@@ -4,8 +4,12 @@ import argparse
 import csv
 from datetime import date
 from decimal import Decimal
+import hashlib
+import json
 from pathlib import Path
+import subprocess
 import sys
+from datetime import datetime, timezone
 
 try:
     import yaml
@@ -15,7 +19,7 @@ except Exception:  # pragma: no cover - dependency guard for clearer CLI errors.
 from .modelo130 import (
     calculate_modelo130,
     extract_modelo130_values,
-    previous_positive_payments,
+    previous_positive_payments_with_warnings,
 )
 from .money import cents, format_es, parse_amount, parse_rate
 from .parsers import (
@@ -26,7 +30,7 @@ from .parsers import (
     scan_expense_dir,
     scan_income_dir,
 )
-from .reports import write_compare, write_ledger, write_markdown_report
+from .reports import write_compare, write_ledger, write_manifest, write_markdown_report
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -43,11 +47,7 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         help="Optional reviewed CSV ledger with scanned/manual entries",
     )
-    modelo.add_argument(
-        "--no-derive-target-fx",
-        action="store_true",
-        help="Do not derive missing income FX rate from target Xolo report",
-    )
+    modelo.add_argument("--derive-target-fx", action="store_true", help="Derive missing income FX from the target Xolo report for historical reconciliation only")
 
     extract_income = subparsers.add_parser("extract-invoices", help="Extract income invoice ledger")
     _add_common_args(extract_income)
@@ -108,18 +108,18 @@ def _cmd_modelo130(args: argparse.Namespace) -> int:
 
     fx_rates = _parse_fx_rates(args.fx_rate)
     fx_notes: list[str] = []
-    if target and "USD" not in fx_rates and not args.no_derive_target_fx:
+    for currency, rate in sorted(fx_rates.items()):
+        fx_notes.append(f"Configured FX rate: {currency}={rate}")
+    if target and "USD" not in fx_rates and args.derive_target_fx:
         derived = derive_single_currency_rate(income_entries, target["01"], "USD", year, quarter)
         if derived is not None:
             fx_rates["USD"] = derived
             fx_notes.append(
-                "Derived USD rate from Xolo target casilla 01 for reconciliation only: "
+                "WARNING: Derived USD rate from Xolo target casilla 01 for historical reconciliation only: "
                 f"USD={derived}"
             )
 
     warnings = apply_fx(entries, fx_rates)
-    if target and "USD" in fx_rates and not args.no_derive_target_fx:
-        _reconcile_income_residual(entries, target["01"], year, quarter, fx_notes)
     manual.extend(e for e in entries if e.review_required)
     ytd_entries = [e for e in entries if in_ytd(e.date, year, quarter)]
     ytd_manual = [e for e in manual if _manual_relevant_to_run(e, year, quarter)]
@@ -128,13 +128,15 @@ def _cmd_modelo130(args: argparse.Namespace) -> int:
     deductible_before_difficult = cents(
         sum((e.deductible_eur or Decimal("0.00")) for e in ytd_entries if e.kind == "expense" and not e.review_required)
     )
-    previous = previous_positive_payments(xolo_root / "TAX_REPORT", year, quarter)
+    previous, previous_warnings = previous_positive_payments_with_warnings(xolo_root / "TAX_REPORT", year, quarter)
+    warnings.extend(previous_warnings)
     result = calculate_modelo130(income_ytd, deductible_before_difficult, previous)
 
     write_ledger(out_dir / "ledger.csv", ytd_entries)
     write_ledger(out_dir / "manual_review.csv", ytd_manual)
     write_ledger(out_dir / "manual_review_all.csv", manual)
     write_compare(out_dir / "xolo_compare.json", result, target)
+    write_manifest(out_dir / "run_manifest.json", _build_manifest(args, xolo_root, out_dir, target is not None))
     write_markdown_report(
         out_dir / "modelo130_report.md",
         year,
@@ -220,6 +222,11 @@ def _load_manual_ledger(path: Path) -> list[LedgerEntry]:
                 amount_eur = amount_original
             if deductible_eur is None and (row.get("kind") or "expense") == "expense":
                 deductible_eur = amount_eur
+            reviewed = (row.get("review_required") or "no").lower() in {"yes", "true", "1"}
+            if not reviewed and (amount_eur is None or amount_eur == 0):
+                raise SystemExit(f"Manual ledger row must have non-zero amount_eur when review_required=no: {row}")
+            if not reviewed and (row.get("kind") or "expense") == "expense" and (deductible_eur is None or deductible_eur == 0):
+                raise SystemExit(f"Manual ledger expense row must have non-zero deductible_eur when review_required=no: {row}")
             entries.append(
                 LedgerEntry(
                     kind=row.get("kind") or "expense",
@@ -233,7 +240,7 @@ def _load_manual_ledger(path: Path) -> list[LedgerEntry]:
                     deductible_eur=deductible_eur,
                     category=row.get("category") or "manual",
                     confidence=row.get("confidence") or "manual",
-                    review_required=(row.get("review_required") or "no").lower() in {"yes", "true", "1"},
+                    review_required=reviewed,
                     notes=row.get("notes") or f"Manual ledger: {path}",
                 )
             )
@@ -246,25 +253,54 @@ def _optional_amount(raw: str | None) -> Decimal | None:
     return parse_amount(raw)
 
 
-def _reconcile_income_residual(
-    entries: list[LedgerEntry],
-    target_income: Decimal,
-    year: int,
-    quarter: int,
-    fx_notes: list[str],
-) -> None:
-    ytd_income = [e for e in entries if e.kind == "income" and in_ytd(e.date, year, quarter)]
-    calculated = cents(sum((e.amount_eur or Decimal("0.00")) for e in ytd_income))
-    residual = cents(target_income - calculated)
-    if residual == 0:
-        return
-    candidates = [e for e in ytd_income if e.currency != "EUR" and e.amount_eur is not None]
-    if not candidates or abs(residual) > Decimal("0.05"):
-        return
-    entry = candidates[-1]
-    entry.amount_eur = cents((entry.amount_eur or Decimal("0.00")) + residual)
-    entry.notes = (entry.notes + "; " if entry.notes else "") + f"Target FX residual adjustment {residual}"
-    fx_notes.append(f"Applied {residual} EUR residual to {Path(entry.document).name} to match target income")
+def _build_manifest(args: argparse.Namespace, xolo_root: Path, out_dir: Path, target_present: bool) -> dict[str, object]:
+    files: list[dict[str, object]] = []
+    for subdir in ("INVOICE", "EXPENSE", "TAX_REPORT"):
+        root = xolo_root / subdir
+        if not root.exists():
+            continue
+        for path in sorted(p for p in root.rglob("*") if p.is_file()):
+            files.append(
+                {
+                    "path": str(path),
+                    "size": path.stat().st_size,
+                    "sha256": _sha256(path),
+                }
+            )
+    return {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "tool_commit": _git_commit(),
+        "year": args.year,
+        "quarter": args.quarter,
+        "xolo_root": str(xolo_root),
+        "target_report": str(args.target_report) if args.target_report else None,
+        "target_present": target_present,
+        "manual_ledger": str(args.manual_ledger) if args.manual_ledger else None,
+        "out_dir": str(out_dir),
+        "input_files": files,
+    }
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _git_commit() -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=Path(__file__).resolve().parents[2],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        return result.stdout.strip()
+    except Exception:
+        return None
 
 
 def _manual_relevant_to_run(entry: LedgerEntry, year: int, quarter: int) -> bool:

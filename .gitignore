@@ -4,6 +4,8 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .venv/
+.omc/
+.omx/
 build/
 dist/
 *.egg-info/

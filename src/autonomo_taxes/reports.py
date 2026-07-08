@@ -75,7 +75,7 @@ def write_markdown_report(
     if target and "01" in target and "02" in target:
         target_before = _deductible_before_from_total(target["01"], target["02"])
         gap = target_before - calculated.deductible_before_difficult
-        lines.append(f"- Xolo deductible expenses before 5%: **{format_es(target_before)} EUR**")
+        lines.append(f"- Xolo implied deductible expenses before 5%: **{format_es(target_before)} EUR**")
         lines.append(f"- Unexplained deductible gap before 5%: **{format_es(gap)} EUR**")
     lines.append("")
     if fx_notes:
@@ -84,6 +84,8 @@ def write_markdown_report(
         for note in fx_notes:
             lines.append(f"- {note}")
         lines.append("")
+    if target and "01" in target and "02" in target:
+        lines.extend(_manual_reconciliation_block(manual, target_before, calculated.deductible_before_difficult))
     lines.append("## Casillas")
     lines.append("")
     lines.append("| Casilla | Calculated | Xolo target | Diff |")
@@ -117,12 +119,21 @@ def write_markdown_report(
     lines.append("")
     lines.append("## Manual Review Queue")
     lines.append("")
-    lines.append("| Document | Category | Notes |")
-    lines.append("|---|---|---|")
+    lines.append("| Document | Original | EUR/deductible candidate | Category | Notes |")
+    lines.append("|---|---:|---:|---|---|")
     for entry in manual:
-        lines.append(f"| {Path(entry.document).name} | {entry.category} | {entry.notes} |")
+        candidate = entry.deductible_eur or entry.amount_eur or entry.amount_original
+        original = (
+            f"{format_es(entry.amount_original)} {entry.currency}"
+            if entry.amount_original is not None
+            else ""
+        )
+        lines.append(
+            f"| {Path(entry.document).name} | {original} | {format_es(candidate)} | "
+            f"{entry.category} | {entry.notes} |"
+        )
     if not manual:
-        lines.append("| - | - | - |")
+        lines.append("| - | - | - | - | - |")
     lines.append("")
     if warnings:
         lines.append("## Warnings")
@@ -133,6 +144,10 @@ def write_markdown_report(
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def write_manifest(path: Path, manifest: dict[str, object]) -> None:
+    path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
 def _deductible_before_from_total(income: Decimal, total_expenses: Decimal) -> Decimal:
     uncapped = (total_expenses - income * Decimal("0.05")) / Decimal("0.95")
     hard_to_justify = income - uncapped
@@ -140,3 +155,31 @@ def _deductible_before_from_total(income: Decimal, total_expenses: Decimal) -> D
     if hard_to_justify <= Decimal("2000.00"):
         return cents(uncapped)
     return cents(total_expenses - Decimal("2000.00"))
+
+
+def _manual_reconciliation_block(
+    manual: list[LedgerEntry],
+    target_before: Decimal,
+    calculated_before: Decimal,
+) -> list[str]:
+    by_category: dict[str, Decimal] = {}
+    for entry in manual:
+        candidate = entry.deductible_eur or entry.amount_eur or entry.amount_original
+        if candidate is None:
+            continue
+        by_category[entry.category] = by_category.get(entry.category, Decimal("0.00")) + candidate
+    known_manual = cents(sum(by_category.values(), Decimal("0.00")))
+    gap = cents(target_before - calculated_before)
+    lines = ["## Missing Evidence Reconciliation", ""]
+    lines.append(f"- Gap before 5% rule: **{format_es(gap)} EUR**")
+    lines.append(f"- Manual-review documents with parseable candidate amounts: **{format_es(known_manual)} EUR**")
+    lines.append(f"- Remaining gap after candidate amounts: **{format_es(gap - known_manual)} EUR**")
+    lines.append("")
+    lines.append("| Manual category | Candidate amount |")
+    lines.append("|---|---:|")
+    for category, amount in sorted(by_category.items()):
+        lines.append(f"| {category} | {format_es(amount)} |")
+    if not by_category:
+        lines.append("| - | - |")
+    lines.append("")
+    return lines

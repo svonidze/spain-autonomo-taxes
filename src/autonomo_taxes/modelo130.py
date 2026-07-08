@@ -155,13 +155,26 @@ def find_previous_reports(tax_report_dir: Path, year: int, quarter: int) -> list
     return reports
 
 
-def previous_positive_payments(tax_report_dir: Path, year: int, quarter: int) -> Decimal:
+def previous_positive_payments_with_warnings(tax_report_dir: Path, year: int, quarter: int) -> tuple[Decimal, list[str]]:
     total = Decimal("0.00")
-    for report in find_previous_reports(tax_report_dir, year, quarter):
+    warnings: list[str] = []
+    reports = find_previous_reports(tax_report_dir, year, quarter)
+    reports_by_quarter: dict[int, Path] = {}
+    for report in reports:
         match = re.search(r"([1-4])T", report.name, flags=re.IGNORECASE)
         if not match:
             continue
-        report_quarter = int(match.group(1))
-        values = extract_modelo130_values(report, year, report_quarter)
+        reports_by_quarter[int(match.group(1))] = report
+    for prev in range(1, quarter):
+        report = reports_by_quarter.get(prev)
+        if report is None:
+            warnings.append(f"Missing prior Modelo 130 report for {year} {prev}T; casilla 05 may be understated")
+            continue
+        values = extract_modelo130_values(report, year, prev)
         total += max(values.get("07", Decimal("0.00")), Decimal("0.00"))
-    return cents(total)
+    return cents(total), warnings
+
+
+def previous_positive_payments(tax_report_dir: Path, year: int, quarter: int) -> Decimal:
+    total, _ = previous_positive_payments_with_warnings(tax_report_dir, year, quarter)
+    return total
