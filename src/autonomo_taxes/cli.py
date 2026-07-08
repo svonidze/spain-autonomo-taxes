@@ -269,7 +269,7 @@ def _build_manifest(args: argparse.Namespace, xolo_root: Path, out_dir: Path, ta
             )
     return {
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "tool_commit": _git_commit(),
+        "tool_git_head_at_run": _git_commit(),
         "year": args.year,
         "quarter": args.quarter,
         "xolo_root": str(xolo_root),
