@@ -9,3 +9,6 @@ __pycache__/
 build/
 dist/
 *.egg-info/
+.env
+data/xolo_live_*
+data/*.secret.*

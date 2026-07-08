@@ -30,6 +30,15 @@ from .parsers import (
     scan_income_dir,
 )
 from .reports import write_compare, write_ledger, write_manifest, write_markdown_report
+from .xolo_ledger import (
+    import_xolo_expense_csv,
+    load_xolo_expense_ledger,
+    reconcile_xolo_expenses,
+    reviewed_expense_entries,
+    write_xolo_expense_ledger_csv,
+    write_xolo_reconciliation,
+    xolo_ledger_total,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -47,6 +56,11 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         help="Optional reviewed CSV ledger with scanned/manual entries",
     )
+    modelo.add_argument(
+        "--xolo-expense-ledger",
+        type=Path,
+        help="Optional reviewed Xolo expense ledger CSV. Replaces parsed expense PDFs for Modelo 130 expense totals.",
+    )
     modelo.add_argument("--derive-target-fx", action="store_true", help="Derive missing income FX from the target Xolo report for historical reconciliation only")
 
     extract_income = subparsers.add_parser("extract-invoices", help="Extract income invoice ledger")
@@ -61,6 +75,19 @@ def main(argv: list[str] | None = None) -> int:
     compare.add_argument("--target-report", type=Path, required=True)
     compare.add_argument("--year", type=int, required=True)
     compare.add_argument("--quarter", type=int, required=True, choices=[1, 2, 3, 4])
+
+    xolo_ledger = subparsers.add_parser("xolo-ledger", help="Validate and reconcile reviewed Xolo expense ledgers")
+    xolo_subparsers = xolo_ledger.add_subparsers(dest="xolo_ledger_command", required=True)
+    xolo_import = xolo_subparsers.add_parser("import", help="Validate a Xolo expense ledger CSV and write a local mirror")
+    xolo_import.add_argument("--input", type=Path, required=True)
+    xolo_import.add_argument("--out", type=Path, required=True)
+    xolo_import.add_argument("--fx-rate", action="append", default=[], help="Currency rate, e.g. USD=0.85679")
+    xolo_reconcile = xolo_subparsers.add_parser("reconcile", help="Compare a Xolo expense ledger to local EXPENSE files")
+    _add_common_args(xolo_reconcile)
+    xolo_reconcile.add_argument("--xolo-expense-ledger", type=Path, required=True)
+    xolo_reconcile.add_argument("--out", type=Path, required=True)
+    xolo_reconcile.add_argument("--fx-rate", action="append", default=[], help="Currency rate, e.g. USD=0.85679")
+    xolo_reconcile.add_argument("--asset-review-threshold-eur", help="Expense amount threshold for asset/amortization review")
 
     args = parser.parse_args(argv)
     config = _load_config(args.config)
@@ -83,6 +110,14 @@ def main(argv: list[str] | None = None) -> int:
         for key, value in values.items():
             print(f"{key}: {format_es(value)}")
         return 0
+    if args.command == "xolo-ledger":
+        if args.xolo_ledger_command == "import":
+            rows = import_xolo_expense_csv(args.input, _parse_fx_rates(args.fx_rate))
+            write_xolo_expense_ledger_csv(args.out, rows)
+            print(f"Validated {len(rows)} Xolo expense rows and wrote {args.out}")
+            return 0
+        if args.xolo_ledger_command == "reconcile":
+            return _cmd_xolo_reconcile(args)
     raise AssertionError(args.command)
 
 
@@ -100,11 +135,10 @@ def _cmd_modelo130(args: argparse.Namespace) -> int:
     income_entries, income_manual = scan_income_dir(xolo_root / "INVOICE")
     asset_threshold = parse_amount(args.asset_review_threshold_eur or "600.00")
     expense_entries, expense_manual = scan_expense_dir(xolo_root / "EXPENSE", asset_threshold)
-    entries = income_entries + expense_entries
     manual = income_manual + expense_manual
+    reviewed: list[LedgerEntry] = []
     if args.manual_ledger:
         reviewed = _load_manual_ledger(Path(args.manual_ledger))
-        entries.extend(e for e in reviewed if not e.review_required)
         manual.extend(e for e in reviewed if e.review_required)
 
     fx_rates = _parse_fx_rates(args.fx_rate)
@@ -120,11 +154,48 @@ def _cmd_modelo130(args: argparse.Namespace) -> int:
                 f"USD={derived}"
             )
 
-    warnings = apply_fx(entries, fx_rates)
-    newly_manual = [e for e in entries if e.review_required]
+    entries_for_fx = income_entries + expense_entries + [e for e in reviewed if not e.review_required]
+    warnings = apply_fx(entries_for_fx, fx_rates)
+    newly_manual = [e for e in entries_for_fx if e.review_required]
     manual.extend(newly_manual)
-    entries = [e for e in entries if not e.review_required]
-    ytd_entries = [e for e in entries if in_ytd(e.date, year, quarter)]
+    entries = _final_entries(args, income_entries, expense_entries, reviewed, warnings, year, quarter)
+    expense_source_summary = None
+    xolo_reconciliation = None
+    if args.xolo_expense_ledger:
+        xolo_rows = load_xolo_expense_ledger(Path(args.xolo_expense_ledger))
+        xolo_entries, xolo_warnings = reviewed_expense_entries(xolo_rows, year, quarter)
+        warnings.extend(xolo_warnings)
+        if xolo_warnings:
+            raise SystemExit("; ".join(xolo_warnings))
+        manual_expense_rows = [e for e in reviewed if not e.review_required and e.kind == "expense"]
+        if manual_expense_rows:
+            warnings.append(
+                "Ignoring reviewed expense rows from --manual-ledger because --xolo-expense-ledger is the authoritative expense source"
+            )
+        entries = [e for e in entries if e.kind != "expense"] + xolo_entries
+        local_expense_ytd = cents(
+            sum(
+                (e.deductible_eur or Decimal("0.00"))
+                for e in expense_entries
+                if not e.review_required and in_ytd(e.date, year, quarter)
+            )
+        )
+        xolo_total = xolo_ledger_total(xolo_rows, year, quarter)
+        xolo_reconciliation = reconcile_xolo_expenses(xolo_rows, expense_entries + expense_manual, year, quarter)
+        write_xolo_reconciliation(out_dir / "xolo_expense_reconcile.csv", xolo_reconciliation)
+        expense_source_summary = {
+            "source": "reviewed Xolo expense ledger",
+            "xolo_expense_ledger": str(args.xolo_expense_ledger),
+            "local_parsed_deductible_before_5": local_expense_ytd,
+            "xolo_ledger_deductible_before_5": xolo_total,
+            "reconciliation_csv": str(out_dir / "xolo_expense_reconcile.csv"),
+        }
+    if args.xolo_expense_ledger:
+        ytd_entries = [e for e in entries if e.kind == "expense"] + [
+            e for e in entries if e.kind != "expense" and in_ytd(e.date, year, quarter)
+        ]
+    else:
+        ytd_entries = [e for e in entries if in_ytd(e.date, year, quarter)]
     ytd_manual = [e for e in manual if _manual_relevant_to_run(e, year, quarter)]
 
     income_ytd = cents(sum((e.amount_eur or Decimal("0.00")) for e in ytd_entries if e.kind == "income"))
@@ -151,6 +222,8 @@ def _cmd_modelo130(args: argparse.Namespace) -> int:
         ytd_manual,
         warnings,
         fx_notes,
+        expense_source_summary=expense_source_summary,
+        xolo_reconciliation=xolo_reconciliation,
     )
 
     print(f"Wrote run artifacts to {out_dir}")
@@ -165,6 +238,46 @@ def _cmd_modelo130(args: argparse.Namespace) -> int:
     if ytd_manual:
         print(f"manual review items: {len(ytd_manual)}")
     return 0
+
+
+def _cmd_xolo_reconcile(args: argparse.Namespace) -> int:
+    xolo_root = Path(args.xolo_root)
+    year = int(args.year)
+    quarter = int(args.quarter)
+    rows = load_xolo_expense_ledger(Path(args.xolo_expense_ledger))
+    asset_threshold = parse_amount(args.asset_review_threshold_eur or "600.00")
+    expense_entries, expense_manual = scan_expense_dir(xolo_root / "EXPENSE", asset_threshold)
+    apply_fx(expense_entries + expense_manual, _parse_fx_rates(args.fx_rate))
+    reconciliation = reconcile_xolo_expenses(rows, expense_entries + expense_manual, year, quarter)
+    write_xolo_reconciliation(args.out, reconciliation)
+    print(f"Wrote {len(reconciliation)} reconciliation rows to {args.out}")
+    return 0
+
+
+def _final_entries(
+    args: argparse.Namespace,
+    income_entries: list[LedgerEntry],
+    expense_entries: list[LedgerEntry],
+    reviewed: list[LedgerEntry],
+    warnings: list[str],
+    year: int,
+    quarter: int,
+) -> list[LedgerEntry]:
+    non_reviewed = [e for e in reviewed if not e.review_required]
+    if args.xolo_expense_ledger:
+        ignored_local = cents(
+            sum(
+                (e.deductible_eur or Decimal("0.00"))
+                for e in expense_entries
+                if not e.review_required and in_ytd(e.date, year, quarter)
+            )
+        )
+        warnings.append(
+            "Parsed local expense PDFs are used only for reconciliation because --xolo-expense-ledger is set; "
+            f"ignored parsed expense deductible before 5%: {format_es(ignored_local)} EUR"
+        )
+        return [e for e in income_entries + non_reviewed if not e.review_required and e.kind != "expense"]
+    return [e for e in income_entries + expense_entries + non_reviewed if not e.review_required]
 
 
 def _add_common_args(parser: argparse.ArgumentParser) -> None:
@@ -189,7 +302,7 @@ def _merge_config(args: argparse.Namespace, config: dict) -> None:
         threshold = review.get("asset_review_threshold_eur")
         if threshold not in (None, ""):
             setattr(args, "asset_review_threshold_eur", str(threshold))
-    for key in ("xolo_root", "year", "quarter", "target_report", "manual_ledger"):
+    for key in ("xolo_root", "year", "quarter", "target_report", "manual_ledger", "xolo_expense_ledger"):
         if hasattr(args, key) and getattr(args, key, None) in (None, "") and key in config:
             setattr(args, key, config[key])
     if hasattr(args, "fx_rate") and not args.fx_rate:
@@ -200,6 +313,8 @@ def _merge_config(args: argparse.Namespace, config: dict) -> None:
         required = ["xolo_root"]
     if getattr(args, "command", None) == "modelo130":
         required += ["year", "quarter"]
+    if getattr(args, "command", None) == "xolo-ledger" and getattr(args, "xolo_ledger_command", None) == "reconcile":
+        required = ["xolo_root", "year", "quarter"]
     missing = [key for key in required if getattr(args, key, None) in (None, "")]
     if missing:
         raise SystemExit(f"Missing required option(s): {', '.join('--' + m.replace('_', '-') for m in missing)}")
@@ -278,7 +393,7 @@ def _build_manifest(args: argparse.Namespace, xolo_root: Path, out_dir: Path, ta
             )
     covered = {item["path"] for item in files}
     aux_inputs: list[dict[str, object]] = []
-    for value in (args.target_report, args.manual_ledger):
+    for value in (args.target_report, args.manual_ledger, getattr(args, "xolo_expense_ledger", None)):
         if not value:
             continue
         path = Path(value)
@@ -294,6 +409,10 @@ def _build_manifest(args: argparse.Namespace, xolo_root: Path, out_dir: Path, ta
         "target_report": str(args.target_report) if args.target_report else None,
         "target_present": target_present,
         "manual_ledger": str(args.manual_ledger) if args.manual_ledger else None,
+        "xolo_expense_ledger": str(args.xolo_expense_ledger) if getattr(args, "xolo_expense_ledger", None) else None,
+        "fx_rate_args": list(getattr(args, "fx_rate", []) or []),
+        "derive_target_fx": bool(getattr(args, "derive_target_fx", False)),
+        "asset_review_threshold_eur": str(getattr(args, "asset_review_threshold_eur", "") or ""),
         "out_dir": str(out_dir),
         "input_files": files,
         "aux_input_files": aux_inputs,
