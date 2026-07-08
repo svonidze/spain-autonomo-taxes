@@ -78,10 +78,21 @@ def write_markdown_report(
         status = _run_status(calculated, target, xolo_reconciliation)
         lines.append(f"- Run status: **{status}**")
     if target and "01" in target and "02" in target:
-        target_before = _deductible_before_from_total(target["01"], target["02"])
+        if calculated.difficult_expenses == 0:
+            target_before = target["02"]
+            target_label = "Xolo target deductible expenses under selected policy"
+            gap_label = "Unexplained deductible gap under selected policy"
+        else:
+            target_before = _deductible_before_from_total(
+                target["01"],
+                target["02"],
+                rate=_difficult_expenses_rate_for_year(year),
+            )
+            target_label = "Xolo implied deductible expenses before difficult-expenses provision"
+            gap_label = "Unexplained deductible gap before difficult-expenses provision"
         gap = target_before - calculated.deductible_before_difficult
-        lines.append(f"- Xolo implied deductible expenses before 5%: **{format_es(target_before)} EUR**")
-        lines.append(f"- Unexplained deductible gap before 5%: **{format_es(gap)} EUR**")
+        lines.append(f"- {target_label}: **{format_es(target_before)} EUR**")
+        lines.append(f"- {gap_label}: **{format_es(gap)} EUR**")
     lines.append("")
     if expense_source_summary:
         lines.append("## Expense Source")
@@ -170,13 +181,22 @@ def write_manifest(path: Path, manifest: dict[str, object]) -> None:
     path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-def _deductible_before_from_total(income: Decimal, total_expenses: Decimal) -> Decimal:
-    uncapped = (total_expenses - income * Decimal("0.05")) / Decimal("0.95")
+def _deductible_before_from_total(
+    income: Decimal,
+    total_expenses: Decimal,
+    rate: Decimal = Decimal("0.05"),
+    cap: Decimal = Decimal("2000.00"),
+) -> Decimal:
+    uncapped = (total_expenses - income * rate) / (Decimal("1.00") - rate)
     hard_to_justify = income - uncapped
-    hard_to_justify = hard_to_justify * Decimal("0.05")
-    if hard_to_justify <= Decimal("2000.00"):
+    hard_to_justify = hard_to_justify * rate
+    if hard_to_justify <= cap:
         return cents(uncapped)
-    return cents(total_expenses - Decimal("2000.00"))
+    return cents(total_expenses - cap)
+
+
+def _difficult_expenses_rate_for_year(year: int) -> Decimal:
+    return Decimal("0.07") if year == 2023 else Decimal("0.05")
 
 
 def _manual_reconciliation_block(

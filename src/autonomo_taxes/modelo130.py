@@ -9,6 +9,22 @@ from .money import cents, parse_amount
 from .pdf_text import extract_pdf_text
 
 
+_POSITIONED_CASILLA_Y = {
+    "01": Decimal("604"),
+    "02": Decimal("592"),
+    "03": Decimal("580"),
+    "04": Decimal("568"),
+    "05": Decimal("545"),
+    "07": Decimal("496"),
+    "12": Decimal("388"),
+    "13": Decimal("376"),
+    "14": Decimal("364"),
+    "17": Decimal("304"),
+    "19": Decimal("268"),
+}
+_TARGET_KEYS = ("01", "02", "03", "04", "05", "06", "07", "12", "13", "14", "15", "16", "17", "18", "19")
+
+
 @dataclass(frozen=True)
 class Modelo130Result:
     casilla_01: Decimal
@@ -49,11 +65,16 @@ class Modelo130Result:
         }
 
 
-def difficult_expenses(income: Decimal, deductible_before_difficult: Decimal) -> Decimal:
+def difficult_expenses(
+    income: Decimal,
+    deductible_before_difficult: Decimal,
+    rate: Decimal = Decimal("0.05"),
+    cap: Decimal = Decimal("2000.00"),
+) -> Decimal:
     base = income - deductible_before_difficult
     if base <= 0:
         return Decimal("0.00")
-    return min(cents(base * Decimal("0.05")), Decimal("2000.00"))
+    return min(cents(base * rate), cap)
 
 
 def calculate_modelo130(
@@ -65,10 +86,16 @@ def calculate_modelo130(
     previous_negative_results: Decimal = Decimal("0.00"),
     vivienda_deduction: Decimal = Decimal("0.00"),
     complementary_previous_result: Decimal = Decimal("0.00"),
+    include_difficult_expenses: bool = True,
+    difficult_expenses_rate: Decimal = Decimal("0.05"),
 ) -> Modelo130Result:
     income_ytd = cents(income_ytd)
     deductible_before_difficult_ytd = cents(deductible_before_difficult_ytd)
-    hard_to_justify = difficult_expenses(income_ytd, deductible_before_difficult_ytd)
+    hard_to_justify = (
+        difficult_expenses(income_ytd, deductible_before_difficult_ytd, difficult_expenses_rate)
+        if include_difficult_expenses
+        else Decimal("0.00")
+    )
     casilla_02 = cents(deductible_before_difficult_ytd + hard_to_justify)
     casilla_03 = cents(income_ytd - casilla_02)
     casilla_04 = cents(max(casilla_03, Decimal("0.00")) * Decimal("0.20"))
@@ -137,7 +164,54 @@ def extract_modelo130_values_from_text(text: str, year: int, quarter: int) -> di
 
 
 def extract_modelo130_values(path: Path, year: int, quarter: int) -> dict[str, Decimal]:
+    positioned = _extract_modelo130_values_from_pdf_coordinates(path, year, quarter)
+    if positioned is not None:
+        return positioned
     return extract_modelo130_values_from_text(extract_pdf_text(path), year, quarter)
+
+
+def _extract_modelo130_values_from_pdf_coordinates(path: Path, year: int, quarter: int) -> dict[str, Decimal] | None:
+    from pypdf import PdfReader
+
+    period = f"{year} {quarter}T"
+    reader = PdfReader(str(path))
+    for page in reader.pages:
+        text = page.extract_text() or ""
+        if period not in text:
+            continue
+        words: list[tuple[Decimal, Decimal, str]] = []
+
+        def visitor(fragment: str, _cm, tm, _font_dict, font_size: float) -> None:
+            value = fragment.strip()
+            if font_size < 5 or not re.fullmatch(r"-?[0-9.]+,[0-9]{2}", value):
+                return
+            x = Decimal(str(tm[4]))
+            if x < Decimal("500"):
+                return
+            words.append((x, Decimal(str(tm[5])), value))
+
+        page.extract_text(visitor_text=visitor)
+        return _extract_modelo130_values_from_positioned_words(words)
+    return None
+
+
+def _extract_modelo130_values_from_positioned_words(
+    words: list[tuple[Decimal, Decimal, str]],
+) -> dict[str, Decimal]:
+    values = {key: Decimal("0.00") for key in _TARGET_KEYS}
+    for key, expected_y in _POSITIONED_CASILLA_Y.items():
+        candidates = [
+            (abs(y - expected_y), x, raw)
+            for x, y, raw in words
+            if abs(y - expected_y) <= Decimal("6.0")
+        ]
+        if not candidates:
+            continue
+        _, _, raw = min(candidates, key=lambda item: (item[0], item[1]))
+        values[key] = parse_amount(raw)
+    if values["01"] == 0 and values["04"] == 0:
+        raise ValueError("Could not extract positioned Modelo 130 values")
+    return values
 
 
 def find_previous_reports(tax_report_dir: Path, year: int, quarter: int) -> list[Path]:

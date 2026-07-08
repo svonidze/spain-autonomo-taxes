@@ -15,6 +15,7 @@ try:
 except Exception:  # pragma: no cover - dependency guard for clearer CLI errors.
     yaml = None
 
+from .history import run_history_audit, write_history_audit_csv, write_history_audit_markdown
 from .modelo130 import (
     calculate_modelo130,
     extract_modelo130_values,
@@ -61,6 +62,12 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         help="Optional reviewed Xolo expense ledger CSV. Replaces parsed expense PDFs for Modelo 130 expense totals.",
     )
+    modelo.add_argument(
+        "--difficult-expenses-policy",
+        choices=["include", "exclude"],
+        default="include",
+        help="Whether to add Modelo 130 difficult-to-justify expenses on top of deductible expenses.",
+    )
     modelo.add_argument("--derive-target-fx", action="store_true", help="Derive missing income FX from the target Xolo report for historical reconciliation only")
 
     extract_income = subparsers.add_parser("extract-invoices", help="Extract income invoice ledger")
@@ -88,6 +95,12 @@ def main(argv: list[str] | None = None) -> int:
     xolo_reconcile.add_argument("--out", type=Path, required=True)
     xolo_reconcile.add_argument("--fx-rate", action="append", default=[], help="Currency rate, e.g. USD=0.85679")
     xolo_reconcile.add_argument("--asset-review-threshold-eur", help="Expense amount threshold for asset/amortization review")
+
+    audit_history = subparsers.add_parser("audit-history", help="Audit every available Modelo 130 quarter in sequence")
+    audit_history.add_argument("--xolo-root", type=Path, required=True)
+    audit_history.add_argument("--xolo-raw-expenses", type=Path, help="Optional raw Xolo expense CSV from scripts/fetch_xolo_expenses.py")
+    audit_history.add_argument("--out-csv", type=Path, required=True)
+    audit_history.add_argument("--out-md", type=Path, required=True)
 
     args = parser.parse_args(argv)
     config = _load_config(args.config)
@@ -118,6 +131,12 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.xolo_ledger_command == "reconcile":
             return _cmd_xolo_reconcile(args)
+    if args.command == "audit-history":
+        rows = run_history_audit(Path(args.xolo_root), Path(args.xolo_raw_expenses) if args.xolo_raw_expenses else None)
+        write_history_audit_csv(args.out_csv, rows)
+        write_history_audit_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} historical audit rows to {args.out_csv} and {args.out_md}")
+        return 0
     raise AssertionError(args.command)
 
 
@@ -204,7 +223,14 @@ def _cmd_modelo130(args: argparse.Namespace) -> int:
     )
     previous, previous_warnings = previous_positive_payments_with_warnings(xolo_root / "TAX_REPORT", year, quarter)
     warnings.extend(previous_warnings)
-    result = calculate_modelo130(income_ytd, deductible_before_difficult, previous)
+    result = calculate_modelo130(
+        income_ytd,
+        deductible_before_difficult,
+        previous,
+        minoracion=target.get("13", Decimal("0.00")) if target else Decimal("0.00"),
+        include_difficult_expenses=args.difficult_expenses_policy == "include",
+        difficult_expenses_rate=_difficult_expenses_rate_for_year(year),
+    )
     manifest = _build_manifest(args, xolo_root, out_dir, target is not None)
 
     write_ledger(out_dir / "ledger.csv", ytd_entries)
@@ -302,7 +328,15 @@ def _merge_config(args: argparse.Namespace, config: dict) -> None:
         threshold = review.get("asset_review_threshold_eur")
         if threshold not in (None, ""):
             setattr(args, "asset_review_threshold_eur", str(threshold))
-    for key in ("xolo_root", "year", "quarter", "target_report", "manual_ledger", "xolo_expense_ledger"):
+    for key in (
+        "xolo_root",
+        "year",
+        "quarter",
+        "target_report",
+        "manual_ledger",
+        "xolo_expense_ledger",
+        "difficult_expenses_policy",
+    ):
         if hasattr(args, key) and getattr(args, key, None) in (None, "") and key in config:
             setattr(args, key, config[key])
     if hasattr(args, "fx_rate") and not args.fx_rate:
@@ -413,6 +447,7 @@ def _build_manifest(args: argparse.Namespace, xolo_root: Path, out_dir: Path, ta
         "fx_rate_args": list(getattr(args, "fx_rate", []) or []),
         "derive_target_fx": bool(getattr(args, "derive_target_fx", False)),
         "asset_review_threshold_eur": str(getattr(args, "asset_review_threshold_eur", "") or ""),
+        "difficult_expenses_policy": str(getattr(args, "difficult_expenses_policy", "") or ""),
         "out_dir": str(out_dir),
         "input_files": files,
         "aux_input_files": aux_inputs,
@@ -460,6 +495,10 @@ def _manual_relevant_to_run(entry: LedgerEntry, year: int, quarter: int) -> bool
         return True
     name = Path(entry.document).name
     return str(year) in name
+
+
+def _difficult_expenses_rate_for_year(year: int) -> Decimal:
+    return Decimal("0.07") if year == 2023 else Decimal("0.05")
 
 
 if __name__ == "__main__":
