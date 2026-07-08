@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import argparse
 import csv
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 import hashlib
 import json
 from pathlib import Path
 import subprocess
 import sys
-from datetime import datetime, timezone
 
 try:
     import yaml
@@ -42,6 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     _add_common_args(modelo)
     modelo.add_argument("--out-dir", type=Path, help="Output directory. Defaults to runs/YYYY-QN")
     modelo.add_argument("--fx-rate", action="append", default=[], help="Currency rate, e.g. USD=0.85679")
+    modelo.add_argument("--asset-review-threshold-eur", help="Expense amount threshold for asset/amortization review")
     modelo.add_argument(
         "--manual-ledger",
         type=Path,
@@ -98,7 +98,8 @@ def _cmd_modelo130(args: argparse.Namespace) -> int:
         target = extract_modelo130_values(Path(args.target_report), year, quarter)
 
     income_entries, income_manual = scan_income_dir(xolo_root / "INVOICE")
-    expense_entries, expense_manual = scan_expense_dir(xolo_root / "EXPENSE")
+    asset_threshold = parse_amount(args.asset_review_threshold_eur or "600.00")
+    expense_entries, expense_manual = scan_expense_dir(xolo_root / "EXPENSE", asset_threshold)
     entries = income_entries + expense_entries
     manual = income_manual + expense_manual
     if args.manual_ledger:
@@ -120,7 +121,9 @@ def _cmd_modelo130(args: argparse.Namespace) -> int:
             )
 
     warnings = apply_fx(entries, fx_rates)
-    manual.extend(e for e in entries if e.review_required)
+    newly_manual = [e for e in entries if e.review_required]
+    manual.extend(newly_manual)
+    entries = [e for e in entries if not e.review_required]
     ytd_entries = [e for e in entries if in_ytd(e.date, year, quarter)]
     ytd_manual = [e for e in manual if _manual_relevant_to_run(e, year, quarter)]
 
@@ -131,12 +134,13 @@ def _cmd_modelo130(args: argparse.Namespace) -> int:
     previous, previous_warnings = previous_positive_payments_with_warnings(xolo_root / "TAX_REPORT", year, quarter)
     warnings.extend(previous_warnings)
     result = calculate_modelo130(income_ytd, deductible_before_difficult, previous)
+    manifest = _build_manifest(args, xolo_root, out_dir, target is not None)
 
     write_ledger(out_dir / "ledger.csv", ytd_entries)
     write_ledger(out_dir / "manual_review.csv", ytd_manual)
     write_ledger(out_dir / "manual_review_all.csv", manual)
     write_compare(out_dir / "xolo_compare.json", result, target)
-    write_manifest(out_dir / "run_manifest.json", _build_manifest(args, xolo_root, out_dir, target is not None))
+    write_manifest(out_dir / "run_manifest.json", manifest)
     write_markdown_report(
         out_dir / "modelo130_report.md",
         year,
@@ -180,6 +184,11 @@ def _load_config(path: Path | None) -> dict:
 
 
 def _merge_config(args: argparse.Namespace, config: dict) -> None:
+    review = config.get("review") or {}
+    if hasattr(args, "asset_review_threshold_eur") and getattr(args, "asset_review_threshold_eur", None) in (None, ""):
+        threshold = review.get("asset_review_threshold_eur")
+        if threshold not in (None, ""):
+            setattr(args, "asset_review_threshold_eur", str(threshold))
     for key in ("xolo_root", "year", "quarter", "target_report", "manual_ledger"):
         if hasattr(args, key) and getattr(args, key, None) in (None, "") and key in config:
             setattr(args, key, config[key])
@@ -267,9 +276,18 @@ def _build_manifest(args: argparse.Namespace, xolo_root: Path, out_dir: Path, ta
                     "sha256": _sha256(path),
                 }
             )
+    covered = {item["path"] for item in files}
+    aux_inputs: list[dict[str, object]] = []
+    for value in (args.target_report, args.manual_ledger):
+        if not value:
+            continue
+        path = Path(value)
+        if path.exists() and str(path) not in covered:
+            aux_inputs.append({"path": str(path), "size": path.stat().st_size, "sha256": _sha256(path)})
     return {
         "created_at": datetime.now(timezone.utc).isoformat(),
         "tool_git_head_at_run": _git_commit(),
+        "tool_git_dirty": _git_dirty(),
         "year": args.year,
         "quarter": args.quarter,
         "xolo_root": str(xolo_root),
@@ -278,6 +296,7 @@ def _build_manifest(args: argparse.Namespace, xolo_root: Path, out_dir: Path, ta
         "manual_ledger": str(args.manual_ledger) if args.manual_ledger else None,
         "out_dir": str(out_dir),
         "input_files": files,
+        "aux_input_files": aux_inputs,
     }
 
 
@@ -299,6 +318,20 @@ def _git_commit() -> str | None:
             capture_output=True,
         )
         return result.stdout.strip()
+    except Exception:
+        return None
+
+
+def _git_dirty() -> bool | None:
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=Path(__file__).resolve().parents[2],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        return bool(result.stdout.strip())
     except Exception:
         return None
 
