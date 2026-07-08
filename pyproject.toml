@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spain-autonomo-taxes"
+version = "0.1.0"
+description = "Reusable audit toolkit for Spanish autonomo tax declarations."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "pypdf>=5",
+  "PyYAML>=6",
+]
+
+[project.scripts]
+autonomo-tax = "autonomo_taxes.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
