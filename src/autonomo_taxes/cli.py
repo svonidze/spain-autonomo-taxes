@@ -40,6 +40,11 @@ from .asset_audit import (
     write_asset_scenarios_csv,
     write_candidate_quarter_reconciliation_csv,
 )
+from .asset_schedule_intake import (
+    build_asset_schedule_intake,
+    write_asset_schedule_intake_csv,
+    write_asset_schedule_intake_markdown,
+)
 from .closure_request import build_xolo_closure_request, write_xolo_closure_request
 from .evidence_inventory import (
     build_evidence_inventory,
@@ -192,6 +197,11 @@ from .xolo_api_coverage import (
     write_xolo_api_coverage_markdown,
     write_xolo_api_quarter_counts_csv,
 )
+from .xolo_calculation_compare import (
+    build_xolo_calculation_compare,
+    write_xolo_calculation_compare_csv,
+    write_xolo_calculation_compare_markdown,
+)
 from .xolo_questions import build_xolo_questions, write_questions_csv, write_questions_markdown
 
 
@@ -274,6 +284,15 @@ def main(argv: list[str] | None = None) -> int:
     audit_xolo_api_coverage.add_argument("--out-quarter-csv", type=Path, required=True)
     audit_xolo_api_coverage.add_argument("--out-md", type=Path, required=True)
 
+    audit_xolo_calculation_compare = subparsers.add_parser(
+        "audit-xolo-calculation-compare",
+        help="Compare authenticated Xolo calculation popups against extracted Modelo 130 history values",
+    )
+    audit_xolo_calculation_compare.add_argument("--history-audit", type=Path, required=True)
+    audit_xolo_calculation_compare.add_argument("--xolo-calculations", type=Path, required=True)
+    audit_xolo_calculation_compare.add_argument("--out-csv", type=Path, required=True)
+    audit_xolo_calculation_compare.add_argument("--out-md", type=Path, required=True)
+
     audit_evidence_inventory = subparsers.add_parser(
         "audit-evidence-inventory",
         help="Inventory local Xolo archive evidence for submitted registers and asset schedules",
@@ -317,6 +336,16 @@ def main(argv: list[str] | None = None) -> int:
     audit_assets.add_argument("--out-scenarios-csv", type=Path, help="Optional output CSV for annual amortization scenarios")
     audit_assets.add_argument("--out-quarter-reconciliation-csv", type=Path, help="Optional output CSV for candidate quarterly reconciliation")
     audit_assets.add_argument("--out-md", type=Path, required=True)
+
+    audit_asset_schedule_intake = subparsers.add_parser(
+        "audit-asset-schedule-intake",
+        help="Build per-asset, per-quarter intake rows for Xolo amortization schedule confirmation",
+    )
+    audit_asset_schedule_intake.add_argument("--asset-candidates", type=Path, required=True)
+    audit_asset_schedule_intake.add_argument("--candidate-quarter-reconciliation", type=Path, required=True)
+    audit_asset_schedule_intake.add_argument("--annual-constrained-assets", type=Path)
+    audit_asset_schedule_intake.add_argument("--out-csv", type=Path, required=True)
+    audit_asset_schedule_intake.add_argument("--out-md", type=Path, required=True)
 
     audit_questions = subparsers.add_parser("audit-questions", help="Generate prioritized Xolo questions from audit outputs")
     audit_questions.add_argument("--candidate-quarter-reconciliation", type=Path, required=True)
@@ -654,6 +683,12 @@ def main(argv: list[str] | None = None) -> int:
         write_xolo_api_coverage_markdown(args.out_md, coverage)
         print(f"Wrote Xolo API coverage status {coverage.status} to {args.out_csv}, {args.out_quarter_csv}, and {args.out_md}")
         return 0
+    if args.command == "audit-xolo-calculation-compare":
+        rows = build_xolo_calculation_compare(args.history_audit, args.xolo_calculations)
+        write_xolo_calculation_compare_csv(args.out_csv, rows)
+        write_xolo_calculation_compare_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} Xolo calculation compare rows to {args.out_csv} and {args.out_md}")
+        return 0
     if args.command == "audit-evidence-inventory":
         rows = build_evidence_inventory(args.xolo_root)
         write_evidence_inventory_csv(args.out_csv, rows)
@@ -702,6 +737,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Wrote {len(scenarios)} annual scenario rows")
         if args.out_quarter_reconciliation_csv:
             print(f"Wrote {len(candidate_quarters)} candidate quarterly reconciliation rows")
+        return 0
+    if args.command == "audit-asset-schedule-intake":
+        rows = build_asset_schedule_intake(
+            args.asset_candidates,
+            args.candidate_quarter_reconciliation,
+            args.annual_constrained_assets,
+        )
+        write_asset_schedule_intake_csv(args.out_csv, rows)
+        write_asset_schedule_intake_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} asset schedule intake rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-questions":
         questions = build_xolo_questions(args.candidate_quarter_reconciliation)
