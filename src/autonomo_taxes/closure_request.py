@@ -6,12 +6,17 @@ from pathlib import Path
 from .money import format_es, parse_amount
 
 
-def build_xolo_closure_request(quarter_closure_csv: Path, source_findings_csv: Path | None = None) -> str:
+def build_xolo_closure_request(
+    quarter_closure_csv: Path,
+    source_findings_csv: Path | None = None,
+    row_decisions_csv: Path | None = None,
+) -> str:
     rows = _load_rows(quarter_closure_csv)
     material = [row for row in rows if row["closure_status"] == "blocked_material_unexplained_adjustment"]
     asset = [row for row in rows if row["has_asset_decision"] == "yes"]
     exclusions = [row for row in rows if row["has_nearest_exclusion"] == "yes"]
     source_findings = _source_finding_highlights(source_findings_csv) if source_findings_csv else []
+    row_decisions = _row_decision_highlights(row_decisions_csv) if row_decisions_csv else []
 
     lines = [
         "# Xolo Modelo 130 Closure Request",
@@ -86,6 +91,34 @@ def build_xolo_closure_request(quarter_closure_csv: Path, source_findings_csv: P
     for row in exclusions:
         lines.append("| " + row["period"] + " | " + _cell(row["nearest_exclusion_rows"]) + " |")
 
+    if row_decisions:
+        lines.extend(
+            [
+                "",
+                "## Concrete Row-Level Decisions",
+                "",
+                "These are the shortest row-level checks needed to close the remaining residuals. Please answer with the submitted Modelo 130 deductible EUR amount and treatment for each row.",
+                "",
+                "| Priority | Period | Decision | Row | Amount | Question |",
+                "|---|---|---|---|---:|---|",
+            ]
+        )
+        for row in row_decisions:
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        row["priority"],
+                        row["period"],
+                        _cell(row["decision_kind"]),
+                        _cell(_row_label(row)),
+                        _fmt(row["amount_eur"]),
+                        _cell(row["question"]),
+                    ]
+                )
+                + " |"
+            )
+
     if source_findings:
         lines.extend(
             [
@@ -145,6 +178,27 @@ def _source_finding_highlights(path: Path) -> list[dict[str, str]]:
         if row.get("source_status", "").startswith("unconfirmed")
         or row.get("row_ref", "").startswith("scenario_")
     ]
+
+
+def _row_decision_highlights(path: Path) -> list[dict[str, str]]:
+    rows = _load_rows(path)
+    priority_order = {"high": 0, "medium": 1, "low": 2}
+    return sorted(
+        rows,
+        key=lambda row: (
+            priority_order.get(row.get("priority", ""), 9),
+            row.get("period", ""),
+            row.get("decision_kind", ""),
+            row.get("date", ""),
+            row.get("number", ""),
+        ),
+    )
+
+
+def _row_label(row: dict[str, str]) -> str:
+    parts = [row.get("date", ""), row.get("number", ""), row.get("recipient", "")]
+    value = " ".join(part for part in parts if part)
+    return value or row.get("classification", "")
 
 
 def _fmt(value: str) -> str:
