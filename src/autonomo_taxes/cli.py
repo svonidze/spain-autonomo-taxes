@@ -664,6 +664,7 @@ def main(argv: list[str] | None = None) -> int:
     audit_quarter_acceptance.add_argument("--quarter-balance-bridge", type=Path, required=True)
     audit_quarter_acceptance.add_argument("--material-gap-drilldown", type=Path)
     audit_quarter_acceptance.add_argument("--packets-dir", type=Path)
+    audit_quarter_acceptance.add_argument("--source-book-reconciliation", type=Path)
     audit_quarter_acceptance.add_argument("--out-csv", type=Path, required=True)
     audit_quarter_acceptance.add_argument("--out-md", type=Path, required=True)
 
@@ -1223,6 +1224,7 @@ def main(argv: list[str] | None = None) -> int:
             args.quarter_balance_bridge,
             args.material_gap_drilldown,
             args.packets_dir,
+            args.source_book_reconciliation,
         )
         write_quarter_acceptance_csv(args.out_csv, rows)
         write_quarter_acceptance_markdown(args.out_md, rows)

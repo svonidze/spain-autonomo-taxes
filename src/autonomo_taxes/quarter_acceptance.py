@@ -36,10 +36,12 @@ def build_quarter_acceptance_matrix(
     quarter_balance_bridge_csv: Path,
     material_gap_drilldown_csv: Path | None = None,
     packets_dir: Path | None = None,
+    source_book_reconciliation_csv: Path | None = None,
 ) -> list[dict[str, str]]:
     closure_rows = _load_rows(quarter_closure_csv)
     balance_by_period = {row["period"]: row for row in _load_rows(quarter_balance_bridge_csv)}
     material_by_period = _material_by_period(_load_rows(material_gap_drilldown_csv) if material_gap_drilldown_csv else [])
+    reconciliation_by_period = _source_book_reconciliation_by_period(source_book_reconciliation_csv)
 
     rows: list[dict[str, str]] = []
     for index, closure in enumerate(closure_rows, start=1):
@@ -50,7 +52,8 @@ def build_quarter_acceptance_matrix(
 
         material = material_by_period.get(period, [])
         annual_balance = parse_amount(balance["annual_constrained_balance_to_target"])
-        acceptance_status, priority = _acceptance_gate(closure, balance, material, annual_balance)
+        reconciliation = reconciliation_by_period.get(period, {})
+        acceptance_status, priority = _acceptance_gate(closure, balance, material, annual_balance, reconciliation)
         material_focus = _yes_no(any(_is_actionable_material(row) for row in material))
 
         rows.append(
@@ -65,8 +68,8 @@ def build_quarter_acceptance_matrix(
                 "closure_status": closure["closure_status"],
                 "material_gap_focus": material_focus,
                 "material_hypotheses": _material_summary(material),
-                "required_evidence": _required_evidence(closure, material),
-                "next_action": _next_action(closure, material, acceptance_status),
+                "required_evidence": _required_evidence(closure, material, reconciliation),
+                "next_action": _next_action(closure, material, acceptance_status, reconciliation),
                 "packet_path": _packet_path(packets_dir, period),
             }
         )
@@ -96,7 +99,7 @@ def write_quarter_acceptance_markdown(path: Path, rows: list[dict[str, str]]) ->
         "## Summary",
         "",
         f"- Quarters reviewed: `{len(rows)}`.",
-        "- Accepted/closed from current local evidence: `0`.",
+        f"- Accepted/closed from source-book evidence: `{sum(1 for row in rows if row['acceptance_status'] == 'accepted_from_source_books')}`.",
         "- Highest-priority external confirmations: " + _period_list(p0_rows) + ".",
         "",
         "| Priority | Count |",
@@ -159,7 +162,10 @@ def _acceptance_gate(
     balance: dict[str, str],
     material: list[dict[str, str]],
     annual_balance: Decimal,
+    reconciliation: dict[str, str],
 ) -> tuple[str, str]:
+    if reconciliation.get("status") == "rows_and_tieout_match_target":
+        return "accepted_from_source_books", "accepted"
     closure_status = closure["closure_status"]
     if any(_is_actionable_material(row) for row in material):
         return "not_closed_material_gap_requires_source_books", "P0"
@@ -176,7 +182,13 @@ def _acceptance_gate(
     return "not_closed_requires_xolo_evidence", "P2"
 
 
-def _required_evidence(closure: dict[str, str], material: list[dict[str, str]]) -> str:
+def _required_evidence(
+    closure: dict[str, str],
+    material: list[dict[str, str]],
+    reconciliation: dict[str, str],
+) -> str:
+    if reconciliation.get("status") == "rows_and_tieout_match_target":
+        return _source_book_reconciliation_evidence(reconciliation)
     evidence = closure.get("required_xolo_evidence", "").strip()
     material_questions = _material_questions(material)
     if material_questions:
@@ -190,7 +202,10 @@ def _next_action(
     closure: dict[str, str],
     material: list[dict[str, str]],
     acceptance_status: str,
+    reconciliation: dict[str, str],
 ) -> str:
+    if acceptance_status == "accepted_from_source_books":
+        return _source_book_reconciliation_next_action(reconciliation)
     questions = _material_questions(material)
     if acceptance_status == "not_closed_material_gap_requires_source_books" and questions:
         return "Resolve material-gap question(s): " + " | ".join(questions)
@@ -216,6 +231,44 @@ def _material_by_period(rows: list[dict[str, str]]) -> dict[str, list[dict[str, 
             continue
         grouped[row["period"]].append(row)
     return dict(grouped)
+
+
+def _source_book_reconciliation_by_period(path: Path | None) -> dict[str, dict[str, str]]:
+    if path is None:
+        return {}
+    by_period: dict[str, dict[str, str]] = {}
+    duplicates: list[str] = []
+    for row in _load_rows(path):
+        period = row.get("period", "")
+        if not period:
+            continue
+        if period in by_period:
+            duplicates.append(period)
+            continue
+        by_period[period] = row
+    if duplicates:
+        duplicate_list = ", ".join(sorted(set(duplicates)))
+        raise ValueError(f"Duplicate source-book reconciliation period row(s): {duplicate_list}")
+    return by_period
+
+
+def _source_book_reconciliation_evidence(row: dict[str, str]) -> str:
+    return (
+        "source-book rows, asset amortization rows, and Modelo 130 tie-out reconcile to filed casilla 02; "
+        f"expenses={_fmt(row.get('imported_expense_delta', ''))}; "
+        f"amortization={_fmt(row.get('imported_amortization_delta', ''))}; "
+        f"tieout_delta={_fmt(row.get('tieout_casilla02_delta', ''))}; "
+        f"diff={_fmt(row.get('imported_minus_target_delta', ''))}; "
+        "source-book evidence supersedes local material-gap hypotheses for this period"
+    )
+
+
+def _source_book_reconciliation_next_action(row: dict[str, str]) -> str:
+    return (
+        "Accepted from imported Xolo source-book evidence for this period; keep the source files, "
+        f"source rows={row.get('expense_row_count', '0')} expense / "
+        f"{row.get('asset_row_count', '0')} asset / {row.get('tieout_row_count', '0')} tie-out."
+    )
 
 
 def _material_summary(rows: list[dict[str, str]]) -> str:
