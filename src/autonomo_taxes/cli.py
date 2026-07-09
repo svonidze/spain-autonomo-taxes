@@ -40,6 +40,11 @@ from .asset_audit import (
     write_asset_scenarios_csv,
     write_candidate_quarter_reconciliation_csv,
 )
+from .asset_gap_matrix import (
+    build_asset_gap_matrix,
+    write_asset_gap_matrix_csv,
+    write_asset_gap_matrix_markdown,
+)
 from .asset_schedule_intake import (
     build_asset_schedule_intake,
     write_asset_schedule_intake_csv,
@@ -359,6 +364,16 @@ def main(argv: list[str] | None = None) -> int:
     audit_asset_schedule_intake.add_argument("--annual-constrained-assets", type=Path)
     audit_asset_schedule_intake.add_argument("--out-csv", type=Path, required=True)
     audit_asset_schedule_intake.add_argument("--out-md", type=Path, required=True)
+
+    audit_asset_gap_matrix = subparsers.add_parser(
+        "audit-asset-gap-matrix",
+        help="Compare required quarter amortization/catch-up against candidate asset schedules",
+    )
+    audit_asset_gap_matrix.add_argument("--candidate-quarter-reconciliation", type=Path, required=True)
+    audit_asset_gap_matrix.add_argument("--annual-constrained-assets", type=Path, required=True)
+    audit_asset_gap_matrix.add_argument("--asset-schedule-intake", type=Path, required=True)
+    audit_asset_gap_matrix.add_argument("--out-csv", type=Path, required=True)
+    audit_asset_gap_matrix.add_argument("--out-md", type=Path, required=True)
 
     audit_questions = subparsers.add_parser("audit-questions", help="Generate prioritized Xolo questions from audit outputs")
     audit_questions.add_argument("--candidate-quarter-reconciliation", type=Path, required=True)
@@ -766,6 +781,16 @@ def main(argv: list[str] | None = None) -> int:
         write_asset_schedule_intake_csv(args.out_csv, rows)
         write_asset_schedule_intake_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} asset schedule intake rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-asset-gap-matrix":
+        rows = build_asset_gap_matrix(
+            args.candidate_quarter_reconciliation,
+            args.annual_constrained_assets,
+            args.asset_schedule_intake,
+        )
+        write_asset_gap_matrix_csv(args.out_csv, rows)
+        write_asset_gap_matrix_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} asset gap matrix rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-questions":
         questions = build_xolo_questions(args.candidate_quarter_reconciliation)
