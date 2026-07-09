@@ -142,6 +142,11 @@ from .register_blocking_queue import (
     write_register_blocking_queue_csv,
     write_register_blocking_queue_markdown,
 )
+from .register_answer_intake import (
+    build_register_answer_intake,
+    write_register_answer_intake_csv,
+    write_register_answer_intake_markdown,
+)
 from .reports import write_compare, write_ledger, write_manifest, write_markdown_report
 from .row_audit import build_row_audit, write_row_audit_csv, write_row_audit_markdown
 from .row_decision_report import (
@@ -377,6 +382,14 @@ def main(argv: list[str] | None = None) -> int:
     audit_register_blocking_queue.add_argument("--amortization-chain", type=Path, required=True)
     audit_register_blocking_queue.add_argument("--out-csv", type=Path, required=True)
     audit_register_blocking_queue.add_argument("--out-md", type=Path, required=True)
+
+    audit_register_answer_intake = subparsers.add_parser(
+        "audit-register-answer-intake",
+        help="Build a fillable answer-intake template from the register blocking queue",
+    )
+    audit_register_answer_intake.add_argument("--register-blocking-queue", type=Path, required=True)
+    audit_register_answer_intake.add_argument("--out-csv", type=Path, required=True)
+    audit_register_answer_intake.add_argument("--out-md", type=Path, required=True)
 
     audit_ledger_projection = subparsers.add_parser(
         "audit-ledger-projection",
@@ -730,6 +743,12 @@ def main(argv: list[str] | None = None) -> int:
         write_register_blocking_queue_csv(args.out_csv, rows)
         write_register_blocking_queue_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} register blocking queue rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-register-answer-intake":
+        rows = build_register_answer_intake(args.register_blocking_queue)
+        write_register_answer_intake_csv(args.out_csv, rows)
+        write_register_answer_intake_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} register answer intake rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-ledger-projection":
         rows = build_ledger_projection(args.history_audit, args.xolo_expense_ledger)
