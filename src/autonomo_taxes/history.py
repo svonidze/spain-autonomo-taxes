@@ -450,7 +450,7 @@ def _raw_expense_totals(
 
 
 def _row_gross_eur(row: RawXoloExpense, usd_fx: Decimal | None) -> Decimal | None:
-    if row.gross_eur is not None and _trusted_enriched_amount(row):
+    if row.gross_eur is not None and trusted_enriched_amount(row):
         return row.gross_eur
     if row.currency == "EUR":
         return row.amount_original
@@ -460,7 +460,7 @@ def _row_gross_eur(row: RawXoloExpense, usd_fx: Decimal | None) -> Decimal | Non
 
 
 def _row_base_eur(row: RawXoloExpense, usd_fx: Decimal | None) -> Decimal | None:
-    if row.vat_base_eur is not None and _trusted_enriched_amount(row):
+    if row.vat_base_eur is not None and trusted_enriched_amount(row):
         return row.vat_base_eur
     if row.currency == "EUR":
         return row.subtotal_amount if row.subtotal_amount is not None else row.amount_original
@@ -490,7 +490,7 @@ def _optional_amount(value: str | None) -> Decimal | None:
     return parse_amount(value)
 
 
-def _trusted_enriched_amount(row: RawXoloExpense) -> bool:
+def trusted_enriched_amount(row: RawXoloExpense) -> bool:
     if not row.detail_confidence:
         return True
     return row.detail_confidence in {"detail_page_eur", "detail_page_exchange_rate"}

@@ -11,6 +11,7 @@ from .history import (
     format_subset_rows,
     load_raw_xolo_expenses,
     nearest_excluded_subset,
+    trusted_enriched_amount,
 )
 from .money import cents, format_es, parse_amount
 from .parsers import quarter_end
@@ -147,7 +148,7 @@ def write_asset_audit_markdown(
         "",
         "This report makes the amortization estimate used in the historical Modelo 130 audit explicit.",
         "It is an audit estimate, not Xolo's confirmed asset schedule.",
-        "USD asset candidates are converted once at the derived income FX rate for the purchase quarter; the historical audit's report-FX estimate is shown separately for comparison.",
+        "Asset candidates use trusted Xolo detail-page EUR basis when available; USD rows otherwise fall back to the derived income FX rate for the purchase quarter.",
         "",
         "## Asset Candidates",
         "",
@@ -289,7 +290,7 @@ def write_asset_audit_markdown(
             "",
             "- Positive residuals after subtracting raw non-asset expenses can be consistent with amortization, but this table does not prove Xolo's exact schedule.",
             "- Negative residuals point to row exclusion, netting, VAT/base treatment, or later annual true-up rather than missing asset amortization alone.",
-            "- The fixed-purchase-FX columns avoid revaluing old USD assets with each later quarter's derived income FX.",
+            "- The fixed-basis columns avoid revaluing old USD assets with each later quarter's derived income FX when Xolo detail-page EUR basis is unavailable.",
             "- The scenario sweep is a candidate reconciliation against annual Modelo 100 `0208`; it is not confirmed Xolo tax treatment.",
             "- Candidate quarterly reconciliation uses the closest annual scenario only as a diagnostic lens; exact quarterly treatment still requires Xolo's submitted per-row register.",
             "",
@@ -375,6 +376,10 @@ def _basis_eur(
     *,
     use_base: bool,
 ) -> tuple[Decimal | None, str]:
+    if use_base and row.vat_base_eur is not None and trusted_enriched_amount(row):
+        return row.vat_base_eur, _enriched_basis_source(row, "VAT/base")
+    if not use_base and row.gross_eur is not None and trusted_enriched_amount(row):
+        return row.gross_eur, _enriched_basis_source(row, "gross")
     amount = row.subtotal_amount if use_base and row.subtotal_amount is not None else row.amount_original
     if row.currency == "EUR":
         return amount, "EUR source amount"
@@ -385,6 +390,12 @@ def _basis_eur(
             return None, f"missing purchase-period FX for {period[0]}-Q{period[1]}"
         return cents(amount * rate), f"USD converted at purchase-quarter derived_income_usd_fx={rate}"
     return None, f"unsupported currency {row.currency}"
+
+
+def _enriched_basis_source(row: RawXoloExpense, label: str) -> str:
+    if row.detail_confidence:
+        return f"Xolo detail-page {label} EUR ({row.detail_confidence})"
+    return f"legacy/manual reviewed {label} EUR"
 
 
 def _amortization_ytd(
