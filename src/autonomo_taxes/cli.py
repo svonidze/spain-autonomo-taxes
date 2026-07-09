@@ -147,6 +147,12 @@ from .register_answer_intake import (
     write_register_answer_intake_csv,
     write_register_answer_intake_markdown,
 )
+from .register_answer_apply import (
+    apply_register_answers,
+    write_applied_register_review_csv,
+    write_register_answer_apply_report_csv,
+    write_register_answer_apply_report_markdown,
+)
 from .reports import write_compare, write_ledger, write_manifest, write_markdown_report
 from .row_audit import build_row_audit, write_row_audit_csv, write_row_audit_markdown
 from .row_decision_report import (
@@ -390,6 +396,16 @@ def main(argv: list[str] | None = None) -> int:
     audit_register_answer_intake.add_argument("--register-blocking-queue", type=Path, required=True)
     audit_register_answer_intake.add_argument("--out-csv", type=Path, required=True)
     audit_register_answer_intake.add_argument("--out-md", type=Path, required=True)
+
+    audit_register_answer_apply = subparsers.add_parser(
+        "audit-register-answer-apply",
+        help="Apply filled answer-intake confirmations to a register-review CSV",
+    )
+    audit_register_answer_apply.add_argument("--register-review", type=Path, required=True)
+    audit_register_answer_apply.add_argument("--answer-intake", type=Path, required=True)
+    audit_register_answer_apply.add_argument("--out-review-csv", type=Path, required=True)
+    audit_register_answer_apply.add_argument("--out-report-csv", type=Path, required=True)
+    audit_register_answer_apply.add_argument("--out-report-md", type=Path, required=True)
 
     audit_ledger_projection = subparsers.add_parser(
         "audit-ledger-projection",
@@ -749,6 +765,16 @@ def main(argv: list[str] | None = None) -> int:
         write_register_answer_intake_csv(args.out_csv, rows)
         write_register_answer_intake_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} register answer intake rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-register-answer-apply":
+        result = apply_register_answers(args.register_review, args.answer_intake)
+        write_applied_register_review_csv(args.out_review_csv, result.review_rows)
+        write_register_answer_apply_report_csv(args.out_report_csv, result.report_rows)
+        write_register_answer_apply_report_markdown(args.out_report_md, result.report_rows)
+        print(
+            f"Applied answer intake to {len(result.review_rows)} register review rows; "
+            f"wrote {args.out_review_csv}, {args.out_report_csv}, and {args.out_report_md}"
+        )
         return 0
     if args.command == "audit-ledger-projection":
         rows = build_ledger_projection(args.history_audit, args.xolo_expense_ledger)
