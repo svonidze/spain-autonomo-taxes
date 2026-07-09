@@ -132,8 +132,8 @@ def build_xolo_closure_request(
                 "",
                 "These are the shortest row-level checks needed to close the remaining residuals. Please answer with the submitted Modelo 130 deductible EUR amount and treatment for each row.",
                 "",
-                "| Priority | Period | Decision | Row | Amount | Question |",
-                "|---|---|---|---|---:|---|",
+                "| Priority | Period | Decision | Row | Amount | Question | Context |",
+                "|---|---|---|---|---:|---|---|",
             ]
         )
         for row in row_decisions:
@@ -147,6 +147,7 @@ def build_xolo_closure_request(
                         _cell(_row_label(row)),
                         _fmt(row["amount_eur"]),
                         _cell(row["question"]),
+                        _cell(row.get("root_cause_context", "")),
                     ]
                 )
                 + " |"

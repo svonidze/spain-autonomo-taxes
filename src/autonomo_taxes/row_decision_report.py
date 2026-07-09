@@ -71,6 +71,9 @@ def write_row_decision_report_markdown(path: Path, rows: list[dict[str, str]]) -
             ]
         )
         for row in period_rows:
+            question = row["question"]
+            if row.get("root_cause_context"):
+                question += " Context: " + row["root_cause_context"]
             lines.append(
                 "| "
                 + " | ".join(
@@ -81,7 +84,7 @@ def write_row_decision_report_markdown(path: Path, rows: list[dict[str, str]]) -
                         _cell(row["number"]),
                         _cell(row["recipient"]),
                         _fmt(row["amount_eur"]),
-                        _cell(row["question"]),
+                        _cell(question),
                     ]
                 )
                 + " |"
@@ -107,6 +110,7 @@ def _decision_row(row: dict[str, str], root: dict[str, str]) -> dict[str, str]:
         "nearest_subset_total_eur": row["nearest_subset_total_eur"],
         "nearest_subset_error_eur": row["nearest_subset_error_eur"],
         "root_cause_remaining": root.get("remaining_causes", ""),
+        "root_cause_context": _root_cause_context(root),
         "question": _question(classification, row, root),
         "xolo_url": row["xolo_url"],
     }
@@ -161,6 +165,22 @@ def _question(classification: str, row: dict[str, str], root: dict[str, str]) ->
             return f"For {period}, was this row treated as a direct expense, capitalized asset, or excluded?"
         return f"For {period}, what asset basis, rate, start date, and amortization amount did Xolo use for this row?"
     return f"For {period}, confirm submitted Modelo 130 treatment for this row."
+
+
+def _root_cause_context(root: dict[str, str]) -> str:
+    contexts: list[str] = []
+    eliminated = root.get("eliminated_causes", "")
+    remaining = root.get("remaining_causes", "")
+    professional_base_diff = root.get("annual_professional_base_diff", "")
+    if "annual professional gross-gap row-exclusion inference" in eliminated:
+        contexts.append("annual professional gross gap is VAT-shaped, not row-exclusion evidence by itself")
+    if professional_base_diff and abs(parse_amount(professional_base_diff)) > Decimal("20.00"):
+        contexts.append(f"annual professional VAT-base difference is {format_es(parse_amount(professional_base_diff))} EUR")
+    if "annual asset direct-expense or reclassification treatment" in remaining:
+        contexts.append("annual Modelo 100 category lens suggests direct expense or reclassification for asset-like rows")
+    if "VAT-bearing row completeness" in remaining:
+        contexts.append("VAT-bearing row completeness is not locally ruled out for this period")
+    return "; ".join(contexts)
 
 
 def _decision_amount(row: dict[str, str]) -> str:
