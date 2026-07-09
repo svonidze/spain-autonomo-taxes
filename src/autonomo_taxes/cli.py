@@ -84,6 +84,11 @@ from .register_reconcile import (
 )
 from .reports import write_compare, write_ledger, write_manifest, write_markdown_report
 from .row_audit import build_row_audit, write_row_audit_csv, write_row_audit_markdown
+from .row_decision_report import (
+    build_row_decision_report,
+    write_row_decision_report_csv,
+    write_row_decision_report_markdown,
+)
 from .root_cause_narrowing import (
     build_root_cause_narrowing,
     write_root_cause_narrowing_csv,
@@ -286,6 +291,15 @@ def main(argv: list[str] | None = None) -> int:
     audit_root_cause_narrowing.add_argument("--out-csv", type=Path, required=True)
     audit_root_cause_narrowing.add_argument("--out-md", type=Path, required=True)
 
+    audit_row_decisions = subparsers.add_parser(
+        "audit-row-decisions",
+        help="Build concrete row-level questions needed to close Modelo 130 quarter residuals",
+    )
+    audit_row_decisions.add_argument("--row-audit", type=Path, required=True)
+    audit_row_decisions.add_argument("--root-cause-narrowing", type=Path, required=True)
+    audit_row_decisions.add_argument("--out-csv", type=Path, required=True)
+    audit_row_decisions.add_argument("--out-md", type=Path, required=True)
+
     audit_quarter_packets = subparsers.add_parser(
         "audit-quarter-packets",
         help="Write one verification packet per Modelo 130 quarter",
@@ -453,6 +467,12 @@ def main(argv: list[str] | None = None) -> int:
         write_root_cause_narrowing_csv(args.out_csv, rows)
         write_root_cause_narrowing_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} root-cause narrowing rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-row-decisions":
+        rows = build_row_decision_report(args.row_audit, args.root_cause_narrowing)
+        write_row_decision_report_csv(args.out_csv, rows)
+        write_row_decision_report_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} row decision rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-quarter-packets":
         packets = build_quarter_packets(
