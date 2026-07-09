@@ -67,6 +67,7 @@ from .first_gate_answer_check import (
     write_first_gate_answer_check_csv,
     write_first_gate_answer_check_markdown,
 )
+from .goal_status import build_goal_status, write_goal_status_csv, write_goal_status_markdown
 from .history import run_history_audit, write_history_audit_csv, write_history_audit_markdown
 from .hypothesis_ledger import (
     build_hypothesis_ledger,
@@ -342,6 +343,17 @@ def main(argv: list[str] | None = None) -> int:
     audit_tax_report_sequence.add_argument("--end-quarter", type=int, choices=[1, 2, 3, 4], required=True)
     audit_tax_report_sequence.add_argument("--out-csv", type=Path, required=True)
     audit_tax_report_sequence.add_argument("--out-md", type=Path, required=True)
+
+    audit_goal_status = subparsers.add_parser(
+        "audit-goal-status",
+        help="Aggregate hard gates for the full Modelo 130 chronological audit goal",
+    )
+    audit_goal_status.add_argument("--tax-report-sequence", type=Path, required=True)
+    audit_goal_status.add_argument("--quarter-acceptance", type=Path, required=True)
+    audit_goal_status.add_argument("--first-gate-answer-check", type=Path, required=True)
+    audit_goal_status.add_argument("--source-book-response-check", type=Path, required=True)
+    audit_goal_status.add_argument("--out-csv", type=Path, required=True)
+    audit_goal_status.add_argument("--out-md", type=Path, required=True)
 
     audit_evidence_inventory = subparsers.add_parser(
         "audit-evidence-inventory",
@@ -839,6 +851,17 @@ def main(argv: list[str] | None = None) -> int:
         write_tax_report_sequence_csv(args.out_csv, rows)
         write_tax_report_sequence_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} tax-report sequence rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-goal-status":
+        rows = build_goal_status(
+            tax_report_sequence_csv=args.tax_report_sequence,
+            quarter_acceptance_csv=args.quarter_acceptance,
+            first_gate_answer_check_csv=args.first_gate_answer_check,
+            source_book_response_check_csv=args.source_book_response_check,
+        )
+        write_goal_status_csv(args.out_csv, rows)
+        write_goal_status_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} goal-status rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-evidence-inventory":
         rows = build_evidence_inventory(args.xolo_root)
