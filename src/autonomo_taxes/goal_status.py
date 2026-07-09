@@ -18,19 +18,22 @@ GOAL_STATUS_FIELDS = [
 def build_goal_status(
     *,
     tax_report_sequence_csv: Path,
+    target_values_coverage_csv: Path,
     quarter_acceptance_csv: Path,
     first_gate_answer_check_csv: Path,
     source_book_response_check_csv: Path,
 ) -> list[dict[str, str]]:
     sequence_rows = _load_rows(tax_report_sequence_csv)
+    target_rows = _load_rows(target_values_coverage_csv)
     acceptance_rows = _load_rows(quarter_acceptance_csv)
     first_gate_rows = _load_rows(first_gate_answer_check_csv)
     response_rows = _load_rows(source_book_response_check_csv)
 
     rows = [
         _tax_report_sequence_gate(sequence_rows),
+        _target_values_gate(target_rows),
         _quarter_acceptance_gate(acceptance_rows),
-        _scope_alignment_gate(sequence_rows, acceptance_rows, response_rows),
+        _scope_alignment_gate(sequence_rows, target_rows, acceptance_rows, response_rows),
         _first_gate_answer_gate(first_gate_rows),
         _source_book_response_gate(response_rows),
     ]
@@ -120,24 +123,48 @@ def _quarter_acceptance_gate(rows: list[dict[str, str]]) -> dict[str, str]:
     )
 
 
+def _target_values_gate(rows: list[dict[str, str]]) -> dict[str, str]:
+    period_rows = [row for row in rows if row.get("period") != "target_values_verdict"]
+    verdict = next((row for row in rows if row.get("period") == "target_values_verdict"), {})
+    matched = [row for row in period_rows if row.get("status") == "matched"]
+    complete = verdict.get("status") == "complete" and bool(period_rows) and len(matched) == len(period_rows)
+    status = "complete" if complete else "attention_required"
+    return _row(
+        "target_values_coverage",
+        status,
+        "all filed quarters have extracted target casillas matching Xolo calculation evidence",
+        f"{len(matched)}/{len(period_rows)} matched",
+        f"verdict={verdict.get('status', '')}; {verdict.get('evidence', '')}",
+        "Continue to quarter acceptance gates." if status == "complete" else verdict.get("next_action", "Fix target values coverage."),
+    )
+
+
 def _scope_alignment_gate(
     sequence_rows: list[dict[str, str]],
+    target_rows: list[dict[str, str]],
     acceptance_rows: list[dict[str, str]],
     response_rows: list[dict[str, str]],
 ) -> dict[str, str]:
     sequence_periods = [row.get("period", "") for row in sequence_rows if row.get("period") != "sequence_verdict"]
+    target_periods = [row.get("period", "") for row in target_rows if row.get("period") != "target_values_verdict"]
     acceptance_periods = [row.get("period", "") for row in acceptance_rows if row.get("period")]
     response_verdict = next((row for row in response_rows if row.get("check") == "package_verdict"), {})
     expected_scope = _period_scope(sequence_periods)
+    target_scope = _period_scope(target_periods)
     acceptance_scope = _period_scope(acceptance_periods)
     response_scope = response_verdict.get("scope", "")
-    aligned = bool(sequence_periods) and sequence_periods == acceptance_periods and response_scope == expected_scope
+    aligned = (
+        bool(sequence_periods)
+        and sequence_periods == target_periods
+        and sequence_periods == acceptance_periods
+        and response_scope == expected_scope
+    )
     return _row(
         "scope_alignment",
         "complete" if aligned else "scope_mismatch",
-        "tax-report sequence, quarter acceptance, and source-book response package cover the same quarters",
-        f"sequence={expected_scope}; acceptance={acceptance_scope}; response={response_scope}",
-        f"sequence_periods={len(sequence_periods)}; acceptance_periods={len(acceptance_periods)}",
+        "tax-report sequence, target values, quarter acceptance, and source-book response package cover the same quarters",
+        f"sequence={expected_scope}; targets={target_scope}; acceptance={acceptance_scope}; response={response_scope}",
+        f"sequence_periods={len(sequence_periods)}; target_periods={len(target_periods)}; acceptance_periods={len(acceptance_periods)}",
         "Continue to evidence gates." if aligned else "Regenerate gate inputs for the same quarter range before relying on goal status.",
     )
 
@@ -172,16 +199,20 @@ def _source_book_response_gate(rows: list[dict[str, str]]) -> dict[str, str]:
 def _goal_verdict(rows: list[dict[str, str]]) -> dict[str, str]:
     by_gate = {row["gate"]: row for row in rows}
     sequence_ok = by_gate.get("filed_pdf_sequence", {}).get("status") == "complete"
+    targets_ok = by_gate.get("target_values_coverage", {}).get("status") == "complete"
     quarters_ok = by_gate.get("quarter_acceptance", {}).get("status") == "complete"
     first_gate_ok = by_gate.get("first_gate_answer_check", {}).get("status") == "ready_for_rebuild"
     response_ok = by_gate.get("source_book_response_package", {}).get("status") == "ready_for_intake"
     scope_ok = by_gate.get("scope_alignment", {}).get("status") == "complete"
-    if sequence_ok and quarters_ok and first_gate_ok and response_ok and scope_ok:
+    if sequence_ok and targets_ok and quarters_ok and first_gate_ok and response_ok and scope_ok:
         status = "complete"
         next_action = "All hard gates are green; perform final human review before relying on the audit."
     elif not scope_ok:
         status = "not_complete_scope_mismatch"
         next_action = by_gate.get("scope_alignment", {}).get("next_action", "Regenerate gate inputs for the same scope.")
+    elif sequence_ok and not targets_ok:
+        status = "not_complete_target_values_attention"
+        next_action = by_gate.get("target_values_coverage", {}).get("next_action", "Fix target values coverage.")
     elif sequence_ok and not response_ok:
         status = "not_complete_waiting_for_xolo_books"
         next_action = "Send the Xolo source-book request and place the response under evidence/xolo-source-books."
@@ -196,7 +227,7 @@ def _goal_verdict(rows: list[dict[str, str]]) -> dict[str, str]:
         status,
         "all quarters verified one by one with amortization/source-book evidence",
         "; ".join(f"{row['gate']}={row['status']}" for row in rows),
-        "Hard gates aggregate the filed-PDF baseline, quarter acceptance, first-gate answer check, and source-book response package.",
+        "Hard gates aggregate the filed-PDF baseline, target values, scope, quarter acceptance, first-gate answer check, and source-book response package.",
         next_action,
     )
 
