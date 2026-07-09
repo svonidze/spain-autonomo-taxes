@@ -25,6 +25,7 @@ from .asset_audit import (
     write_asset_scenarios_csv,
     write_candidate_quarter_reconciliation_csv,
 )
+from .closure_request import build_xolo_closure_request, write_xolo_closure_request
 from .history import run_history_audit, write_history_audit_csv, write_history_audit_markdown
 from .hypothesis_ledger import (
     build_hypothesis_ledger,
@@ -232,6 +233,13 @@ def main(argv: list[str] | None = None) -> int:
     audit_quarter_closure.add_argument("--out-csv", type=Path, required=True)
     audit_quarter_closure.add_argument("--out-md", type=Path, required=True)
 
+    audit_closure_request = subparsers.add_parser(
+        "audit-closure-request",
+        help="Build a draft request to Xolo from the quarter closure checklist",
+    )
+    audit_closure_request.add_argument("--quarter-closure", type=Path, required=True)
+    audit_closure_request.add_argument("--out-md", type=Path, required=True)
+
     args = parser.parse_args(argv)
     config = _load_config(args.config)
     _merge_config(args, config)
@@ -350,6 +358,11 @@ def main(argv: list[str] | None = None) -> int:
         write_quarter_closure_csv(args.out_csv, rows)
         write_quarter_closure_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} quarter closure rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-closure-request":
+        markdown = build_xolo_closure_request(args.quarter_closure)
+        write_xolo_closure_request(args.out_md, markdown)
+        print(f"Wrote Xolo closure request to {args.out_md}")
         return 0
     raise AssertionError(args.command)
 
