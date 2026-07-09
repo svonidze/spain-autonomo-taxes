@@ -137,6 +137,11 @@ from .register_reconcile import (
     write_register_reconciliation_csv,
     write_register_reconciliation_markdown,
 )
+from .register_blocking_queue import (
+    build_register_blocking_queue,
+    write_register_blocking_queue_csv,
+    write_register_blocking_queue_markdown,
+)
 from .reports import write_compare, write_ledger, write_manifest, write_markdown_report
 from .row_audit import build_row_audit, write_row_audit_csv, write_row_audit_markdown
 from .row_decision_report import (
@@ -331,6 +336,17 @@ def main(argv: list[str] | None = None) -> int:
     audit_register_reconcile.add_argument("--register-review", type=Path, required=True)
     audit_register_reconcile.add_argument("--out-csv", type=Path, required=True)
     audit_register_reconcile.add_argument("--out-md", type=Path, required=True)
+
+    audit_register_blocking_queue = subparsers.add_parser(
+        "audit-register-blocking-queue",
+        help="Build a concise external-confirmation queue from open register decisions",
+    )
+    audit_register_blocking_queue.add_argument("--quarter-acceptance", type=Path, required=True)
+    audit_register_blocking_queue.add_argument("--register-reconciliation", type=Path, required=True)
+    audit_register_blocking_queue.add_argument("--row-decisions", type=Path, required=True)
+    audit_register_blocking_queue.add_argument("--amortization-chain", type=Path, required=True)
+    audit_register_blocking_queue.add_argument("--out-csv", type=Path, required=True)
+    audit_register_blocking_queue.add_argument("--out-md", type=Path, required=True)
 
     audit_ledger_projection = subparsers.add_parser(
         "audit-ledger-projection",
@@ -653,6 +669,17 @@ def main(argv: list[str] | None = None) -> int:
         write_register_reconciliation_csv(args.out_csv, rows)
         write_register_reconciliation_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} register reconciliation rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-register-blocking-queue":
+        rows = build_register_blocking_queue(
+            args.quarter_acceptance,
+            args.register_reconciliation,
+            args.row_decisions,
+            args.amortization_chain,
+        )
+        write_register_blocking_queue_csv(args.out_csv, rows)
+        write_register_blocking_queue_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} register blocking queue rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-ledger-projection":
         rows = build_ledger_projection(args.history_audit, args.xolo_expense_ledger)
