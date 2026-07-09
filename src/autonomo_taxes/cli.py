@@ -61,6 +61,7 @@ from .quarter_closure import (
     write_quarter_closure_csv,
     write_quarter_closure_markdown,
 )
+from .quarter_packets import build_quarter_packets, write_quarter_packets
 from .register_review import (
     build_register_review_template,
     write_register_review_csv,
@@ -240,6 +241,15 @@ def main(argv: list[str] | None = None) -> int:
     audit_closure_request.add_argument("--quarter-closure", type=Path, required=True)
     audit_closure_request.add_argument("--out-md", type=Path, required=True)
 
+    audit_quarter_packets = subparsers.add_parser(
+        "audit-quarter-packets",
+        help="Write one verification packet per Modelo 130 quarter",
+    )
+    audit_quarter_packets.add_argument("--history-audit", type=Path, required=True)
+    audit_quarter_packets.add_argument("--quarter-closure", type=Path, required=True)
+    audit_quarter_packets.add_argument("--row-audit", type=Path, required=True)
+    audit_quarter_packets.add_argument("--out-dir", type=Path, required=True)
+
     args = parser.parse_args(argv)
     config = _load_config(args.config)
     _merge_config(args, config)
@@ -363,6 +373,11 @@ def main(argv: list[str] | None = None) -> int:
         markdown = build_xolo_closure_request(args.quarter_closure)
         write_xolo_closure_request(args.out_md, markdown)
         print(f"Wrote Xolo closure request to {args.out_md}")
+        return 0
+    if args.command == "audit-quarter-packets":
+        packets = build_quarter_packets(args.history_audit, args.quarter_closure, args.row_audit)
+        write_quarter_packets(args.out_dir, packets)
+        print(f"Wrote {len(packets)} quarter packets to {args.out_dir}")
         return 0
     raise AssertionError(args.command)
 
