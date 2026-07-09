@@ -52,9 +52,9 @@ def write_register_review_csv(path: Path, rows: list[dict[str, str]]) -> None:
 def write_register_review_markdown(path: Path, rows: list[dict[str, str]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
-        "# Modelo 130 Submitted Register Review Template",
+        "# Modelo 130 Source-Book Review Template",
         "",
-        "Fill this template from Xolo's submitted Modelo 130 expense register and asset schedule.",
+        "Fill this template from Xolo's source books and asset schedule.",
         "The current hypotheses come from the raw Xolo UI export and candidate amortization model; they are not confirmed tax treatment.",
         "",
         "## Period Summary",
@@ -137,7 +137,7 @@ def _hypothesis(classification: str) -> str:
     if classification == "asset_amortization_candidate":
         return "confirm asset schedule, not direct expense"
     if classification == "nearest_exclusion_candidate":
-        return "possibly excluded, netted, or basis-reduced in submitted register"
+        return "possibly excluded, netted, or basis-reduced in source books"
     if classification == "missing_catch_up_or_reclassification":
         return "missing Xolo adjustment or catch-up row"
     if classification == "unresolved_after_nearest_subset":
@@ -175,19 +175,19 @@ def _question(row: dict[str, str], hypothesis: str) -> str:
     if classification == "nearest_exclusion_candidate":
         return (
             "Confirm whether this row was excluded, netted, reversed, or deducted on a different basis "
-            "in the submitted Modelo 130 register."
+            "in the source books used for Modelo 130."
         )
     if classification == "missing_catch_up_or_reclassification":
         return "Identify the Xolo adjustment, catch-up, reclassification, or amortization row that makes the submitted target higher."
     if classification == "unresolved_after_nearest_subset":
         return "Identify the remaining adjustment after applying the nearest excluded-row hypothesis."
     if row["currency"] != "EUR":
-        return "Confirm FX source/rate and deductible EUR amount used in the submitted register."
+        return "Confirm FX source/rate and deductible EUR amount used in the source books."
     if abs(_amount(row["gross_minus_base_eur"])) > Decimal("0.00"):
         return "Confirm whether IRPF deductible amount used gross, VAT base, or another basis."
     if _amount(row["gross_eur"]) >= Decimal("300.00"):
         return "Confirm this higher-value row was included and the deductible amount used."
-    return f"Confirm submitted-register treatment for this row: {hypothesis}."
+    return f"Confirm source-book treatment for this row: {hypothesis}."
 
 
 def _candidate_amount(row: dict[str, str]) -> str:

@@ -77,7 +77,7 @@ def write_p2_near_target_context_markdown(path: Path, rows: list[dict[str, str]]
         "# Modelo 130 P2 Near-Target Context",
         "",
         "This report summarizes near-target forks for P2 quarters.",
-        "These are not closure evidence: the submitted register and asset schedule are still required even when residuals are small.",
+        "These are not closure evidence: the source books and asset schedule are still required even when residuals are small.",
         "",
         "## Summary",
         "",

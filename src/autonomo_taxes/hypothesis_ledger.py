@@ -147,7 +147,7 @@ def write_hypothesis_markdown(path: Path, result: HypothesisLedger) -> None:
         "# Modelo 130 Hypothesis Ledger",
         "",
         "This report converts the row audit into an unconfirmed ledger scenario.",
-        "It is useful for checking every quarter arithmetically, but it is not proof of Xolo's submitted register.",
+        "It is useful for checking every quarter arithmetically, but it is not proof of Xolo's source books.",
         "The post-plug diff is zero by construction; the useful signal is the pre-plug residual and balancing adjustment size.",
         "Rows marked as candidate amortization or balancing adjustments require Xolo confirmation before future filing use.",
         "",
@@ -251,7 +251,7 @@ def _synthetic_row(
             "not the Xolo-confirmed asset schedule."
         )
     else:
-        recipient = "Xolo submitted-register adjustment"
+        recipient = "Xolo source-book adjustment"
         expense_type = "Reconciliation residual"
         confidence = "inferred_hypothesis_balancing_adjustment"
         if amount >= Decimal("0.00"):

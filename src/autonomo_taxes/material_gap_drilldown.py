@@ -108,7 +108,7 @@ def write_material_gap_drilldown_markdown(path: Path, rows: list[dict[str, str]]
         "# Modelo 130 Material Gap Drilldown",
         "",
         "This report focuses only on material balances that remain after the quarter balance bridge.",
-        "It separates locally ruled-out ideas, partial candidates, strong but unconfirmed bridges, and side components that still need Xolo's submitted register.",
+        "It separates locally ruled-out ideas, partial candidates, strong but unconfirmed bridges, and side components that still need Xolo's source books.",
         "",
         "## Summary",
         "",

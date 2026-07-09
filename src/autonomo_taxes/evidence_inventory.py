@@ -70,12 +70,12 @@ def write_evidence_inventory_markdown(path: Path, rows: list[dict[str, str]], xo
         "## Conclusion",
         "",
         f"- Modelo 130 reports found: `{_count(by_category, 'modelo130_report')}` ({', '.join(m130_periods)}).",
-        f"- Candidate submitted-register files found: `{register_count}`.",
+        f"- Candidate source-book/register files found: `{register_count}`.",
         f"- Candidate asset/amortization schedule files found: `{asset_count}`.",
     ]
     if register_count == 0 and asset_count == 0:
         lines.append(
-            "- Local archive still does not contain the submitted Modelo 130 expense register or asset schedule needed to close quarter row treatment."
+            "- Local archive still does not contain the source-book/register or asset schedule export needed to close quarter row treatment."
         )
     lines.extend(
         [

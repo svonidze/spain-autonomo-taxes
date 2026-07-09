@@ -91,7 +91,7 @@ def write_timing_audit_markdown(path: Path, rows: list[dict[str, str]]) -> None:
         "# Modelo 130 Timing And Carry-Forward Audit",
         "",
         "This report is a local diagnostic over the current quarter-closure hypotheses.",
-        "It does not prove Xolo's submitted register; it shows whether remaining balances look like isolated material adjustments or timing/netting patterns after the current row and amortization hypotheses.",
+        "It does not prove Xolo's source-book treatment; it shows whether remaining balances look like isolated material adjustments or timing/netting patterns after the current row and amortization hypotheses.",
         "",
         "## Summary",
         "",
@@ -99,7 +99,7 @@ def write_timing_audit_markdown(path: Path, rows: list[dict[str, str]]) -> None:
         f"- Annual near-zero residual years after current hypotheses: `{', '.join(near_zero_years) if near_zero_years else 'none'}`.",
         f"- Annual material residual years after current hypotheses: `{', '.join(material_years) if material_years else 'none'}`.",
         "- Near-zero years should be treated as asset-schedule/row-inclusion confirmation work, not as proof of Xolo accounting.",
-        "- Material residual years still need a submitted-register adjustment, catch-up, reclassification, or missing/non-Xolo row explanation.",
+        "- Material residual years still need a source-book adjustment, catch-up, reclassification, or missing/non-Xolo row explanation.",
         "",
         "## Year Totals",
         "",
@@ -200,12 +200,12 @@ def _next_local_action(balance: Decimal, year_total: Decimal, timing_refs: list[
     if abs(year_total) <= NEAR_ZERO_YEAR_THRESHOLD:
         return "Prioritize confirming asset schedule and exact included/excluded rows; annual residual is already near zero under current hypotheses."
     if timing_refs:
-        return "Review timing source refs and ask Xolo to confirm whether these rows were carried, corrected, deferred, netted, or reversed in the submitted register."
+        return "Review timing source refs and ask Xolo to confirm whether these rows were carried, corrected, deferred, netted, or reversed in the source books."
     if balance > Decimal("0.00"):
-        return "Look for missing submitted-register additions, catch-up rows, reclassifications, or non-Xolo local rows."
+        return "Look for missing source-book additions, catch-up rows, reclassifications, or non-Xolo local rows."
     if balance < Decimal("0.00"):
         return "Look for exclusions, VAT/base reductions, netting, reversals, or deferred rows."
-    return "No local action beyond submitted-register confirmation."
+    return "No local action beyond source-book confirmation."
 
 
 def _period_year(period: str) -> str:

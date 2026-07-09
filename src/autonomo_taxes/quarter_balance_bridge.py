@@ -106,7 +106,7 @@ def write_quarter_balance_bridge_markdown(path: Path, rows: list[dict[str, str]]
         "",
         "`raw non-asset expenses + amortization - excluded/netted rows + balancing amount = submitted casilla 02 delta`",
         "",
-        "The balancing amount is not a confirmed filing row. It is the remaining amount that still needs Xolo's submitted Modelo 130 register or asset schedule.",
+        "The balancing amount is not a confirmed filing row. It is the remaining amount that still needs Xolo's source books or asset schedule.",
         "",
         "## Summary",
         "",
@@ -197,7 +197,7 @@ def _findings(
         findings.append(
             "- Material post-bridge balances remain in: "
             + _period_list(material_rows)
-            + "; these are the first quarters to ask Xolo about in the submitted register."
+            + "; these are the first quarters to ask Xolo about in the source books."
         )
     return findings
 

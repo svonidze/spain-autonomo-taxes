@@ -45,7 +45,7 @@ def write_row_decision_report_markdown(path: Path, rows: list[dict[str, str]]) -
         "# Modelo 130 Row Decision Report",
         "",
         "This report lists the concrete row-level decisions still needed to close the sequential Modelo 130 audit.",
-        "It is built from `modelo130_row_audit.csv` and `modelo130_root_cause_narrowing.csv`; it does not infer Xolo's submitted register.",
+        "It is built from `modelo130_row_audit.csv` and `modelo130_root_cause_narrowing.csv`; it does not infer Xolo's source books.",
         "",
         "## Summary",
         "",

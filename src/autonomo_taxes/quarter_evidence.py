@@ -104,7 +104,7 @@ def write_quarter_evidence_markdown(path: Path, rows: list[dict[str, str]]) -> N
         "# Modelo 130 Quarter Evidence",
         "",
         "This file packages every submitted Modelo 130 quarter with the raw Xolo rows, candidate amortization movement, and generated Xolo questions.",
-        "It is audit evidence, not a confirmed Xolo register. The row-level submitted register and asset schedule are still required for exact closure.",
+        "It is audit evidence, not confirmed Xolo source-book treatment. The row-level source books and asset schedule are still required for exact closure.",
         "",
         "| Period | Status | Target 02 delta | Raw non-asset delta | Candidate amort. delta | Model - target | Nearest subset | Questions |",
         "|---|---|---:|---:|---:|---:|---|---|",

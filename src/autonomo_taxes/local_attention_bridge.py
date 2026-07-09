@@ -183,11 +183,11 @@ def _question(row: dict[str, str], balance: Decimal, known_effect: Decimal | Non
         )
     if not _known_local_amount(row):
         return (
-            f"For {period}, does `{document}` contain a deductible expense amount used in the submitted Modelo 130 register, "
+            f"For {period}, does `{document}` contain a deductible expense amount used in the source books for Modelo 130, "
             "or is it evidence-only/ignored?"
         )
     direction = "increase" if balance > 0 else "reduce"
-    return f"For {period}, was `{document}` manually included in the submitted register to {direction} casilla 02?"
+    return f"For {period}, was `{document}` manually included in the source books to {direction} casilla 02?"
 
 
 def _balance_direction(value: Decimal) -> str:

@@ -297,7 +297,7 @@ def _next_question(annual: dict[str, str], closure: dict[str, str], has_modelo10
         )
     if abs(parse_amount(annual["annual_constrained_model_minus_target_delta"])) > Decimal("20.00"):
         return (
-            f"For {period}, confirm submitted register row inclusion/netting first; annual amortization "
+            f"For {period}, confirm source-book row inclusion/netting first; annual amortization "
             f"changes the local candidate by only {format_es(abs(parse_amount(annual['amortization_delta_shift'])))}."
         )
     return f"For {period}, confirm the exact asset schedule amount and row basis used by Xolo."

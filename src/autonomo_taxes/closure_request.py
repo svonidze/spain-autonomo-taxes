@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .asset_gap_matrix import ASSET_GAP_SIGNAL_PRIORITY
 from .money import format_es, parse_amount
+from .source_book_wording import source_book_wording
 
 
 def build_xolo_closure_request(
@@ -45,15 +46,15 @@ def build_xolo_closure_request(
         "",
         "Hello,",
         "",
-        "I am reconstructing the submitted Modelo 130 declarations from 2023-Q2 through 2026-Q2 and need the row-level basis that Xolo used.",
-        "The expense UI export is not sufficient because it does not show the submitted Modelo 130 register, row inclusion, amortization, or deductible basis per row.",
+        "I am reconstructing the submitted Modelo 130 declarations from 2023-Q2 through 2026-Q2 and need the source-book basis that Xolo used.",
+        "The expense UI export is not sufficient because it does not show the `libro registro de compras y gastos`, `libro registro de bienes de inversión`, quarterly tie-outs, row inclusion, amortization, or deductible basis per row.",
         "",
         "Please provide:",
         "",
-        "1. The submitted Modelo 130 expense register for every quarter from 2023-Q2 through 2026-Q2, with date, supplier, invoice number, category, original amount, EUR deductible amount used in casilla 02, and whether the amount was gross, VAT-base, excluded, netted, reversed, or adjusted.",
-        "2. The full asset amortization schedule used for Modelo 130 and annual Renta/Modelo 100: asset, acquisition date, acquisition basis, VAT treatment, start date, amortization rate, quarterly amortization amount, and accumulated amortization by quarter.",
-        "3. The source rows or accounting adjustments for the material quarter gaps listed below.",
-        "4. Please answer with the register/schedule exports if available; local target-fitting arithmetic is only being used to route the questions and should not be treated as confirmed Xolo accounting.",
+        "1. The `libro registro de compras y gastos` for 2023, 2024, 2025, and 2026 through 2T, with date, booking date/period, supplier, invoice number, category, original amount/currency, FX rate/date/source, deductible base, VAT treatment, EUR deductible amount used in casilla 02, and whether the row was included, excluded, netted, reversed, deferred, corrected, or adjusted.",
+        "2. The `libro registro de bienes de inversión` / full asset amortization schedule used for Modelo 130 and annual Renta/Modelo 100: asset id, acquisition date, acquisition basis, VAT treatment, start date, method, amortization rate, quarterly amortization amount, accumulated amortization by quarter, catch-up flag, and incentive flag if any.",
+        "3. Quarterly tie-outs from the source books to filed Modelo 130 casillas 01, 02, 03, and 07 for every quarter from 2023-Q2 through 2026-Q2.",
+        "4. Please answer with source-book/register/schedule exports if available; local target-fitting arithmetic is only being used to route the questions and should not be treated as confirmed Xolo accounting.",
         "",
     ]
     if root_cause_rows:
@@ -61,7 +62,7 @@ def build_xolo_closure_request(
             [
                 "## Local Root-Cause Gates Already Checked",
                 "",
-                "These gates do not replace Xolo's submitted register. They show which local explanations have been narrowed so Xolo can answer the remaining accounting questions directly.",
+                "These gates do not replace Xolo's source books. They show which local explanations have been narrowed so Xolo can answer the remaining accounting questions directly.",
                 "",
                 "| Period | Residual after annual asset lens | Annual professional base diff | Locally eliminated | Still open |",
                 "|---|---:|---:|---|---|",
@@ -145,7 +146,7 @@ def build_xolo_closure_request(
                 "",
                 "## Material Gap Drilldown",
                 "",
-                "These are local hypotheses for the material gaps. They are not confirmed filing treatment; they define the shortest questions for Xolo's submitted register.",
+                "These are local hypotheses for the material gaps. They are not confirmed filing treatment; they define the shortest questions for Xolo's source books.",
                 "",
                 "| Period | Hypothesis | Status | Bridge total | Residual to candidate | Residual to annual | Fit | Components | Xolo question |",
                 "|---|---|---|---:|---:|---:|---|---|---|",
@@ -176,7 +177,7 @@ def build_xolo_closure_request(
                 "",
                 "## P0 Raw Xolo Context",
                 "",
-                "These rows explain why the P0 questions are currently prioritized. They still require Xolo's submitted register and asset schedule before any quarter can be closed.",
+                "These rows explain why the P0 questions are currently prioritized. They still require Xolo's source books and asset schedule before any quarter can be closed.",
                 "",
                 "| Period | Context signal | Xolo non-asset | Bridge raw non-asset | Target minus Xolo non-asset | Gap-sized asset rows | Asset fit | Xolo question |",
                 "|---|---|---:|---:|---:|---|---|---|",
@@ -206,7 +207,7 @@ def build_xolo_closure_request(
                 "",
                 "## P1 Near-Fit Context",
                 "",
-                "These are the strongest local arithmetic forks after the P0 material gaps. Please confirm the submitted row set and basis rather than treating these fits as proof.",
+                "These are the strongest local arithmetic forks after the P0 material gaps. Please confirm the source-book row set and basis rather than treating these fits as proof.",
                 "",
                 "| Period | Signal | Target | Model | Diff | Components | Xolo question |",
                 "|---|---|---:|---:|---:|---|---|",
@@ -235,7 +236,7 @@ def build_xolo_closure_request(
                 "",
                 "## P2 Near-Target Context",
                 "",
-                "These are lower-priority near-target forks that still require Xolo's submitted register and asset schedule. Please confirm row inclusion and deductible basis rather than treating the arithmetic fits as proof.",
+                "These are lower-priority near-target forks that still require Xolo's source books and asset schedule. Please confirm row inclusion and deductible basis rather than treating the arithmetic fits as proof.",
                 "",
                 "| Period | Signal | Row | Target | Annual balance | Amortization | Excluded/netted | Finding | Impact |",
                 "|---|---|---|---:|---:|---:|---:|---|---|",
@@ -300,7 +301,7 @@ def build_xolo_closure_request(
                 "",
                 "## Concrete Row-Level Decisions",
                 "",
-                "These are the shortest row-level checks needed to close the remaining residuals. Please answer with the submitted Modelo 130 deductible EUR amount and treatment for each row.",
+                "These are the shortest row-level checks needed to close the remaining residuals. Please answer with the source-book deductible EUR amount and treatment for each row.",
                 "",
                 "| Priority | Period | Decision | Row | Amount | Question | Context |",
                 "|---|---|---|---|---:|---|---|",
@@ -383,16 +384,16 @@ def build_xolo_closure_request(
             "",
             "## Local Evidence Already Checked",
             "",
-            "- Local Xolo export contains expense documents and submitted PDF declarations, but no submitted Modelo 130 expense register.",
-            "- Local Xolo expense API snapshot contains UI expense rows only; it does not contain row-level Modelo 130 inclusion or asset amortization schedule.",
-            "- Modelo 100 PDFs expose annual aggregate amortization, not the per-asset schedule needed to close quarterly Modelo 130.",
+            "- Local Xolo export contains expense documents and submitted PDF declarations, but no source-book export for `compras y gastos` or `bienes de inversión`.",
+            "- Local Xolo expense API snapshot contains UI expense rows only; it does not contain row-level Modelo 130 inclusion, booking period, FX/VAT basis, or asset amortization schedule.",
+            "- Modelo 100 PDFs expose annual aggregate amortization, not the per-asset source-book schedule needed to close quarterly Modelo 130.",
         ]
     )
     if inventory:
         lines.append(
             "- Evidence inventory found "
             f"{inventory.get('modelo130_report', '0')} Modelo 130 reports, "
-            f"{inventory.get('candidate_submitted_register', '0')} candidate submitted-register files, and "
+            f"{inventory.get('candidate_submitted_register', '0')} candidate source-book/register files, and "
             f"{inventory.get('candidate_asset_schedule', '0')} candidate asset/amortization schedule files."
         )
     lines.append("")
@@ -553,4 +554,4 @@ def _fmt(value: str) -> str:
 
 
 def _cell(value: str) -> str:
-    return value.replace("|", "\\|")
+    return source_book_wording(value).replace("|", "\\|").replace("\n", " ")

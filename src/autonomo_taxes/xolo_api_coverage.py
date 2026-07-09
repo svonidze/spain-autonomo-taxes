@@ -122,7 +122,7 @@ def write_xolo_api_coverage_markdown(path: Path, coverage: XoloApiCoverage) -> N
         "# Xolo API Raw Export Coverage",
         "",
         "This report validates the raw Xolo expense DataTables export used by the historical Modelo 130 audit.",
-        "It does not prove Xolo's submitted Modelo 130 register or asset amortization schedule.",
+        "It does not prove Xolo's source books or asset amortization schedule.",
         "",
         "## Summary",
         "",

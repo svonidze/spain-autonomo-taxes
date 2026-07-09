@@ -223,32 +223,32 @@ def _next_question(
         rows = _format_original_rows(unconverted_rows)
         return (
             f"For {period}, Xolo raw rows include non-EUR amounts without booked EUR values: {rows}. "
-            "Please provide the submitted Modelo 130 register EUR deductible amount and FX/basis for these rows."
+            "Please provide the source-book EUR deductible amount and FX/basis for these rows."
         )
     if context_signal == "target_matches_asset_candidate_if_non_assets_excluded":
         assets = _format_rows(asset_rows)
         non_assets = _format_rows(non_asset_rows)
         return (
             f"For {period}, submitted casilla 02 delta matches the asset/category rows at {format_es(target)} EUR. "
-            f"Did Xolo's submitted register include these row(s): {assets}, and exclude, defer, or reclassify these non-asset row(s): {non_assets}?"
+            f"Did Xolo's source books include these row(s): {assets}, and exclude, defer, or reclassify these non-asset row(s): {non_assets}?"
         )
     if context_signal == "gap_matches_excluded_asset_candidate_context" and gap_sized_assets:
         rows = _format_rows(gap_sized_assets)
         return (
-            f"For {period}, did Xolo's submitted register use {format_es(annual_balance)} EUR "
+            f"For {period}, did Xolo's source books use {format_es(annual_balance)} EUR "
             f"from this asset/category row as partial deduction, direct-expense reclassification, or amortization: {rows}?"
         )
     if context_signal == "local_bridge_raw_non_asset_differs_from_xolo_raw":
         return (
-            f"For {period}, confirm the submitted row set and tax basis because the local bridge raw "
+            f"For {period}, confirm the source-book row set and tax basis because the local bridge raw "
             "non-asset total differs from the raw Xolo ledger."
         )
     if context_signal == "local_bridge_differs_from_xolo_raw_with_strong_cross_quarter_hypotheses":
         return (
-            f"For {period}, confirm the submitted row set, cross-quarter carry-ins, and tax basis "
+            f"For {period}, confirm the source-book row set, cross-quarter carry-ins, and tax basis "
             "for the strong material-gap hypotheses listed in the drilldown."
         )
-    return f"For {period}, identify the submitted-register rows or asset schedule that explain the material gap."
+    return f"For {period}, identify the source-book rows or asset schedule that explain the material gap."
 
 
 def _actionable_material_by_period(rows: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:

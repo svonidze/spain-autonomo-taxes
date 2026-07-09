@@ -89,7 +89,7 @@ def write_quarter_closure_markdown(path: Path, rows: list[dict[str, str]]) -> No
         "# Modelo 130 Quarter Closure Checklist",
         "",
         "This checklist tracks whether each submitted quarter can be closed from local evidence.",
-        "A closed quarter requires Xolo's submitted expense register and, where applicable, the confirmed asset amortization schedule.",
+        "A closed quarter requires Xolo's source books and, where applicable, the confirmed asset amortization schedule.",
         "",
         "| Period | Closure status | Target delta | Pre-plug residual | Balance | Plug % | Amortization | Asset decision | Nearest exclusions |",
         "|---|---|---:|---:|---:|---:|---:|---|---|",
@@ -155,7 +155,7 @@ def _closure_status(has_material: bool, has_asset: bool, has_nearest: bool, has_
 
 
 def _required_evidence(has_material: bool, has_asset: bool, has_nearest: bool, has_minor: bool) -> str:
-    parts: list[str] = ["submitted Modelo 130 expense register with deductible amount per row"]
+    parts: list[str] = ["source-book export with deductible EUR amount per row"]
     if has_asset:
         parts.append("asset amortization schedule by quarter")
     if has_nearest:
@@ -179,7 +179,7 @@ def _next_question(
     pct = summary["balancing_adjustment_pct_of_target"]
     if has_material:
         return (
-            f"For {period}, please identify the submitted-register row(s) or adjustment that explain "
+            f"For {period}, please identify the source-book row(s) or adjustment that explain "
             f"the material balancing amount {balance} EUR ({pct}% of the quarter target delta)."
         )
     if has_asset:
@@ -188,7 +188,7 @@ def _next_question(
         return f"For {period}, please confirm whether the nearest-subset rows were excluded, netted, or used on another basis."
     if has_minor:
         return f"For {period}, please confirm whether the {balance} EUR residual is rounding or a tax-basis difference."
-    return f"For {period}, please confirm the submitted register matches the listed raw expense rows."
+    return f"For {period}, please confirm the source books match the listed raw expense rows."
 
 
 def _format_rows(rows: list[dict[str, str]]) -> str:

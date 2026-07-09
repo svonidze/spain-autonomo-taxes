@@ -6,6 +6,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from .money import format_es, parse_amount
+from .source_book_wording import source_book_wording
 
 
 QUARTER_ACCEPTANCE_FIELDS = [
@@ -90,7 +91,7 @@ def write_quarter_acceptance_markdown(path: Path, rows: list[dict[str, str]]) ->
         "# Modelo 130 Quarter Acceptance Matrix",
         "",
         "This matrix is the evidence gate for the sequential Modelo 130 audit.",
-        "No quarter is accepted from local arithmetic alone; acceptance requires Xolo's submitted register and any applicable asset schedule.",
+        "No quarter is accepted from local arithmetic alone; acceptance requires Xolo's source books and any applicable asset schedule.",
         "",
         "## Summary",
         "",
@@ -179,8 +180,8 @@ def _required_evidence(closure: dict[str, str], material: list[dict[str, str]]) 
     evidence = closure.get("required_xolo_evidence", "").strip()
     material_questions = _material_questions(material)
     if material_questions:
-        return "; ".join(part for part in [evidence, "material-gap row basis from submitted register"] if part)
-    return evidence or "submitted Modelo 130 expense register with deductible amount per row"
+        return "; ".join(part for part in [evidence, "material-gap row basis from source books"] if part)
+    return evidence or "source-book export with deductible EUR amount per row"
 
 
 def _next_action(
@@ -193,17 +194,17 @@ def _next_action(
         return "Resolve material-gap question(s): " + " | ".join(questions)
     if acceptance_status == "not_closed_material_status_near_fit_requires_register":
         return (
-            "Confirm the submitted register and asset schedule before treating this near-fit material-status "
+            "Confirm the source books and asset schedule before treating this near-fit material-status "
             "quarter as closed."
         )
     if acceptance_status == "not_closed_row_exclusion_requires_register":
         return "Confirm whether the candidate rows were excluded, netted, deferred, or used on another tax basis."
     if acceptance_status.startswith("not_closed_near_target") or acceptance_status.startswith("not_closed_minor"):
         return (
-            "Confirm Xolo's submitted register and asset amortization schedule; the small residual is not "
+            "Confirm Xolo's source books and asset amortization schedule; the small residual is not "
             "enough to prove row-level treatment."
         )
-    return closure.get("next_question", "") or "Confirm the submitted Modelo 130 register."
+    return closure.get("next_question", "") or "Confirm the source books used for Modelo 130."
 
 
 def _material_by_period(rows: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
@@ -270,7 +271,7 @@ def _fmt(value: str) -> str:
 
 
 def _cell(value: str) -> str:
-    return value.replace("|", "\\|").replace("\n", " ")
+    return source_book_wording(value).replace("|", "\\|").replace("\n", " ")
 
 
 def _period_list(rows: list[dict[str, str]]) -> str:

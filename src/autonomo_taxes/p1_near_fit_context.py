@@ -103,7 +103,7 @@ def write_p1_near_fit_context_markdown(path: Path, rows: list[dict[str, str]]) -
         "# Modelo 130 P1 Near-Fit Context",
         "",
         "This report summarizes the strongest local arithmetic forks for P1 quarters.",
-        "These forks are not closure evidence; they identify the next submitted-register or asset-schedule questions after the P0 material gaps.",
+        "These forks are not closure evidence; they identify the next source-book or asset-schedule questions after the P0 material gaps.",
         "",
         "## Summary",
         "",

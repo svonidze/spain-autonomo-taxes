@@ -122,7 +122,7 @@ def write_asset_gap_matrix_markdown(path: Path, rows: list[dict[str, str]]) -> N
         "# Asset Gap Matrix",
         "",
         "This report asks one narrow question per quarter: before row exclusions or netting, how much amortization or catch-up would be needed to make raw non-asset expenses equal the submitted Modelo 130 expense delta?",
-        "It does not confirm Xolo's asset schedule. It separates asset-schedule-sized gaps from gaps that require submitted-register row treatment.",
+        "It does not confirm Xolo's asset schedule. It separates asset-schedule-sized gaps from gaps that require source-book row treatment.",
         "",
         "## Summary",
         "",
@@ -245,17 +245,17 @@ def _next_action(
     annual_constrained: Decimal,
 ) -> str:
     if signal == "raw_non_asset_above_target":
-        return "Do not tune amortization first; identify submitted-register exclusions, netting, VAT/base treatment, or deferrals."
+        return "Do not tune amortization first; identify source-book exclusions, netting, VAT/base treatment, or deferrals."
     if signal == "ordinary_amortization_too_small":
         return (
             "Ask Xolo whether this quarter has catch-up, direct asset deduction, or row reclassification; "
             f"required amortization/catch-up is {format_es(required)} versus annual-constrained {format_es(annual_constrained)}."
         )
     if signal == "excluded_asset_or_register_adjustment_required":
-        return "The candidate schedule excludes active asset rows; confirm whether the submitted register direct-expensed, capitalized, or excluded them."
+        return "The candidate schedule excludes active asset rows; confirm whether the source books direct-expensed, capitalized, or excluded them."
     if signal == "asset_amortization_above_required_row_exclusions_needed":
         return (
-            "The asset schedule alone would push expenses above target; confirm submitted-register exclusions, VAT/base treatment, or netting alongside the asset schedule."
+            "The asset schedule alone would push expenses above target; confirm source-book exclusions, VAT/base treatment, or netting alongside the asset schedule."
         )
     if signal.endswith("_near_required"):
         return (

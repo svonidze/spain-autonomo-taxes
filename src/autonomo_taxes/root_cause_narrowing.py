@@ -67,7 +67,7 @@ def write_root_cause_narrowing_markdown(path: Path, rows: list[dict[str, str]]) 
         "# Modelo 130 Root-Cause Narrowing",
         "",
         "This report narrows the remaining Modelo 130 problem by combining the quarter closure checklist, the annual-constrained asset lens, the annual Modelo 100 category lens, and the submitted Modelo 303 VAT cross-check.",
-        "It is not a filed-register substitute. It records which causes are locally ruled out and which causes still require Xolo's submitted Modelo 130 expense register or asset schedule.",
+        "It is not a source-book substitute. It records which causes are locally ruled out and which causes still require Xolo's source books or asset schedule.",
         "",
         "## Evidence Gates",
         "",
@@ -155,7 +155,7 @@ def _remaining_causes(
 
 
 def _next_evidence(closure: dict[str, str], annual: dict[str, str], vat: dict[str, str]) -> str:
-    items = ["submitted Modelo 130 expense register with deductible EUR per row"]
+    items = ["source-book export with deductible EUR per row"]
     if closure.get("has_asset_decision") == "yes" or closure["closure_status"] == "pending_asset_schedule_confirmation":
         items.append(_asset_evidence_label(annual))
     if closure.get("has_nearest_exclusion") == "yes":

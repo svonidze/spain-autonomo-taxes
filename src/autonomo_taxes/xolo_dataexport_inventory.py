@@ -82,7 +82,7 @@ def write_xolo_dataexport_inventory_markdown(path: Path, rows: list[dict[str, st
         "",
         "## Conclusion",
         "",
-        f"- Candidate submitted-register or asset/amortization files found: `{candidate_count}`.",
+        f"- Candidate source-book/register or asset/amortization files found: `{candidate_count}`.",
     ]
     if candidate_count == 0:
         lines.append(

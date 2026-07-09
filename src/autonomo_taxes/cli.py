@@ -307,7 +307,7 @@ def main(argv: list[str] | None = None) -> int:
 
     audit_evidence_inventory = subparsers.add_parser(
         "audit-evidence-inventory",
-        help="Inventory local Xolo archive evidence for submitted registers and asset schedules",
+        help="Inventory local Xolo archive evidence for source books/registers and asset schedules",
     )
     audit_evidence_inventory.add_argument("--xolo-root", type=Path, required=True)
     audit_evidence_inventory.add_argument("--out-csv", type=Path, required=True)
@@ -427,7 +427,7 @@ def main(argv: list[str] | None = None) -> int:
 
     audit_register_template = subparsers.add_parser(
         "audit-register-template",
-        help="Create a fillable submitted-register review template from row audit evidence",
+        help="Create a fillable source-book review template from row audit evidence",
     )
     audit_register_template.add_argument("--row-audit", type=Path, required=True)
     audit_register_template.add_argument("--out-csv", type=Path, required=True)
@@ -435,7 +435,7 @@ def main(argv: list[str] | None = None) -> int:
 
     audit_register_reconcile = subparsers.add_parser(
         "audit-register-reconcile",
-        help="Compare a filled submitted-register review template against Modelo 130 target deltas",
+        help="Compare a filled source-book review template against Modelo 130 target deltas",
     )
     audit_register_reconcile.add_argument("--history-audit", type=Path, required=True)
     audit_register_reconcile.add_argument("--register-review", type=Path, required=True)

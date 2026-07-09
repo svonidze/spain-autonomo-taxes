@@ -79,7 +79,7 @@ def write_local_archive_audit_markdown(path: Path, rows: list[dict[str, str]]) -
         "# Modelo 130 Local Archive Coverage Audit",
         "",
         "This report compares locally parsed `EXPENSE` archive documents against the raw Xolo expense API rows.",
-        "It is a coverage diagnostic only: a local document can support evidence, but Xolo's submitted Modelo 130 register is still required for row inclusion and deductible basis.",
+        "It is a coverage diagnostic only: a local document can support evidence, but Xolo's source books are still required for row inclusion and deductible basis.",
         "",
         "## Summary",
         "",
@@ -245,7 +245,7 @@ def _notes(entry: LedgerEntry, status: str) -> str:
     if entry.notes:
         parts.append(entry.notes)
     if status.startswith("local_"):
-        parts.append("Not matched to the raw Xolo expense API snapshot; confirm whether this file was evidence-only, ignored, or manually entered into the submitted register.")
+        parts.append("Not matched to the raw Xolo expense API snapshot; confirm whether this file was evidence-only, ignored, or manually entered into the source books.")
     if status == "ambiguous_xolo_raw_matches":
         parts.append("Matched more than one Xolo raw row; inspect manually before using as evidence.")
     return " ".join(parts)
