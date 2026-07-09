@@ -38,6 +38,7 @@ def build_xolo_support_request_short(
     asset_gap_matrix_csv: Path,
     *,
     first_gate_csv: Path | None = None,
+    asset_ui_evidence_csv: Path | None = None,
     max_questions: int = 8,
 ) -> str:
     intake_rows = sorted(_load_rows(register_answer_intake_csv), key=_queue_sort_key)
@@ -51,6 +52,7 @@ def build_xolo_support_request_short(
     signal_counts = Counter(row["amortization_gap_signal"] for row in asset_rows)
     priority_counts = Counter(row["audit_priority"] for row in intake_rows)
     first_gate_section = _first_gate_section(_load_rows(first_gate_csv)) if first_gate_csv else []
+    asset_ui_rows = _asset_ui_rows(asset_ui_evidence_csv) if asset_ui_evidence_csv else []
 
     lines = [
         "# Xolo Support Request - Modelo 130 Source Books",
@@ -76,9 +78,11 @@ def build_xolo_support_request_short(
             "- Local CSV: `runs/modelo130_register_answer_intake.csv`",
             "- Local report: `runs/modelo130_register_answer_intake.md`",
             "- Full request: `runs/xolo_modelo130_closure_request.md`",
-            "",
         ]
     )
+    if asset_ui_rows:
+        lines.append("- Xolo UI asset classification evidence: `runs/modelo130_asset_ui_evidence.md`")
+    lines.append("")
     lines.extend(first_gate_section)
     lines.extend(
         [
@@ -135,6 +139,8 @@ def build_xolo_support_request_short(
             "- Which rows were deducted in a quarter different from the document date, and what booking date/period was used?",
             "- Which rows were excluded, netted, reversed, corrected, duplicated, or reclassified?",
             "- Which low-value items were direct-expensed instead of amortized, and under what source-book treatment?",
+            "- For rows where the Xolo expense UI says `depreciable asset`, provide the submitted asset schedule line instead of only confirming the UI label.",
+            "- For asset-like rows where the Xolo expense UI does not show a depreciable-asset banner, confirm direct-expensed, split/multiple treatment, capitalized, excluded, or another source-book treatment.",
             "- For TGSS/RETA apremio rows, which part was deductible principal and which part was non-deductible surcharge or interest?",
             "- Was the difficult-justification expense allowance applied in quarterly Modelo 130, only in annual Renta/Modelo 100, or not at all in these calculations?",
             "",
@@ -200,6 +206,8 @@ def build_xolo_support_request_short(
             )
             + " |"
         )
+
+    lines.extend(_asset_ui_section(asset_ui_rows))
 
     lines.extend(
         [
@@ -343,6 +351,75 @@ def _queue_sort_key(row: dict[str, str]) -> tuple[int, str]:
 def _load_rows(path: Path) -> list[dict[str, str]]:
     with path.open("r", newline="", encoding="utf-8-sig") as handle:
         return list(csv.DictReader(handle))
+
+
+def _asset_ui_rows(path: Path) -> list[dict[str, str]]:
+    return sorted(
+        _load_rows(path),
+        key=lambda row: (
+            0 if row.get("ui_depreciable_asset") == "yes" else 1,
+            row.get("period", ""),
+            row.get("date", ""),
+            row.get("recipient", ""),
+            row.get("number", ""),
+        ),
+    )
+
+
+def _asset_ui_section(rows: list[dict[str, str]]) -> list[str]:
+    if not rows:
+        return []
+    counts = Counter(row.get("status", "") for row in rows)
+    lines = [
+        "",
+        "## Appendix C - Xolo UI Asset Classification Evidence",
+        "",
+        "This appendix uses Xolo expense-detail UI facts for classification and separately lists local asset-like candidates that lack a Xolo depreciable-asset banner.",
+        "A depreciable-asset banner does not confirm the submitted amortization schedule, deductible Modelo 130 amount, or annual Renta treatment.",
+        "",
+        "- UI classification rows waiting for source-book schedule: "
+        + f"`{len(rows)}`.",
+        "- UI classification statuses: "
+        + "; ".join(f"`{status}`={counts[status]}" for status in sorted(counts))
+        + ".",
+        "",
+        "| Period | UI asset? | Status | Row | Gross/Base EUR | Required Xolo answer |",
+        "|---|---|---|---|---:|---|",
+    ]
+    for row in rows:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    _cell(row.get("period", "")),
+                    _cell(row.get("ui_depreciable_asset", "")),
+                    _cell(row.get("status", "")),
+                    _cell(_asset_ui_row_label(row)),
+                    _cell(_asset_ui_basis(row)),
+                    _cell(row.get("next_action", "")),
+                ]
+            )
+            + " |"
+        )
+    return lines
+
+
+def _asset_ui_row_label(row: dict[str, str]) -> str:
+    parts = [
+        row.get("date", ""),
+        row.get("xolo_id", ""),
+        row.get("recipient", ""),
+        row.get("number", ""),
+    ]
+    return " ".join(part for part in parts if part)
+
+
+def _asset_ui_basis(row: dict[str, str]) -> str:
+    gross = row.get("gross_eur", "")
+    base = row.get("vat_base_eur", "")
+    if gross and base:
+        return f"{_fmt(gross)} / {_fmt(base)}"
+    return _fmt(gross or base)
 
 
 def _dedupe(values: list[str]) -> list[str]:

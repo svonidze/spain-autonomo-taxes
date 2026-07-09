@@ -30,6 +30,8 @@ ASSET_SCHEDULE_INTAKE_FIELDS = [
     "annual_constraint_source",
     "annual_constrained_quarter_total_delta",
     "annual_constrained_model_minus_target_delta",
+    "xolo_ui_depreciable_asset",
+    "xolo_ui_asset_status",
     "xolo_confirmed_included",
     "xolo_confirmed_basis_eur",
     "xolo_confirmed_rate",
@@ -49,10 +51,12 @@ def build_asset_schedule_intake(
     asset_candidates_csv: Path,
     candidate_quarter_reconciliation_csv: Path,
     annual_constrained_assets_csv: Path | None = None,
+    asset_ui_evidence_csv: Path | None = None,
 ) -> list[dict[str, str]]:
     assets = _load_rows(asset_candidates_csv)
     periods = _load_rows(candidate_quarter_reconciliation_csv)
     annual_by_period = _annual_by_period(annual_constrained_assets_csv) if annual_constrained_assets_csv else {}
+    ui_by_asset = _asset_ui_by_key(asset_ui_evidence_csv) if asset_ui_evidence_csv else {}
     rows: list[dict[str, str]] = []
     previous_ytd: dict[tuple[str, int], Decimal] = defaultdict(lambda: Decimal("0.00"))
 
@@ -67,6 +71,7 @@ def build_asset_schedule_intake(
             if purchase_date > end:
                 continue
             asset_id = _asset_id(asset)
+            ui = ui_by_asset.get(_match_key(asset), {})
             included = not _is_excluded_2023_low_value_or_subscription(asset)
             basis = parse_amount(asset["base_basis_eur"]) if asset.get("base_basis_eur") else Decimal("0.00")
             ytd = _straight_line_ytd(basis, purchase_date, end, CANDIDATE_RATE) if included else Decimal("0.00")
@@ -95,6 +100,8 @@ def build_asset_schedule_intake(
                     "annual_constrained_model_minus_target_delta": annual.get(
                         "annual_constrained_model_minus_target_delta", ""
                     ),
+                    "xolo_ui_depreciable_asset": ui.get("ui_depreciable_asset", ""),
+                    "xolo_ui_asset_status": ui.get("status", ""),
                     "xolo_confirmed_included": "",
                     "xolo_confirmed_basis_eur": "",
                     "xolo_confirmed_rate": "",
@@ -102,7 +109,7 @@ def build_asset_schedule_intake(
                     "xolo_confirmed_delta_eur": "",
                     "xolo_confirmed_ytd_eur": "",
                     "xolo_confirmed_source": "",
-                    "question": _question(asset, period, included),
+                    "question": _question(asset, period, included, ui),
                 }
             )
     return rows
@@ -129,6 +136,7 @@ def write_asset_schedule_intake_markdown(path: Path, rows: list[dict[str, str]])
         "",
         "This is a working intake table for Xolo's submitted asset amortization schedule.",
         "It records the local candidate per-asset quarterly amortization, but it does not confirm Xolo treatment.",
+        "Xolo UI asset evidence is classification evidence only; it still does not confirm the submitted asset schedule.",
         "",
         "## Summary",
         "",
@@ -150,8 +158,8 @@ def write_asset_schedule_intake_markdown(path: Path, rows: list[dict[str, str]])
             "",
             "## Asset Questions",
             "",
-            "| Asset | First period | Candidate included | Basis | Last candidate YTD | Question |",
-            "|---|---|---|---:|---:|---|",
+            "| Asset | First period | Candidate included | UI asset? | UI status | Basis | Last candidate YTD | Question |",
+            "|---|---|---|---|---|---:|---:|---|",
         ]
     )
     for asset_id, asset_rows in sorted(by_asset.items()):
@@ -164,6 +172,8 @@ def write_asset_schedule_intake_markdown(path: Path, rows: list[dict[str, str]])
                     _cell(asset_id),
                     first["period"],
                     first["candidate_included"],
+                    first["xolo_ui_depreciable_asset"],
+                    _cell(first["xolo_ui_asset_status"]),
                     first["base_basis_eur"],
                     last["candidate_amortization_ytd_eur"],
                     _cell(first["question"]),
@@ -182,6 +192,10 @@ def _load_rows(path: Path) -> list[dict[str, str]]:
 
 def _annual_by_period(path: Path) -> dict[str, dict[str, str]]:
     return {row["period"]: row for row in _load_rows(path)}
+
+
+def _asset_ui_by_key(path: Path) -> dict[tuple[str, str, str], dict[str, str]]:
+    return {_match_key(row): row for row in _load_rows(path)}
 
 
 def _straight_line_ytd(amount: Decimal, purchase_date: date, period_end: date, rate: Decimal) -> Decimal:
@@ -210,16 +224,45 @@ def _asset_id(asset: dict[str, str]) -> str:
     return value[:80]
 
 
-def _question(asset: dict[str, str], period: str, included: bool) -> str:
+def _question(asset: dict[str, str], period: str, included: bool, ui: dict[str, str]) -> str:
+    if ui.get("status") == "local_asset_candidate_without_ui_banner":
+        return (
+            f"For {period}, Xolo UI did not show a depreciable-asset banner for "
+            f"{asset['date']} {asset['number']} {asset['recipient']}; confirm whether this row was direct-expensed, "
+            "split/multiple treatment, or capitalized in the investment-goods book."
+        )
     if not included:
+        if ui.get("status") == "ui_confirms_depreciable_asset":
+            return (
+                f"For {period}, Xolo UI marks {asset['date']} {asset['number']} {asset['recipient']} "
+                "as a depreciable asset, but the local candidate excludes it; confirm whether it was "
+                "direct-expensed, capitalized and amortized, excluded, or booked in another source-book row."
+            )
         return (
             f"For {period}, confirm whether {asset['date']} {asset['number']} {asset['recipient']} "
             "was direct-expensed, capitalized, or excluded; the local candidate excludes it."
+        )
+    if ui.get("status") == "ui_confirms_depreciable_asset":
+        return (
+            f"For {period}, Xolo UI marks {asset['date']} {asset['number']} {asset['recipient']} as a depreciable asset; "
+            "confirm the submitted schedule basis, rate, start date, quarter amortization, and YTD amortization."
         )
     return (
         f"For {period}, confirm Xolo asset schedule for {asset['date']} {asset['number']} {asset['recipient']}: "
         "basis, rate, start date, quarter amortization, and YTD amortization."
     )
+
+
+def _match_key(row: dict[str, str]) -> tuple[str, str, str]:
+    return (
+        row.get("date") or row.get("asset_date", ""),
+        _normalize(row.get("recipient", "")),
+        _normalize(row.get("number", "")),
+    )
+
+
+def _normalize(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.lower())
 
 
 def _money(value: Decimal) -> str:

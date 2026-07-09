@@ -50,6 +50,11 @@ from .asset_schedule_intake import (
     write_asset_schedule_intake_csv,
     write_asset_schedule_intake_markdown,
 )
+from .asset_ui_evidence import (
+    build_asset_ui_evidence,
+    write_asset_ui_evidence_csv,
+    write_asset_ui_evidence_markdown,
+)
 from .chronological_walkthrough import (
     build_chronological_walkthrough,
     write_chronological_walkthrough_csv,
@@ -436,8 +441,17 @@ def main(argv: list[str] | None = None) -> int:
     audit_asset_schedule_intake.add_argument("--asset-candidates", type=Path, required=True)
     audit_asset_schedule_intake.add_argument("--candidate-quarter-reconciliation", type=Path, required=True)
     audit_asset_schedule_intake.add_argument("--annual-constrained-assets", type=Path)
+    audit_asset_schedule_intake.add_argument("--asset-ui-evidence", type=Path)
     audit_asset_schedule_intake.add_argument("--out-csv", type=Path, required=True)
     audit_asset_schedule_intake.add_argument("--out-md", type=Path, required=True)
+
+    audit_asset_ui_evidence = subparsers.add_parser(
+        "audit-asset-ui-evidence",
+        help="Summarize Xolo expense-detail UI asset classification evidence",
+    )
+    audit_asset_ui_evidence.add_argument("--xolo-raw-expenses", type=Path, required=True)
+    audit_asset_ui_evidence.add_argument("--out-csv", type=Path, required=True)
+    audit_asset_ui_evidence.add_argument("--out-md", type=Path, required=True)
 
     audit_asset_gap_matrix = subparsers.add_parser(
         "audit-asset-gap-matrix",
@@ -540,6 +554,7 @@ def main(argv: list[str] | None = None) -> int:
     audit_support_request_short.add_argument("--answer-intake", type=Path, required=True)
     audit_support_request_short.add_argument("--asset-gap-matrix", type=Path, required=True)
     audit_support_request_short.add_argument("--first-gate", type=Path)
+    audit_support_request_short.add_argument("--asset-ui-evidence", type=Path)
     audit_support_request_short.add_argument("--max-questions", type=int, default=8)
     audit_support_request_short.add_argument("--out-md", type=Path, required=True)
 
@@ -966,10 +981,17 @@ def main(argv: list[str] | None = None) -> int:
             args.asset_candidates,
             args.candidate_quarter_reconciliation,
             args.annual_constrained_assets,
+            args.asset_ui_evidence,
         )
         write_asset_schedule_intake_csv(args.out_csv, rows)
         write_asset_schedule_intake_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} asset schedule intake rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-asset-ui-evidence":
+        rows = build_asset_ui_evidence(args.xolo_raw_expenses)
+        write_asset_ui_evidence_csv(args.out_csv, rows)
+        write_asset_ui_evidence_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} asset UI evidence rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-asset-gap-matrix":
         rows = build_asset_gap_matrix(
@@ -1062,6 +1084,7 @@ def main(argv: list[str] | None = None) -> int:
             args.answer_intake,
             args.asset_gap_matrix,
             first_gate_csv=args.first_gate,
+            asset_ui_evidence_csv=args.asset_ui_evidence,
             max_questions=args.max_questions,
         )
         write_xolo_support_request_short(args.out_md, markdown)
