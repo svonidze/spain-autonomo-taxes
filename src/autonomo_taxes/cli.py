@@ -214,6 +214,11 @@ from .source_book_import import (
     write_source_book_import_csv,
     write_source_book_import_markdown,
 )
+from .source_book_reconcile import (
+    build_source_book_reconciliation,
+    write_source_book_reconciliation_csv,
+    write_source_book_reconciliation_markdown,
+)
 from .source_book_response_check import (
     build_source_book_response_check,
     write_source_book_response_check_csv,
@@ -813,6 +818,15 @@ def main(argv: list[str] | None = None) -> int:
     audit_source_book_import.add_argument("--out-csv", type=Path, required=True)
     audit_source_book_import.add_argument("--out-md", type=Path, required=True)
 
+    audit_source_book_reconcile = subparsers.add_parser(
+        "audit-source-book-reconcile",
+        help="Compare imported Xolo source-book rows against filed Modelo 130 quarter movements",
+    )
+    audit_source_book_reconcile.add_argument("--history-audit", type=Path, required=True)
+    audit_source_book_reconcile.add_argument("--source-book-rows", type=Path, required=True)
+    audit_source_book_reconcile.add_argument("--out-csv", type=Path, required=True)
+    audit_source_book_reconcile.add_argument("--out-md", type=Path, required=True)
+
     audit_timing = subparsers.add_parser(
         "audit-timing",
         help="Diagnose timing, carry-forward, and netting patterns across Modelo 130 quarter balances",
@@ -1334,6 +1348,12 @@ def main(argv: list[str] | None = None) -> int:
         write_source_book_import_csv(args.out_csv, rows)
         write_source_book_import_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} imported source-book rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-source-book-reconcile":
+        rows = build_source_book_reconciliation(args.history_audit, args.source_book_rows)
+        write_source_book_reconciliation_csv(args.out_csv, rows)
+        write_source_book_reconciliation_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} source-book reconciliation rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-timing":
         rows = build_timing_audit(args.quarter_closure, args.source_findings)
