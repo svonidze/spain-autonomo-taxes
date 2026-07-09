@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 from pathlib import Path
+import re
 import unicodedata
 
 
@@ -167,19 +168,27 @@ def _matching_files(files: list[_FileItem], predicate) -> list[_FileItem]:
 
 
 def _matches_compras_gastos(name: str, year: str) -> bool:
-    has_year_scope = year in name or _has_all_year_scope(name)
-    if not has_year_scope:
+    has_book = _has_any(name, ["libro", "registro", "register", "book", "ledger"])
+    has_expense = _has_any(
+        name,
+        [
+            "compras",
+            "gastos",
+            "expense",
+            "expenses",
+            "purchase",
+            "purchases",
+            "facturas recibidas",
+            "received invoices",
+        ],
+    )
+    if not (has_book and has_expense):
         return False
-    has_book = _has_any(name, ["libro", "registro", "register", "book"])
-    has_expense = _has_any(name, ["compras", "gastos", "expense", "expenses", "purchase", "purchases"])
-    return has_book and has_expense
+    return _has_year_scope(name, year, allow_unscoped=True)
 
 
 def _matches_asset_schedule(name: str, year: str) -> bool:
-    has_year_scope = year in name or _has_all_year_scope(name)
-    if not has_year_scope:
-        return False
-    return _has_any(
+    has_asset = _has_any(
         name,
         [
             "bienes inversion",
@@ -192,6 +201,9 @@ def _matches_asset_schedule(name: str, year: str) -> bool:
             "depreciation",
         ],
     )
+    if not has_asset:
+        return False
+    return _has_year_scope(name, year, allow_unscoped=True)
 
 
 def _matches_quarter_tieout(name: str, period: str) -> bool:
@@ -253,11 +265,55 @@ def _load_rows(path: Path) -> list[dict[str, str]]:
 
 
 def _has_any(value: str, needles: list[str]) -> bool:
-    return any(needle in value for needle in needles)
+    return any(_has_token_sequence(value, needle) for needle in needles)
 
 
 def _has_all_year_scope(value: str) -> bool:
-    return _has_any(value, ["all years", "allyears", "full history", "complete", "2023 2026", "2023 to 2026"])
+    return _has_any(
+        value,
+        [
+            "all years",
+            "allyears",
+            "full history",
+            "complete",
+            "todo",
+            "todos",
+            "historico",
+        ],
+    )
+
+
+def _has_year_scope(value: str, year: str, *, allow_unscoped: bool = False) -> bool:
+    if year in value or _has_year_range_scope(value):
+        return True
+    if _contains_year(value):
+        return False
+    if _has_all_year_scope(value):
+        return True
+    if allow_unscoped:
+        return True
+    return False
+
+
+def _has_year_range_scope(value: str) -> bool:
+    return _has_any(value, ["2023 2026", "2023 to 2026", "2023 2024 2025 2026"])
+
+
+def _contains_year(value: str) -> bool:
+    return re.search(r"20\d{2}", value) is not None
+
+
+def _has_token_sequence(value: str, needle: str) -> bool:
+    pattern = rf"(?<![a-z0-9]){re.escape(needle)}(?![a-z0-9])"
+    if re.search(pattern, value):
+        return True
+    if " " not in needle:
+        escaped = re.escape(needle)
+        if re.search(rf"(?<![a-z0-9]){escaped}(?=20\d{{2}})", value):
+            return True
+        if re.search(rf"(?<=20\d{{2}}){escaped}(?![a-z0-9])", value):
+            return True
+    return False
 
 
 def _normalize(value: str) -> str:

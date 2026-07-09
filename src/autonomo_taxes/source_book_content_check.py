@@ -226,8 +226,7 @@ def _inspect_file(path: Path, check: str) -> _Inspection:
             headers, row_count = _read_delimited_headers(path, "\t" if suffix == ".tsv" else None)
             return _inspection(path, check, suffix.removeprefix("."), headers, row_count)
         if suffix == ".xlsx":
-            headers, row_count = _read_xlsx_headers(path)
-            return _inspection(path, check, "xlsx", headers, row_count)
+            return _best_xlsx_inspection(path, check)
         return _Inspection(str(path), "unsupported_format", suffix.removeprefix(".") or "unknown", 0, [], sorted(REQUIRED_GROUPS.get(check, {})))
     except Exception as exc:  # pragma: no cover - exact parser failures are environment/file dependent.
         return _Inspection(str(path), "unreadable", suffix.removeprefix(".") or "unknown", 0, [], sorted(REQUIRED_GROUPS.get(check, {})), str(exc))
@@ -303,18 +302,43 @@ def _read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
-def _read_xlsx_headers(path: Path) -> tuple[list[str], int]:
+def _best_xlsx_inspection(path: Path, check: str) -> _Inspection:
+    sheets = _read_xlsx_sheets(path)
+    if not sheets:
+        return _inspection(path, check, "xlsx", [], 0)
+    inspections = [
+        _inspection(path, check, f"xlsx:{sheet_name}", headers, row_count)
+        for sheet_name, headers, row_count in sheets
+    ]
+    return min(inspections, key=_inspection_rank)
+
+
+def _inspection_rank(item: _Inspection) -> tuple[int, int, int]:
+    status_rank = {
+        "content_ready": 0,
+        "content_incomplete": 1,
+        "empty_or_no_data_rows": 2,
+        "empty_or_no_header": 3,
+    }.get(item.status, 9)
+    return (status_rank, len(item.missing_groups), -item.row_count)
+
+
+def _read_xlsx_sheets(path: Path) -> list[tuple[str, list[str], int]]:
     with zipfile.ZipFile(path) as archive:
         shared_strings = _shared_strings(archive)
         sheet_names = sorted(name for name in archive.namelist() if name.startswith("xl/worksheets/sheet") and name.endswith(".xml"))
         if not sheet_names:
-            return [], 0
-        root = ET.fromstring(archive.read(sheet_names[0]))
-    rows = [_xlsx_row_values(row, shared_strings) for row in root.findall(".//{*}sheetData/{*}row")]
-    rows = [row for row in rows if any(cell.strip() for cell in row)]
-    if not rows:
-        return [], 0
-    return rows[0], max(0, len(rows) - 1)
+            return []
+        sheets: list[tuple[str, list[str], int]] = []
+        for sheet_name in sheet_names:
+            root = ET.fromstring(archive.read(sheet_name))
+            rows = [_xlsx_row_values(row, shared_strings) for row in root.findall(".//{*}sheetData/{*}row")]
+            rows = [row for row in rows if any(cell.strip() for cell in row)]
+            if not rows:
+                sheets.append((Path(sheet_name).stem, [], 0))
+            else:
+                sheets.append((Path(sheet_name).stem, rows[0], max(0, len(rows) - 1)))
+        return sheets
 
 
 def _shared_strings(archive: zipfile.ZipFile) -> list[str]:
