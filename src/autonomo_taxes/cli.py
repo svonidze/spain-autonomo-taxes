@@ -295,6 +295,7 @@ def main(argv: list[str] | None = None) -> int:
     audit_closure_request.add_argument("--quarter-closure", type=Path, required=True)
     audit_closure_request.add_argument("--source-findings", type=Path)
     audit_closure_request.add_argument("--row-decisions", type=Path)
+    audit_closure_request.add_argument("--root-cause-narrowing", type=Path)
     audit_closure_request.add_argument("--out-md", type=Path, required=True)
 
     audit_root_cause_narrowing = subparsers.add_parser(
@@ -482,7 +483,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Wrote {len(rows)} quarter closure rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-closure-request":
-        markdown = build_xolo_closure_request(args.quarter_closure, args.source_findings, args.row_decisions)
+        markdown = build_xolo_closure_request(
+            args.quarter_closure,
+            args.source_findings,
+            args.row_decisions,
+            args.root_cause_narrowing,
+        )
         write_xolo_closure_request(args.out_md, markdown)
         print(f"Wrote Xolo closure request to {args.out_md}")
         return 0

@@ -10,6 +10,7 @@ def build_xolo_closure_request(
     quarter_closure_csv: Path,
     source_findings_csv: Path | None = None,
     row_decisions_csv: Path | None = None,
+    root_cause_narrowing_csv: Path | None = None,
 ) -> str:
     rows = _load_rows(quarter_closure_csv)
     material = [row for row in rows if row["closure_status"] == "blocked_material_unexplained_adjustment"]
@@ -17,6 +18,7 @@ def build_xolo_closure_request(
     exclusions = [row for row in rows if row["has_nearest_exclusion"] == "yes"]
     source_findings = _source_finding_highlights(source_findings_csv) if source_findings_csv else []
     row_decisions = _row_decision_highlights(row_decisions_csv) if row_decisions_csv else []
+    root_cause_rows = _root_cause_highlights(root_cause_narrowing_csv) if root_cause_narrowing_csv else []
 
     lines = [
         "# Xolo Modelo 130 Closure Request",
@@ -36,11 +38,42 @@ def build_xolo_closure_request(
         "2. The full asset amortization schedule used for Modelo 130 and annual Renta/Modelo 100: asset, acquisition date, acquisition basis, VAT treatment, start date, amortization rate, quarterly amortization amount, and accumulated amortization by quarter.",
         "3. The source rows or accounting adjustments for the material quarter gaps listed below.",
         "",
-        "## Material Quarter Gaps",
-        "",
-        "| Period | Target 02 delta | Pre-plug residual | Balancing adjustment | Plug % | Required answer |",
-        "|---|---:|---:|---:|---:|---|",
     ]
+    if root_cause_rows:
+        lines.extend(
+            [
+                "## Local Root-Cause Gates Already Checked",
+                "",
+                "These gates do not replace Xolo's submitted register. They show which local explanations have been narrowed so Xolo can answer the remaining accounting questions directly.",
+                "",
+                "| Period | Residual after annual asset lens | Annual professional base diff | Locally eliminated | Still open |",
+                "|---|---:|---:|---|---|",
+            ]
+        )
+        for row in root_cause_rows:
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        row["period"],
+                        _fmt(row["annual_constrained_residual"]),
+                        _fmt(row.get("annual_professional_base_diff", "")),
+                        _cell(row["eliminated_causes"]),
+                        _cell(row["remaining_causes"]),
+                    ]
+                )
+                + " |"
+            )
+        lines.append("")
+
+    lines.extend(
+        [
+            "## Material Quarter Gaps",
+            "",
+            "| Period | Target 02 delta | Pre-plug residual | Balancing adjustment | Plug % | Required answer |",
+            "|---|---:|---:|---:|---:|---|",
+        ]
+    )
     for row in material:
         lines.append(
             "| "
@@ -193,6 +226,20 @@ def _row_decision_highlights(path: Path) -> list[dict[str, str]]:
             row.get("number", ""),
         ),
     )
+
+
+def _root_cause_highlights(path: Path) -> list[dict[str, str]]:
+    rows = _load_rows(path)
+    return [
+        row
+        for row in rows
+        if row.get("closure_status")
+        in {
+            "blocked_material_unexplained_adjustment",
+            "pending_asset_schedule_confirmation",
+            "pending_row_exclusion_confirmation",
+        }
+    ]
 
 
 def _row_label(row: dict[str, str]) -> str:
