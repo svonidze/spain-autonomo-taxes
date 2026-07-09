@@ -50,6 +50,7 @@ from .xolo_ledger import (
     write_xolo_reconciliation,
     xolo_ledger_total,
 )
+from .xolo_questions import build_xolo_questions, write_questions_csv, write_questions_markdown
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -129,6 +130,11 @@ def main(argv: list[str] | None = None) -> int:
     audit_assets.add_argument("--out-quarter-reconciliation-csv", type=Path, help="Optional output CSV for candidate quarterly reconciliation")
     audit_assets.add_argument("--out-md", type=Path, required=True)
 
+    audit_questions = subparsers.add_parser("audit-questions", help="Generate prioritized Xolo questions from audit outputs")
+    audit_questions.add_argument("--candidate-quarter-reconciliation", type=Path, required=True)
+    audit_questions.add_argument("--out-csv", type=Path, required=True)
+    audit_questions.add_argument("--out-md", type=Path, required=True)
+
     args = parser.parse_args(argv)
     config = _load_config(args.config)
     _merge_config(args, config)
@@ -190,6 +196,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Wrote {len(scenarios)} annual scenario rows")
         if args.out_quarter_reconciliation_csv:
             print(f"Wrote {len(candidate_quarters)} candidate quarterly reconciliation rows")
+        return 0
+    if args.command == "audit-questions":
+        questions = build_xolo_questions(args.candidate_quarter_reconciliation)
+        write_questions_csv(args.out_csv, questions)
+        write_questions_markdown(args.out_md, questions)
+        print(f"Wrote {len(questions)} Xolo questions to {args.out_csv} and {args.out_md}")
         return 0
     raise AssertionError(args.command)
 
