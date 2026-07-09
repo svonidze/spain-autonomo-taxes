@@ -45,6 +45,11 @@ from .quarter_evidence import (
     write_quarter_evidence_csv,
     write_quarter_evidence_markdown,
 )
+from .register_review import (
+    build_register_review_template,
+    write_register_review_csv,
+    write_register_review_markdown,
+)
 from .reports import write_compare, write_ledger, write_manifest, write_markdown_report
 from .row_audit import build_row_audit, write_row_audit_csv, write_row_audit_markdown
 from .xolo_ledger import (
@@ -162,6 +167,14 @@ def main(argv: list[str] | None = None) -> int:
     audit_row_evidence.add_argument("--out-csv", type=Path, required=True)
     audit_row_evidence.add_argument("--out-md", type=Path, required=True)
 
+    audit_register_template = subparsers.add_parser(
+        "audit-register-template",
+        help="Create a fillable submitted-register review template from row audit evidence",
+    )
+    audit_register_template.add_argument("--row-audit", type=Path, required=True)
+    audit_register_template.add_argument("--out-csv", type=Path, required=True)
+    audit_register_template.add_argument("--out-md", type=Path, required=True)
+
     args = parser.parse_args(argv)
     config = _load_config(args.config)
     _merge_config(args, config)
@@ -246,6 +259,12 @@ def main(argv: list[str] | None = None) -> int:
         write_row_audit_csv(args.out_csv, rows)
         write_row_audit_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} row audit rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-register-template":
+        rows = build_register_review_template(args.row_audit)
+        write_register_review_csv(args.out_csv, rows)
+        write_register_review_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} register review rows to {args.out_csv} and {args.out_md}")
         return 0
     raise AssertionError(args.command)
 
