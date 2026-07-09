@@ -59,6 +59,13 @@ class RawXoloExpense:
         )
 
 
+@dataclass(frozen=True)
+class ExclusionSubset:
+    total: Decimal
+    error: Decimal
+    rows: tuple[tuple[RawXoloExpense, Decimal], ...]
+
+
 def run_history_audit(
     xolo_root: Path,
     xolo_raw_csv: Path | None,
@@ -114,6 +121,12 @@ def run_history_audit(
         )
         raw = _raw_ytd_totals(raw_expenses, report.year, report.quarter, derived_fx)
         quarter_raw = _raw_quarter_totals(raw_expenses, report.year, report.quarter, derived_fx)
+        quarter_gap_to_raw_non_asset = cents(quarter_raw["non_asset_gross_eur"] - target_02_delta)
+        excluded_subset = (
+            _nearest_excluded_subset(raw_expenses, report.year, report.quarter, derived_fx, quarter_gap_to_raw_non_asset)
+            if quarter_gap_to_raw_non_asset > Decimal("20.00")
+            else None
+        )
         provision_before_5 = _deductible_before_from_total(
             target["01"],
             target["02"],
@@ -171,6 +184,10 @@ def run_history_audit(
                 "raw_quarter_asset_gross_eur": _money(quarter_raw["asset_gross_eur"]),
                 "raw_quarter_non_asset_gross_eur": _money(quarter_raw["non_asset_gross_eur"]),
                 "raw_quarter_non_asset_base_eur": _money(quarter_raw["non_asset_base_eur"]),
+                "quarter_gap_to_raw_non_asset_gross": _money(quarter_gap_to_raw_non_asset),
+                "nearest_excluded_subset_eur": _money(excluded_subset.total if excluded_subset else Decimal("0.00")),
+                "nearest_excluded_subset_error_eur": _money(excluded_subset.error if excluded_subset else Decimal("0.00")),
+                "nearest_excluded_subset_rows": _format_subset_rows(excluded_subset),
                 "estimated_asset_amortization_gross_ytd": _money(raw["asset_amortization_estimate_gross"]),
                 "estimated_asset_amortization_base_ytd": _money(raw["asset_amortization_estimate_base"]),
                 "residual_after_estimated_amortization": _money(after_amortization_residual),
@@ -236,8 +253,8 @@ def write_history_audit_markdown(path: Path, rows: list[dict[str, str]]) -> None
         "`best_fit_model` compares forward models. It does not reverse-solve a hidden expense row to make a hypothesis fit.",
         "Asset-like rows include Xolo rows marked `Computer hardware & software` in any currency plus known hardware suppliers.",
         "",
-        "| Period | Signal | Target 02 delta | Raw non-asset delta | Asset delta | YTD residual gross | YTD residual base | Est. amortization | Residual after est. amort. | Target 19 | Calc 19 | Diff 19 |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Period | Signal | Target 02 delta | Raw non-asset delta | Quarter gap | Nearest excluded subset | Subset error | Asset delta | YTD residual gross | Target 19 | Diff 19 |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in rows:
         period = f"{row['year']}-Q{row['quarter']}"
@@ -249,13 +266,12 @@ def write_history_audit_markdown(path: Path, rows: list[dict[str, str]]) -> None
                     row["reconciliation_signal"],
                     _fmt(row["target_casilla_02_delta"]),
                     _fmt(row["raw_quarter_non_asset_gross_eur"]),
+                    _fmt(row["quarter_gap_to_raw_non_asset_gross"]),
+                    _fmt(row["nearest_excluded_subset_eur"]),
+                    _fmt(row["nearest_excluded_subset_error_eur"]),
                     _fmt(row["raw_quarter_asset_gross_eur"]),
                     _fmt(row["no_provision_gross_residual"]),
-                    _fmt(row["no_provision_base_residual"]),
-                    _fmt(row["estimated_asset_amortization_gross_ytd"]),
-                    _fmt(row["residual_after_estimated_amortization"]),
                     _fmt(row["target_casilla_19"]),
-                    _fmt(row["calculated_casilla_19"]),
                     _fmt(row["casilla_19_diff"]),
                 ]
             )
@@ -274,6 +290,77 @@ def _raw_quarter_totals(
     start = _quarter_start(year, quarter)
     end = quarter_end(year, quarter)
     return _raw_expense_totals(rows, start, end, usd_fx)
+
+
+def _nearest_excluded_subset(
+    rows: list[RawXoloExpense],
+    year: int,
+    quarter: int,
+    usd_fx: Decimal | None,
+    target: Decimal,
+) -> ExclusionSubset | None:
+    if target <= 0:
+        return None
+    candidates: list[tuple[Decimal, RawXoloExpense]] = []
+    start = _quarter_start(year, quarter)
+    end = quarter_end(year, quarter)
+    for row in rows:
+        if row.is_asset_like or not (start <= row.date <= end):
+            continue
+        gross = _row_gross_eur(row, usd_fx)
+        if gross is not None and gross != 0:
+            candidates.append((gross, row))
+    if not candidates or len(candidates) > 28:
+        return None
+    split = len(candidates) // 2
+    left = candidates[:split]
+    right = candidates[split:]
+    left_sums = _subset_sums(left)
+    right_sums = sorted(_subset_sums(right), key=lambda item: item[0])
+    right_values = [item[0] for item in right_sums]
+
+    import bisect
+
+    best: tuple[Decimal, Decimal, int, int] | None = None
+    for left_total, left_mask in left_sums:
+        needed = target - left_total
+        position = bisect.bisect_left(right_values, needed)
+        for index in range(max(0, position - 2), min(len(right_sums), position + 3)):
+            right_total, right_mask = right_sums[index]
+            total = cents(left_total + right_total)
+            error = abs(cents(total - target))
+            candidate = (error, total, left_mask, right_mask)
+            if best is None or candidate < best:
+                best = candidate
+    if best is None:
+        return None
+    error, total, left_mask, right_mask = best
+    selected: list[tuple[RawXoloExpense, Decimal]] = []
+    for index, (amount, row) in enumerate(left):
+        if left_mask & (1 << index):
+            selected.append((row, amount))
+    for index, (amount, row) in enumerate(right):
+        if right_mask & (1 << index):
+            selected.append((row, amount))
+    selected.sort(key=lambda item: (item[0].date, item[0].recipient, item[0].number))
+    return ExclusionSubset(total=total, error=error, rows=tuple(selected))
+
+
+def _subset_sums(candidates: list[tuple[Decimal, RawXoloExpense]]) -> list[tuple[Decimal, int]]:
+    output: list[tuple[Decimal, int]] = []
+    for mask in range(1 << len(candidates)):
+        total = sum((candidates[index][0] for index in range(len(candidates)) if mask & (1 << index)), Decimal("0.00"))
+        output.append((cents(total), mask))
+    return output
+
+
+def _format_subset_rows(subset: ExclusionSubset | None) -> str:
+    if subset is None:
+        return ""
+    return "; ".join(
+        f"{row.date.isoformat()} {row.number or row.recipient} {amount:.2f}"
+        for row, amount in subset.rows
+    )
 
 
 def _raw_ytd_totals(
