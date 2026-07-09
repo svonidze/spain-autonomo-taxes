@@ -67,6 +67,11 @@ from .material_gap_drilldown import (
     write_material_gap_drilldown_csv,
     write_material_gap_drilldown_markdown,
 )
+from .material_gap_context import (
+    build_material_gap_context,
+    write_material_gap_context_csv,
+    write_material_gap_context_markdown,
+)
 from .modelo130 import (
     calculate_modelo130,
     extract_modelo130_values,
@@ -357,6 +362,17 @@ def main(argv: list[str] | None = None) -> int:
     audit_quarter_acceptance.add_argument("--out-csv", type=Path, required=True)
     audit_quarter_acceptance.add_argument("--out-md", type=Path, required=True)
 
+    audit_material_gap_context = subparsers.add_parser(
+        "audit-material-gap-context",
+        help="Add raw Xolo ledger context to P0 material-gap quarters",
+    )
+    audit_material_gap_context.add_argument("--quarter-acceptance", type=Path, required=True)
+    audit_material_gap_context.add_argument("--quarter-balance-bridge", type=Path, required=True)
+    audit_material_gap_context.add_argument("--xolo-expense-ledger", type=Path, required=True)
+    audit_material_gap_context.add_argument("--material-gap-drilldown", type=Path)
+    audit_material_gap_context.add_argument("--out-csv", type=Path, required=True)
+    audit_material_gap_context.add_argument("--out-md", type=Path, required=True)
+
     audit_closure_request = subparsers.add_parser(
         "audit-closure-request",
         help="Build a draft request to Xolo from the quarter closure checklist",
@@ -617,6 +633,17 @@ def main(argv: list[str] | None = None) -> int:
         write_quarter_acceptance_csv(args.out_csv, rows)
         write_quarter_acceptance_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} quarter acceptance rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-material-gap-context":
+        rows = build_material_gap_context(
+            args.quarter_acceptance,
+            args.quarter_balance_bridge,
+            args.xolo_expense_ledger,
+            args.material_gap_drilldown,
+        )
+        write_material_gap_context_csv(args.out_csv, rows)
+        write_material_gap_context_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} material gap context rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-closure-request":
         markdown = build_xolo_closure_request(
