@@ -11,6 +11,8 @@ def build_quarter_packets(
     quarter_closure_csv: Path,
     row_audit_csv: Path,
     source_findings_csv: Path | None = None,
+    root_cause_narrowing_csv: Path | None = None,
+    row_decisions_csv: Path | None = None,
 ) -> list[dict[str, object]]:
     history_by_period = {
         f"{row['year']}-Q{row['quarter']}": row
@@ -19,24 +21,35 @@ def build_quarter_packets(
     closure_rows = _load_rows(quarter_closure_csv)
     audit_by_period = _group_by_period(_load_rows(row_audit_csv))
     source_findings_by_period = _group_by_period(_load_rows(source_findings_csv)) if source_findings_csv else {}
+    root_cause_by_period = {
+        row["period"]: row
+        for row in _load_rows(root_cause_narrowing_csv)
+    } if root_cause_narrowing_csv else {}
+    row_decisions_by_period = _group_by_period(_load_rows(row_decisions_csv)) if row_decisions_csv else {}
 
     packets: list[dict[str, object]] = []
     for closure in closure_rows:
         period = closure["period"]
         history = history_by_period.get(period, {})
         packet_rows = audit_by_period.get(period, [])
+        root_cause = root_cause_by_period.get(period, {})
+        row_decisions = row_decisions_by_period.get(period, [])
         packets.append(
             {
                 "period": period,
                 "filename": f"{period}.md",
                 "history": history,
                 "closure": closure,
+                "root_cause": root_cause,
+                "row_decisions": row_decisions,
                 "rows": packet_rows,
                 "source_findings": source_findings_by_period.get(period, []),
                 "markdown": _packet_markdown(
                     period,
                     history,
                     closure,
+                    root_cause,
+                    row_decisions,
                     packet_rows,
                     source_findings_by_period.get(period, []),
                 ),
@@ -56,6 +69,8 @@ def _packet_markdown(
     period: str,
     history: dict[str, str],
     closure: dict[str, str],
+    root_cause: dict[str, str],
+    row_decisions: list[dict[str, str]],
     rows: list[dict[str, str]],
     source_findings: list[dict[str, str]] | None = None,
 ) -> str:
@@ -93,9 +108,25 @@ def _packet_markdown(
         f"- Excluded asset direct amount: `{_fmt(closure['excluded_asset_direct_eur'])}`",
         f"- Nearest excluded subset: `{_fmt(closure['excluded_nearest_subset_eur'])}`",
         "",
-        "## Local Source Checks",
+        "## Root-Cause Gates",
         "",
     ]
+    lines.extend(_root_cause_table(root_cause))
+    lines.extend(
+        [
+            "",
+            "## Open Row Decisions",
+            "",
+        ]
+    )
+    lines.extend(_row_decisions_table(row_decisions))
+    lines.extend(
+        [
+            "",
+            "## Local Source Checks",
+            "",
+        ]
+    )
     lines.extend(_source_findings_table(source_findings or []))
     lines.extend(
         [
@@ -185,6 +216,51 @@ def _rows_table(rows: list[dict[str, str]]) -> list[str]:
     return lines
 
 
+def _root_cause_table(row: dict[str, str]) -> list[str]:
+    if not row:
+        return ["not supplied"]
+    return [
+        "| Annual-constrained residual | M303 VAT | Annual professional base diff | Eliminated locally | Remaining causes |",
+        "|---:|---|---:|---|---|",
+        "| "
+        + " | ".join(
+            [
+                _fmt(row.get("annual_constrained_residual", "")),
+                _cell(row.get("modelo303_vat_status", "")),
+                _fmt(row.get("annual_professional_base_diff", "")),
+                _cell(row.get("eliminated_causes", "")),
+                _cell(row.get("remaining_causes", "")),
+            ]
+        )
+        + " |",
+    ]
+
+
+def _row_decisions_table(rows: list[dict[str, str]]) -> list[str]:
+    if not rows:
+        return ["not supplied"]
+    lines = [
+        "| Priority | Decision | Row | Amount | Question | Context |",
+        "|---|---|---|---:|---|---|",
+    ]
+    for row in rows:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    _cell(row.get("priority", "")),
+                    _cell(row.get("decision_kind", "")),
+                    _cell(_decision_row_label(row)),
+                    _fmt(row.get("amount_eur", "")),
+                    _cell(row.get("question", "")),
+                    _cell(row.get("root_cause_context", "")),
+                ]
+            )
+            + " |"
+        )
+    return lines
+
+
 def _source_findings_table(rows: list[dict[str, str]]) -> list[str]:
     if not rows:
         return ["none"]
@@ -207,6 +283,12 @@ def _source_findings_table(rows: list[dict[str, str]]) -> list[str]:
             + " |"
         )
     return lines
+
+
+def _decision_row_label(row: dict[str, str]) -> str:
+    parts = [row.get("date", ""), row.get("number", ""), row.get("recipient", "")]
+    value = " ".join(part for part in parts if part)
+    return value or row.get("classification", "")
 
 
 def _load_rows(path: Path) -> list[dict[str, str]]:

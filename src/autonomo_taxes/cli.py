@@ -326,6 +326,8 @@ def main(argv: list[str] | None = None) -> int:
     audit_quarter_packets.add_argument("--quarter-closure", type=Path, required=True)
     audit_quarter_packets.add_argument("--row-audit", type=Path, required=True)
     audit_quarter_packets.add_argument("--source-findings", type=Path)
+    audit_quarter_packets.add_argument("--root-cause-narrowing", type=Path)
+    audit_quarter_packets.add_argument("--row-decisions", type=Path)
     audit_quarter_packets.add_argument("--out-dir", type=Path, required=True)
 
     audit_sequential_summary = subparsers.add_parser(
@@ -515,6 +517,8 @@ def main(argv: list[str] | None = None) -> int:
             args.quarter_closure,
             args.row_audit,
             args.source_findings,
+            args.root_cause_narrowing,
+            args.row_decisions,
         )
         write_quarter_packets(args.out_dir, packets)
         print(f"Wrote {len(packets)} quarter packets to {args.out_dir}")
