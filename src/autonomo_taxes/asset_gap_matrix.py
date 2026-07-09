@@ -34,6 +34,18 @@ ASSET_GAP_MATRIX_FIELDS = [
     "next_action",
 ]
 
+ASSET_GAP_SIGNAL_ORDER = (
+    "ordinary_amortization_too_small",
+    "excluded_asset_or_register_adjustment_required",
+    "asset_amortization_above_required_row_exclusions_needed",
+    "raw_non_asset_above_target",
+    "annual_constrained_amortization_near_required",
+    "candidate_amortization_near_required",
+    "asset_schedule_confirmation_required",
+)
+
+ASSET_GAP_SIGNAL_PRIORITY = {signal: index for index, signal in enumerate(ASSET_GAP_SIGNAL_ORDER)}
+
 
 def build_asset_gap_matrix(
     candidate_quarter_reconciliation_csv: Path,

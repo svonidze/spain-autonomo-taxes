@@ -4,6 +4,7 @@ import csv
 from collections import Counter
 from pathlib import Path
 
+from .asset_gap_matrix import ASSET_GAP_SIGNAL_PRIORITY
 from .money import format_es, parse_amount
 
 
@@ -528,19 +529,10 @@ def _p2_context_highlights(path: Path) -> list[dict[str, str]]:
 
 def _asset_gap_highlights(path: Path) -> list[dict[str, str]]:
     rows = _load_rows(path)
-    priority_order = {
-        "ordinary_amortization_too_small": 0,
-        "excluded_asset_or_register_adjustment_required": 1,
-        "asset_amortization_above_required_row_exclusions_needed": 2,
-        "raw_non_asset_above_target": 3,
-        "annual_constrained_amortization_near_required": 4,
-        "candidate_amortization_near_required": 5,
-    }
-    focus_signals = set(priority_order)
     return sorted(
-        [row for row in rows if row.get("amortization_gap_signal") in focus_signals],
+        rows,
         key=lambda row: (
-            priority_order.get(row.get("amortization_gap_signal", ""), 9),
+            ASSET_GAP_SIGNAL_PRIORITY.get(row.get("amortization_gap_signal", ""), 99),
             row.get("period", ""),
         ),
     )
