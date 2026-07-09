@@ -44,14 +44,17 @@ class RawXoloExpense:
     @property
     def is_asset_like(self) -> bool:
         text = f"{self.recipient} {self.expense_type} {self.number}".lower()
+        if "computer hardware" in text:
+            return True
         return any(
             marker in text
             for marker in (
-                "computer hardware",
                 "macbook",
                 "media markt",
+                "faciletea",
                 "rosselli",
                 "apple retail",
+                "apple retal",
             )
         )
 
@@ -67,8 +70,12 @@ def run_history_audit(
     raw_expenses = load_raw_xolo_expenses(xolo_raw_csv) if xolo_raw_csv else []
 
     rows: list[dict[str, str]] = []
+    previous_target_02_by_year: dict[int, Decimal] = {}
     for report in reports:
         target = extract_modelo130_values(report.path, report.year, report.quarter)
+        previous_target_02 = previous_target_02_by_year.get(report.year, Decimal("0.00"))
+        target_02_delta = cents(target["02"] - previous_target_02)
+        previous_target_02_by_year[report.year] = target["02"]
         derived_fx = derive_single_currency_rate(
             income_entries,
             target["01"],
@@ -106,14 +113,15 @@ def run_history_audit(
             include_difficult_expenses=False,
         )
         raw = _raw_ytd_totals(raw_expenses, report.year, report.quarter, derived_fx)
+        quarter_raw = _raw_quarter_totals(raw_expenses, report.year, report.quarter, derived_fx)
         provision_before_5 = _deductible_before_from_total(
             target["01"],
             target["02"],
             rate=_difficult_expenses_rate_for_year(report.year),
         )
         provision_difficult = cents(target["02"] - provision_before_5)
-        no_provision_gross_model = cents(raw["gross_eur"] + raw["usd_at_fx"] - raw["asset_gross_eur"])
-        no_provision_base_model = cents(raw["base_eur"] + raw["usd_at_fx"] - raw["asset_base_eur"])
+        no_provision_gross_model = raw["non_asset_gross_eur"]
+        no_provision_base_model = raw["non_asset_base_eur"]
         no_provision_gross_residual = cents(target["02"] - no_provision_gross_model)
         no_provision_base_residual = cents(target["02"] - no_provision_base_model)
         provision_residual = cents(provision_before_5 - no_provision_gross_model)
@@ -135,6 +143,7 @@ def run_history_audit(
                 "target_casilla_01": _money(target["01"]),
                 "calculated_income_ytd": _money(income_ytd),
                 "target_casilla_02": _money(target["02"]),
+                "target_casilla_02_delta": _money(target_02_delta),
                 "provision_before_5_reverse": _money(provision_before_5),
                 "provision_difficult_reverse": _money(provision_difficult),
                 "no_provision_gross_model": _money(no_provision_gross_model),
@@ -155,9 +164,17 @@ def run_history_audit(
                 "raw_xolo_usd_at_income_fx_ytd": _money(raw["usd_at_fx"]),
                 "raw_asset_like_gross_eur_ytd": _money(raw["asset_gross_eur"]),
                 "raw_asset_like_base_eur_ytd": _money(raw["asset_base_eur"]),
+                "raw_non_asset_gross_eur_ytd": _money(raw["non_asset_gross_eur"]),
+                "raw_non_asset_base_eur_ytd": _money(raw["non_asset_base_eur"]),
+                "raw_quarter_gross_eur": _money(quarter_raw["gross_eur"] + quarter_raw["usd_at_fx"]),
+                "raw_quarter_base_eur": _money(quarter_raw["base_eur"] + quarter_raw["usd_at_fx"]),
+                "raw_quarter_asset_gross_eur": _money(quarter_raw["asset_gross_eur"]),
+                "raw_quarter_non_asset_gross_eur": _money(quarter_raw["non_asset_gross_eur"]),
+                "raw_quarter_non_asset_base_eur": _money(quarter_raw["non_asset_base_eur"]),
                 "estimated_asset_amortization_gross_ytd": _money(raw["asset_amortization_estimate_gross"]),
                 "estimated_asset_amortization_base_ytd": _money(raw["asset_amortization_estimate_base"]),
                 "residual_after_estimated_amortization": _money(after_amortization_residual),
+                "reconciliation_signal": _reconciliation_signal(no_provision_gross_residual),
                 "local_asset_review_eur_ytd": _money(local_asset_review),
                 "manual_review_items": str(manual_count),
                 "derived_income_usd_fx": "" if derived_fx is None else str(derived_fx),
@@ -217,8 +234,9 @@ def write_history_audit_markdown(path: Path, rows: list[dict[str, str]]) -> None
         "",
         "This report compares submitted Modelo 130 casillas against the local parser and the raw Xolo expense table.",
         "`best_fit_model` compares forward models. It does not reverse-solve a hidden expense row to make a hypothesis fit.",
+        "Asset-like rows include Xolo rows marked `Computer hardware & software` in any currency plus known hardware suppliers.",
         "",
-        "| Period | Best fit | Target 02 | No-provision gross residual | No-provision base residual | Provision residual | Est. amortization | Residual after est. amort. | Local gap | Target 19 | Calc 19 | Diff 19 |",
+        "| Period | Signal | Target 02 delta | Raw non-asset delta | Asset delta | YTD residual gross | YTD residual base | Est. amortization | Residual after est. amort. | Target 19 | Calc 19 | Diff 19 |",
         "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in rows:
@@ -228,14 +246,14 @@ def write_history_audit_markdown(path: Path, rows: list[dict[str, str]]) -> None
             + " | ".join(
                 [
                     period,
-                    row["best_fit_model"],
-                    _fmt(row["target_casilla_02"]),
+                    row["reconciliation_signal"],
+                    _fmt(row["target_casilla_02_delta"]),
+                    _fmt(row["raw_quarter_non_asset_gross_eur"]),
+                    _fmt(row["raw_quarter_asset_gross_eur"]),
                     _fmt(row["no_provision_gross_residual"]),
                     _fmt(row["no_provision_base_residual"]),
-                    _fmt(row["provision_model_residual"]),
                     _fmt(row["estimated_asset_amortization_gross_ytd"]),
                     _fmt(row["residual_after_estimated_amortization"]),
-                    _fmt(row["local_gap_to_target02"]),
                     _fmt(row["target_casilla_19"]),
                     _fmt(row["calculated_casilla_19"]),
                     _fmt(row["casilla_19_diff"]),
@@ -247,6 +265,17 @@ def write_history_audit_markdown(path: Path, rows: list[dict[str, str]]) -> None
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
+def _raw_quarter_totals(
+    rows: list[RawXoloExpense],
+    year: int,
+    quarter: int,
+    usd_fx: Decimal | None,
+) -> dict[str, Decimal]:
+    start = _quarter_start(year, quarter)
+    end = quarter_end(year, quarter)
+    return _raw_expense_totals(rows, start, end, usd_fx)
+
+
 def _raw_ytd_totals(
     rows: list[RawXoloExpense],
     year: int,
@@ -255,6 +284,25 @@ def _raw_ytd_totals(
 ) -> dict[str, Decimal]:
     start = date(year, 1, 1)
     end = quarter_end(year, quarter)
+    totals = _raw_expense_totals(rows, start, end, usd_fx)
+    for row in rows:
+        if not row.is_asset_like or row.date > end:
+            continue
+        gross = _row_gross_eur(row, usd_fx)
+        base = _row_base_eur(row, usd_fx)
+        if gross is not None:
+            totals["asset_amortization_estimate_gross"] += _straight_line_ytd(gross, row.date, end)
+        if base is not None:
+            totals["asset_amortization_estimate_base"] += _straight_line_ytd(base, row.date, end)
+    return {key: cents(value) for key, value in totals.items()}
+
+
+def _raw_expense_totals(
+    rows: list[RawXoloExpense],
+    start: date,
+    end: date,
+    usd_fx: Decimal | None,
+) -> dict[str, Decimal]:
     totals = {
         "gross_eur": Decimal("0.00"),
         "base_eur": Decimal("0.00"),
@@ -264,28 +312,41 @@ def _raw_ytd_totals(
         "asset_amortization_estimate_gross": Decimal("0.00"),
         "asset_amortization_estimate_base": Decimal("0.00"),
     }
-    all_asset_rows: list[RawXoloExpense] = []
     for row in rows:
-        if row.is_asset_like and row.date <= end:
-            all_asset_rows.append(row)
         if not (start <= row.date <= end):
             continue
-        if row.currency == "EUR":
-            base = row.subtotal_amount if row.subtotal_amount is not None else row.amount_original
-            totals["gross_eur"] += row.amount_original
-            totals["base_eur"] += base
-            if row.is_asset_like:
-                totals["asset_gross_eur"] += row.amount_original
-                totals["asset_base_eur"] += base
-        elif row.currency == "USD" and usd_fx is not None:
-            totals["usd_at_fx"] += cents(row.amount_original * usd_fx)
-    for row in all_asset_rows:
-        if row.currency != "EUR":
+        gross = _row_gross_eur(row, usd_fx)
+        base = _row_base_eur(row, usd_fx)
+        if gross is None or base is None:
             continue
-        base = row.subtotal_amount if row.subtotal_amount is not None else row.amount_original
-        totals["asset_amortization_estimate_gross"] += _straight_line_ytd(row.amount_original, row.date, end)
-        totals["asset_amortization_estimate_base"] += _straight_line_ytd(base, row.date, end)
+        if row.currency == "USD":
+            totals["usd_at_fx"] += gross
+        else:
+            totals["gross_eur"] += gross
+            totals["base_eur"] += base
+        if row.is_asset_like:
+            totals["asset_gross_eur"] += gross
+            totals["asset_base_eur"] += base
+    totals["non_asset_gross_eur"] = totals["gross_eur"] + totals["usd_at_fx"] - totals["asset_gross_eur"]
+    totals["non_asset_base_eur"] = totals["base_eur"] + totals["usd_at_fx"] - totals["asset_base_eur"]
     return {key: cents(value) for key, value in totals.items()}
+
+
+def _row_gross_eur(row: RawXoloExpense, usd_fx: Decimal | None) -> Decimal | None:
+    if row.currency == "EUR":
+        return row.amount_original
+    if row.currency == "USD" and usd_fx is not None:
+        return cents(row.amount_original * usd_fx)
+    return None
+
+
+def _row_base_eur(row: RawXoloExpense, usd_fx: Decimal | None) -> Decimal | None:
+    if row.currency == "EUR":
+        return row.subtotal_amount if row.subtotal_amount is not None else row.amount_original
+    if row.currency == "USD" and usd_fx is not None:
+        base = row.subtotal_amount if row.subtotal_amount is not None else row.amount_original
+        return cents(base * usd_fx)
+    return None
 
 
 def _entry_amount_eur(entry: LedgerEntry, usd_fx: Decimal | None) -> Decimal:
@@ -323,6 +384,18 @@ def _difficult_expenses_rate_for_year(year: int) -> Decimal:
 def _best_fit(*residuals: Decimal) -> str:
     labels = ("no_provision_gross", "no_provision_base", "provision_reverse")
     return labels[min(range(len(residuals)), key=lambda index: abs(residuals[index]))]
+
+
+def _reconciliation_signal(residual: Decimal) -> str:
+    if abs(residual) <= Decimal("1.00"):
+        return "raw_non_asset_near_match"
+    if residual > 0:
+        return "target_above_raw_non_asset"
+    return "target_below_raw_non_asset"
+
+
+def _quarter_start(year: int, quarter: int) -> date:
+    return date(year, 1 + (quarter - 1) * 3, 1)
 
 
 def _straight_line_ytd(amount: Decimal, purchase_date: date, period_end: date) -> Decimal:
