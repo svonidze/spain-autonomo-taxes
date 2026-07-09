@@ -49,6 +49,7 @@ def compare_annual_to_quarterly(
         annual_minus_m130 = cents(summary.deductible_expenses_0218 - m130_q4)
         raw_non_asset = raw["non_asset_gross_eur"]
         annual_minus_raw_non_asset = cents(summary.deductible_expenses_0218 - raw_non_asset)
+        amortization_minus_raw_residual = cents(summary.amortization_0208 - annual_minus_raw_non_asset)
         rows.append(
             {
                 "year": str(summary.year),
@@ -64,6 +65,7 @@ def compare_annual_to_quarterly(
                 "raw_non_asset_gross_ytd": _money(raw_non_asset),
                 "raw_asset_gross_ytd": _money(raw["asset_gross_eur"]),
                 "annual_minus_raw_non_asset": _money(annual_minus_raw_non_asset),
+                "amortization_minus_raw_residual": _money(amortization_minus_raw_residual),
                 "raw_estimated_asset_amortization_ytd": _money(raw["asset_amortization_estimate_gross"]),
                 "social_security_0186": _money(summary.social_security_0186),
                 "professional_services_0199": _money(summary.professional_services_0199),
@@ -92,8 +94,8 @@ def write_annual_comparison_markdown(path: Path, rows: list[dict[str, str]]) -> 
         "This report compares annual Modelo 100 economic-activity expenses with submitted Q4 Modelo 130 `casilla 02` and the raw Xolo expense export.",
         "`M100 0218` is before difficult-to-justify expenses; `M100 0222` shows the annual difficult-expense provision separately.",
         "",
-        "| Year | Source | M100 0218 | M100 amort. 0208 | M100 difficult 0222 | M130 Q4 casilla 02 | Annual - M130 | Raw non-asset | Annual - raw non-asset | Asset candidates |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Year | Source | M100 0218 | M100 amort. 0208 | M100 difficult 0222 | M130 Q4 casilla 02 | Annual - M130 | Raw non-asset | Annual - raw non-asset | Amort. - raw residual | Asset candidates |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in rows:
         lines.append(
@@ -109,6 +111,7 @@ def write_annual_comparison_markdown(path: Path, rows: list[dict[str, str]]) -> 
                     _fmt(row["annual_minus_m130_q4"]),
                     _fmt(row["raw_non_asset_gross_ytd"]),
                     _fmt(row["annual_minus_raw_non_asset"]),
+                    _fmt(row["amortization_minus_raw_residual"]),
                     _fmt(row["raw_asset_gross_ytd"]),
                 ]
             )
@@ -121,6 +124,7 @@ def write_annual_comparison_markdown(path: Path, rows: list[dict[str, str]]) -> 
             "",
             "- 2023 and 2024 annual Modelo 100 deductible expenses are higher than Q4 Modelo 130 `casilla 02`, so annual filing added or reclassified expenses after the quarterly return.",
             "- 2025 draft Modelo 100 `0218` equals Q4 Modelo 130 `casilla 02`, and explicitly includes `422.87 EUR` of amortization.",
+            "- In 2025, annual `0218` exceeds raw non-asset expenses by `213.59 EUR`, while M100 amortization is `422.87 EUR`; this implies about `209.28 EUR` of raw non-asset rows were excluded, netted, or treated on a different basis.",
             "- Annual difficult-to-justify expenses are present in Modelo 100 (`0222 = 2,000.00`) but are not needed to reproduce quarterly Modelo 130 `casilla 02`.",
             "",
         ]
