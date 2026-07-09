@@ -199,6 +199,11 @@ from .source_book_availability import (
     write_source_book_availability_csv,
     write_source_book_availability_markdown,
 )
+from .source_book_content_check import (
+    build_source_book_content_check,
+    write_source_book_content_check_csv,
+    write_source_book_content_check_markdown,
+)
 from .source_book_response_check import (
     build_source_book_response_check,
     write_source_book_response_check_csv,
@@ -368,6 +373,7 @@ def main(argv: list[str] | None = None) -> int:
     audit_goal_status.add_argument("--quarter-acceptance", type=Path, required=True)
     audit_goal_status.add_argument("--first-gate-answer-check", type=Path, required=True)
     audit_goal_status.add_argument("--source-book-response-check", type=Path, required=True)
+    audit_goal_status.add_argument("--source-book-content-check", type=Path, required=True)
     audit_goal_status.add_argument("--out-csv", type=Path, required=True)
     audit_goal_status.add_argument("--out-md", type=Path, required=True)
 
@@ -769,6 +775,15 @@ def main(argv: list[str] | None = None) -> int:
     audit_source_book_response_check.add_argument("--out-csv", type=Path, required=True)
     audit_source_book_response_check.add_argument("--out-md", type=Path, required=True)
 
+    audit_source_book_content_check = subparsers.add_parser(
+        "audit-source-book-content-check",
+        help="Validate source-book file headers before row-level import",
+    )
+    audit_source_book_content_check.add_argument("--response-root", type=Path, required=True)
+    audit_source_book_content_check.add_argument("--source-book-response-check", type=Path, required=True)
+    audit_source_book_content_check.add_argument("--out-csv", type=Path, required=True)
+    audit_source_book_content_check.add_argument("--out-md", type=Path, required=True)
+
     audit_timing = subparsers.add_parser(
         "audit-timing",
         help="Diagnose timing, carry-forward, and netting patterns across Modelo 130 quarter balances",
@@ -885,6 +900,7 @@ def main(argv: list[str] | None = None) -> int:
             quarter_acceptance_csv=args.quarter_acceptance,
             first_gate_answer_check_csv=args.first_gate_answer_check,
             source_book_response_check_csv=args.source_book_response_check,
+            source_book_content_check_csv=args.source_book_content_check,
         )
         write_goal_status_csv(args.out_csv, rows)
         write_goal_status_markdown(args.out_md, rows)
@@ -1263,6 +1279,15 @@ def main(argv: list[str] | None = None) -> int:
         write_source_book_response_check_csv(args.out_csv, rows)
         write_source_book_response_check_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} source-book response-check rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-source-book-content-check":
+        rows = build_source_book_content_check(
+            response_root=args.response_root,
+            source_book_response_check_csv=args.source_book_response_check,
+        )
+        write_source_book_content_check_csv(args.out_csv, rows)
+        write_source_book_content_check_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} source-book content-check rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-timing":
         rows = build_timing_audit(args.quarter_closure, args.source_findings)
