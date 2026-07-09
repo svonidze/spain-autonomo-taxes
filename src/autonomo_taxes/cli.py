@@ -214,6 +214,7 @@ from .source_book_import import (
     write_source_book_import_csv,
     write_source_book_import_markdown,
 )
+from .source_book_request_package import build_source_book_request_package
 from .source_book_reconcile import (
     build_source_book_reconciliation,
     write_source_book_reconciliation_csv,
@@ -568,6 +569,14 @@ def main(argv: list[str] | None = None) -> int:
     audit_support_request_short.add_argument("--asset-ui-evidence", type=Path)
     audit_support_request_short.add_argument("--max-questions", type=int, default=8)
     audit_support_request_short.add_argument("--out-md", type=Path, required=True)
+
+    audit_source_book_request_package = subparsers.add_parser(
+        "audit-source-book-request-package",
+        help="Build a safe local package for requesting Xolo source books",
+    )
+    audit_source_book_request_package.add_argument("--message", type=Path, required=True)
+    audit_source_book_request_package.add_argument("--attachment", type=Path, action="append", default=[])
+    audit_source_book_request_package.add_argument("--out-dir", type=Path, required=True)
 
     audit_register_answer_import = subparsers.add_parser(
         "audit-register-answer-import",
@@ -1119,6 +1128,18 @@ def main(argv: list[str] | None = None) -> int:
         )
         write_xolo_support_request_short(args.out_md, markdown)
         print(f"Wrote short Xolo support request to {args.out_md}")
+        return 0
+    if args.command == "audit-source-book-request-package":
+        try:
+            rows = build_source_book_request_package(
+                message_md=args.message,
+                attachments=args.attachment,
+                out_dir=args.out_dir,
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            raise SystemExit(str(exc)) from exc
+        included = sum(1 for row in rows if row["status"] == "included")
+        print(f"Wrote Xolo source-book request package to {args.out_dir}; included {included}/{len(rows)} files")
         return 0
     if args.command == "audit-register-answer-import":
         rows = import_register_answer_sheet_json(args.sheet_json)
