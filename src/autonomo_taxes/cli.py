@@ -16,6 +16,13 @@ except Exception:  # pragma: no cover - dependency guard for clearer CLI errors.
     yaml = None
 
 from .annual import compare_annual_to_quarterly, write_annual_comparison_csv, write_annual_comparison_markdown
+from .asset_audit import (
+    build_asset_audit,
+    build_asset_scenarios,
+    write_asset_audit_csvs,
+    write_asset_audit_markdown,
+    write_asset_scenarios_csv,
+)
 from .history import run_history_audit, write_history_audit_csv, write_history_audit_markdown
 from .modelo130 import (
     calculate_modelo130,
@@ -110,6 +117,15 @@ def main(argv: list[str] | None = None) -> int:
     audit_annual.add_argument("--out-csv", type=Path, required=True)
     audit_annual.add_argument("--out-md", type=Path, required=True)
 
+    audit_assets = subparsers.add_parser("audit-assets", help="Build an explicit asset/amortization audit table")
+    audit_assets.add_argument("--history-audit", type=Path, required=True)
+    audit_assets.add_argument("--xolo-raw-expenses", type=Path, required=True)
+    audit_assets.add_argument("--modelo100-summary", type=Path, help="Optional annual Modelo 100 summary for scenario comparison")
+    audit_assets.add_argument("--out-assets-csv", type=Path, required=True)
+    audit_assets.add_argument("--out-quarter-csv", type=Path, required=True)
+    audit_assets.add_argument("--out-scenarios-csv", type=Path, help="Optional output CSV for annual amortization scenarios")
+    audit_assets.add_argument("--out-md", type=Path, required=True)
+
     args = parser.parse_args(argv)
     config = _load_config(args.config)
     _merge_config(args, config)
@@ -150,6 +166,22 @@ def main(argv: list[str] | None = None) -> int:
         write_annual_comparison_csv(args.out_csv, rows)
         write_annual_comparison_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} annual comparison rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-assets":
+        if args.out_scenarios_csv and not args.modelo100_summary:
+            raise SystemExit("--out-scenarios-csv requires --modelo100-summary")
+        assets, quarters = build_asset_audit(args.history_audit, args.xolo_raw_expenses)
+        scenarios = build_asset_scenarios(assets, args.modelo100_summary) if args.modelo100_summary else []
+        write_asset_audit_csvs(args.out_assets_csv, args.out_quarter_csv, assets, quarters)
+        if args.out_scenarios_csv:
+            write_asset_scenarios_csv(args.out_scenarios_csv, scenarios)
+        write_asset_audit_markdown(args.out_md, assets, quarters, scenarios)
+        print(
+            f"Wrote {len(assets)} asset rows and {len(quarters)} quarter rows "
+            f"to {args.out_assets_csv}, {args.out_quarter_csv}, and {args.out_md}"
+        )
+        if scenarios:
+            print(f"Wrote {len(scenarios)} annual scenario rows")
         return 0
     raise AssertionError(args.command)
 
