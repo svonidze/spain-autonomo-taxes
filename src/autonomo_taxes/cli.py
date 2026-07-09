@@ -188,6 +188,11 @@ from .root_cause_narrowing import (
     write_root_cause_narrowing_markdown,
 )
 from .sequential_summary import build_sequential_summary, write_sequential_summary
+from .source_book_availability import (
+    build_source_book_availability,
+    write_source_book_availability_csv,
+    write_source_book_availability_markdown,
+)
 from .support_request_short import build_xolo_support_request_short, write_xolo_support_request_short
 from .timing_audit import build_timing_audit, write_timing_audit_csv, write_timing_audit_markdown
 from .xolo_ledger import (
@@ -678,6 +683,19 @@ def main(argv: list[str] | None = None) -> int:
     audit_first_gate.add_argument("--out-csv", type=Path, required=True)
     audit_first_gate.add_argument("--out-md", type=Path, required=True)
 
+    audit_source_book_availability = subparsers.add_parser(
+        "audit-source-book-availability",
+        help="Consolidate source-book and asset-schedule availability evidence",
+    )
+    audit_source_book_availability.add_argument("--first-gate", type=Path, required=True)
+    audit_source_book_availability.add_argument("--evidence-inventory", type=Path, required=True)
+    audit_source_book_availability.add_argument("--dataexport-inventory", type=Path, required=True)
+    audit_source_book_availability.add_argument("--dataexport-archives", type=Path, required=True)
+    audit_source_book_availability.add_argument("--storage-probe", type=Path, required=True)
+    audit_source_book_availability.add_argument("--support-request", type=Path, required=True)
+    audit_source_book_availability.add_argument("--out-csv", type=Path, required=True)
+    audit_source_book_availability.add_argument("--out-md", type=Path, required=True)
+
     audit_timing = subparsers.add_parser(
         "audit-timing",
         help="Diagnose timing, carry-forward, and netting patterns across Modelo 130 quarter balances",
@@ -1110,6 +1128,19 @@ def main(argv: list[str] | None = None) -> int:
         write_first_gate_csv(args.out_csv, rows)
         write_first_gate_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} first-gate rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-source-book-availability":
+        rows = build_source_book_availability(
+            first_gate_csv=args.first_gate,
+            evidence_inventory_csv=args.evidence_inventory,
+            dataexport_inventory_csv=args.dataexport_inventory,
+            dataexport_archives_csv=args.dataexport_archives,
+            storage_probe_json=args.storage_probe,
+            support_request_md=args.support_request,
+        )
+        write_source_book_availability_csv(args.out_csv, rows)
+        write_source_book_availability_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} source-book availability rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-timing":
         rows = build_timing_audit(args.quarter_closure, args.source_findings)
