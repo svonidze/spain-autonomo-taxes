@@ -40,12 +40,18 @@ class RawXoloExpense:
     amount_original: Decimal
     currency: str
     subtotal_amount: Decimal | None
+    gross_eur: Decimal | None = None
+    vat_base_eur: Decimal | None = None
+    detail_confidence: str = ""
+    is_depreciable_asset: bool = False
     xolo_url: str = ""
     xolo_id: str = ""
     status: str = ""
 
     @property
     def is_asset_like(self) -> bool:
+        if self.is_depreciable_asset:
+            return True
         text = f"{self.recipient} {self.expense_type} {self.number}".lower()
         if "computer hardware" in text:
             return True
@@ -233,6 +239,10 @@ def load_raw_xolo_expenses(path: Path) -> list[RawXoloExpense]:
                     amount_original=amount,
                     currency=(row.get("currency") or "").upper(),
                     subtotal_amount=_optional_amount(row.get("subtotal_amount")),
+                    gross_eur=_optional_amount(row.get("gross_eur")),
+                    vat_base_eur=_optional_amount(row.get("vat_base_eur")),
+                    detail_confidence=row.get("detail_confidence") or "",
+                    is_depreciable_asset=_truthy(row.get("is_depreciable_asset")),
                     xolo_url=row.get("xolo_url") or "",
                     xolo_id=row.get("xolo_id") or "",
                     status=row.get("status") or "",
@@ -440,6 +450,8 @@ def _raw_expense_totals(
 
 
 def _row_gross_eur(row: RawXoloExpense, usd_fx: Decimal | None) -> Decimal | None:
+    if row.gross_eur is not None and _trusted_enriched_amount(row):
+        return row.gross_eur
     if row.currency == "EUR":
         return row.amount_original
     if row.currency == "USD" and usd_fx is not None:
@@ -448,6 +460,8 @@ def _row_gross_eur(row: RawXoloExpense, usd_fx: Decimal | None) -> Decimal | Non
 
 
 def _row_base_eur(row: RawXoloExpense, usd_fx: Decimal | None) -> Decimal | None:
+    if row.vat_base_eur is not None and _trusted_enriched_amount(row):
+        return row.vat_base_eur
     if row.currency == "EUR":
         return row.subtotal_amount if row.subtotal_amount is not None else row.amount_original
     if row.currency == "USD" and usd_fx is not None:
@@ -474,6 +488,16 @@ def _optional_amount(value: str | None) -> Decimal | None:
     if not value:
         return None
     return parse_amount(value)
+
+
+def _trusted_enriched_amount(row: RawXoloExpense) -> bool:
+    if not row.detail_confidence:
+        return True
+    return row.detail_confidence in {"detail_page_eur", "detail_page_exchange_rate"}
+
+
+def _truthy(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "y", "si", "sí"}
 
 
 def _money(value: Decimal) -> str:

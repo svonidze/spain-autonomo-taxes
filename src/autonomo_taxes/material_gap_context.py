@@ -22,6 +22,7 @@ MATERIAL_GAP_CONTEXT_FIELDS = [
     "bridge_raw_non_asset_delta",
     "bridge_raw_vs_xolo_non_asset_delta",
     "target_minus_xolo_non_asset_eur",
+    "target_minus_xolo_asset_candidate_eur",
     "asset_candidate_rows",
     "gap_sized_asset_candidate_rows",
     "gap_sized_asset_candidate_fit",
@@ -67,11 +68,13 @@ def build_material_gap_context(
         xolo_asset = _sum_rows(asset_rows)
         bridge_vs_xolo = cents(bridge_raw - xolo_non_asset)
         target_minus_non_asset = cents(target - xolo_non_asset)
+        target_minus_asset = cents(target - xolo_asset)
         gap_sized_assets = [
             row for row in asset_rows if abs(_row_gross(row)) >= abs(annual_balance)
         ]
         context_signal = _context_signal(
             annual_balance,
+            target_minus_asset,
             target_minus_non_asset,
             bridge_vs_xolo,
             gap_sized_assets,
@@ -94,12 +97,22 @@ def build_material_gap_context(
                 "bridge_raw_non_asset_delta": _money(bridge_raw),
                 "bridge_raw_vs_xolo_non_asset_delta": _money(bridge_vs_xolo),
                 "target_minus_xolo_non_asset_eur": _money(target_minus_non_asset),
+                "target_minus_xolo_asset_candidate_eur": _money(target_minus_asset),
                 "asset_candidate_rows": _format_rows(asset_rows),
                 "gap_sized_asset_candidate_rows": _format_rows(gap_sized_assets),
                 "gap_sized_asset_candidate_fit": _format_asset_fit(gap_sized_assets, annual_balance),
                 "actionable_hypotheses": _format_hypotheses(material_rows),
                 "context_signal": context_signal,
-                "next_xolo_question": _next_question(period, annual_balance, gap_sized_assets, context_signal, unconverted_rows),
+                "next_xolo_question": _next_question(
+                    period,
+                    annual_balance,
+                    target,
+                    asset_rows,
+                    non_asset_rows,
+                    gap_sized_assets,
+                    context_signal,
+                    unconverted_rows,
+                ),
             }
         )
     return rows
@@ -169,6 +182,7 @@ def write_material_gap_context_markdown(path: Path, rows: list[dict[str, str]]) 
 
 def _context_signal(
     annual_balance: Decimal,
+    target_minus_asset: Decimal,
     target_minus_non_asset: Decimal,
     bridge_vs_xolo: Decimal,
     gap_sized_assets: list[dict[str, str]],
@@ -177,6 +191,8 @@ def _context_signal(
 ) -> str:
     if unconverted_rows:
         return "xolo_raw_has_unconverted_currency_rows_requires_fx"
+    if gap_sized_assets and abs(target_minus_asset) <= Decimal("0.02"):
+        return "target_matches_asset_candidate_if_non_assets_excluded"
     if (
         abs(annual_balance - target_minus_non_asset) <= Decimal("0.02")
         and abs(bridge_vs_xolo) <= Decimal("0.02")
@@ -196,6 +212,9 @@ def _context_signal(
 def _next_question(
     period: str,
     annual_balance: Decimal,
+    target: Decimal,
+    asset_rows: list[dict[str, str]],
+    non_asset_rows: list[dict[str, str]],
     gap_sized_assets: list[dict[str, str]],
     context_signal: str,
     unconverted_rows: list[dict[str, str]],
@@ -205,6 +224,13 @@ def _next_question(
         return (
             f"For {period}, Xolo raw rows include non-EUR amounts without booked EUR values: {rows}. "
             "Please provide the submitted Modelo 130 register EUR deductible amount and FX/basis for these rows."
+        )
+    if context_signal == "target_matches_asset_candidate_if_non_assets_excluded":
+        assets = _format_rows(asset_rows)
+        non_assets = _format_rows(non_asset_rows)
+        return (
+            f"For {period}, submitted casilla 02 delta matches the asset/category rows at {format_es(target)} EUR. "
+            f"Did Xolo's submitted register include these row(s): {assets}, and exclude, defer, or reclassify these non-asset row(s): {non_assets}?"
         )
     if context_signal == "gap_matches_excluded_asset_candidate_context" and gap_sized_assets:
         rows = _format_rows(gap_sized_assets)
@@ -269,7 +295,7 @@ def _sum_rows(rows: list[dict[str, str]]) -> Decimal:
 
 def _row_gross(row: dict[str, str]) -> Decimal:
     gross_eur = row.get("gross_eur")
-    if gross_eur:
+    if gross_eur and _trusted_detail_amount(row):
         return parse_amount(gross_eur)
     currency = (row.get("currency") or "").upper()
     if currency and currency != "EUR":
@@ -280,7 +306,14 @@ def _row_gross(row: dict[str, str]) -> Decimal:
 
 def _row_has_unconverted_currency(row: dict[str, str]) -> bool:
     currency = (row.get("currency") or "").upper()
-    return bool(currency and currency != "EUR" and not row.get("gross_eur"))
+    return bool(currency and currency != "EUR" and (not row.get("gross_eur") or not _trusted_detail_amount(row)))
+
+
+def _trusted_detail_amount(row: dict[str, str]) -> bool:
+    confidence = row.get("detail_confidence") or ""
+    if not confidence:
+        return True
+    return confidence in {"detail_page_eur", "detail_page_exchange_rate"}
 
 
 def _format_rows(rows: list[dict[str, str]]) -> str:
