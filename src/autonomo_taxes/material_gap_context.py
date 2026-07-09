@@ -22,6 +22,7 @@ MATERIAL_GAP_CONTEXT_FIELDS = [
     "target_minus_xolo_non_asset_eur",
     "asset_candidate_rows",
     "gap_sized_asset_candidate_rows",
+    "gap_sized_asset_candidate_fit",
     "actionable_hypotheses",
     "context_signal",
     "next_xolo_question",
@@ -89,6 +90,7 @@ def build_material_gap_context(
                 "target_minus_xolo_non_asset_eur": _money(target_minus_non_asset),
                 "asset_candidate_rows": _format_rows(asset_rows),
                 "gap_sized_asset_candidate_rows": _format_rows(gap_sized_assets),
+                "gap_sized_asset_candidate_fit": _format_asset_fit(gap_sized_assets, annual_balance),
                 "actionable_hypotheses": _format_hypotheses(material_rows),
                 "context_signal": context_signal,
                 "next_xolo_question": _next_question(period, annual_balance, gap_sized_assets, context_signal),
@@ -118,8 +120,8 @@ def write_material_gap_context_markdown(path: Path, rows: list[dict[str, str]]) 
         f"- P0 material-gap periods: `{len(rows)}`.",
         "- Confirmed closed from this context alone: `0`.",
         "",
-        "| Period | Target 02 delta | Annual balance | Raw Xolo rows | Xolo non-asset | Bridge raw non-asset | Target minus Xolo non-asset | Signal |",
-        "|---|---:|---:|---:|---:|---:|---:|---|",
+        "| Period | Target 02 delta | Annual balance | Raw Xolo rows | Xolo non-asset | Bridge raw non-asset | Target minus Xolo non-asset | Asset fit | Signal |",
+        "|---|---:|---:|---:|---:|---:|---:|---|---|",
     ]
     for row in rows:
         lines.append(
@@ -133,6 +135,7 @@ def write_material_gap_context_markdown(path: Path, rows: list[dict[str, str]]) 
                     _fmt(row["xolo_document_quarter_non_asset_gross_eur"]),
                     _fmt(row["bridge_raw_non_asset_delta"]),
                     _fmt(row["target_minus_xolo_non_asset_eur"]),
+                    _cell(row["gap_sized_asset_candidate_fit"] or ""),
                     row["context_signal"],
                 ]
             )
@@ -148,6 +151,7 @@ def write_material_gap_context_markdown(path: Path, rows: list[dict[str, str]]) 
                 f"- Context signal: `{row['context_signal']}`",
                 f"- Asset candidate rows: {_cell(row['asset_candidate_rows']) or 'none'}",
                 f"- Gap-sized asset candidate rows: {_cell(row['gap_sized_asset_candidate_rows']) or 'none'}",
+                f"- Gap-sized asset fit: {_cell(row['gap_sized_asset_candidate_fit']) or 'none'}",
                 f"- Actionable hypotheses: {_cell(row['actionable_hypotheses']) or 'none'}",
                 f"- Next Xolo question: {_cell(row['next_xolo_question'])}",
                 "",
@@ -189,7 +193,7 @@ def _next_question(
         rows = _format_rows(gap_sized_assets)
         return (
             f"For {period}, did Xolo's submitted register use {format_es(annual_balance)} EUR "
-            f"from this asset/category row as partial deduction or amortization: {rows}?"
+            f"from this asset/category row as partial deduction, direct-expense reclassification, or amortization: {rows}?"
         )
     if context_signal == "local_bridge_raw_non_asset_differs_from_xolo_raw":
         return (
@@ -267,6 +271,21 @@ def _format_rows(rows: list[dict[str, str]]) -> str:
         )
         for row in rows
     )
+
+
+def _format_asset_fit(rows: list[dict[str, str]], gap: Decimal) -> str:
+    if not rows:
+        return ""
+    parts = []
+    for row in rows:
+        gross = abs(_row_gross(row))
+        if gross == Decimal("0.00"):
+            continue
+        pct = (abs(gap) / gross * Decimal("100")).quantize(Decimal("0.01"))
+        parts.append(
+            f"{row.get('xolo_id', '') or row.get('number', '')}: gap {_money(abs(gap))} is {pct}% of {_money(gross)}"
+        )
+    return "; ".join(parts)
 
 
 def _format_hypotheses(rows: list[dict[str, str]]) -> str:

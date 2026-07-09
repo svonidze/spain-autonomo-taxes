@@ -137,8 +137,8 @@ def build_xolo_closure_request(
                 "",
                 "These rows explain why the P0 questions are currently prioritized. They still require Xolo's submitted register and asset schedule before any quarter can be closed.",
                 "",
-                "| Period | Context signal | Xolo non-asset | Bridge raw non-asset | Target minus Xolo non-asset | Gap-sized asset rows | Xolo question |",
-                "|---|---|---:|---:|---:|---|---|",
+                "| Period | Context signal | Xolo non-asset | Bridge raw non-asset | Target minus Xolo non-asset | Gap-sized asset rows | Asset fit | Xolo question |",
+                "|---|---|---:|---:|---:|---|---|---|",
             ]
         )
         for row in material_context_rows:
@@ -152,6 +152,7 @@ def build_xolo_closure_request(
                         _fmt(row["bridge_raw_non_asset_delta"]),
                         _fmt(row["target_minus_xolo_non_asset_eur"]),
                         _cell(row["gap_sized_asset_candidate_rows"] or "none"),
+                        _cell(row.get("gap_sized_asset_candidate_fit", "") or "none"),
                         _cell(row["next_xolo_question"]),
                     ]
                 )
