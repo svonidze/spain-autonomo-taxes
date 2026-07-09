@@ -52,6 +52,11 @@ from .ledger_projection import (
     write_ledger_projection_csv,
     write_ledger_projection_markdown,
 )
+from .local_archive_audit import (
+    build_local_archive_audit,
+    write_local_archive_audit_csv,
+    write_local_archive_audit_markdown,
+)
 from .modelo130 import (
     calculate_modelo130,
     extract_modelo130_values,
@@ -364,6 +369,15 @@ def main(argv: list[str] | None = None) -> int:
     audit_timing.add_argument("--out-csv", type=Path, required=True)
     audit_timing.add_argument("--out-md", type=Path, required=True)
 
+    audit_local_archive = subparsers.add_parser(
+        "audit-local-archive",
+        help="Compare local EXPENSE archive documents against raw Xolo expense API rows",
+    )
+    audit_local_archive.add_argument("--xolo-root", type=Path, required=True)
+    audit_local_archive.add_argument("--xolo-raw-expenses", type=Path, required=True)
+    audit_local_archive.add_argument("--out-csv", type=Path, required=True)
+    audit_local_archive.add_argument("--out-md", type=Path, required=True)
+
     args = parser.parse_args(argv)
     config = _load_config(args.config)
     _merge_config(args, config)
@@ -569,6 +583,12 @@ def main(argv: list[str] | None = None) -> int:
         write_timing_audit_csv(args.out_csv, rows)
         write_timing_audit_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} timing audit rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-local-archive":
+        rows = build_local_archive_audit(args.xolo_root, args.xolo_raw_expenses)
+        write_local_archive_audit_csv(args.out_csv, rows)
+        write_local_archive_audit_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} local archive audit rows to {args.out_csv} and {args.out_md}")
         return 0
     raise AssertionError(args.command)
 
