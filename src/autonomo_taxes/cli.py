@@ -303,6 +303,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     audit_root_cause_narrowing.add_argument("--quarter-closure", type=Path, required=True)
     audit_root_cause_narrowing.add_argument("--annual-constrained-assets", type=Path, required=True)
+    audit_root_cause_narrowing.add_argument("--annual-categories", type=Path)
     audit_root_cause_narrowing.add_argument("--modelo303-vat-crosscheck", type=Path, required=True)
     audit_root_cause_narrowing.add_argument("--out-csv", type=Path, required=True)
     audit_root_cause_narrowing.add_argument("--out-md", type=Path, required=True)
@@ -333,6 +334,7 @@ def main(argv: list[str] | None = None) -> int:
     audit_sequential_summary.add_argument("--quarter-closure", type=Path, required=True)
     audit_sequential_summary.add_argument("--source-findings", type=Path, required=True)
     audit_sequential_summary.add_argument("--modelo303-vat-crosscheck", type=Path)
+    audit_sequential_summary.add_argument("--annual-categories", type=Path)
     audit_sequential_summary.add_argument("--out-md", type=Path, required=True)
 
     args = parser.parse_args(argv)
@@ -489,6 +491,7 @@ def main(argv: list[str] | None = None) -> int:
             args.quarter_closure,
             args.annual_constrained_assets,
             args.modelo303_vat_crosscheck,
+            args.annual_categories,
         )
         write_root_cause_narrowing_csv(args.out_csv, rows)
         write_root_cause_narrowing_markdown(args.out_md, rows)
@@ -511,7 +514,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Wrote {len(packets)} quarter packets to {args.out_dir}")
         return 0
     if args.command == "audit-sequential-summary":
-        markdown = build_sequential_summary(args.quarter_closure, args.source_findings, args.modelo303_vat_crosscheck)
+        markdown = build_sequential_summary(
+            args.quarter_closure,
+            args.source_findings,
+            args.modelo303_vat_crosscheck,
+            args.annual_categories,
+        )
         write_sequential_summary(args.out_md, markdown)
         print(f"Wrote sequential audit summary to {args.out_md}")
         return 0
