@@ -209,6 +209,12 @@ from .source_book_content_check import (
     write_source_book_content_check_csv,
     write_source_book_content_check_markdown,
 )
+from .source_book_dropzone import (
+    build_source_book_dropzone_rows,
+    write_source_book_dropzone_csv,
+    write_source_book_dropzone_markdown,
+    write_source_book_dropzone_readme,
+)
 from .source_book_import import (
     build_source_book_import,
     write_source_book_import_csv,
@@ -820,6 +826,16 @@ def main(argv: list[str] | None = None) -> int:
     audit_source_book_content_check.add_argument("--out-csv", type=Path, required=True)
     audit_source_book_content_check.add_argument("--out-md", type=Path, required=True)
 
+    audit_source_book_dropzone = subparsers.add_parser(
+        "audit-source-book-dropzone",
+        help="Create a dropzone guide for expected Xolo source-book response files",
+    )
+    audit_source_book_dropzone.add_argument("--response-root", type=Path, required=True)
+    audit_source_book_dropzone.add_argument("--source-book-response-check", type=Path, required=True)
+    audit_source_book_dropzone.add_argument("--out-csv", type=Path, required=True)
+    audit_source_book_dropzone.add_argument("--out-md", type=Path, required=True)
+    audit_source_book_dropzone.add_argument("--dropzone-readme", type=Path)
+
     audit_source_book_import = subparsers.add_parser(
         "audit-source-book-import",
         help="Import content-ready Xolo source-book rows into a normalized evidence table",
@@ -1364,6 +1380,17 @@ def main(argv: list[str] | None = None) -> int:
         write_source_book_content_check_csv(args.out_csv, rows)
         write_source_book_content_check_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} source-book content-check rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-source-book-dropzone":
+        rows = build_source_book_dropzone_rows(
+            source_book_response_check_csv=args.source_book_response_check,
+            response_root=args.response_root,
+        )
+        write_source_book_dropzone_csv(args.out_csv, rows)
+        write_source_book_dropzone_markdown(args.out_md, rows, response_root=args.response_root)
+        if args.dropzone_readme:
+            write_source_book_dropzone_readme(args.dropzone_readme, rows, response_root=args.response_root)
+        print(f"Wrote {len(rows)} source-book dropzone rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-source-book-import":
         rows = build_source_book_import(
