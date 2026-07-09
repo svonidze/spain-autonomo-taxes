@@ -105,7 +105,18 @@ def _post_page(cookie: str, csrf: str, payload: dict[str, Any]) -> dict[str, Any
     )
     try:
         with urlopen(request, timeout=30) as response:
-            return json.loads(response.read().decode("utf-8"))
+            raw = response.read()
+            text = raw.decode("utf-8", errors="replace")
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError as exc:
+                content_type = response.headers.get("content-type", "")
+                raise SystemExit(
+                    "Xolo request returned non-JSON response "
+                    f"(HTTP {response.status}, content-type {content_type}). "
+                    "The session is likely expired or redirected to login. "
+                    f"Response excerpt: {_plain_text(text)[:300]}"
+                ) from exc
     except HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
         raise SystemExit(f"Xolo request failed: HTTP {exc.code}: {detail[:500]}") from exc
@@ -163,6 +174,11 @@ def _text(value: Any) -> str:
         return ""
     text = re.sub(r"<[^>]*>", "", str(value))
     return html.unescape(text).strip()
+
+
+def _plain_text(value: str) -> str:
+    text = re.sub(r"<[^>]*>", " ", value)
+    return re.sub(r"\s+", " ", html.unescape(text)).strip()
 
 
 def _url_from_party(value: str) -> str:
