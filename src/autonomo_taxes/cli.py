@@ -50,6 +50,11 @@ from .asset_schedule_intake import (
     write_asset_schedule_intake_csv,
     write_asset_schedule_intake_markdown,
 )
+from .chronological_walkthrough import (
+    build_chronological_walkthrough,
+    write_chronological_walkthrough_csv,
+    write_chronological_walkthrough_markdown,
+)
 from .closure_request import build_xolo_closure_request, write_xolo_closure_request
 from .evidence_inventory import (
     build_evidence_inventory,
@@ -650,6 +655,16 @@ def main(argv: list[str] | None = None) -> int:
     audit_sequential_summary.add_argument("--asset-gap-matrix", type=Path)
     audit_sequential_summary.add_argument("--out-md", type=Path, required=True)
 
+    audit_chronological_walkthrough = subparsers.add_parser(
+        "audit-chronological-walkthrough",
+        help="Walk Modelo 130 quarters in filing order with the amortization gate for each period",
+    )
+    audit_chronological_walkthrough.add_argument("--quarter-closure", type=Path, required=True)
+    audit_chronological_walkthrough.add_argument("--asset-gap-matrix", type=Path, required=True)
+    audit_chronological_walkthrough.add_argument("--source-findings", type=Path)
+    audit_chronological_walkthrough.add_argument("--out-csv", type=Path, required=True)
+    audit_chronological_walkthrough.add_argument("--out-md", type=Path, required=True)
+
     audit_timing = subparsers.add_parser(
         "audit-timing",
         help="Diagnose timing, carry-forward, and netting patterns across Modelo 130 quarter balances",
@@ -1060,6 +1075,16 @@ def main(argv: list[str] | None = None) -> int:
         )
         write_sequential_summary(args.out_md, markdown)
         print(f"Wrote sequential audit summary to {args.out_md}")
+        return 0
+    if args.command == "audit-chronological-walkthrough":
+        rows = build_chronological_walkthrough(
+            args.quarter_closure,
+            args.asset_gap_matrix,
+            args.source_findings,
+        )
+        write_chronological_walkthrough_csv(args.out_csv, rows)
+        write_chronological_walkthrough_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} chronological walkthrough rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-timing":
         rows = build_timing_audit(args.quarter_closure, args.source_findings)
