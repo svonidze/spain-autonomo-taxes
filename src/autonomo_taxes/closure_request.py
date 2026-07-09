@@ -16,6 +16,7 @@ def build_xolo_closure_request(
     material_gap_drilldown_csv: Path | None = None,
     material_gap_context_csv: Path | None = None,
     p1_near_fit_context_csv: Path | None = None,
+    p2_near_target_context_csv: Path | None = None,
 ) -> str:
     rows = _load_rows(quarter_closure_csv)
     material = [row for row in rows if row["closure_status"] == "blocked_material_unexplained_adjustment"]
@@ -29,6 +30,7 @@ def build_xolo_closure_request(
     material_gap_rows = _material_gap_highlights(material_gap_drilldown_csv) if material_gap_drilldown_csv else []
     material_context_rows = _material_context_highlights(material_gap_context_csv) if material_gap_context_csv else []
     p1_context_rows = _p1_context_highlights(p1_near_fit_context_csv) if p1_near_fit_context_csv else []
+    p2_context_rows = _p2_context_highlights(p2_near_target_context_csv) if p2_near_target_context_csv else []
 
     lines = [
         "# Xolo Modelo 130 Closure Request",
@@ -185,6 +187,37 @@ def build_xolo_closure_request(
                         _fmt(row["diff_to_target_eur"]),
                         _cell(row["components"]),
                         _cell(row["xolo_question"]),
+                    ]
+                )
+                + " |"
+            )
+
+    if p2_context_rows:
+        lines.extend(
+            [
+                "",
+                "## P2 Near-Target Context",
+                "",
+                "These are lower-priority near-target forks that still require Xolo's submitted register and asset schedule. Please confirm row inclusion and deductible basis rather than treating the arithmetic fits as proof.",
+                "",
+                "| Period | Signal | Row | Target | Annual balance | Amortization | Excluded/netted | Finding | Impact |",
+                "|---|---|---|---:|---:|---:|---:|---|---|",
+            ]
+        )
+        for row in p2_context_rows:
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        row["period"],
+                        _cell(row["context_signal"]),
+                        _cell(row["row_ref"]),
+                        _fmt(row["target_casilla_02_delta"]),
+                        _fmt(row["annual_constrained_balance_to_target"]),
+                        _fmt(row["annual_constrained_amortization_delta"]),
+                        _fmt(row["nearest_excluded_or_netted_eur"]),
+                        _cell(row["finding"]),
+                        _cell(row["impact"]),
                     ]
                 )
                 + " |"
@@ -451,6 +484,10 @@ def _material_context_highlights(path: Path) -> list[dict[str, str]]:
 
 def _p1_context_highlights(path: Path) -> list[dict[str, str]]:
     return sorted(_load_rows(path), key=lambda row: row["period"])
+
+
+def _p2_context_highlights(path: Path) -> list[dict[str, str]]:
+    return sorted(_load_rows(path), key=lambda row: (row["period"], row["context_signal"], row["row_ref"]))
 
 
 def _row_label(row: dict[str, str]) -> str:
