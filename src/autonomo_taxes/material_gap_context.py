@@ -132,7 +132,7 @@ def write_material_gap_context_markdown(path: Path, rows: list[dict[str, str]]) 
         "# Modelo 130 Material Gap Context",
         "",
         "This report adds raw Xolo ledger context to the P0 material-gap quarters.",
-        "It does not confirm submitted Modelo 130 treatment; it identifies the shortest row-level questions for Xolo's filed register and asset schedule.",
+        "It does not confirm submitted Modelo 130 treatment; it identifies the shortest row-level questions for Xolo's source books and asset schedule.",
         "",
         "## Summary",
         "",
@@ -206,7 +206,7 @@ def _context_signal(
         return "local_bridge_differs_from_xolo_raw_with_strong_cross_quarter_hypotheses"
     if abs(bridge_vs_xolo) > Decimal("1.00"):
         return "local_bridge_raw_non_asset_differs_from_xolo_raw"
-    return "material_hypotheses_require_register_confirmation"
+    return "material_hypotheses_require_source_book_confirmation"
 
 
 def _next_question(

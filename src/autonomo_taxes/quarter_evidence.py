@@ -214,7 +214,7 @@ def _status(diff: Decimal) -> str:
 
 def _recommended_next_evidence(diff: Decimal) -> str:
     if abs(diff) <= Decimal("1.00"):
-        return "Confirm that the submitted expense register uses the same rows and asset schedule."
+        return "Confirm that Xolo's source books use the same rows and asset schedule."
     if diff > 0:
         return "Get Xolo row-level exclusions, VAT-base/gross basis decisions, or reversal rows for this quarter."
     return "Get Xolo catch-up, reclassification, amortization, or annual adjustment rows for this quarter."

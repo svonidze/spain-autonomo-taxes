@@ -162,17 +162,17 @@ def _acceptance_gate(
 ) -> tuple[str, str]:
     closure_status = closure["closure_status"]
     if any(_is_actionable_material(row) for row in material):
-        return "not_closed_material_gap_requires_xolo_register", "P0"
+        return "not_closed_material_gap_requires_source_books", "P0"
     if closure_status == "blocked_material_unexplained_adjustment":
-        return "not_closed_material_status_near_fit_requires_register", "P1"
+        return "not_closed_material_status_near_fit_requires_source_books", "P1"
     if closure_status == "pending_row_exclusion_confirmation":
-        return "not_closed_row_exclusion_requires_register", "P1"
+        return "not_closed_row_exclusion_requires_source_books", "P1"
     if abs(annual_balance) <= Decimal("1.00"):
         return "not_closed_near_target_requires_asset_schedule", "P2"
     if "asset" in closure_status:
         return "not_closed_minor_residual_requires_asset_schedule", "P2"
     if "minor" in closure_status or balance["balance_signal"] == "minor_residual_pending_confirmation":
-        return "not_closed_minor_residual_requires_register", "P2"
+        return "not_closed_minor_residual_requires_source_books", "P2"
     return "not_closed_requires_xolo_evidence", "P2"
 
 
@@ -180,8 +180,10 @@ def _required_evidence(closure: dict[str, str], material: list[dict[str, str]]) 
     evidence = closure.get("required_xolo_evidence", "").strip()
     material_questions = _material_questions(material)
     if material_questions:
-        return "; ".join(part for part in [evidence, "material-gap row basis from source books"] if part)
-    return evidence or "source-book export with deductible EUR amount per row"
+        return source_book_wording(
+            "; ".join(part for part in [evidence, "material-gap row basis from source books"] if part)
+        )
+    return source_book_wording(evidence or "source-book export with deductible EUR amount per row")
 
 
 def _next_action(
@@ -190,14 +192,14 @@ def _next_action(
     acceptance_status: str,
 ) -> str:
     questions = _material_questions(material)
-    if acceptance_status == "not_closed_material_gap_requires_xolo_register" and questions:
+    if acceptance_status == "not_closed_material_gap_requires_source_books" and questions:
         return "Resolve material-gap question(s): " + " | ".join(questions)
-    if acceptance_status == "not_closed_material_status_near_fit_requires_register":
+    if acceptance_status == "not_closed_material_status_near_fit_requires_source_books":
         return (
             "Confirm the source books and asset schedule before treating this near-fit material-status "
             "quarter as closed."
         )
-    if acceptance_status == "not_closed_row_exclusion_requires_register":
+    if acceptance_status == "not_closed_row_exclusion_requires_source_books":
         return "Confirm whether the candidate rows were excluded, netted, deferred, or used on another tax basis."
     if acceptance_status.startswith("not_closed_near_target") or acceptance_status.startswith("not_closed_minor"):
         return (
@@ -226,7 +228,8 @@ def _material_summary(rows: list[dict[str, str]]) -> str:
     for hypothesis_id, group in sorted(grouped.items()):
         first = group[0]
         components = [
-            f"{row['component']} {_fmt(row['effect_closes_gap_eur'])} counts={row['counts_in_best_bridge']}"
+            f"{source_book_wording(row['component'])} {_fmt(row['effect_closes_gap_eur'])} "
+            f"counts={row['counts_in_best_bridge']}"
             for row in group
         ]
         summaries.append(
@@ -243,7 +246,7 @@ def _material_questions(rows: list[dict[str, str]]) -> list[str]:
     for row in rows:
         if not _is_actionable_material(row):
             continue
-        question = row.get("xolo_question", "").strip()
+        question = source_book_wording(row.get("xolo_question", "").strip())
         if not question or question in seen:
             continue
         seen.add(question)

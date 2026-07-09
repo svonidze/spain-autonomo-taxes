@@ -111,7 +111,7 @@ def write_annual_category_reconciliation_markdown(path: Path, rows: list[dict[st
         "# Modelo 100 Annual Category Reconciliation",
         "",
         "This report compares annual Modelo 100 expense categories with raw Xolo expense categories.",
-        "It is an annual diagnostic lens: quarterly Modelo 130 closure still requires Xolo's submitted row-level register and asset schedule.",
+        "It is an annual diagnostic lens: quarterly Modelo 130 closure still requires Xolo's source-book row evidence and asset schedule.",
         "USD rows are converted with the corresponding Q4 derived income FX used in the historical Modelo 130 audit.",
         "Modelo 100 service categories are compared primarily against raw Xolo VAT-base/subtotal amounts; gross amounts remain as a VAT diagnostic.",
         "",

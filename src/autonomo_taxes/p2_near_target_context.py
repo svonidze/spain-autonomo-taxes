@@ -4,6 +4,7 @@ import csv
 from pathlib import Path
 
 from .money import format_es, parse_amount
+from .source_book_wording import source_book_wording
 
 
 P2_NEAR_TARGET_CONTEXT_FIELDS = [
@@ -55,8 +56,8 @@ def build_p2_near_target_context(
                 "annual_constrained_balance_to_target": bridge["annual_constrained_balance_to_target"],
                 "annual_constrained_amortization_delta": bridge["annual_constrained_amortization_delta"],
                 "nearest_excluded_or_netted_eur": bridge["nearest_excluded_or_netted_eur"],
-                "finding": source["finding"],
-                "impact": source["impact"],
+                "finding": source_book_wording(source["finding"]),
+                "impact": source_book_wording(source["impact"]),
                 "context_signal": _context_signal(source),
             }
         )
@@ -154,12 +155,12 @@ def _context_signal(row: dict[str, str]) -> str:
         return "secondary_near_target_fork"
     if row_ref.startswith("scenario_q2_2026"):
         return "q2_2026_original_gap_fork"
-    return "primary_near_target_fork_requires_register"
+    return "primary_near_target_fork_requires_source_books"
 
 
 def _signal_order(signal: str) -> int:
     order = {
-        "primary_near_target_fork_requires_register": 0,
+        "primary_near_target_fork_requires_source_books": 0,
         "asset_placeholder_requires_schedule": 1,
         "q2_2026_original_gap_fork": 2,
         "reta_treatment_requires_xolo_confirmation": 3,
@@ -185,4 +186,4 @@ def _fmt(value: str) -> str:
 
 
 def _cell(value: str) -> str:
-    return value.replace("|", "\\|").replace("\n", " ")
+    return source_book_wording(value).replace("|", "\\|").replace("\n", " ")

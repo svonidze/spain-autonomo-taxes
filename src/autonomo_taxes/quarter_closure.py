@@ -151,7 +151,7 @@ def _closure_status(has_material: bool, has_asset: bool, has_nearest: bool, has_
         return "pending_row_exclusion_confirmation"
     if has_minor:
         return "pending_minor_residual_confirmation"
-    return "pending_submitted_register_confirmation"
+    return "pending_source_book_confirmation"
 
 
 def _required_evidence(has_material: bool, has_asset: bool, has_nearest: bool, has_minor: bool) -> str:

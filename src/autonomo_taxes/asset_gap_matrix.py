@@ -262,7 +262,7 @@ def _next_action(
             "Asset schedule can arithmetically explain this pre-exclusion gap; confirm per-asset basis, rate, start date, quarter amount, and YTD amount."
         )
     return (
-        "Confirm the submitted asset schedule and row register; candidate amortization "
+        "Confirm the source-book row set and asset schedule; candidate amortization "
         f"{format_es(candidate_amortization)} and annual-constrained {format_es(annual_constrained)} are not independently verified."
     )
 

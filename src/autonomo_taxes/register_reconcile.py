@@ -95,9 +95,9 @@ def write_register_reconciliation_csv(path: Path, rows: list[dict[str, str]]) ->
 def write_register_reconciliation_markdown(path: Path, rows: list[dict[str, str]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
-        "# Modelo 130 Register Reconciliation",
+        "# Modelo 130 Source-Book Reconciliation",
         "",
-        "This report compares filled `confirmed_*` register-review rows against submitted Modelo 130 `casilla 02` quarter movements.",
+        "This report compares filled `confirmed_*` source-book review rows against submitted Modelo 130 `casilla 02` quarter movements.",
         "Blank confirmation fields are treated as open work, not as zero.",
         "",
         "| Period | Status | Target 02 delta | Confirmed delta | Diff | Open high | Open total |",
@@ -203,8 +203,8 @@ def _notes(open_total: int, rows_needing_amount: list[str], diff: Decimal) -> st
     if open_total:
         return "Open rows remain; confirmed delta is partial."
     if abs(diff) <= Decimal("0.02"):
-        return "Confirmed register matches submitted casilla 02 movement."
-    return "All rows are closed but confirmed register does not match submitted casilla 02 movement."
+        return "Confirmed source-book rows match submitted casilla 02 movement."
+    return "All rows are closed but confirmed source-book rows do not match submitted casilla 02 movement."
 
 
 def _row_label(row: dict[str, str]) -> str:

@@ -292,7 +292,7 @@ def write_asset_audit_markdown(
             "- Negative residuals point to row exclusion, netting, VAT/base treatment, or later annual true-up rather than missing asset amortization alone.",
             "- The fixed-basis columns avoid revaluing old USD assets with each later quarter's derived income FX when Xolo detail-page EUR basis is unavailable.",
             "- The scenario sweep is a candidate reconciliation against annual Modelo 100 `0208`; it is not confirmed Xolo tax treatment.",
-            "- Candidate quarterly reconciliation uses the closest annual scenario only as a diagnostic lens; exact quarterly treatment still requires Xolo's submitted per-row register.",
+            "- Candidate quarterly reconciliation uses the closest annual scenario only as a diagnostic lens; exact quarterly treatment still requires Xolo's source-book row detail.",
             "",
         ]
     )

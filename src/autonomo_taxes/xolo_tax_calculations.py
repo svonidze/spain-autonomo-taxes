@@ -129,7 +129,7 @@ def write_xolo_tax_calculations_markdown(path: Path, rows: list[dict[str, str]])
         "# Xolo Modelo 130 Calculations",
         "",
         "Fetched from Xolo's authenticated tax-report calculation endpoint.",
-        "These rows confirm Xolo's quarter-level YTD calculation, but they are not the submitted row-level expense register.",
+        "These rows confirm Xolo's quarter-level YTD calculation, but they are not source-book row evidence.",
         "",
         "| Period | Status | Report id | File id | Sales YTD | Expenses YTD | Payable | Submitted |",
         "|---|---|---:|---:|---:|---:|---:|---|",

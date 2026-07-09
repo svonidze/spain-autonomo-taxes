@@ -153,7 +153,7 @@ def _question(classification: str, row: dict[str, str], root: dict[str, str]) ->
     if classification == "missing_catch_up_or_reclassification":
         return (
             f"For {period}, submitted casilla 02 is above the local model by {amount}; "
-            "which register row, catch-up, or reclassification explains it?"
+            "which source-book row, catch-up, or reclassification explains it?"
         )
     if classification == "unresolved_after_nearest_subset":
         return (
