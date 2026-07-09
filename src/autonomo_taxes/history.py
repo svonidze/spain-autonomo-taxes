@@ -40,6 +40,9 @@ class RawXoloExpense:
     amount_original: Decimal
     currency: str
     subtotal_amount: Decimal | None
+    xolo_url: str = ""
+    xolo_id: str = ""
+    status: str = ""
 
     @property
     def is_asset_like(self) -> bool:
@@ -230,6 +233,9 @@ def load_raw_xolo_expenses(path: Path) -> list[RawXoloExpense]:
                     amount_original=amount,
                     currency=(row.get("currency") or "").upper(),
                     subtotal_amount=_optional_amount(row.get("subtotal_amount")),
+                    xolo_url=row.get("xolo_url") or "",
+                    xolo_id=row.get("xolo_id") or "",
+                    status=row.get("status") or "",
                 )
             )
     return rows
