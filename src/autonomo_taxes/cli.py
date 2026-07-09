@@ -47,6 +47,11 @@ from .modelo130 import (
     extract_modelo130_values,
     previous_positive_payments_with_warnings,
 )
+from .modelo303 import (
+    build_modelo303_vat_crosscheck,
+    write_modelo303_vat_crosscheck_csv,
+    write_modelo303_vat_crosscheck_markdown,
+)
 from .money import cents, format_es, parse_amount, parse_rate
 from .parsers import (
     LedgerEntry,
@@ -158,6 +163,15 @@ def main(argv: list[str] | None = None) -> int:
     audit_annual.add_argument("--xolo-raw-expenses", type=Path, required=True)
     audit_annual.add_argument("--out-csv", type=Path, required=True)
     audit_annual.add_argument("--out-md", type=Path, required=True)
+
+    audit_modelo303 = subparsers.add_parser(
+        "audit-modelo303-vat",
+        help="Cross-check Modelo 303 VAT totals against raw Xolo VAT-bearing expense rows",
+    )
+    audit_modelo303.add_argument("--tax-report-dir", type=Path, required=True)
+    audit_modelo303.add_argument("--xolo-raw-expenses", type=Path, required=True)
+    audit_modelo303.add_argument("--out-csv", type=Path, required=True)
+    audit_modelo303.add_argument("--out-md", type=Path, required=True)
 
     audit_assets = subparsers.add_parser("audit-assets", help="Build an explicit asset/amortization audit table")
     audit_assets.add_argument("--history-audit", type=Path, required=True)
@@ -273,6 +287,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     audit_sequential_summary.add_argument("--quarter-closure", type=Path, required=True)
     audit_sequential_summary.add_argument("--source-findings", type=Path, required=True)
+    audit_sequential_summary.add_argument("--modelo303-vat-crosscheck", type=Path)
     audit_sequential_summary.add_argument("--out-md", type=Path, required=True)
 
     args = parser.parse_args(argv)
@@ -315,6 +330,12 @@ def main(argv: list[str] | None = None) -> int:
         write_annual_comparison_csv(args.out_csv, rows)
         write_annual_comparison_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} annual comparison rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-modelo303-vat":
+        rows = build_modelo303_vat_crosscheck(args.tax_report_dir, args.xolo_raw_expenses)
+        write_modelo303_vat_crosscheck_csv(args.out_csv, rows)
+        write_modelo303_vat_crosscheck_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} Modelo 303 VAT cross-check rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-assets":
         if args.out_scenarios_csv and not args.modelo100_summary:
@@ -419,7 +440,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Wrote {len(packets)} quarter packets to {args.out_dir}")
         return 0
     if args.command == "audit-sequential-summary":
-        markdown = build_sequential_summary(args.quarter_closure, args.source_findings)
+        markdown = build_sequential_summary(args.quarter_closure, args.source_findings, args.modelo303_vat_crosscheck)
         write_sequential_summary(args.out_md, markdown)
         print(f"Wrote sequential audit summary to {args.out_md}")
         return 0
