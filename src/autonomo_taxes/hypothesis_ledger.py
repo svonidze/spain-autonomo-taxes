@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
-from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
@@ -17,12 +16,16 @@ HYPOTHESIS_SUMMARY_FIELDS = [
     "excluded_nearest_subset_eur",
     "excluded_asset_direct_eur",
     "candidate_amortization_delta",
+    "pre_plug_model_minus_target_eur",
     "balancing_adjustment_eur",
+    "balancing_adjustment_pct_of_target",
+    "balancing_adjustment_materiality",
     "hypothesis_ledger_delta",
     "hypothesis_minus_target_delta",
     "included_raw_rows",
     "excluded_nearest_rows",
     "excluded_asset_rows",
+    "ignored_non_xolo_rows",
     "status",
     "open_confirmation",
 ]
@@ -52,12 +55,15 @@ def build_hypothesis_ledger(
     summary_rows: list[dict[str, str]] = []
 
     for candidate in candidate_rows:
-        year = int(candidate["year"])
-        quarter = int(candidate["quarter"])
-        period = candidate["period"]
-        target_delta = parse_amount(candidate["target_casilla_02_delta"])
-        amortization_delta = parse_amount(candidate["candidate_amortization_delta"])
-        period_rows = [row for row in audit_rows.get(period, []) if row["row_kind"] == "xolo_expense"]
+        year = int((candidate.get("year") or "").strip())
+        quarter = int((candidate.get("quarter") or "").strip())
+        period = (candidate.get("period") or "").strip()
+        target_delta = _amount_or_zero(candidate.get("target_casilla_02_delta"))
+        amortization_delta = _amount_or_zero(candidate.get("candidate_amortization_delta"))
+        all_period_rows = audit_rows.get(period, [])
+        _validate_row_kinds(period, all_period_rows)
+        period_rows = [row for row in all_period_rows if row["row_kind"] == "xolo_expense"]
+        ignored_non_xolo_rows = len(all_period_rows) - len(period_rows)
 
         included_raw = Decimal("0.00")
         excluded_nearest = Decimal("0.00")
@@ -85,12 +91,16 @@ def build_hypothesis_ledger(
             ledger_rows.append(_synthetic_row(year, quarter, period, "AMORT", amortization_delta))
 
         before_adjustment = cents(included_raw + amortization_delta)
+        pre_plug_model_minus_target = cents(before_adjustment - target_delta)
         balancing_adjustment = cents(target_delta - before_adjustment)
         if balancing_adjustment != Decimal("0.00"):
             ledger_rows.append(_synthetic_row(year, quarter, period, "BALANCE", balancing_adjustment))
 
         hypothesis_delta = cents(before_adjustment + balancing_adjustment)
         diff = cents(hypothesis_delta - target_delta)
+        materiality = _materiality(balancing_adjustment, target_delta)
+        if diff != Decimal("0.00"):
+            raise AssertionError(f"Hypothesis ledger failed to balance {period}: {diff}")
         summary_rows.append(
             {
                 "period": period,
@@ -99,16 +109,21 @@ def build_hypothesis_ledger(
                 "excluded_nearest_subset_eur": _money(excluded_nearest),
                 "excluded_asset_direct_eur": _money(excluded_asset),
                 "candidate_amortization_delta": _money(amortization_delta),
+                "pre_plug_model_minus_target_eur": _money(pre_plug_model_minus_target),
                 "balancing_adjustment_eur": _money(balancing_adjustment),
+                "balancing_adjustment_pct_of_target": _percent(balancing_adjustment, target_delta),
+                "balancing_adjustment_materiality": materiality,
                 "hypothesis_ledger_delta": _money(hypothesis_delta),
                 "hypothesis_minus_target_delta": _money(diff),
                 "included_raw_rows": str(included_raw_rows),
                 "excluded_nearest_rows": str(excluded_nearest_rows),
                 "excluded_asset_rows": str(excluded_asset_rows),
-                "status": _status(diff, balancing_adjustment),
+                "ignored_non_xolo_rows": str(ignored_non_xolo_rows),
+                "status": _status(balancing_adjustment, target_delta),
                 "open_confirmation": _open_confirmation(
                     amortization_delta,
                     balancing_adjustment,
+                    materiality,
                     excluded_nearest_rows,
                     excluded_asset_rows,
                 ),
@@ -133,10 +148,11 @@ def write_hypothesis_markdown(path: Path, result: HypothesisLedger) -> None:
         "",
         "This report converts the row audit into an unconfirmed ledger scenario.",
         "It is useful for checking every quarter arithmetically, but it is not proof of Xolo's submitted register.",
+        "The post-plug diff is zero by construction; the useful signal is the pre-plug residual and balancing adjustment size.",
         "Rows marked as candidate amortization or balancing adjustments require Xolo confirmation before future filing use.",
         "",
-        "| Period | Status | Target delta | Raw included | Nearest excluded | Assets direct excluded | Amortization | Balance | Hypothesis diff |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|",
+        "| Period | Status | Target delta | Raw included | Nearest excluded | Assets direct excluded | Amortization | Pre-plug residual | Balance | Plug % | Post-plug diff |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in result.summary_rows:
         lines.append(
@@ -150,7 +166,9 @@ def write_hypothesis_markdown(path: Path, result: HypothesisLedger) -> None:
                     _fmt(row["excluded_nearest_subset_eur"]),
                     _fmt(row["excluded_asset_direct_eur"]),
                     _fmt(row["candidate_amortization_delta"]),
+                    _fmt(row["pre_plug_model_minus_target_eur"]),
                     _fmt(row["balancing_adjustment_eur"]),
+                    row["balancing_adjustment_pct_of_target"] + "%",
                     _fmt(row["hypothesis_minus_target_delta"]),
                 ]
             )
@@ -173,6 +191,13 @@ def _group_by_period(rows: list[dict[str, str]]) -> dict[str, list[dict[str, str
     for row in rows:
         grouped.setdefault(row["period"], []).append(row)
     return grouped
+
+
+def _validate_row_kinds(period: str, rows: list[dict[str, str]]) -> None:
+    allowed = {"xolo_expense", "synthetic_gap"}
+    unexpected = sorted({row.get("row_kind", "") for row in rows} - allowed)
+    if unexpected:
+        raise ValueError(f"Unexpected row_kind values for {period}: {', '.join(unexpected)}")
 
 
 def _include_raw_row(row: dict[str, str]) -> bool:
@@ -205,10 +230,7 @@ def _raw_ledger_row(
         "include_in_modelo130": "yes" if include else "no",
         "source_document_path": row["xolo_url"],
         "confidence": _confidence(classification),
-        "notes": (
-            f"Pending confirmation: annual-best hypothesis treats row as {classification}. "
-            f"{row['notes']}"
-        ).strip(),
+        "notes": (f"Annual-best hypothesis treats row as {classification}. {row['notes']}").strip(),
     }
 
 
@@ -264,25 +286,26 @@ def _synthetic_row(
 
 def _confidence(classification: str) -> str:
     if classification == "asset_amortization_candidate":
-        return "inferred_hypothesis_asset_direct_excluded"
+        return "hypothesis_asset_direct_excluded"
     if classification == "nearest_exclusion_candidate":
-        return "inferred_hypothesis_nearest_subset_excluded"
+        return "hypothesis_nearest_subset_excluded"
     if classification == "raw_non_asset_context_for_catch_up":
-        return "inferred_hypothesis_raw_gross_context"
-    return "inferred_hypothesis_raw_gross"
+        return "hypothesis_raw_gross_context"
+    return "hypothesis_raw_gross"
 
 
-def _status(diff: Decimal, balancing_adjustment: Decimal) -> str:
-    if abs(diff) > Decimal("0.02"):
-        return "hypothesis_mismatch"
+def _status(balancing_adjustment: Decimal, target_delta: Decimal) -> str:
     if balancing_adjustment == Decimal("0.00"):
         return "matches_target_without_balancing_adjustment"
-    return "matches_target_with_inferred_balancing_adjustment"
+    if _materiality(balancing_adjustment, target_delta) == "material":
+        return "matches_target_only_via_material_unexplained_plug"
+    return "matches_target_with_minor_inferred_balancing_adjustment"
 
 
 def _open_confirmation(
     amortization_delta: Decimal,
     balancing_adjustment: Decimal,
+    materiality: str,
     excluded_nearest_rows: int,
     excluded_asset_rows: int,
 ) -> str:
@@ -294,10 +317,35 @@ def _open_confirmation(
     if excluded_nearest_rows:
         parts.append("confirm nearest-subset excluded/netted rows")
     if balancing_adjustment != Decimal("0.00"):
-        parts.append("confirm balancing adjustment source")
+        if materiality == "material":
+            parts.append("confirm material balancing adjustment source")
+        else:
+            parts.append("confirm minor balancing adjustment source")
     if not parts:
         return "confirm raw gross treatment"
     return "; ".join(parts)
+
+
+def _amount_or_zero(value: str | None) -> Decimal:
+    if value is None or value.strip() == "":
+        return Decimal("0.00")
+    return parse_amount(value)
+
+
+def _materiality(balancing_adjustment: Decimal, target_delta: Decimal) -> str:
+    if balancing_adjustment == Decimal("0.00"):
+        return "none"
+    if abs(balancing_adjustment) > Decimal("20.00"):
+        return "material"
+    if abs(target_delta) > Decimal("0.00") and (abs(balancing_adjustment) / abs(target_delta)) > Decimal("0.02"):
+        return "material"
+    return "minor"
+
+
+def _percent(value: Decimal, target: Decimal) -> str:
+    if target == Decimal("0.00"):
+        return "0.00"
+    return f"{(abs(value) / abs(target) * Decimal('100')).quantize(Decimal('0.01')):.2f}"
 
 
 def _money(value: Decimal) -> str:
