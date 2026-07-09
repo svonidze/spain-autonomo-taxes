@@ -11,4 +11,5 @@ dist/
 *.egg-info/
 .env
 data/xolo_live_*
+data/xolo-expense-page-*.json
 data/*.secret.*

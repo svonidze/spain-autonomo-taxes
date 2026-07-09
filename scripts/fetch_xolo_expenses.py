@@ -1,15 +1,24 @@
 from __future__ import annotations
 
 import argparse
-import csv
-import html
 import json
 import os
 from pathlib import Path
-import re
+import sys
 from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+from autonomo_taxes.xolo_api_export import (  # noqa: E402
+    normalize_xolo_api_row,
+    write_combined_xolo_api_json,
+    write_raw_xolo_expense_csv,
+)
 
 
 ENDPOINT = "https://app.xolo.io/selfservice/expense/data"
@@ -48,39 +57,14 @@ def main() -> int:
         data = page.get("data") or []
         pages.append(page)
         for item in data:
-            rows.append(_normalize_row(item))
+            rows.append(normalize_xolo_api_row(item))
         total = int(page.get("recordsFiltered") or page.get("recordsTotal") or len(rows))
         start += args.length
         if not data or start >= total:
             break
 
-    args.out_json.parent.mkdir(parents=True, exist_ok=True)
-    args.out_json.write_text(json.dumps({"pages": pages}, indent=2, ensure_ascii=False), encoding="utf-8")
-    args.out_csv.parent.mkdir(parents=True, exist_ok=True)
-    with args.out_csv.open("w", newline="", encoding="utf-8") as handle:
-        fieldnames = [
-            "xolo_url",
-            "xolo_id",
-            "recipient",
-            "type",
-            "number",
-            "date",
-            "payment_date",
-            "amount_text",
-            "amount_original",
-            "currency",
-            "gross_amount",
-            "match_amount",
-            "subtotal_amount",
-            "vat_amount",
-            "vat_percentages",
-            "irpf_amount",
-            "irpf_percentage",
-            "status",
-        ]
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
+    write_combined_xolo_api_json(args.out_json, pages)
+    write_raw_xolo_expense_csv(args.out_csv, rows)
 
     print(f"Fetched {len(rows)} expense rows into {args.out_csv}")
     return 0
@@ -142,71 +126,12 @@ def _payload(draw: int, start: int, length: int) -> dict[str, Any]:
     }
 
 
-def _normalize_row(item: dict[str, Any]) -> dict[str, str]:
-    party_html = str(item.get("party") or "")
-    amount_text = _text(item.get("amountString") or item.get("amount"))
-    amount, detected_currency = _split_amount(amount_text)
-    xolo_id = str(item.get("id") or _id_from_party(party_html))
-    return {
-        "xolo_url": _url_from_id(xolo_id) or _url_from_party(party_html),
-        "xolo_id": xolo_id,
-        "recipient": _text(party_html),
-        "type": _text(item.get("categoryText")),
-        "number": _text(item.get("number")),
-        "date": _text(item.get("dateString") or item.get("date")),
-        "payment_date": _text(item.get("paymentDateString") or item.get("paymentDate")),
-        "amount_text": amount_text,
-        "amount_original": _text(item.get("amount") if item.get("amount") is not None else amount),
-        "currency": _text(item.get("currency")) or detected_currency,
-        "gross_amount": _text(item.get("amount")),
-        "match_amount": _text(item.get("matchAmount")),
-        "subtotal_amount": _text(item.get("subTotalAmount")),
-        "vat_amount": _text(item.get("vatAmount")),
-        "vat_percentages": _text(item.get("vatPercentages")),
-        "irpf_amount": _text(item.get("irpfAmount")),
-        "irpf_percentage": _text(item.get("irpfPercentage")),
-        "status": _text(item.get("status")),
-    }
-
-
-def _text(value: Any) -> str:
-    if value is None:
-        return ""
-    text = re.sub(r"<[^>]*>", "", str(value))
-    return html.unescape(text).strip()
-
-
 def _plain_text(value: str) -> str:
+    import html
+    import re
+
     text = re.sub(r"<[^>]*>", " ", value)
     return re.sub(r"\s+", " ", html.unescape(text)).strip()
-
-
-def _url_from_party(value: str) -> str:
-    match = re.search(r'href="([^"]+)"', value)
-    if not match:
-        return ""
-    url = html.unescape(match.group(1))
-    if url.startswith("/"):
-        return "https://app.xolo.io" + url
-    return url
-
-
-def _id_from_party(value: str) -> str:
-    url = _url_from_party(value)
-    match = re.search(r"/invoice/(\d+)/", url)
-    return match.group(1) if match else ""
-
-
-def _url_from_id(value: str) -> str:
-    if not value:
-        return ""
-    return f"https://app.xolo.io/selfservice/expense/invoice/{value}/details?from=expense"
-
-
-def _split_amount(value: str) -> tuple[str, str]:
-    currency = "EUR" if "€" in value else "USD" if "$" in value else ""
-    amount = value.replace("€", "").replace("$", "").replace("\u00a0", " ").strip()
-    return amount, currency
 
 
 if __name__ == "__main__":

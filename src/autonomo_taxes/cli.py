@@ -165,6 +165,11 @@ from .xolo_ledger import (
     write_xolo_reconciliation,
     xolo_ledger_total,
 )
+from .xolo_api_export import (
+    import_xolo_expense_api_json,
+    write_combined_xolo_api_json,
+    write_raw_xolo_expense_csv,
+)
 from .xolo_questions import build_xolo_questions, write_questions_csv, write_questions_markdown
 
 
@@ -215,6 +220,13 @@ def main(argv: list[str] | None = None) -> int:
     xolo_import.add_argument("--input", type=Path, required=True)
     xolo_import.add_argument("--out", type=Path, required=True)
     xolo_import.add_argument("--fx-rate", action="append", default=[], help="Currency rate, e.g. USD=0.85679")
+    xolo_import_api = xolo_subparsers.add_parser(
+        "import-api-json",
+        help="Import saved Xolo /selfservice/expense/data JSON pages into the raw expense CSV format",
+    )
+    xolo_import_api.add_argument("--input", type=Path, action="append", required=True, help="Saved JSON response; repeat for multiple pages")
+    xolo_import_api.add_argument("--out-csv", type=Path, required=True)
+    xolo_import_api.add_argument("--out-json", type=Path, help="Optional normalized combined JSON pages output")
     xolo_reconcile = xolo_subparsers.add_parser("reconcile", help="Compare a Xolo expense ledger to local EXPENSE files")
     _add_common_args(xolo_reconcile)
     xolo_reconcile.add_argument("--xolo-expense-ledger", type=Path, required=True)
@@ -553,6 +565,13 @@ def main(argv: list[str] | None = None) -> int:
             rows = import_xolo_expense_csv(args.input, _parse_fx_rates(args.fx_rate))
             write_xolo_expense_ledger_csv(args.out, rows)
             print(f"Validated {len(rows)} Xolo expense rows and wrote {args.out}")
+            return 0
+        if args.xolo_ledger_command == "import-api-json":
+            pages, rows = import_xolo_expense_api_json(args.input)
+            write_raw_xolo_expense_csv(args.out_csv, rows)
+            if args.out_json:
+                write_combined_xolo_api_json(args.out_json, pages)
+            print(f"Imported {len(rows)} Xolo API expense rows from {len(pages)} page(s) into {args.out_csv}")
             return 0
         if args.xolo_ledger_command == "reconcile":
             return _cmd_xolo_reconcile(args)
