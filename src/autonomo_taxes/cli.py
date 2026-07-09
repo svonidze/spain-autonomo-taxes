@@ -26,6 +26,11 @@ from .asset_audit import (
     write_candidate_quarter_reconciliation_csv,
 )
 from .history import run_history_audit, write_history_audit_csv, write_history_audit_markdown
+from .ledger_projection import (
+    build_ledger_projection,
+    write_ledger_projection_csv,
+    write_ledger_projection_markdown,
+)
 from .modelo130 import (
     calculate_modelo130,
     extract_modelo130_values,
@@ -189,6 +194,15 @@ def main(argv: list[str] | None = None) -> int:
     audit_register_reconcile.add_argument("--out-csv", type=Path, required=True)
     audit_register_reconcile.add_argument("--out-md", type=Path, required=True)
 
+    audit_ledger_projection = subparsers.add_parser(
+        "audit-ledger-projection",
+        help="Compare a curated Xolo expense ledger against historical Modelo 130 casilla 02 targets",
+    )
+    audit_ledger_projection.add_argument("--history-audit", type=Path, required=True)
+    audit_ledger_projection.add_argument("--xolo-expense-ledger", type=Path, required=True)
+    audit_ledger_projection.add_argument("--out-csv", type=Path, required=True)
+    audit_ledger_projection.add_argument("--out-md", type=Path, required=True)
+
     args = parser.parse_args(argv)
     config = _load_config(args.config)
     _merge_config(args, config)
@@ -285,6 +299,12 @@ def main(argv: list[str] | None = None) -> int:
         write_register_reconciliation_csv(args.out_csv, rows)
         write_register_reconciliation_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} register reconciliation rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-ledger-projection":
+        rows = build_ledger_projection(args.history_audit, args.xolo_expense_ledger)
+        write_ledger_projection_csv(args.out_csv, rows)
+        write_ledger_projection_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} ledger projection rows to {args.out_csv} and {args.out_md}")
         return 0
     raise AssertionError(args.command)
 
