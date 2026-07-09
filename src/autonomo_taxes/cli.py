@@ -315,7 +315,7 @@ def main(argv: list[str] | None = None) -> int:
 
     audit_xolo_dataexport_inventory = subparsers.add_parser(
         "audit-xolo-dataexport-inventory",
-        help="Inventory a downloaded Xolo dataexport ZIP for registers and asset schedules",
+        help="Inventory a downloaded Xolo dataexport ZIP for source-book evidence and asset schedules",
     )
     audit_xolo_dataexport_inventory.add_argument("--zip", type=Path, required=True)
     audit_xolo_dataexport_inventory.add_argument("--out-csv", type=Path, required=True)

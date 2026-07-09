@@ -21,7 +21,7 @@ FIELDNAMES = [
     "expense_files",
     "invoice_files",
     "tax_report_files",
-    "candidate_register_or_asset_files",
+    "candidate_source_book_or_asset_files",
     *[f"keyword_{keyword}" for keyword in KEYWORDS],
     "candidate_paths",
 ]
@@ -55,12 +55,12 @@ def build_rows(zip_dir: Path) -> list[dict[str, str]]:
             "expense_files": _count(by_kind_key, "top_level", "EXPENSE"),
             "invoice_files": _count(by_kind_key, "top_level", "INVOICE"),
             "tax_report_files": _count(by_kind_key, "top_level", "TAX_REPORT"),
-            "candidate_register_or_asset_files": _count(
-                by_kind_key, "conclusion", "candidate_submitted_register_or_asset_schedule"
+            "candidate_source_book_or_asset_files": _count(
+                by_kind_key, "conclusion", "candidate_source_book_or_asset_schedule"
             ),
-            "candidate_paths": by_kind_key.get(
-                ("conclusion", "candidate_submitted_register_or_asset_schedule"), {}
-            ).get("paths", ""),
+            "candidate_paths": by_kind_key.get(("conclusion", "candidate_source_book_or_asset_schedule"), {}).get(
+                "paths", ""
+            ),
         }
         for keyword in KEYWORDS:
             row[f"keyword_{keyword}"] = _count(by_kind_key, "keyword", keyword)
@@ -78,7 +78,7 @@ def write_csv(path: Path, rows: list[dict[str, str]]) -> None:
 
 def write_markdown(path: Path, rows: list[dict[str, str]], zip_dir: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    candidate_archives = [row for row in rows if row["candidate_register_or_asset_files"] != "0"]
+    candidate_archives = [row for row in rows if row["candidate_source_book_or_asset_files"] != "0"]
     lines = [
         "# Xolo Data Export Archive Comparison",
         "",
@@ -87,11 +87,11 @@ def write_markdown(path: Path, rows: list[dict[str, str]], zip_dir: Path) -> Non
         "## Conclusion",
         "",
         f"- Archives scanned: `{len(rows)}`.",
-        f"- Archives with filename-level register/asset/amortization candidates: `{len(candidate_archives)}`.",
+        f"- Archives with filename-level source-book/asset/amortization candidates: `{len(candidate_archives)}`.",
     ]
     if not candidate_archives:
         lines.append(
-            "- None of the historical ZIP archives expose a submitted Modelo 130 row register or asset amortization schedule by filename."
+            "- None of the historical ZIP archives expose source-book row evidence or an asset amortization schedule by filename."
         )
     lines.append("- This is a filename-only scan; it does not inspect PDF or image contents inside the archives.")
     lines.extend(
@@ -99,7 +99,7 @@ def write_markdown(path: Path, rows: list[dict[str, str]], zip_dir: Path) -> Non
             "",
             "## Archives",
             "",
-            "| Archive | Size bytes | COMPANY | EXPENSE | INVOICE | TAX_REPORT | Candidate register/assets |",
+            "| Archive | Size bytes | COMPANY | EXPENSE | INVOICE | TAX_REPORT | Candidate source books/assets |",
             "|---|---:|---:|---:|---:|---:|---:|",
         ]
     )
@@ -114,7 +114,7 @@ def write_markdown(path: Path, rows: list[dict[str, str]], zip_dir: Path) -> Non
                     row["expense_files"],
                     row["invoice_files"],
                     row["tax_report_files"],
-                    row["candidate_register_or_asset_files"],
+                    row["candidate_source_book_or_asset_files"],
                 ]
             )
             + " |"

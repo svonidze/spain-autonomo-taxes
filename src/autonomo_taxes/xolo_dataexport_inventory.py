@@ -52,7 +52,7 @@ def build_xolo_dataexport_inventory(zip_path: Path) -> list[dict[str, str]]:
     rows.append(
         {
             "kind": "conclusion",
-            "key": "candidate_submitted_register_or_asset_schedule",
+            "key": "candidate_source_book_or_asset_schedule",
             "count": str(len(candidate_paths)),
             "paths": "; ".join(candidate_paths[:50]),
         }
@@ -73,7 +73,7 @@ def write_xolo_dataexport_inventory_markdown(path: Path, rows: list[dict[str, st
     path.parent.mkdir(parents=True, exist_ok=True)
     by_kind_key = {(row["kind"], row["key"]): row for row in rows}
     candidate_count = int(
-        by_kind_key.get(("conclusion", "candidate_submitted_register_or_asset_schedule"), {}).get("count", "0")
+        by_kind_key.get(("conclusion", "candidate_source_book_or_asset_schedule"), {}).get("count", "0")
     )
     lines = [
         "# Xolo Data Export Inventory",
@@ -82,11 +82,11 @@ def write_xolo_dataexport_inventory_markdown(path: Path, rows: list[dict[str, st
         "",
         "## Conclusion",
         "",
-        f"- Candidate source-book/register or asset/amortization files found: `{candidate_count}`.",
+        f"- Candidate source-book row-evidence or asset/amortization files found: `{candidate_count}`.",
     ]
     if candidate_count == 0:
         lines.append(
-            "- Filename-only scan found no register or asset/amortization schedule candidates. "
+            "- Filename-only scan found no source-book row evidence or asset/amortization schedule candidates. "
             "The downloaded Xolo data export appears to be an evidence-document archive, but this check does not inspect PDF/image contents."
         )
     lines.extend(["", "## Top Level", "", "| Folder | Count |", "|---|---:|"])

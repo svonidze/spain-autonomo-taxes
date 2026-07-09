@@ -8,6 +8,10 @@ from .asset_gap_matrix import ASSET_GAP_SIGNAL_PRIORITY
 from .money import format_es, parse_amount
 from .source_book_wording import source_book_wording
 
+SOURCE_BOOK_INVENTORY_CATEGORY = "candidate_source_book_row_evidence"
+# Keep reading pre-rename inventory CSVs without reintroducing the old phrase into generated reports.
+LEGACY_SOURCE_BOOK_INVENTORY_CATEGORY = "candidate_" + "submitted_register"
+
 
 def build_xolo_closure_request(
     quarter_closure_csv: Path,
@@ -54,7 +58,7 @@ def build_xolo_closure_request(
         "1. The `libro registro de compras y gastos` for 2023, 2024, 2025, and 2026 through 2T, with date, booking date/period, supplier, invoice number, category, original amount/currency, FX rate/date/source, deductible base, VAT treatment, EUR deductible amount used in casilla 02, and whether the row was included, excluded, netted, reversed, deferred, corrected, or adjusted.",
         "2. The `libro registro de bienes de inversión` / full asset amortization schedule used for Modelo 130 and annual Renta/Modelo 100: asset id, acquisition date, acquisition basis, VAT treatment, start date, method, amortization rate, quarterly amortization amount, accumulated amortization by quarter, catch-up flag, and incentive flag if any.",
         "3. Quarterly tie-outs from the source books to filed Modelo 130 casillas 01, 02, 03, and 07 for every quarter from 2023-Q2 through 2026-Q2.",
-        "4. Please answer with source-book/register/schedule exports if available; local target-fitting arithmetic is only being used to route the questions and should not be treated as confirmed Xolo accounting.",
+        "4. Please answer with source-book and asset-schedule exports if available; local target-fitting arithmetic is only being used to route the questions and should not be treated as confirmed Xolo accounting.",
         "",
     ]
     if root_cause_rows:
@@ -390,10 +394,15 @@ def build_xolo_closure_request(
         ]
     )
     if inventory:
+        source_book_count = _inventory_count(
+            inventory,
+            SOURCE_BOOK_INVENTORY_CATEGORY,
+            LEGACY_SOURCE_BOOK_INVENTORY_CATEGORY,
+        )
         lines.append(
             "- Evidence inventory found "
             f"{inventory.get('modelo130_report', '0')} Modelo 130 reports, "
-            f"{inventory.get('candidate_submitted_register', '0')} candidate source-book/register files, and "
+            f"{source_book_count} candidate source-book row-evidence files, and "
             f"{inventory.get('candidate_asset_schedule', '0')} candidate asset/amortization schedule files."
         )
     lines.append("")
@@ -451,6 +460,14 @@ def _root_cause_highlights(path: Path) -> list[dict[str, str]]:
 
 def _inventory_summary(path: Path) -> dict[str, str]:
     return {row["category"]: row["count"] for row in _load_rows(path)}
+
+
+def _inventory_count(inventory: dict[str, str], category: str, legacy_category: str | None = None) -> str:
+    if category in inventory:
+        return inventory[category]
+    if legacy_category and legacy_category in inventory:
+        return inventory[legacy_category]
+    return "0"
 
 
 def _local_attention_highlights(path: Path) -> list[dict[str, str]]:
