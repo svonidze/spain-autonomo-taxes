@@ -14,6 +14,7 @@ def build_xolo_closure_request(
     evidence_inventory_csv: Path | None = None,
     local_attention_bridge_csv: Path | None = None,
     material_gap_drilldown_csv: Path | None = None,
+    material_gap_context_csv: Path | None = None,
 ) -> str:
     rows = _load_rows(quarter_closure_csv)
     material = [row for row in rows if row["closure_status"] == "blocked_material_unexplained_adjustment"]
@@ -25,6 +26,7 @@ def build_xolo_closure_request(
     inventory = _inventory_summary(evidence_inventory_csv) if evidence_inventory_csv else {}
     local_attention_rows = _local_attention_highlights(local_attention_bridge_csv) if local_attention_bridge_csv else []
     material_gap_rows = _material_gap_highlights(material_gap_drilldown_csv) if material_gap_drilldown_csv else []
+    material_context_rows = _material_context_highlights(material_gap_context_csv) if material_gap_context_csv else []
 
     lines = [
         "# Xolo Modelo 130 Closure Request",
@@ -122,6 +124,35 @@ def build_xolo_closure_request(
                         _cell(row["fit_signal"]),
                         _cell(row["components"]),
                         _cell(row["xolo_questions"]),
+                    ]
+                )
+                + " |"
+            )
+
+    if material_context_rows:
+        lines.extend(
+            [
+                "",
+                "## P0 Raw Xolo Context",
+                "",
+                "These rows explain why the P0 questions are currently prioritized. They still require Xolo's submitted register and asset schedule before any quarter can be closed.",
+                "",
+                "| Period | Context signal | Xolo non-asset | Bridge raw non-asset | Target minus Xolo non-asset | Gap-sized asset rows | Xolo question |",
+                "|---|---|---:|---:|---:|---|---|",
+            ]
+        )
+        for row in material_context_rows:
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        row["period"],
+                        _cell(row["context_signal"]),
+                        _fmt(row["xolo_document_quarter_non_asset_gross_eur"]),
+                        _fmt(row["bridge_raw_non_asset_delta"]),
+                        _fmt(row["target_minus_xolo_non_asset_eur"]),
+                        _cell(row["gap_sized_asset_candidate_rows"] or "none"),
+                        _cell(row["next_xolo_question"]),
                     ]
                 )
                 + " |"
@@ -380,6 +411,10 @@ def _material_gap_highlights(path: Path) -> list[dict[str, str]]:
             row["hypothesis_id"],
         ),
     )
+
+
+def _material_context_highlights(path: Path) -> list[dict[str, str]]:
+    return sorted(_load_rows(path), key=lambda row: row["period"])
 
 
 def _row_label(row: dict[str, str]) -> str:

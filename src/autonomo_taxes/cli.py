@@ -384,6 +384,7 @@ def main(argv: list[str] | None = None) -> int:
     audit_closure_request.add_argument("--evidence-inventory", type=Path)
     audit_closure_request.add_argument("--local-attention-bridge", type=Path)
     audit_closure_request.add_argument("--material-gap-drilldown", type=Path)
+    audit_closure_request.add_argument("--material-gap-context", type=Path)
     audit_closure_request.add_argument("--out-md", type=Path, required=True)
 
     audit_root_cause_narrowing = subparsers.add_parser(
@@ -428,6 +429,7 @@ def main(argv: list[str] | None = None) -> int:
     audit_sequential_summary.add_argument("--modelo303-vat-crosscheck", type=Path)
     audit_sequential_summary.add_argument("--annual-categories", type=Path)
     audit_sequential_summary.add_argument("--material-gap-drilldown", type=Path)
+    audit_sequential_summary.add_argument("--material-gap-context", type=Path)
     audit_sequential_summary.add_argument("--out-md", type=Path, required=True)
 
     audit_timing = subparsers.add_parser(
@@ -654,6 +656,7 @@ def main(argv: list[str] | None = None) -> int:
             args.evidence_inventory,
             args.local_attention_bridge,
             args.material_gap_drilldown,
+            args.material_gap_context,
         )
         write_xolo_closure_request(args.out_md, markdown)
         print(f"Wrote Xolo closure request to {args.out_md}")
@@ -695,6 +698,7 @@ def main(argv: list[str] | None = None) -> int:
             args.modelo303_vat_crosscheck,
             args.annual_categories,
             args.material_gap_drilldown,
+            args.material_gap_context,
         )
         write_sequential_summary(args.out_md, markdown)
         print(f"Wrote sequential audit summary to {args.out_md}")
