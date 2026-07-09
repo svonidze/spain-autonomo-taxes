@@ -26,6 +26,11 @@ from .asset_audit import (
     write_candidate_quarter_reconciliation_csv,
 )
 from .history import run_history_audit, write_history_audit_csv, write_history_audit_markdown
+from .hypothesis_ledger import (
+    build_hypothesis_ledger,
+    write_hypothesis_markdown,
+    write_hypothesis_summary_csv,
+)
 from .ledger_projection import (
     build_ledger_projection,
     write_ledger_projection_csv,
@@ -203,6 +208,16 @@ def main(argv: list[str] | None = None) -> int:
     audit_ledger_projection.add_argument("--out-csv", type=Path, required=True)
     audit_ledger_projection.add_argument("--out-md", type=Path, required=True)
 
+    audit_hypothesis_ledger = subparsers.add_parser(
+        "audit-hypothesis-ledger",
+        help="Build an unconfirmed ledger scenario from row audit evidence and candidate amortization",
+    )
+    audit_hypothesis_ledger.add_argument("--row-audit", type=Path, required=True)
+    audit_hypothesis_ledger.add_argument("--candidate-quarter-reconciliation", type=Path, required=True)
+    audit_hypothesis_ledger.add_argument("--out-ledger-csv", type=Path, required=True)
+    audit_hypothesis_ledger.add_argument("--out-summary-csv", type=Path, required=True)
+    audit_hypothesis_ledger.add_argument("--out-md", type=Path, required=True)
+
     args = parser.parse_args(argv)
     config = _load_config(args.config)
     _merge_config(args, config)
@@ -305,6 +320,16 @@ def main(argv: list[str] | None = None) -> int:
         write_ledger_projection_csv(args.out_csv, rows)
         write_ledger_projection_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} ledger projection rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-hypothesis-ledger":
+        result = build_hypothesis_ledger(args.row_audit, args.candidate_quarter_reconciliation)
+        write_xolo_expense_ledger_csv(args.out_ledger_csv, result.ledger_rows)
+        write_hypothesis_summary_csv(args.out_summary_csv, result.summary_rows)
+        write_hypothesis_markdown(args.out_md, result)
+        print(
+            f"Wrote {len(result.ledger_rows)} hypothesis ledger rows and "
+            f"{len(result.summary_rows)} summary rows"
+        )
         return 0
     raise AssertionError(args.command)
 

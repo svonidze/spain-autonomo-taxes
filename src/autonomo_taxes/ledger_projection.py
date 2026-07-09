@@ -93,9 +93,9 @@ def write_ledger_projection_csv(path: Path, rows: list[dict[str, str]]) -> None:
 def write_ledger_projection_markdown(path: Path, rows: list[dict[str, str]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
-        "# Modelo 130 Curated Ledger Projection",
+        "# Modelo 130 Ledger Projection",
         "",
-        "This report compares a curated Xolo expense ledger against submitted Modelo 130 `casilla 02` values.",
+        "This report compares a Xolo-format expense ledger against submitted Modelo 130 `casilla 02` values.",
         "A match here proves the ledger arithmetic, not Xolo's row-level submitted tax basis.",
         "",
         "| Period | Status | Target 02 YTD | Ledger YTD | Diff YTD | Target delta | Ledger delta | Pending/inferred delta |",
