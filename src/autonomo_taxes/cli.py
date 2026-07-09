@@ -248,6 +248,7 @@ def main(argv: list[str] | None = None) -> int:
     audit_quarter_packets.add_argument("--history-audit", type=Path, required=True)
     audit_quarter_packets.add_argument("--quarter-closure", type=Path, required=True)
     audit_quarter_packets.add_argument("--row-audit", type=Path, required=True)
+    audit_quarter_packets.add_argument("--source-findings", type=Path)
     audit_quarter_packets.add_argument("--out-dir", type=Path, required=True)
 
     args = parser.parse_args(argv)
@@ -375,7 +376,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Wrote Xolo closure request to {args.out_md}")
         return 0
     if args.command == "audit-quarter-packets":
-        packets = build_quarter_packets(args.history_audit, args.quarter_closure, args.row_audit)
+        packets = build_quarter_packets(
+            args.history_audit,
+            args.quarter_closure,
+            args.row_audit,
+            args.source_findings,
+        )
         write_quarter_packets(args.out_dir, packets)
         print(f"Wrote {len(packets)} quarter packets to {args.out_dir}")
         return 0

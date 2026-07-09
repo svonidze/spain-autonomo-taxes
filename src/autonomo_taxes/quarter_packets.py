@@ -10,6 +10,7 @@ def build_quarter_packets(
     history_audit_csv: Path,
     quarter_closure_csv: Path,
     row_audit_csv: Path,
+    source_findings_csv: Path | None = None,
 ) -> list[dict[str, object]]:
     history_by_period = {
         f"{row['year']}-Q{row['quarter']}": row
@@ -17,6 +18,7 @@ def build_quarter_packets(
     }
     closure_rows = _load_rows(quarter_closure_csv)
     audit_by_period = _group_by_period(_load_rows(row_audit_csv))
+    source_findings_by_period = _group_by_period(_load_rows(source_findings_csv)) if source_findings_csv else {}
 
     packets: list[dict[str, object]] = []
     for closure in closure_rows:
@@ -30,7 +32,14 @@ def build_quarter_packets(
                 "history": history,
                 "closure": closure,
                 "rows": packet_rows,
-                "markdown": _packet_markdown(period, history, closure, packet_rows),
+                "source_findings": source_findings_by_period.get(period, []),
+                "markdown": _packet_markdown(
+                    period,
+                    history,
+                    closure,
+                    packet_rows,
+                    source_findings_by_period.get(period, []),
+                ),
             }
         )
     return packets
@@ -48,6 +57,7 @@ def _packet_markdown(
     history: dict[str, str],
     closure: dict[str, str],
     rows: list[dict[str, str]],
+    source_findings: list[dict[str, str]] | None = None,
 ) -> str:
     xolo_rows = [row for row in rows if row.get("row_kind") == "xolo_expense"]
     synthetic_rows = [row for row in rows if row.get("row_kind") == "synthetic_gap"]
@@ -83,9 +93,17 @@ def _packet_markdown(
         f"- Excluded asset direct amount: `{_fmt(closure['excluded_asset_direct_eur'])}`",
         f"- Nearest excluded subset: `{_fmt(closure['excluded_nearest_subset_eur'])}`",
         "",
-        "## Asset Candidates",
+        "## Local Source Checks",
         "",
     ]
+    lines.extend(_source_findings_table(source_findings or []))
+    lines.extend(
+        [
+            "",
+            "## Asset Candidates",
+            "",
+        ]
+    )
     lines.extend(_rows_table(asset_rows))
     lines.extend(["", "## Nearest Exclusion Candidates", ""])
     lines.extend(_rows_table(nearest_rows))
@@ -160,6 +178,30 @@ def _rows_table(rows: list[dict[str, str]]) -> list[str]:
                     _fmt(row.get("gross_eur", "")),
                     _fmt(row.get("base_eur", "")),
                     _cell(row.get("notes", "")),
+                ]
+            )
+            + " |"
+        )
+    return lines
+
+
+def _source_findings_table(rows: list[dict[str, str]]) -> list[str]:
+    if not rows:
+        return ["none"]
+    lines = [
+        "| Row Ref | Status | Source Document | Finding | Impact |",
+        "|---|---|---|---|---|",
+    ]
+    for row in rows:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    _cell(row.get("row_ref", "")),
+                    _cell(row.get("source_status", "")),
+                    _cell(row.get("source_document", "")),
+                    _cell(row.get("finding", "")),
+                    _cell(row.get("impact", "")),
                 ]
             )
             + " |"
