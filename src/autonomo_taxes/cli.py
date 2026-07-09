@@ -198,6 +198,11 @@ from .source_book_availability import (
     write_source_book_availability_csv,
     write_source_book_availability_markdown,
 )
+from .source_book_response_check import (
+    build_source_book_response_check,
+    write_source_book_response_check_csv,
+    write_source_book_response_check_markdown,
+)
 from .support_request_short import build_xolo_support_request_short, write_xolo_support_request_short
 from .timing_audit import build_timing_audit, write_timing_audit_csv, write_timing_audit_markdown
 from .xolo_ledger import (
@@ -710,6 +715,15 @@ def main(argv: list[str] | None = None) -> int:
     audit_source_book_availability.add_argument("--out-csv", type=Path, required=True)
     audit_source_book_availability.add_argument("--out-md", type=Path, required=True)
 
+    audit_source_book_response_check = subparsers.add_parser(
+        "audit-source-book-response-check",
+        help="Check whether a received Xolo response folder has the source books needed for quarter rebuild",
+    )
+    audit_source_book_response_check.add_argument("--response-root", type=Path, required=True)
+    audit_source_book_response_check.add_argument("--quarter-acceptance", type=Path, required=True)
+    audit_source_book_response_check.add_argument("--out-csv", type=Path, required=True)
+    audit_source_book_response_check.add_argument("--out-md", type=Path, required=True)
+
     audit_timing = subparsers.add_parser(
         "audit-timing",
         help="Diagnose timing, carry-forward, and netting patterns across Modelo 130 quarter balances",
@@ -1161,6 +1175,15 @@ def main(argv: list[str] | None = None) -> int:
         write_source_book_availability_csv(args.out_csv, rows)
         write_source_book_availability_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} source-book availability rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-source-book-response-check":
+        rows = build_source_book_response_check(
+            response_root=args.response_root,
+            quarter_acceptance_csv=args.quarter_acceptance,
+        )
+        write_source_book_response_check_csv(args.out_csv, rows)
+        write_source_book_response_check_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} source-book response-check rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-timing":
         rows = build_timing_audit(args.quarter_closure, args.source_findings)
