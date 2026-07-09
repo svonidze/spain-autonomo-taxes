@@ -389,6 +389,7 @@ def main(argv: list[str] | None = None) -> int:
     audit_goal_status.add_argument("--first-gate-answer-check", type=Path, required=True)
     audit_goal_status.add_argument("--source-book-response-check", type=Path, required=True)
     audit_goal_status.add_argument("--source-book-content-check", type=Path, required=True)
+    audit_goal_status.add_argument("--source-book-reconciliation", type=Path, required=True)
     audit_goal_status.add_argument("--out-csv", type=Path, required=True)
     audit_goal_status.add_argument("--out-md", type=Path, required=True)
 
@@ -944,6 +945,7 @@ def main(argv: list[str] | None = None) -> int:
             first_gate_answer_check_csv=args.first_gate_answer_check,
             source_book_response_check_csv=args.source_book_response_check,
             source_book_content_check_csv=args.source_book_content_check,
+            source_book_reconciliation_csv=args.source_book_reconciliation,
         )
         write_goal_status_csv(args.out_csv, rows)
         write_goal_status_markdown(args.out_md, rows)
