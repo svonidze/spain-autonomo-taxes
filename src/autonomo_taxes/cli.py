@@ -528,6 +528,7 @@ def main(argv: list[str] | None = None) -> int:
     audit_sequential_summary.add_argument("--material-gap-context", type=Path)
     audit_sequential_summary.add_argument("--p1-near-fit-context", type=Path)
     audit_sequential_summary.add_argument("--p2-near-target-context", type=Path)
+    audit_sequential_summary.add_argument("--xolo-api-coverage", type=Path)
     audit_sequential_summary.add_argument("--out-md", type=Path, required=True)
 
     audit_timing = subparsers.add_parser(
@@ -866,6 +867,7 @@ def main(argv: list[str] | None = None) -> int:
             args.material_gap_context,
             args.p1_near_fit_context,
             args.p2_near_target_context,
+            args.xolo_api_coverage,
         )
         write_sequential_summary(args.out_md, markdown)
         print(f"Wrote sequential audit summary to {args.out_md}")
