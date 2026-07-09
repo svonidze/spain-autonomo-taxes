@@ -17,6 +17,9 @@ SOURCE_BOOK_WORDING_REPLACEMENTS = [
     ("Submitted-register entries", "Source-book entries"),
     ("Which submitted row", "Which source-book row"),
     ("Xolo's submitted register", "Xolo's source books"),
+    ("submitted Xolo register row treatment", "Xolo source-book row treatment"),
+    ("Xolo register confirmation", "Xolo source-book confirmation"),
+    ("Xolo register row treatment", "Xolo source-book row treatment"),
     ("Submitted expense registers", "Source-book exports"),
     ("Submitted expense register", "Source-book export"),
     ("submitted expense registers", "source-book exports"),
@@ -52,6 +55,11 @@ def source_book_wording(value: str) -> str:
     text = re.sub(
         r"\bfiled Modelo 130 ([1-4]T \d{4}) register\b",
         r"source books for filed Modelo 130 \1",
+        text,
+    )
+    text = re.sub(
+        r"\bsubmitted Modelo 130 ([1-4]T \d{4}) register\b",
+        r"source books for Modelo 130 \1",
         text,
     )
     for old, new in SOURCE_BOOK_WORDING_REPLACEMENTS:

@@ -61,6 +61,7 @@ from .evidence_inventory import (
     write_evidence_inventory_csv,
     write_evidence_inventory_markdown,
 )
+from .first_gate_report import build_first_gate_report, write_first_gate_csv, write_first_gate_markdown
 from .history import run_history_audit, write_history_audit_csv, write_history_audit_markdown
 from .hypothesis_ledger import (
     build_hypothesis_ledger,
@@ -665,6 +666,17 @@ def main(argv: list[str] | None = None) -> int:
     audit_chronological_walkthrough.add_argument("--out-csv", type=Path, required=True)
     audit_chronological_walkthrough.add_argument("--out-md", type=Path, required=True)
 
+    audit_first_gate = subparsers.add_parser(
+        "audit-first-gate",
+        help="Build a focused report for the first unclosed chronological Modelo 130 gate",
+    )
+    audit_first_gate.add_argument("--chronological-walkthrough", type=Path, required=True)
+    audit_first_gate.add_argument("--material-gap-drilldown", type=Path, required=True)
+    audit_first_gate.add_argument("--material-gap-context", type=Path)
+    audit_first_gate.add_argument("--source-findings", type=Path)
+    audit_first_gate.add_argument("--out-csv", type=Path, required=True)
+    audit_first_gate.add_argument("--out-md", type=Path, required=True)
+
     audit_timing = subparsers.add_parser(
         "audit-timing",
         help="Diagnose timing, carry-forward, and netting patterns across Modelo 130 quarter balances",
@@ -1085,6 +1097,17 @@ def main(argv: list[str] | None = None) -> int:
         write_chronological_walkthrough_csv(args.out_csv, rows)
         write_chronological_walkthrough_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} chronological walkthrough rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-first-gate":
+        rows = build_first_gate_report(
+            args.chronological_walkthrough,
+            args.material_gap_drilldown,
+            args.material_gap_context,
+            args.source_findings,
+        )
+        write_first_gate_csv(args.out_csv, rows)
+        write_first_gate_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} first-gate rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-timing":
         rows = build_timing_audit(args.quarter_closure, args.source_findings)

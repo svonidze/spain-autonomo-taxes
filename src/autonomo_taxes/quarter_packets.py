@@ -4,6 +4,7 @@ import csv
 from pathlib import Path
 
 from .money import format_es, parse_amount
+from .source_book_wording import source_book_wording
 
 
 def build_quarter_packets(
@@ -358,4 +359,4 @@ def _fmt(value: str | None) -> str:
 
 
 def _cell(value: str) -> str:
-    return value.replace("|", "\\|").replace("\n", " ")
+    return source_book_wording(value).replace("|", "\\|").replace("\n", " ")
