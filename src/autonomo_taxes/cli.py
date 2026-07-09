@@ -62,6 +62,11 @@ from .local_attention_bridge import (
     write_local_attention_bridge_csv,
     write_local_attention_bridge_markdown,
 )
+from .material_gap_drilldown import (
+    build_material_gap_drilldown,
+    write_material_gap_drilldown_csv,
+    write_material_gap_drilldown_markdown,
+)
 from .modelo130 import (
     calculate_modelo130,
     extract_modelo130_values,
@@ -327,6 +332,15 @@ def main(argv: list[str] | None = None) -> int:
     audit_quarter_balance_bridge.add_argument("--out-csv", type=Path, required=True)
     audit_quarter_balance_bridge.add_argument("--out-md", type=Path, required=True)
 
+    audit_material_gaps = subparsers.add_parser(
+        "audit-material-gaps",
+        help="Drill into material Modelo 130 balances with explicit local hypotheses",
+    )
+    audit_material_gaps.add_argument("--quarter-balance-bridge", type=Path, required=True)
+    audit_material_gaps.add_argument("--hypotheses", type=Path, required=True)
+    audit_material_gaps.add_argument("--out-csv", type=Path, required=True)
+    audit_material_gaps.add_argument("--out-md", type=Path, required=True)
+
     audit_closure_request = subparsers.add_parser(
         "audit-closure-request",
         help="Build a draft request to Xolo from the quarter closure checklist",
@@ -337,6 +351,7 @@ def main(argv: list[str] | None = None) -> int:
     audit_closure_request.add_argument("--root-cause-narrowing", type=Path)
     audit_closure_request.add_argument("--evidence-inventory", type=Path)
     audit_closure_request.add_argument("--local-attention-bridge", type=Path)
+    audit_closure_request.add_argument("--material-gap-drilldown", type=Path)
     audit_closure_request.add_argument("--out-md", type=Path, required=True)
 
     audit_root_cause_narrowing = subparsers.add_parser(
@@ -569,6 +584,12 @@ def main(argv: list[str] | None = None) -> int:
         write_quarter_balance_bridge_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} quarter balance bridge rows to {args.out_csv} and {args.out_md}")
         return 0
+    if args.command == "audit-material-gaps":
+        rows = build_material_gap_drilldown(args.quarter_balance_bridge, args.hypotheses)
+        write_material_gap_drilldown_csv(args.out_csv, rows)
+        write_material_gap_drilldown_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} material gap drilldown rows to {args.out_csv} and {args.out_md}")
+        return 0
     if args.command == "audit-closure-request":
         markdown = build_xolo_closure_request(
             args.quarter_closure,
@@ -577,6 +598,7 @@ def main(argv: list[str] | None = None) -> int:
             args.root_cause_narrowing,
             args.evidence_inventory,
             args.local_attention_bridge,
+            args.material_gap_drilldown,
         )
         write_xolo_closure_request(args.out_md, markdown)
         print(f"Wrote Xolo closure request to {args.out_md}")

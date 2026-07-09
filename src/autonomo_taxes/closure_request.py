@@ -13,6 +13,7 @@ def build_xolo_closure_request(
     root_cause_narrowing_csv: Path | None = None,
     evidence_inventory_csv: Path | None = None,
     local_attention_bridge_csv: Path | None = None,
+    material_gap_drilldown_csv: Path | None = None,
 ) -> str:
     rows = _load_rows(quarter_closure_csv)
     material = [row for row in rows if row["closure_status"] == "blocked_material_unexplained_adjustment"]
@@ -23,6 +24,7 @@ def build_xolo_closure_request(
     root_cause_rows = _root_cause_highlights(root_cause_narrowing_csv) if root_cause_narrowing_csv else []
     inventory = _inventory_summary(evidence_inventory_csv) if evidence_inventory_csv else {}
     local_attention_rows = _local_attention_highlights(local_attention_bridge_csv) if local_attention_bridge_csv else []
+    material_gap_rows = _material_gap_highlights(material_gap_drilldown_csv) if material_gap_drilldown_csv else []
 
     lines = [
         "# Xolo Modelo 130 Closure Request",
@@ -93,6 +95,37 @@ def build_xolo_closure_request(
             )
             + " |"
         )
+
+    if material_gap_rows:
+        lines.extend(
+            [
+                "",
+                "## Material Gap Drilldown",
+                "",
+                "These are local hypotheses for the material gaps. They are not confirmed filing treatment; they define the shortest questions for Xolo's submitted register.",
+                "",
+                "| Period | Hypothesis | Status | Bridge total | Residual to candidate | Residual to annual | Fit | Components | Xolo question |",
+                "|---|---|---|---:|---:|---:|---|---|---|",
+            ]
+        )
+        for row in material_gap_rows:
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        row["period"],
+                        _cell(row["hypothesis_id"]),
+                        _cell(row["hypothesis_status"]),
+                        _fmt(row["hypothesis_total_eur"]),
+                        _fmt(row["residual_to_candidate_balance_eur"]),
+                        _fmt(row["residual_to_annual_balance_eur"]),
+                        _cell(row["fit_signal"]),
+                        _cell(row["components"]),
+                        _cell(row["xolo_questions"]),
+                    ]
+                )
+                + " |"
+            )
 
     lines.extend(
         [
@@ -295,6 +328,56 @@ def _local_attention_highlights(path: Path) -> list[dict[str, str]]:
             priority_order.get(row.get("priority", ""), 9),
             row.get("period", ""),
             row.get("local_document", ""),
+        ),
+    )
+
+
+def _material_gap_highlights(path: Path) -> list[dict[str, str]]:
+    rows = [
+        row
+        for row in _load_rows(path)
+        if row.get("hypothesis_status") != "ruled_out_local_hypothesis"
+    ]
+    grouped: dict[tuple[str, str], list[dict[str, str]]] = {}
+    for row in rows:
+        grouped.setdefault((row["period"], row["hypothesis_id"]), []).append(row)
+    status_order = {
+        "unresolved_required_evidence": 0,
+        "strong_candidate_pending_confirmation": 1,
+        "partial_candidate_not_in_xolo_raw": 2,
+        "unresolved_side_components": 3,
+    }
+    highlights: list[dict[str, str]] = []
+    for (period, hypothesis_id), group in grouped.items():
+        first = group[0]
+        components = []
+        questions = []
+        for row in group:
+            effect = _fmt(row.get("effect_closes_gap_eur", ""))
+            counts = row.get("counts_in_best_bridge", "")
+            components.append(f"{row['component']} ({effect}, counts={counts})")
+            question = row.get("xolo_question", "")
+            if question and question not in questions:
+                questions.append(question)
+        highlights.append(
+            {
+                "period": period,
+                "hypothesis_id": hypothesis_id,
+                "hypothesis_status": first["hypothesis_status"],
+                "hypothesis_total_eur": first["hypothesis_total_eur"],
+                "residual_to_candidate_balance_eur": first["residual_to_candidate_balance_eur"],
+                "residual_to_annual_balance_eur": first["residual_to_annual_balance_eur"],
+                "fit_signal": first["fit_signal"],
+                "components": "; ".join(components),
+                "xolo_questions": "; ".join(questions),
+            }
+        )
+    return sorted(
+        highlights,
+        key=lambda row: (
+            row["period"],
+            status_order.get(row["hypothesis_status"], 9),
+            row["hypothesis_id"],
         ),
     )
 
