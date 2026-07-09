@@ -220,6 +220,11 @@ from .source_book_import import (
     write_source_book_import_csv,
     write_source_book_import_markdown,
 )
+from .source_book_refresh import (
+    run_source_book_refresh,
+    write_source_book_refresh_csv,
+    write_source_book_refresh_markdown,
+)
 from .source_book_request_package import build_source_book_request_package
 from .source_book_reconcile import (
     build_source_book_reconciliation,
@@ -855,6 +860,24 @@ def main(argv: list[str] | None = None) -> int:
     audit_source_book_reconcile.add_argument("--out-csv", type=Path, required=True)
     audit_source_book_reconcile.add_argument("--out-md", type=Path, required=True)
 
+    audit_source_book_refresh = subparsers.add_parser(
+        "audit-source-book-refresh",
+        help="Run source-book response check, content check, import, reconciliation, acceptance, and goal status",
+    )
+    audit_source_book_refresh.add_argument("--response-root", type=Path, required=True)
+    audit_source_book_refresh.add_argument("--runs-root", type=Path, default=Path("runs"))
+    audit_source_book_refresh.add_argument("--quarter-acceptance", type=Path)
+    audit_source_book_refresh.add_argument("--history-audit", type=Path)
+    audit_source_book_refresh.add_argument("--quarter-closure", type=Path)
+    audit_source_book_refresh.add_argument("--quarter-balance-bridge", type=Path)
+    audit_source_book_refresh.add_argument("--material-gap-drilldown", type=Path)
+    audit_source_book_refresh.add_argument("--packets-dir", type=Path)
+    audit_source_book_refresh.add_argument("--tax-report-sequence", type=Path)
+    audit_source_book_refresh.add_argument("--target-values-coverage", type=Path)
+    audit_source_book_refresh.add_argument("--first-gate-answer-check", type=Path)
+    audit_source_book_refresh.add_argument("--out-csv", type=Path)
+    audit_source_book_refresh.add_argument("--out-md", type=Path)
+
     audit_timing = subparsers.add_parser(
         "audit-timing",
         help="Diagnose timing, carry-forward, and netting patterns across Modelo 130 quarter balances",
@@ -1408,6 +1431,27 @@ def main(argv: list[str] | None = None) -> int:
         write_source_book_reconciliation_csv(args.out_csv, rows)
         write_source_book_reconciliation_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} source-book reconciliation rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-source-book-refresh":
+        rows = run_source_book_refresh(
+            response_root=args.response_root,
+            runs_root=args.runs_root,
+            quarter_acceptance_csv=args.quarter_acceptance,
+            history_audit_csv=args.history_audit,
+            quarter_closure_csv=args.quarter_closure,
+            quarter_balance_bridge_csv=args.quarter_balance_bridge,
+            material_gap_drilldown_csv=args.material_gap_drilldown,
+            packets_dir=args.packets_dir,
+            tax_report_sequence_csv=args.tax_report_sequence,
+            target_values_coverage_csv=args.target_values_coverage,
+            first_gate_answer_check_csv=args.first_gate_answer_check,
+        )
+        out_csv = args.out_csv or args.runs_root / "xolo_source_book_refresh.csv"
+        out_md = args.out_md or args.runs_root / "xolo_source_book_refresh.md"
+        write_source_book_refresh_csv(out_csv, rows)
+        write_source_book_refresh_markdown(out_md, rows)
+        final_status = rows[-1]["status"] if rows else "unknown"
+        print(f"Wrote {len(rows)} source-book refresh rows to {out_csv} and {out_md}; final status: {final_status}")
         return 0
     if args.command == "audit-timing":
         rows = build_timing_audit(args.quarter_closure, args.source_findings)
