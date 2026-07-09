@@ -57,6 +57,11 @@ from .local_archive_audit import (
     write_local_archive_audit_csv,
     write_local_archive_audit_markdown,
 )
+from .local_attention_bridge import (
+    build_local_attention_bridge,
+    write_local_attention_bridge_csv,
+    write_local_attention_bridge_markdown,
+)
 from .modelo130 import (
     calculate_modelo130,
     extract_modelo130_values,
@@ -316,6 +321,7 @@ def main(argv: list[str] | None = None) -> int:
     audit_closure_request.add_argument("--row-decisions", type=Path)
     audit_closure_request.add_argument("--root-cause-narrowing", type=Path)
     audit_closure_request.add_argument("--evidence-inventory", type=Path)
+    audit_closure_request.add_argument("--local-attention-bridge", type=Path)
     audit_closure_request.add_argument("--out-md", type=Path, required=True)
 
     audit_root_cause_narrowing = subparsers.add_parser(
@@ -377,6 +383,15 @@ def main(argv: list[str] | None = None) -> int:
     audit_local_archive.add_argument("--xolo-raw-expenses", type=Path, required=True)
     audit_local_archive.add_argument("--out-csv", type=Path, required=True)
     audit_local_archive.add_argument("--out-md", type=Path, required=True)
+
+    audit_local_attention = subparsers.add_parser(
+        "audit-local-attention",
+        help="Tie local archive attention candidates to current Modelo 130 quarter residuals",
+    )
+    audit_local_attention.add_argument("--local-archive-audit", type=Path, required=True)
+    audit_local_attention.add_argument("--quarter-closure", type=Path, required=True)
+    audit_local_attention.add_argument("--out-csv", type=Path, required=True)
+    audit_local_attention.add_argument("--out-md", type=Path, required=True)
 
     args = parser.parse_args(argv)
     config = _load_config(args.config)
@@ -535,6 +550,7 @@ def main(argv: list[str] | None = None) -> int:
             args.row_decisions,
             args.root_cause_narrowing,
             args.evidence_inventory,
+            args.local_attention_bridge,
         )
         write_xolo_closure_request(args.out_md, markdown)
         print(f"Wrote Xolo closure request to {args.out_md}")
@@ -589,6 +605,12 @@ def main(argv: list[str] | None = None) -> int:
         write_local_archive_audit_csv(args.out_csv, rows)
         write_local_archive_audit_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} local archive audit rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-local-attention":
+        rows = build_local_attention_bridge(args.local_archive_audit, args.quarter_closure)
+        write_local_attention_bridge_csv(args.out_csv, rows)
+        write_local_attention_bridge_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} local attention bridge rows to {args.out_csv} and {args.out_md}")
         return 0
     raise AssertionError(args.command)
 

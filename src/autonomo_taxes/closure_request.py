@@ -12,6 +12,7 @@ def build_xolo_closure_request(
     row_decisions_csv: Path | None = None,
     root_cause_narrowing_csv: Path | None = None,
     evidence_inventory_csv: Path | None = None,
+    local_attention_bridge_csv: Path | None = None,
 ) -> str:
     rows = _load_rows(quarter_closure_csv)
     material = [row for row in rows if row["closure_status"] == "blocked_material_unexplained_adjustment"]
@@ -21,6 +22,7 @@ def build_xolo_closure_request(
     row_decisions = _row_decision_highlights(row_decisions_csv) if row_decisions_csv else []
     root_cause_rows = _root_cause_highlights(root_cause_narrowing_csv) if root_cause_narrowing_csv else []
     inventory = _inventory_summary(evidence_inventory_csv) if evidence_inventory_csv else {}
+    local_attention_rows = _local_attention_highlights(local_attention_bridge_csv) if local_attention_bridge_csv else []
 
     lines = [
         "# Xolo Modelo 130 Closure Request",
@@ -182,6 +184,34 @@ def build_xolo_closure_request(
                 + " |"
             )
 
+    if local_attention_rows:
+        lines.extend(
+            [
+                "",
+                "## Local Archive Attention Candidates",
+                "",
+                "These local files are not enough to close the returns, but they narrow the evidence questions for 2023/2024 residuals.",
+                "",
+                "| Priority | Period | Document | Signal | Effect | Question |",
+                "|---|---|---|---|---:|---|",
+            ]
+        )
+        for row in local_attention_rows:
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        row["priority"],
+                        row["period"],
+                        _cell(row["local_document"]),
+                        _cell(row["gap_fit_signal"]),
+                        _fmt(row.get("known_effect_eur") or row.get("known_local_amount_eur") or ""),
+                        _cell(row["xolo_question"]),
+                    ]
+                )
+                + " |"
+            )
+
     lines.extend(
         [
             "",
@@ -254,6 +284,19 @@ def _root_cause_highlights(path: Path) -> list[dict[str, str]]:
 
 def _inventory_summary(path: Path) -> dict[str, str]:
     return {row["category"]: row["count"] for row in _load_rows(path)}
+
+
+def _local_attention_highlights(path: Path) -> list[dict[str, str]]:
+    rows = _load_rows(path)
+    priority_order = {"high": 0, "medium": 1, "low": 2}
+    return sorted(
+        [row for row in rows if row.get("priority") in {"high", "medium"}],
+        key=lambda row: (
+            priority_order.get(row.get("priority", ""), 9),
+            row.get("period", ""),
+            row.get("local_document", ""),
+        ),
+    )
 
 
 def _row_label(row: dict[str, str]) -> str:
