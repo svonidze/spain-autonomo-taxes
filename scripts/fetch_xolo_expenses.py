@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import sys
 from typing import Any
 from urllib.error import HTTPError
@@ -41,33 +42,78 @@ def main() -> int:
     parser.add_argument("--length", type=int, default=100)
     parser.add_argument("--max-pages", type=int, default=100)
     parser.add_argument("--start", type=int, default=0)
+    parser.add_argument(
+        "--storage-state",
+        type=Path,
+        help="Optional Playwright storageState from scripts/xolo_playwright_login.py. "
+        "When set, CSRF is read from the live Xolo expense page and XOLO_COOKIE/XOLO_CSRF are not needed.",
+    )
     args = parser.parse_args()
 
-    cookie = os.environ.get("XOLO_COOKIE")
-    csrf = os.environ.get("XOLO_CSRF")
-    if not cookie or not csrf:
-        raise SystemExit("Set XOLO_COOKIE and XOLO_CSRF environment variables; do not commit them")
+    pages = (
+        _fetch_pages_with_playwright(args.storage_state, args.start, args.length, args.max_pages)
+        if args.storage_state
+        else _fetch_pages_with_env(args.start, args.length, args.max_pages)
+    )
 
-    pages: list[dict[str, Any]] = []
     rows: list[dict[str, str]] = []
-    start = args.start
-    for draw in range(1, args.max_pages + 1):
-        payload = _payload(draw=draw, start=start, length=args.length)
-        page = _post_page(cookie, csrf, payload)
-        data = page.get("data") or []
-        pages.append(page)
-        for item in data:
+    for page in pages:
+        for item in page.get("data") or []:
             rows.append(normalize_xolo_api_row(item))
-        total = int(page.get("recordsFiltered") or page.get("recordsTotal") or len(rows))
-        start += args.length
-        if not data or start >= total:
-            break
 
     write_combined_xolo_api_json(args.out_json, pages)
     write_raw_xolo_expense_csv(args.out_csv, rows)
 
     print(f"Fetched {len(rows)} expense rows into {args.out_csv}")
     return 0
+
+
+def _fetch_pages_with_env(start: int, length: int, max_pages: int) -> list[dict[str, Any]]:
+    cookie = os.environ.get("XOLO_COOKIE")
+    csrf = os.environ.get("XOLO_CSRF")
+    if not cookie or not csrf:
+        raise SystemExit("Set XOLO_COOKIE and XOLO_CSRF environment variables; do not commit them")
+    pages: list[dict[str, Any]] = []
+    for draw in range(1, max_pages + 1):
+        payload = _payload(draw=draw, start=start, length=length)
+        page = _post_page(cookie, csrf, payload)
+        data = page.get("data") or []
+        pages.append(page)
+        total = int(page.get("recordsFiltered") or page.get("recordsTotal") or start + len(data))
+        start += length
+        if not data or start >= total:
+            break
+    return pages
+
+
+def _fetch_pages_with_playwright(storage_state: Path, start: int, length: int, max_pages: int) -> list[dict[str, Any]]:
+    if not storage_state.exists():
+        raise SystemExit(f"Storage state not found: {storage_state}. Run scripts/xolo_playwright_login.py first.")
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:  # pragma: no cover - environment guard.
+        raise SystemExit("Playwright is required for --storage-state mode") from exc
+
+    pages: list[dict[str, Any]] = []
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        context = browser.new_context(storage_state=str(storage_state), viewport={"width": 1600, "height": 1200})
+        page = context.new_page()
+        page.goto("https://app.xolo.io/selfservice/expense", wait_until="networkidle", timeout=60_000)
+        if "/hub/login" in page.url:
+            raise SystemExit("Xolo session is not authenticated; rerun scripts/xolo_playwright_login.py")
+        csrf = _extract_csrf(page.content())
+        for draw in range(1, max_pages + 1):
+            payload = _payload(draw=draw, start=start, length=length)
+            api_page = _post_page_in_browser(page, csrf, payload)
+            data = api_page.get("data") or []
+            pages.append(api_page)
+            total = int(api_page.get("recordsFiltered") or api_page.get("recordsTotal") or start + len(data))
+            start += length
+            if not data or start >= total:
+                break
+        browser.close()
+    return pages
 
 
 def _post_page(cookie: str, csrf: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -106,6 +152,43 @@ def _post_page(cookie: str, csrf: str, payload: dict[str, Any]) -> dict[str, Any
         raise SystemExit(f"Xolo request failed: HTTP {exc.code}: {detail[:500]}") from exc
 
 
+def _post_page_in_browser(page: Any, csrf: str, payload: dict[str, Any]) -> dict[str, Any]:
+    result = page.evaluate(
+        """async ({payload, csrf}) => {
+          const res = await fetch('/selfservice/expense/data?_csrf=' + encodeURIComponent(csrf), {
+            method: 'POST',
+            headers: {
+              'accept': 'application/json, text/javascript, */*; q=0.01',
+              'content-type': 'application/json; charset=UTF-8',
+              'x-csrf-token': csrf,
+              'x-requested-with': 'XMLHttpRequest'
+            },
+            body: JSON.stringify(payload)
+          });
+          const text = await res.text();
+          return {status: res.status, contentType: res.headers.get('content-type') || '', text};
+        }""",
+        {"payload": payload, "csrf": csrf},
+    )
+    if int(result["status"]) >= 400:
+        raise SystemExit(
+            "Xolo request failed in Playwright mode: "
+            f"HTTP {result['status']}, content-type {result['contentType']}. "
+            f"Response excerpt: {_plain_text(result['text'])[:500]}"
+        )
+    try:
+        parsed = json.loads(result["text"])
+    except json.JSONDecodeError as exc:
+        raise SystemExit(
+            "Xolo request returned non-JSON response in Playwright mode "
+            f"(HTTP {result['status']}, content-type {result['contentType']}). "
+            f"Response excerpt: {_plain_text(result['text'])[:300]}"
+        ) from exc
+    if not isinstance(parsed, dict):
+        raise SystemExit(f"Unexpected Xolo API response shape: {type(parsed).__name__}")
+    return parsed
+
+
 def _payload(draw: int, start: int, length: int) -> dict[str, Any]:
     return {
         "draw": draw,
@@ -126,9 +209,22 @@ def _payload(draw: int, start: int, length: int) -> dict[str, Any]:
     }
 
 
+def _extract_csrf(page_html: str) -> str:
+    patterns = [
+        r'name="_csrf"\s+value="([^"]+)"',
+        r'value="([^"]+)"\s+name="_csrf"',
+        r'csrf-token"\s+content="([^"]+)"',
+        r'content="([^"]+)"\s+name="csrf-token"',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, page_html)
+        if match:
+            return match.group(1)
+    raise SystemExit("Could not find Xolo CSRF token on the expense page")
+
+
 def _plain_text(value: str) -> str:
     import html
-    import re
 
     text = re.sub(r"<[^>]*>", " ", value)
     return re.sub(r"\s+", " ", html.unescape(text)).strip()

@@ -14,9 +14,11 @@ MATERIAL_GAP_CONTEXT_FIELDS = [
     "target_casilla_02_delta",
     "annual_constrained_balance_to_target",
     "xolo_document_quarter_row_count",
+    "xolo_document_quarter_unconverted_row_count",
     "xolo_document_quarter_gross_eur",
     "xolo_document_quarter_non_asset_gross_eur",
     "xolo_document_quarter_asset_candidate_gross_eur",
+    "xolo_document_quarter_unconverted_rows",
     "bridge_raw_non_asset_delta",
     "bridge_raw_vs_xolo_non_asset_delta",
     "target_minus_xolo_non_asset_eur",
@@ -54,6 +56,7 @@ def build_material_gap_context(
         xolo_rows = xolo_by_period.get(period, [])
         asset_rows = [row for row in xolo_rows if _is_asset_candidate(row)]
         non_asset_rows = [row for row in xolo_rows if not _is_asset_candidate(row)]
+        unconverted_rows = [row for row in xolo_rows if _row_has_unconverted_currency(row)]
         material_rows = material_by_period.get(period, [])
 
         target = parse_amount(bridge["target_casilla_02_delta"])
@@ -73,6 +76,7 @@ def build_material_gap_context(
             bridge_vs_xolo,
             gap_sized_assets,
             material_rows,
+            unconverted_rows,
         )
 
         rows.append(
@@ -82,9 +86,11 @@ def build_material_gap_context(
                 "target_casilla_02_delta": _money(target),
                 "annual_constrained_balance_to_target": _money(annual_balance),
                 "xolo_document_quarter_row_count": str(len(xolo_rows)),
+                "xolo_document_quarter_unconverted_row_count": str(len(unconverted_rows)),
                 "xolo_document_quarter_gross_eur": _money(xolo_total),
                 "xolo_document_quarter_non_asset_gross_eur": _money(xolo_non_asset),
                 "xolo_document_quarter_asset_candidate_gross_eur": _money(xolo_asset),
+                "xolo_document_quarter_unconverted_rows": _format_original_rows(unconverted_rows),
                 "bridge_raw_non_asset_delta": _money(bridge_raw),
                 "bridge_raw_vs_xolo_non_asset_delta": _money(bridge_vs_xolo),
                 "target_minus_xolo_non_asset_eur": _money(target_minus_non_asset),
@@ -93,7 +99,7 @@ def build_material_gap_context(
                 "gap_sized_asset_candidate_fit": _format_asset_fit(gap_sized_assets, annual_balance),
                 "actionable_hypotheses": _format_hypotheses(material_rows),
                 "context_signal": context_signal,
-                "next_xolo_question": _next_question(period, annual_balance, gap_sized_assets, context_signal),
+                "next_xolo_question": _next_question(period, annual_balance, gap_sized_assets, context_signal, unconverted_rows),
             }
         )
     return rows
@@ -150,6 +156,7 @@ def write_material_gap_context_markdown(path: Path, rows: list[dict[str, str]]) 
                 "",
                 f"- Context signal: `{row['context_signal']}`",
                 f"- Asset candidate rows: {_cell(row['asset_candidate_rows']) or 'none'}",
+                f"- Non-EUR rows without booked EUR amount: {_cell(row['xolo_document_quarter_unconverted_rows']) or 'none'}",
                 f"- Gap-sized asset candidate rows: {_cell(row['gap_sized_asset_candidate_rows']) or 'none'}",
                 f"- Gap-sized asset fit: {_cell(row['gap_sized_asset_candidate_fit']) or 'none'}",
                 f"- Actionable hypotheses: {_cell(row['actionable_hypotheses']) or 'none'}",
@@ -166,7 +173,10 @@ def _context_signal(
     bridge_vs_xolo: Decimal,
     gap_sized_assets: list[dict[str, str]],
     material_rows: list[dict[str, str]],
+    unconverted_rows: list[dict[str, str]],
 ) -> str:
+    if unconverted_rows:
+        return "xolo_raw_has_unconverted_currency_rows_requires_fx"
     if (
         abs(annual_balance - target_minus_non_asset) <= Decimal("0.02")
         and abs(bridge_vs_xolo) <= Decimal("0.02")
@@ -188,7 +198,14 @@ def _next_question(
     annual_balance: Decimal,
     gap_sized_assets: list[dict[str, str]],
     context_signal: str,
+    unconverted_rows: list[dict[str, str]],
 ) -> str:
+    if context_signal == "xolo_raw_has_unconverted_currency_rows_requires_fx":
+        rows = _format_original_rows(unconverted_rows)
+        return (
+            f"For {period}, Xolo raw rows include non-EUR amounts without booked EUR values: {rows}. "
+            "Please provide the submitted Modelo 130 register EUR deductible amount and FX/basis for these rows."
+        )
     if context_signal == "gap_matches_excluded_asset_candidate_context" and gap_sized_assets:
         rows = _format_rows(gap_sized_assets)
         return (
@@ -251,8 +268,19 @@ def _sum_rows(rows: list[dict[str, str]]) -> Decimal:
 
 
 def _row_gross(row: dict[str, str]) -> Decimal:
-    value = row.get("gross_eur") or row.get("match_amount") or row.get("amount_original") or "0"
+    gross_eur = row.get("gross_eur")
+    if gross_eur:
+        return parse_amount(gross_eur)
+    currency = (row.get("currency") or "").upper()
+    if currency and currency != "EUR":
+        return Decimal("0.00")
+    value = row.get("match_amount") or row.get("amount_original") or "0"
     return parse_amount(value)
+
+
+def _row_has_unconverted_currency(row: dict[str, str]) -> bool:
+    currency = (row.get("currency") or "").upper()
+    return bool(currency and currency != "EUR" and not row.get("gross_eur"))
 
 
 def _format_rows(rows: list[dict[str, str]]) -> str:
@@ -265,6 +293,25 @@ def _format_rows(rows: list[dict[str, str]]) -> str:
                 row.get("recipient", ""),
                 row.get("number", ""),
                 _money(_row_gross(row)),
+                row.get("type", ""),
+            )
+            if part
+        )
+        for row in rows
+    )
+
+
+def _format_original_rows(rows: list[dict[str, str]]) -> str:
+    return "; ".join(
+        " ".join(
+            part
+            for part in (
+                row.get("date", ""),
+                row.get("xolo_id", ""),
+                row.get("recipient", ""),
+                row.get("number", ""),
+                row.get("amount_original", ""),
+                row.get("currency", ""),
                 row.get("type", ""),
             )
             if part

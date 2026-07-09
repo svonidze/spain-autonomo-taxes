@@ -202,6 +202,11 @@ from .xolo_calculation_compare import (
     write_xolo_calculation_compare_csv,
     write_xolo_calculation_compare_markdown,
 )
+from .xolo_dataexport_inventory import (
+    build_xolo_dataexport_inventory,
+    write_xolo_dataexport_inventory_csv,
+    write_xolo_dataexport_inventory_markdown,
+)
 from .xolo_questions import build_xolo_questions, write_questions_csv, write_questions_markdown
 
 
@@ -300,6 +305,14 @@ def main(argv: list[str] | None = None) -> int:
     audit_evidence_inventory.add_argument("--xolo-root", type=Path, required=True)
     audit_evidence_inventory.add_argument("--out-csv", type=Path, required=True)
     audit_evidence_inventory.add_argument("--out-md", type=Path, required=True)
+
+    audit_xolo_dataexport_inventory = subparsers.add_parser(
+        "audit-xolo-dataexport-inventory",
+        help="Inventory a downloaded Xolo dataexport ZIP for registers and asset schedules",
+    )
+    audit_xolo_dataexport_inventory.add_argument("--zip", type=Path, required=True)
+    audit_xolo_dataexport_inventory.add_argument("--out-csv", type=Path, required=True)
+    audit_xolo_dataexport_inventory.add_argument("--out-md", type=Path, required=True)
 
     audit_annual = subparsers.add_parser("audit-annual", help="Compare annual Modelo 100 summaries to Q4 Modelo 130")
     audit_annual.add_argument("--modelo100-summary", type=Path, required=True)
@@ -694,6 +707,12 @@ def main(argv: list[str] | None = None) -> int:
         write_evidence_inventory_csv(args.out_csv, rows)
         write_evidence_inventory_markdown(args.out_md, rows, args.xolo_root)
         print(f"Wrote {len(rows)} evidence inventory rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-xolo-dataexport-inventory":
+        rows = build_xolo_dataexport_inventory(args.zip)
+        write_xolo_dataexport_inventory_csv(args.out_csv, rows)
+        write_xolo_dataexport_inventory_markdown(args.out_md, rows, args.zip)
+        print(f"Wrote {len(rows)} Xolo data export inventory rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-annual":
         rows = compare_annual_to_quarterly(args.modelo100_summary, args.history_audit, args.xolo_raw_expenses)
