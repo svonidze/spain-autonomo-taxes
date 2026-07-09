@@ -170,6 +170,12 @@ from .xolo_api_export import (
     write_combined_xolo_api_json,
     write_raw_xolo_expense_csv,
 )
+from .xolo_api_coverage import (
+    build_xolo_api_coverage,
+    write_xolo_api_coverage_csv,
+    write_xolo_api_coverage_markdown,
+    write_xolo_api_quarter_counts_csv,
+)
 from .xolo_questions import build_xolo_questions, write_questions_csv, write_questions_markdown
 
 
@@ -239,6 +245,18 @@ def main(argv: list[str] | None = None) -> int:
     audit_history.add_argument("--xolo-raw-expenses", type=Path, help="Optional raw Xolo expense CSV from scripts/fetch_xolo_expenses.py")
     audit_history.add_argument("--out-csv", type=Path, required=True)
     audit_history.add_argument("--out-md", type=Path, required=True)
+
+    audit_xolo_api_coverage = subparsers.add_parser(
+        "audit-xolo-api-coverage",
+        help="Validate raw Xolo DataTables JSON/CSV coverage before using it as audit evidence",
+    )
+    audit_xolo_api_coverage.add_argument("--raw-json", type=Path, required=True)
+    audit_xolo_api_coverage.add_argument("--raw-csv", type=Path, required=True)
+    audit_xolo_api_coverage.add_argument("--activity-start-year", type=int, default=2023)
+    audit_xolo_api_coverage.add_argument("--activity-start-quarter", type=int, choices=[1, 2, 3, 4], default=2)
+    audit_xolo_api_coverage.add_argument("--out-csv", type=Path, required=True)
+    audit_xolo_api_coverage.add_argument("--out-quarter-csv", type=Path, required=True)
+    audit_xolo_api_coverage.add_argument("--out-md", type=Path, required=True)
 
     audit_evidence_inventory = subparsers.add_parser(
         "audit-evidence-inventory",
@@ -580,6 +598,18 @@ def main(argv: list[str] | None = None) -> int:
         write_history_audit_csv(args.out_csv, rows)
         write_history_audit_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} historical audit rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-xolo-api-coverage":
+        coverage = build_xolo_api_coverage(
+            args.raw_json,
+            args.raw_csv,
+            activity_start_year=args.activity_start_year,
+            activity_start_quarter=args.activity_start_quarter,
+        )
+        write_xolo_api_coverage_csv(args.out_csv, coverage)
+        write_xolo_api_quarter_counts_csv(args.out_quarter_csv, coverage)
+        write_xolo_api_coverage_markdown(args.out_md, coverage)
+        print(f"Wrote Xolo API coverage status {coverage.status} to {args.out_csv}, {args.out_quarter_csv}, and {args.out_md}")
         return 0
     if args.command == "audit-evidence-inventory":
         rows = build_evidence_inventory(args.xolo_root)
