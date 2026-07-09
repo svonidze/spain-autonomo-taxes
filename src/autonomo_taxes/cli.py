@@ -55,6 +55,11 @@ from .quarter_evidence import (
     write_quarter_evidence_csv,
     write_quarter_evidence_markdown,
 )
+from .quarter_closure import (
+    build_quarter_closure_checklist,
+    write_quarter_closure_csv,
+    write_quarter_closure_markdown,
+)
 from .register_review import (
     build_register_review_template,
     write_register_review_csv,
@@ -218,6 +223,15 @@ def main(argv: list[str] | None = None) -> int:
     audit_hypothesis_ledger.add_argument("--out-summary-csv", type=Path, required=True)
     audit_hypothesis_ledger.add_argument("--out-md", type=Path, required=True)
 
+    audit_quarter_closure = subparsers.add_parser(
+        "audit-quarter-closure",
+        help="Build a quarter-by-quarter closure checklist from hypothesis ledger evidence",
+    )
+    audit_quarter_closure.add_argument("--hypothesis-summary", type=Path, required=True)
+    audit_quarter_closure.add_argument("--row-audit", type=Path, required=True)
+    audit_quarter_closure.add_argument("--out-csv", type=Path, required=True)
+    audit_quarter_closure.add_argument("--out-md", type=Path, required=True)
+
     args = parser.parse_args(argv)
     config = _load_config(args.config)
     _merge_config(args, config)
@@ -330,6 +344,12 @@ def main(argv: list[str] | None = None) -> int:
             f"Wrote {len(result.ledger_rows)} hypothesis ledger rows and "
             f"{len(result.summary_rows)} summary rows"
         )
+        return 0
+    if args.command == "audit-quarter-closure":
+        rows = build_quarter_closure_checklist(args.hypothesis_summary, args.row_audit)
+        write_quarter_closure_csv(args.out_csv, rows)
+        write_quarter_closure_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} quarter closure rows to {args.out_csv} and {args.out_md}")
         return 0
     raise AssertionError(args.command)
 
