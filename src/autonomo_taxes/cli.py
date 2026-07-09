@@ -181,6 +181,7 @@ from .root_cause_narrowing import (
     write_root_cause_narrowing_markdown,
 )
 from .sequential_summary import build_sequential_summary, write_sequential_summary
+from .support_request_short import build_xolo_support_request_short, write_xolo_support_request_short
 from .timing_audit import build_timing_audit, write_timing_audit_csv, write_timing_audit_markdown
 from .xolo_ledger import (
     import_xolo_expense_csv,
@@ -458,6 +459,15 @@ def main(argv: list[str] | None = None) -> int:
     audit_register_answer_intake.add_argument("--register-blocking-queue", type=Path, required=True)
     audit_register_answer_intake.add_argument("--out-csv", type=Path, required=True)
     audit_register_answer_intake.add_argument("--out-md", type=Path, required=True)
+
+    audit_support_request_short = subparsers.add_parser(
+        "audit-support-request-short",
+        help="Build a concise Xolo support request from answer intake and asset-gap evidence",
+    )
+    audit_support_request_short.add_argument("--answer-intake", type=Path, required=True)
+    audit_support_request_short.add_argument("--asset-gap-matrix", type=Path, required=True)
+    audit_support_request_short.add_argument("--max-questions", type=int, default=8)
+    audit_support_request_short.add_argument("--out-md", type=Path, required=True)
 
     audit_register_answer_status = subparsers.add_parser(
         "audit-register-answer-status",
@@ -869,6 +879,15 @@ def main(argv: list[str] | None = None) -> int:
         write_register_answer_intake_csv(args.out_csv, rows)
         write_register_answer_intake_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} register answer intake rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-support-request-short":
+        markdown = build_xolo_support_request_short(
+            args.answer_intake,
+            args.asset_gap_matrix,
+            max_questions=args.max_questions,
+        )
+        write_xolo_support_request_short(args.out_md, markdown)
+        print(f"Wrote short Xolo support request to {args.out_md}")
         return 0
     if args.command == "audit-register-answer-status":
         rows = build_register_answer_status(args.answer_intake)
