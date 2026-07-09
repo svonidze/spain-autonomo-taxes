@@ -209,6 +209,11 @@ from .source_book_content_check import (
     write_source_book_content_check_csv,
     write_source_book_content_check_markdown,
 )
+from .source_book_import import (
+    build_source_book_import,
+    write_source_book_import_csv,
+    write_source_book_import_markdown,
+)
 from .source_book_response_check import (
     build_source_book_response_check,
     write_source_book_response_check_csv,
@@ -799,6 +804,15 @@ def main(argv: list[str] | None = None) -> int:
     audit_source_book_content_check.add_argument("--out-csv", type=Path, required=True)
     audit_source_book_content_check.add_argument("--out-md", type=Path, required=True)
 
+    audit_source_book_import = subparsers.add_parser(
+        "audit-source-book-import",
+        help="Import content-ready Xolo source-book rows into a normalized evidence table",
+    )
+    audit_source_book_import.add_argument("--response-root", type=Path, required=True)
+    audit_source_book_import.add_argument("--source-book-content-check", type=Path, required=True)
+    audit_source_book_import.add_argument("--out-csv", type=Path, required=True)
+    audit_source_book_import.add_argument("--out-md", type=Path, required=True)
+
     audit_timing = subparsers.add_parser(
         "audit-timing",
         help="Diagnose timing, carry-forward, and netting patterns across Modelo 130 quarter balances",
@@ -1311,6 +1325,15 @@ def main(argv: list[str] | None = None) -> int:
         write_source_book_content_check_csv(args.out_csv, rows)
         write_source_book_content_check_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} source-book content-check rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-source-book-import":
+        rows = build_source_book_import(
+            response_root=args.response_root,
+            source_book_content_check_csv=args.source_book_content_check,
+        )
+        write_source_book_import_csv(args.out_csv, rows)
+        write_source_book_import_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} imported source-book rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-timing":
         rows = build_timing_audit(args.quarter_closure, args.source_findings)

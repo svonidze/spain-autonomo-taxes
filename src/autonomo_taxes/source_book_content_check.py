@@ -246,14 +246,33 @@ def _inspection(path: Path, check: str, file_format: str, headers: list[str], ro
 
 
 def _missing_groups(check: str, headers: list[str]) -> list[str]:
+    mapping = required_group_header_map(check, headers)
+    return [group for group in REQUIRED_GROUPS.get(check, {}) if group not in mapping]
+
+
+def required_group_header_map(check: str, headers: list[str]) -> dict[str, str]:
     groups = REQUIRED_GROUPS.get(check, {})
     normalized_headers = [_normalize(header) for header in headers]
     compact_headers = [_compact(header) for header in normalized_headers]
-    missing: list[str] = []
+    mapping: dict[str, str] = {}
     for group, aliases in groups.items():
-        if not any(_alias_matches(alias, normalized_headers, compact_headers) for alias in aliases):
-            missing.append(group)
-    return missing
+        match = _matched_header(aliases, headers, normalized_headers, compact_headers)
+        if match:
+            mapping[group] = match
+    return mapping
+
+
+def _matched_header(
+    aliases: list[str],
+    headers: list[str],
+    normalized_headers: list[str],
+    compact_headers: list[str],
+) -> str:
+    for alias in aliases:
+        for header, normalized_header, compact_header in zip(headers, normalized_headers, compact_headers, strict=True):
+            if _alias_matches(alias, [normalized_header], [compact_header]):
+                return header
+    return ""
 
 
 def _alias_matches(alias: str, normalized_headers: list[str], compact_headers: list[str]) -> bool:
