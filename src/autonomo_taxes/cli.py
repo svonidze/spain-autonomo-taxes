@@ -15,6 +15,7 @@ try:
 except Exception:  # pragma: no cover - dependency guard for clearer CLI errors.
     yaml = None
 
+from .annual import compare_annual_to_quarterly, write_annual_comparison_csv, write_annual_comparison_markdown
 from .history import run_history_audit, write_history_audit_csv, write_history_audit_markdown
 from .modelo130 import (
     calculate_modelo130,
@@ -102,6 +103,13 @@ def main(argv: list[str] | None = None) -> int:
     audit_history.add_argument("--out-csv", type=Path, required=True)
     audit_history.add_argument("--out-md", type=Path, required=True)
 
+    audit_annual = subparsers.add_parser("audit-annual", help="Compare annual Modelo 100 summaries to Q4 Modelo 130")
+    audit_annual.add_argument("--modelo100-summary", type=Path, required=True)
+    audit_annual.add_argument("--history-audit", type=Path, required=True)
+    audit_annual.add_argument("--xolo-raw-expenses", type=Path, required=True)
+    audit_annual.add_argument("--out-csv", type=Path, required=True)
+    audit_annual.add_argument("--out-md", type=Path, required=True)
+
     args = parser.parse_args(argv)
     config = _load_config(args.config)
     _merge_config(args, config)
@@ -136,6 +144,12 @@ def main(argv: list[str] | None = None) -> int:
         write_history_audit_csv(args.out_csv, rows)
         write_history_audit_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} historical audit rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-annual":
+        rows = compare_annual_to_quarterly(args.modelo100_summary, args.history_audit, args.xolo_raw_expenses)
+        write_annual_comparison_csv(args.out_csv, rows)
+        write_annual_comparison_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} annual comparison rows to {args.out_csv} and {args.out_md}")
         return 0
     raise AssertionError(args.command)
 
