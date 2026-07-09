@@ -50,6 +50,11 @@ from .register_review import (
     write_register_review_csv,
     write_register_review_markdown,
 )
+from .register_reconcile import (
+    build_register_reconciliation,
+    write_register_reconciliation_csv,
+    write_register_reconciliation_markdown,
+)
 from .reports import write_compare, write_ledger, write_manifest, write_markdown_report
 from .row_audit import build_row_audit, write_row_audit_csv, write_row_audit_markdown
 from .xolo_ledger import (
@@ -175,6 +180,15 @@ def main(argv: list[str] | None = None) -> int:
     audit_register_template.add_argument("--out-csv", type=Path, required=True)
     audit_register_template.add_argument("--out-md", type=Path, required=True)
 
+    audit_register_reconcile = subparsers.add_parser(
+        "audit-register-reconcile",
+        help="Compare a filled submitted-register review template against Modelo 130 target deltas",
+    )
+    audit_register_reconcile.add_argument("--history-audit", type=Path, required=True)
+    audit_register_reconcile.add_argument("--register-review", type=Path, required=True)
+    audit_register_reconcile.add_argument("--out-csv", type=Path, required=True)
+    audit_register_reconcile.add_argument("--out-md", type=Path, required=True)
+
     args = parser.parse_args(argv)
     config = _load_config(args.config)
     _merge_config(args, config)
@@ -265,6 +279,12 @@ def main(argv: list[str] | None = None) -> int:
         write_register_review_csv(args.out_csv, rows)
         write_register_review_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} register review rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-register-reconcile":
+        rows = build_register_reconciliation(args.history_audit, args.register_review)
+        write_register_reconciliation_csv(args.out_csv, rows)
+        write_register_reconciliation_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} register reconciliation rows to {args.out_csv} and {args.out_md}")
         return 0
     raise AssertionError(args.command)
 
