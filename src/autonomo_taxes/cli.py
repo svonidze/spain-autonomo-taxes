@@ -84,6 +84,11 @@ from .register_reconcile import (
 )
 from .reports import write_compare, write_ledger, write_manifest, write_markdown_report
 from .row_audit import build_row_audit, write_row_audit_csv, write_row_audit_markdown
+from .root_cause_narrowing import (
+    build_root_cause_narrowing,
+    write_root_cause_narrowing_csv,
+    write_root_cause_narrowing_markdown,
+)
 from .sequential_summary import build_sequential_summary, write_sequential_summary
 from .xolo_ledger import (
     import_xolo_expense_csv,
@@ -271,6 +276,16 @@ def main(argv: list[str] | None = None) -> int:
     audit_closure_request.add_argument("--source-findings", type=Path)
     audit_closure_request.add_argument("--out-md", type=Path, required=True)
 
+    audit_root_cause_narrowing = subparsers.add_parser(
+        "audit-root-cause-narrowing",
+        help="Combine closure, annual amortization, and Modelo 303 gates into remaining root-cause categories",
+    )
+    audit_root_cause_narrowing.add_argument("--quarter-closure", type=Path, required=True)
+    audit_root_cause_narrowing.add_argument("--annual-constrained-assets", type=Path, required=True)
+    audit_root_cause_narrowing.add_argument("--modelo303-vat-crosscheck", type=Path, required=True)
+    audit_root_cause_narrowing.add_argument("--out-csv", type=Path, required=True)
+    audit_root_cause_narrowing.add_argument("--out-md", type=Path, required=True)
+
     audit_quarter_packets = subparsers.add_parser(
         "audit-quarter-packets",
         help="Write one verification packet per Modelo 130 quarter",
@@ -428,6 +443,16 @@ def main(argv: list[str] | None = None) -> int:
         markdown = build_xolo_closure_request(args.quarter_closure, args.source_findings)
         write_xolo_closure_request(args.out_md, markdown)
         print(f"Wrote Xolo closure request to {args.out_md}")
+        return 0
+    if args.command == "audit-root-cause-narrowing":
+        rows = build_root_cause_narrowing(
+            args.quarter_closure,
+            args.annual_constrained_assets,
+            args.modelo303_vat_crosscheck,
+        )
+        write_root_cause_narrowing_csv(args.out_csv, rows)
+        write_root_cause_narrowing_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} root-cause narrowing rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-quarter-packets":
         packets = build_quarter_packets(
