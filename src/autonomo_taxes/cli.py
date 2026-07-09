@@ -153,6 +153,11 @@ from .register_answer_apply import (
     write_register_answer_apply_report_csv,
     write_register_answer_apply_report_markdown,
 )
+from .register_answer_status import (
+    build_register_answer_status,
+    write_register_answer_status_csv,
+    write_register_answer_status_markdown,
+)
 from .reports import write_compare, write_ledger, write_manifest, write_markdown_report
 from .row_audit import build_row_audit, write_row_audit_csv, write_row_audit_markdown
 from .row_decision_report import (
@@ -396,6 +401,14 @@ def main(argv: list[str] | None = None) -> int:
     audit_register_answer_intake.add_argument("--register-blocking-queue", type=Path, required=True)
     audit_register_answer_intake.add_argument("--out-csv", type=Path, required=True)
     audit_register_answer_intake.add_argument("--out-md", type=Path, required=True)
+
+    audit_register_answer_status = subparsers.add_parser(
+        "audit-register-answer-status",
+        help="Check whether filled answer-intake rows are structured enough to apply",
+    )
+    audit_register_answer_status.add_argument("--answer-intake", type=Path, required=True)
+    audit_register_answer_status.add_argument("--out-csv", type=Path, required=True)
+    audit_register_answer_status.add_argument("--out-md", type=Path, required=True)
 
     audit_register_answer_apply = subparsers.add_parser(
         "audit-register-answer-apply",
@@ -765,6 +778,12 @@ def main(argv: list[str] | None = None) -> int:
         write_register_answer_intake_csv(args.out_csv, rows)
         write_register_answer_intake_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} register answer intake rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-register-answer-status":
+        rows = build_register_answer_status(args.answer_intake)
+        write_register_answer_status_csv(args.out_csv, rows)
+        write_register_answer_status_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} register answer status rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-register-answer-apply":
         result = apply_register_answers(args.register_review, args.answer_intake)
