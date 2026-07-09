@@ -101,6 +101,11 @@ from .quarter_balance_bridge import (
     write_quarter_balance_bridge_csv,
     write_quarter_balance_bridge_markdown,
 )
+from .quarter_acceptance import (
+    build_quarter_acceptance_matrix,
+    write_quarter_acceptance_csv,
+    write_quarter_acceptance_markdown,
+)
 from .quarter_packets import build_quarter_packets, write_quarter_packets
 from .register_review import (
     build_register_review_template,
@@ -340,6 +345,17 @@ def main(argv: list[str] | None = None) -> int:
     audit_material_gaps.add_argument("--hypotheses", type=Path, required=True)
     audit_material_gaps.add_argument("--out-csv", type=Path, required=True)
     audit_material_gaps.add_argument("--out-md", type=Path, required=True)
+
+    audit_quarter_acceptance = subparsers.add_parser(
+        "audit-quarter-acceptance",
+        help="Build the quarter acceptance gate from closure, balance bridge, and material-gap evidence",
+    )
+    audit_quarter_acceptance.add_argument("--quarter-closure", type=Path, required=True)
+    audit_quarter_acceptance.add_argument("--quarter-balance-bridge", type=Path, required=True)
+    audit_quarter_acceptance.add_argument("--material-gap-drilldown", type=Path)
+    audit_quarter_acceptance.add_argument("--packets-dir", type=Path)
+    audit_quarter_acceptance.add_argument("--out-csv", type=Path, required=True)
+    audit_quarter_acceptance.add_argument("--out-md", type=Path, required=True)
 
     audit_closure_request = subparsers.add_parser(
         "audit-closure-request",
@@ -590,6 +606,17 @@ def main(argv: list[str] | None = None) -> int:
         write_material_gap_drilldown_csv(args.out_csv, rows)
         write_material_gap_drilldown_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} material gap drilldown rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-quarter-acceptance":
+        rows = build_quarter_acceptance_matrix(
+            args.quarter_closure,
+            args.quarter_balance_bridge,
+            args.material_gap_drilldown,
+            args.packets_dir,
+        )
+        write_quarter_acceptance_csv(args.out_csv, rows)
+        write_quarter_acceptance_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} quarter acceptance rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-closure-request":
         markdown = build_xolo_closure_request(
