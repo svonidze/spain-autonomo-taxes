@@ -578,6 +578,8 @@ def main(argv: list[str] | None = None) -> int:
     audit_support_request_short.add_argument("--asset-gap-matrix", type=Path, required=True)
     audit_support_request_short.add_argument("--first-gate", type=Path)
     audit_support_request_short.add_argument("--asset-ui-evidence", type=Path)
+    audit_support_request_short.add_argument("--dataexport-inventory", type=Path)
+    audit_support_request_short.add_argument("--dataexport-archives", type=Path)
     audit_support_request_short.add_argument("--max-questions", type=int, default=8)
     audit_support_request_short.add_argument("--out-md", type=Path, required=True)
 
@@ -1165,6 +1167,8 @@ def main(argv: list[str] | None = None) -> int:
             args.asset_gap_matrix,
             first_gate_csv=args.first_gate,
             asset_ui_evidence_csv=args.asset_ui_evidence,
+            dataexport_inventory_csv=args.dataexport_inventory,
+            dataexport_archives_csv=args.dataexport_archives,
             max_questions=args.max_questions,
         )
         write_xolo_support_request_short(args.out_md, markdown)

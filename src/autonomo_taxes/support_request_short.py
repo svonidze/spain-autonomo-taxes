@@ -39,6 +39,8 @@ def build_xolo_support_request_short(
     *,
     first_gate_csv: Path | None = None,
     asset_ui_evidence_csv: Path | None = None,
+    dataexport_inventory_csv: Path | None = None,
+    dataexport_archives_csv: Path | None = None,
     max_questions: int = 8,
 ) -> str:
     intake_rows = sorted(_load_rows(register_answer_intake_csv), key=_queue_sort_key)
@@ -53,6 +55,7 @@ def build_xolo_support_request_short(
     priority_counts = Counter(row["audit_priority"] for row in intake_rows)
     first_gate_section = _first_gate_section(_load_rows(first_gate_csv)) if first_gate_csv else []
     asset_ui_rows = _asset_ui_rows(asset_ui_evidence_csv) if asset_ui_evidence_csv else []
+    dataexport_section = _dataexport_section(dataexport_inventory_csv, dataexport_archives_csv)
 
     lines = [
         "# Xolo Support Request - Modelo 130 Source Books",
@@ -68,6 +71,7 @@ def build_xolo_support_request_short(
         "Please answer with source exports if available rather than a narrative explanation: the `libro registro de compras y gastos`, the `libro registro de bienes de inversión`, and quarterly tie-outs to the filed Modelo 130 casillas.",
         "The local arithmetic appendix only routes questions and should not be treated as confirmed Xolo accounting.",
         "",
+        *dataexport_section,
         "Local intake files:",
         "",
     ]
@@ -364,6 +368,59 @@ def _asset_ui_rows(path: Path) -> list[dict[str, str]]:
             row.get("number", ""),
         ),
     )
+
+
+def _dataexport_section(dataexport_inventory_csv: Path | None, dataexport_archives_csv: Path | None) -> list[str]:
+    latest_inventory = _dataexport_inventory_summary(dataexport_inventory_csv) if dataexport_inventory_csv else {}
+    archive_summary = _dataexport_archive_summary(dataexport_archives_csv) if dataexport_archives_csv else {}
+    if not latest_inventory and not archive_summary:
+        return []
+
+    lines = ["Data export evidence already checked:"]
+    if latest_inventory:
+        lines.append(
+            "- Latest Xolo data export ZIP inventory: "
+            f"`{latest_inventory.get('expense_files', '0')}` expense files, "
+            f"`{latest_inventory.get('invoice_files', '0')}` invoice files, "
+            f"`{latest_inventory.get('tax_report_files', '0')}` tax-report files, and "
+            f"`{latest_inventory.get('candidate_source_books', '0')}` source-book/asset-schedule filename candidates."
+        )
+    if archive_summary:
+        lines.append(
+            "- Historical Xolo data export ZIP inventories: "
+            f"`{archive_summary.get('archives_scanned', '0')}` archives scanned; "
+            f"`{archive_summary.get('archives_with_candidates', '0')}` archives expose source-book/asset-schedule filename candidates."
+        )
+    lines.extend(
+        [
+            "- Therefore another normal Data export is unlikely to answer this request; I need Xolo's bookkeeping/source-book exports or an explicit accounting export from the tax-preparation side.",
+            "",
+        ]
+    )
+    return lines
+
+
+def _dataexport_inventory_summary(path: Path) -> dict[str, str]:
+    rows = _load_rows(path)
+    by_kind_key = {(row.get("kind", ""), row.get("key", "")): row for row in rows}
+    return {
+        "expense_files": by_kind_key.get(("top_level", "EXPENSE"), {}).get("count", "0"),
+        "invoice_files": by_kind_key.get(("top_level", "INVOICE"), {}).get("count", "0"),
+        "tax_report_files": by_kind_key.get(("top_level", "TAX_REPORT"), {}).get("count", "0"),
+        "candidate_source_books": by_kind_key.get(
+            ("conclusion", "candidate_source_book_or_asset_schedule"), {}
+        ).get("count", "0"),
+    }
+
+
+def _dataexport_archive_summary(path: Path) -> dict[str, str]:
+    rows = _load_rows(path)
+    return {
+        "archives_scanned": str(len(rows)),
+        "archives_with_candidates": str(
+            sum(1 for row in rows if row.get("candidate_source_book_or_asset_files", "0") != "0")
+        ),
+    }
 
 
 def _asset_ui_section(rows: list[dict[str, str]]) -> list[str]:
