@@ -239,6 +239,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Build a draft request to Xolo from the quarter closure checklist",
     )
     audit_closure_request.add_argument("--quarter-closure", type=Path, required=True)
+    audit_closure_request.add_argument("--source-findings", type=Path)
     audit_closure_request.add_argument("--out-md", type=Path, required=True)
 
     audit_quarter_packets = subparsers.add_parser(
@@ -371,7 +372,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Wrote {len(rows)} quarter closure rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-closure-request":
-        markdown = build_xolo_closure_request(args.quarter_closure)
+        markdown = build_xolo_closure_request(args.quarter_closure, args.source_findings)
         write_xolo_closure_request(args.out_md, markdown)
         print(f"Wrote Xolo closure request to {args.out_md}")
         return 0

@@ -6,11 +6,12 @@ from pathlib import Path
 from .money import format_es, parse_amount
 
 
-def build_xolo_closure_request(quarter_closure_csv: Path) -> str:
+def build_xolo_closure_request(quarter_closure_csv: Path, source_findings_csv: Path | None = None) -> str:
     rows = _load_rows(quarter_closure_csv)
     material = [row for row in rows if row["closure_status"] == "blocked_material_unexplained_adjustment"]
     asset = [row for row in rows if row["has_asset_decision"] == "yes"]
     exclusions = [row for row in rows if row["has_nearest_exclusion"] == "yes"]
+    source_findings = _source_finding_highlights(source_findings_csv) if source_findings_csv else []
 
     lines = [
         "# Xolo Modelo 130 Closure Request",
@@ -85,6 +86,33 @@ def build_xolo_closure_request(quarter_closure_csv: Path) -> str:
     for row in exclusions:
         lines.append("| " + row["period"] + " | " + _cell(row["nearest_exclusion_rows"]) + " |")
 
+    if source_findings:
+        lines.extend(
+            [
+                "",
+                "## Source-Finding Highlights To Preserve",
+                "",
+                "These rows are already checked locally or deliberately marked as unconfirmed. Please do not treat a target-fitting hypothesis as a confirmed Xolo filing decision.",
+                "",
+                "| Period | Row | Status | Finding | Impact |",
+                "|---|---|---|---|---|",
+            ]
+        )
+        for row in source_findings:
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        row["period"],
+                        _cell(row["row_ref"]),
+                        _cell(row["source_status"]),
+                        _cell(row["finding"]),
+                        _cell(row["impact"]),
+                    ]
+                )
+                + " |"
+            )
+
     lines.extend(
         [
             "",
@@ -107,6 +135,16 @@ def write_xolo_closure_request(path: Path, markdown: str) -> None:
 def _load_rows(path: Path) -> list[dict[str, str]]:
     with path.open("r", newline="", encoding="utf-8-sig") as handle:
         return list(csv.DictReader(handle))
+
+
+def _source_finding_highlights(path: Path) -> list[dict[str, str]]:
+    rows = _load_rows(path)
+    return [
+        row
+        for row in rows
+        if row.get("source_status", "").startswith("unconfirmed")
+        or row.get("row_ref", "").startswith("scenario_")
+    ]
 
 
 def _fmt(value: str) -> str:
