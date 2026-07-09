@@ -6,12 +6,18 @@ from decimal import Decimal
 from pathlib import Path
 
 from .annual import load_modelo100_summary
-from .history import RawXoloExpense, load_raw_xolo_expenses
+from .history import (
+    RawXoloExpense,
+    format_subset_rows,
+    load_raw_xolo_expenses,
+    nearest_excluded_subset,
+)
 from .money import cents, format_es, parse_amount
 from .parsers import quarter_end
 
 
 ANNUAL_AMORTIZATION_RATE = Decimal("0.26")
+CANDIDATE_QUARTER_SCENARIO = "exclude_2023_usd_low_value_or_subscription_vat_base_25pct"
 
 
 def build_asset_audit(
@@ -24,6 +30,58 @@ def build_asset_audit(
     assets = [_asset_row(row, rates_by_period) for row in sorted(raw_assets, key=lambda item: (item.date, item.recipient, item.number))]
     quarter_rows = _quarter_rows(history_rows, assets)
     return assets, quarter_rows
+
+
+def build_candidate_quarter_reconciliation(
+    history_audit_csv: Path,
+    xolo_raw_expenses_csv: Path,
+) -> list[dict[str, str]]:
+    history_rows = _load_history_rows(history_audit_csv)
+    rates_by_period = _rates_by_period(history_rows)
+    raw_expenses = load_raw_xolo_expenses(xolo_raw_expenses_csv)
+    raw_assets = [row for row in raw_expenses if row.is_asset_like]
+    assets = [_asset_row(row, rates_by_period) for row in sorted(raw_assets, key=lambda item: (item.date, item.recipient, item.number))]
+    included_assets = [asset for asset in assets if not _is_2023_usd_low_value_or_subscription(asset)]
+    rows: list[dict[str, str]] = []
+    previous_ytd_by_year: dict[int, Decimal] = {}
+    for history in history_rows:
+        year = int(history["year"])
+        quarter = int(history["quarter"])
+        end = quarter_end(year, quarter)
+        amortization_ytd = _amortization_ytd(included_assets, end, "base_basis_eur", Decimal("0.25"))
+        amortization_delta = cents(amortization_ytd - previous_ytd_by_year.get(year, Decimal("0.00")))
+        previous_ytd_by_year[year] = amortization_ytd
+        target_delta = parse_amount(history["target_casilla_02_delta"])
+        raw_non_asset_delta = parse_amount(history["raw_quarter_non_asset_gross_eur"])
+        model_delta = cents(raw_non_asset_delta + amortization_delta)
+        model_minus_target = cents(model_delta - target_delta)
+        ytd_residual_after_candidate = cents(parse_amount(history["no_provision_gross_residual"]) - amortization_ytd)
+        derived_fx = Decimal(history["derived_income_usd_fx"]) if history.get("derived_income_usd_fx") else None
+        subset = (
+            nearest_excluded_subset(raw_expenses, year, quarter, derived_fx, model_minus_target)
+            if model_minus_target > Decimal("20.00")
+            else None
+        )
+        rows.append(
+            {
+                "year": str(year),
+                "quarter": str(quarter),
+                "period": f"{year}-Q{quarter}",
+                "scenario": CANDIDATE_QUARTER_SCENARIO,
+                "target_casilla_02_delta": _money(target_delta),
+                "raw_non_asset_gross_delta": _money(raw_non_asset_delta),
+                "candidate_amortization_delta": _money(amortization_delta),
+                "candidate_model_delta": _money(model_delta),
+                "candidate_model_minus_target_delta": _money(model_minus_target),
+                "candidate_amortization_ytd": _money(amortization_ytd),
+                "ytd_residual_after_candidate": _money(ytd_residual_after_candidate),
+                "nearest_excluded_subset_eur": _money(subset.total if subset else Decimal("0.00")),
+                "nearest_excluded_subset_error_eur": _money(subset.error if subset else Decimal("0.00")),
+                "nearest_excluded_subset_rows": format_subset_rows(subset),
+                "interpretation": _quarter_candidate_interpretation(model_minus_target, ytd_residual_after_candidate),
+            }
+        )
+    return rows
 
 
 def write_asset_audit_csvs(
@@ -72,11 +130,16 @@ def write_asset_scenarios_csv(path: Path, scenarios: list[dict[str, str]]) -> No
     _write_csv(path, scenarios)
 
 
+def write_candidate_quarter_reconciliation_csv(path: Path, rows: list[dict[str, str]]) -> None:
+    _write_csv(path, rows)
+
+
 def write_asset_audit_markdown(
     path: Path,
     assets: list[dict[str, str]],
     quarters: list[dict[str, str]],
     scenarios: list[dict[str, str]] | None = None,
+    candidate_quarters: list[dict[str, str]] | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
@@ -187,6 +250,38 @@ def write_asset_audit_markdown(
                 )
                 + " |"
             )
+    if candidate_quarters:
+        lines.extend(
+            [
+                "",
+                "## Candidate Quarterly Reconciliation",
+                "",
+                f"Scenario: `{CANDIDATE_QUARTER_SCENARIO}`.",
+                "Positive `model - target` values mean the candidate model is above the submitted quarter and row exclusions/netting are needed; negative values mean the submitted quarter is above the candidate model.",
+                "",
+                "| Period | Target delta | Raw non-asset delta | Candidate amort. delta | Model - target | Nearest excluded subset | Subset error | Interpretation |",
+                "|---|---:|---:|---:|---:|---:|---:|---|",
+            ]
+        )
+        for row in candidate_quarters:
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        row["period"],
+                        _fmt(row["target_casilla_02_delta"]),
+                        _fmt(row["raw_non_asset_gross_delta"]),
+                        _fmt(row["candidate_amortization_delta"]),
+                        _fmt(row["candidate_model_minus_target_delta"]),
+                        _fmt(row["nearest_excluded_subset_eur"]),
+                        _fmt(row["nearest_excluded_subset_error_eur"]),
+                        row["interpretation"],
+                    ]
+                )
+                + " |"
+            )
+        lines.append("")
+        lines.append("Nearest subset row details are written to the candidate quarterly reconciliation CSV.")
     lines.extend(
         [
             "",
@@ -196,6 +291,7 @@ def write_asset_audit_markdown(
             "- Negative residuals point to row exclusion, netting, VAT/base treatment, or later annual true-up rather than missing asset amortization alone.",
             "- The fixed-purchase-FX columns avoid revaluing old USD assets with each later quarter's derived income FX.",
             "- The scenario sweep is a candidate reconciliation against annual Modelo 100 `0208`; it is not confirmed Xolo tax treatment.",
+            "- Candidate quarterly reconciliation uses the closest annual scenario only as a diagnostic lens; exact quarterly treatment still requires Xolo's submitted per-row register.",
             "",
         ]
     )
@@ -346,6 +442,16 @@ def _closest_scenarios(scenarios: list[dict[str, str]]) -> list[dict[str, str]]:
         min(rows, key=lambda row: abs(parse_amount(row["estimate_minus_m100_0208"])))
         for _, rows in sorted(by_year.items())
     ]
+
+
+def _quarter_candidate_interpretation(model_minus_target: Decimal, ytd_residual_after_candidate: Decimal) -> str:
+    if model_minus_target > Decimal("20.00"):
+        return "candidate model above target; look for excluded/netted rows"
+    if model_minus_target < Decimal("-20.00"):
+        return "target above candidate model; look for catch-up/reclassification"
+    if abs(ytd_residual_after_candidate) > Decimal("20.00"):
+        return "quarter near match but YTD residual remains"
+    return "candidate quarter near match"
 
 
 def _period_for_date(value: date) -> tuple[int, int]:

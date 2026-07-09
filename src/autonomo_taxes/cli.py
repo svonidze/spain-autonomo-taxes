@@ -19,9 +19,11 @@ from .annual import compare_annual_to_quarterly, write_annual_comparison_csv, wr
 from .asset_audit import (
     build_asset_audit,
     build_asset_scenarios,
+    build_candidate_quarter_reconciliation,
     write_asset_audit_csvs,
     write_asset_audit_markdown,
     write_asset_scenarios_csv,
+    write_candidate_quarter_reconciliation_csv,
 )
 from .history import run_history_audit, write_history_audit_csv, write_history_audit_markdown
 from .modelo130 import (
@@ -124,6 +126,7 @@ def main(argv: list[str] | None = None) -> int:
     audit_assets.add_argument("--out-assets-csv", type=Path, required=True)
     audit_assets.add_argument("--out-quarter-csv", type=Path, required=True)
     audit_assets.add_argument("--out-scenarios-csv", type=Path, help="Optional output CSV for annual amortization scenarios")
+    audit_assets.add_argument("--out-quarter-reconciliation-csv", type=Path, help="Optional output CSV for candidate quarterly reconciliation")
     audit_assets.add_argument("--out-md", type=Path, required=True)
 
     args = parser.parse_args(argv)
@@ -172,16 +175,21 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit("--out-scenarios-csv requires --modelo100-summary")
         assets, quarters = build_asset_audit(args.history_audit, args.xolo_raw_expenses)
         scenarios = build_asset_scenarios(assets, args.modelo100_summary) if args.modelo100_summary else []
+        candidate_quarters = build_candidate_quarter_reconciliation(args.history_audit, args.xolo_raw_expenses)
         write_asset_audit_csvs(args.out_assets_csv, args.out_quarter_csv, assets, quarters)
         if args.out_scenarios_csv:
             write_asset_scenarios_csv(args.out_scenarios_csv, scenarios)
-        write_asset_audit_markdown(args.out_md, assets, quarters, scenarios)
+        if args.out_quarter_reconciliation_csv:
+            write_candidate_quarter_reconciliation_csv(args.out_quarter_reconciliation_csv, candidate_quarters)
+        write_asset_audit_markdown(args.out_md, assets, quarters, scenarios, candidate_quarters)
         print(
             f"Wrote {len(assets)} asset rows and {len(quarters)} quarter rows "
             f"to {args.out_assets_csv}, {args.out_quarter_csv}, and {args.out_md}"
         )
         if scenarios:
             print(f"Wrote {len(scenarios)} annual scenario rows")
+        if args.out_quarter_reconciliation_csv:
+            print(f"Wrote {len(candidate_quarters)} candidate quarterly reconciliation rows")
         return 0
     raise AssertionError(args.command)
 

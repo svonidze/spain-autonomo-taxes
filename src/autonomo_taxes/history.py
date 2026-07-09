@@ -346,6 +346,16 @@ def _nearest_excluded_subset(
     return ExclusionSubset(total=total, error=error, rows=tuple(selected))
 
 
+def nearest_excluded_subset(
+    rows: list[RawXoloExpense],
+    year: int,
+    quarter: int,
+    usd_fx: Decimal | None,
+    target: Decimal,
+) -> ExclusionSubset | None:
+    return _nearest_excluded_subset(rows, year, quarter, usd_fx, target)
+
+
 def _subset_sums(candidates: list[tuple[Decimal, RawXoloExpense]]) -> list[tuple[Decimal, int]]:
     output: list[tuple[Decimal, int]] = []
     for mask in range(1 << len(candidates)):
@@ -361,6 +371,10 @@ def _format_subset_rows(subset: ExclusionSubset | None) -> str:
         f"{row.date.isoformat()} {row.number or row.recipient} {amount:.2f}"
         for row, amount in subset.rows
     )
+
+
+def format_subset_rows(subset: ExclusionSubset | None) -> str:
+    return _format_subset_rows(subset)
 
 
 def _raw_ytd_totals(
