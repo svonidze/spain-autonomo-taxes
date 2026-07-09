@@ -204,6 +204,11 @@ from .source_book_response_check import (
     write_source_book_response_check_markdown,
 )
 from .support_request_short import build_xolo_support_request_short, write_xolo_support_request_short
+from .tax_report_sequence import (
+    build_tax_report_sequence,
+    write_tax_report_sequence_csv,
+    write_tax_report_sequence_markdown,
+)
 from .timing_audit import build_timing_audit, write_timing_audit_csv, write_timing_audit_markdown
 from .xolo_ledger import (
     import_xolo_expense_csv,
@@ -325,6 +330,18 @@ def main(argv: list[str] | None = None) -> int:
     audit_xolo_calculation_compare.add_argument("--xolo-calculations", type=Path, required=True)
     audit_xolo_calculation_compare.add_argument("--out-csv", type=Path, required=True)
     audit_xolo_calculation_compare.add_argument("--out-md", type=Path, required=True)
+
+    audit_tax_report_sequence = subparsers.add_parser(
+        "audit-tax-report-sequence",
+        help="Verify Modelo 130 filed PDF coverage for the chronological audit range",
+    )
+    audit_tax_report_sequence.add_argument("--tax-report-dir", type=Path, required=True)
+    audit_tax_report_sequence.add_argument("--start-year", type=int, required=True)
+    audit_tax_report_sequence.add_argument("--start-quarter", type=int, choices=[1, 2, 3, 4], required=True)
+    audit_tax_report_sequence.add_argument("--end-year", type=int, required=True)
+    audit_tax_report_sequence.add_argument("--end-quarter", type=int, choices=[1, 2, 3, 4], required=True)
+    audit_tax_report_sequence.add_argument("--out-csv", type=Path, required=True)
+    audit_tax_report_sequence.add_argument("--out-md", type=Path, required=True)
 
     audit_evidence_inventory = subparsers.add_parser(
         "audit-evidence-inventory",
@@ -810,6 +827,18 @@ def main(argv: list[str] | None = None) -> int:
         write_xolo_calculation_compare_csv(args.out_csv, rows)
         write_xolo_calculation_compare_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} Xolo calculation compare rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-tax-report-sequence":
+        rows = build_tax_report_sequence(
+            tax_report_dir=args.tax_report_dir,
+            start_year=args.start_year,
+            start_quarter=args.start_quarter,
+            end_year=args.end_year,
+            end_quarter=args.end_quarter,
+        )
+        write_tax_report_sequence_csv(args.out_csv, rows)
+        write_tax_report_sequence_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} tax-report sequence rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-evidence-inventory":
         rows = build_evidence_inventory(args.xolo_root)
