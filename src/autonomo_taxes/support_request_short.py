@@ -37,6 +37,7 @@ def build_xolo_support_request_short(
     register_answer_intake_csv: Path,
     asset_gap_matrix_csv: Path,
     *,
+    first_gate_csv: Path | None = None,
     max_questions: int = 8,
 ) -> str:
     intake_rows = sorted(_load_rows(register_answer_intake_csv), key=_queue_sort_key)
@@ -49,6 +50,7 @@ def build_xolo_support_request_short(
     )
     signal_counts = Counter(row["amortization_gap_signal"] for row in asset_rows)
     priority_counts = Counter(row["audit_priority"] for row in intake_rows)
+    first_gate_section = _first_gate_section(_load_rows(first_gate_csv)) if first_gate_csv else []
 
     lines = [
         "# Xolo Support Request - Modelo 130 Source Books",
@@ -66,24 +68,35 @@ def build_xolo_support_request_short(
         "",
         "Local intake files:",
         "",
-        "- Local CSV: `runs/modelo130_register_answer_intake.csv`",
-        "- Local report: `runs/modelo130_register_answer_intake.md`",
-        "- Full request: `runs/xolo_modelo130_closure_request.md`",
-        "",
-        "## Please Provide",
-        "",
-        "1. `Libro registro de compras y gastos` for 2023, 2024, 2025, and 2026 through 2T, preferably CSV/Excel plus PDF export if available.",
-        "2. `Libro registro de bienes de inversión` / asset amortization schedule used for Modelo 130 and annual Renta/Modelo 100.",
-        "3. Quarterly tie-out for each Modelo 130 from 2023-2T through 2026-2T: filed casillas 01, 02, 03, and 07, with the book totals that feed them.",
-        "4. Source rows or accounting adjustments for catch-up, deferral, correction, reversal, netting, personal-use, non-deductible, and amortization decisions.",
-        "",
-        "## Machine-Import Field Spec",
-        "",
-        "If Xolo can export CSV/Excel, please include these fields or equivalent column names:",
-        "",
-        "| Field(s) | Why needed |",
-        "|---|---|",
     ]
+    if first_gate_section:
+        lines.append("- First chronological blocker: `runs/modelo130_first_gate.md`")
+    lines.extend(
+        [
+            "- Local CSV: `runs/modelo130_register_answer_intake.csv`",
+            "- Local report: `runs/modelo130_register_answer_intake.md`",
+            "- Full request: `runs/xolo_modelo130_closure_request.md`",
+            "",
+        ]
+    )
+    lines.extend(first_gate_section)
+    lines.extend(
+        [
+            "## Please Provide",
+            "",
+            "1. `Libro registro de compras y gastos` for 2023, 2024, 2025, and 2026 through 2T, preferably CSV/Excel plus PDF export if available.",
+            "2. `Libro registro de bienes de inversión` / asset amortization schedule used for Modelo 130 and annual Renta/Modelo 100.",
+            "3. Quarterly tie-out for each Modelo 130 from 2T 2023 through 2T 2026: filed casillas 01, 02, 03, and 07, with the book totals that feed them.",
+            "4. Source rows or accounting adjustments for catch-up, deferral, correction, reversal, netting, personal-use, non-deductible, and amortization decisions.",
+            "",
+            "## Machine-Import Field Spec",
+            "",
+            "If Xolo can export CSV/Excel, please include these fields or equivalent column names:",
+            "",
+            "| Field(s) | Why needed |",
+            "|---|---|",
+        ]
+    )
     for field, why in SOURCE_BOOK_FIELD_ROWS:
         lines.append(f"| `{field}` | {_cell(why)} |")
 
@@ -215,6 +228,85 @@ def write_xolo_support_request_short(path: Path, markdown: str) -> None:
     path.write_text(markdown, encoding="utf-8")
 
 
+def _first_gate_section(rows: list[dict[str, str]]) -> list[str]:
+    gate = next((row for row in rows if row.get("section") == "gate"), None)
+    if gate is None:
+        return []
+    period = gate.get("period", "")
+    context = next((row for row in rows if row.get("section") == "raw_context"), None)
+    ruled_out = [
+        row
+        for row in rows
+        if row.get("section") == "hypothesis" and row.get("status", "").startswith("ruled_out")
+    ]
+
+    lines = [
+        "## First Chronological Blocker",
+        "",
+        f"The audit must start with `{_period_to_tax_label(period)}` (`{period}`) because it is the first submitted quarter that the local source evidence cannot close.",
+        "",
+        "| Item | Value |",
+        "|---|---|",
+        f"| Gate | `{_cell(gate.get('key', ''))}` |",
+        f"| Submitted expense delta (`casilla 02`) | `{_fmt(gate.get('amount_eur', ''))}` |",
+        f"| Blocking evidence | {_cell(gate.get('evidence_status', ''))} |",
+        f"| Local verdict | {_cell(gate.get('finding', ''))} |",
+    ]
+    if context is not None:
+        lines.extend(
+            [
+                f"| Confirmed local non-asset rows | `{_fmt(context.get('amount_eur', ''))}` |",
+                f"| Local residual, routing only | `{_fmt(context.get('fit_signal', ''))}` |",
+                f"| Visible local row to reconcile, routing only | {_cell(context.get('finding', ''))} |",
+            ]
+        )
+    lines.extend(["", "Please answer this first blocker before interpreting later amortization patterns:", ""])
+    lines.extend(
+        f"{index}. {question}" for index, question in enumerate(_first_gate_questions(period, context), start=1)
+    )
+    if ruled_out:
+        lines.extend(
+            [
+                "",
+                "Locally ruled-out explanations, included here to avoid re-checking dead ends:",
+                "",
+                "| Hypothesis | Why it does not close the gate |",
+                "|---|---|",
+            ]
+        )
+        for row in ruled_out:
+            lines.append(f"| `{_cell(row.get('key', ''))}` | {_cell(row.get('finding', ''))} |")
+    lines.append("")
+    return lines
+
+
+def _period_to_tax_label(period: str) -> str:
+    if "-Q" not in period:
+        return period
+    year, quarter = period.split("-Q", 1)
+    return f"{quarter}T {year}"
+
+
+def _first_gate_questions(period: str, context: dict[str, str] | None) -> list[str]:
+    questions = [
+        f"Provide the {_period_to_tax_label(period)} source-book tie-out from deductible expense rows to filed Modelo 130 `casilla 02`."
+    ]
+    if context is not None:
+        questions.append(
+            "Confirm the source-book treatment for this row without assuming the local hypothesis: "
+            + _cell(context.get("finding", ""))
+            + "."
+        )
+    questions.extend(
+        [
+            "For any row that was deducted only partly or through amortization, provide the deductible EUR basis, booking period, asset id, amortization method, coefficient, and schedule line.",
+            "If the visible row was not the source-book explanation, identify the actual source-book row, correction, reclassification, deferral, or adjustment used instead.",
+            "Confirm whether active asset-like rows were direct-expensed, capitalized and amortized, excluded, or booked in another quarter.",
+        ]
+    )
+    return _dedupe(questions)
+
+
 def _question_with_row(row: dict[str, str]) -> str:
     label = row.get("row_label", "")
     question = row.get("question", "")
@@ -251,6 +343,16 @@ def _queue_sort_key(row: dict[str, str]) -> tuple[int, str]:
 def _load_rows(path: Path) -> list[dict[str, str]]:
     with path.open("r", newline="", encoding="utf-8-sig") as handle:
         return list(csv.DictReader(handle))
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    output: list[str] = []
+    for value in values:
+        if value and value not in seen:
+            seen.add(value)
+            output.append(value)
+    return output
 
 
 def _fmt(value: str) -> str:

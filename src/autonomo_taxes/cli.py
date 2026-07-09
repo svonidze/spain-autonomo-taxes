@@ -473,6 +473,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     audit_support_request_short.add_argument("--answer-intake", type=Path, required=True)
     audit_support_request_short.add_argument("--asset-gap-matrix", type=Path, required=True)
+    audit_support_request_short.add_argument("--first-gate", type=Path)
     audit_support_request_short.add_argument("--max-questions", type=int, default=8)
     audit_support_request_short.add_argument("--out-md", type=Path, required=True)
 
@@ -919,6 +920,7 @@ def main(argv: list[str] | None = None) -> int:
         markdown = build_xolo_support_request_short(
             args.answer_intake,
             args.asset_gap_matrix,
+            first_gate_csv=args.first_gate,
             max_questions=args.max_questions,
         )
         write_xolo_support_request_short(args.out_md, markdown)
