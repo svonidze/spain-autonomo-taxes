@@ -798,6 +798,7 @@ def main(argv: list[str] | None = None) -> int:
     audit_source_book_availability.add_argument("--dataexport-archives", type=Path, required=True)
     audit_source_book_availability.add_argument("--storage-probe", type=Path, required=True)
     audit_source_book_availability.add_argument("--support-request", type=Path, required=True)
+    audit_source_book_availability.add_argument("--request-package-manifest", type=Path)
     audit_source_book_availability.add_argument("--out-csv", type=Path, required=True)
     audit_source_book_availability.add_argument("--out-md", type=Path, required=True)
 
@@ -1340,6 +1341,7 @@ def main(argv: list[str] | None = None) -> int:
             dataexport_archives_csv=args.dataexport_archives,
             storage_probe_json=args.storage_probe,
             support_request_md=args.support_request,
+            request_package_manifest_csv=args.request_package_manifest,
         )
         write_source_book_availability_csv(args.out_csv, rows)
         write_source_book_availability_markdown(args.out_md, rows)

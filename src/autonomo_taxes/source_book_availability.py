@@ -26,6 +26,7 @@ def build_source_book_availability(
     dataexport_archives_csv: Path,
     storage_probe_json: Path,
     support_request_md: Path,
+    request_package_manifest_csv: Path | None = None,
 ) -> list[dict[str, str]]:
     rows = [
         _first_gate_row(first_gate_csv),
@@ -35,6 +36,8 @@ def build_source_book_availability(
         _authenticated_probe_row(storage_probe_json),
         _support_request_row(support_request_md),
     ]
+    if request_package_manifest_csv is not None:
+        rows.append(_request_package_row(request_package_manifest_csv))
     return rows
 
 
@@ -50,6 +53,7 @@ def write_source_book_availability_markdown(path: Path, rows: list[dict[str, str
     path.parent.mkdir(parents=True, exist_ok=True)
     missing_sources = [row for row in rows if row["status"] in {"missing_required_evidence", "available_but_insufficient"}]
     request_rows = [row for row in rows if row["status"] == "ready_to_send"]
+    package_rows = [row for row in rows if row["status"] == "ready_to_send_package"]
     candidate_rows = [row for row in rows if row["status"] == "candidate_found"]
     lines = [
         "# Xolo Source-Book Availability",
@@ -62,7 +66,9 @@ def write_source_book_availability_markdown(path: Path, rows: list[dict[str, str
         f"- Evidence surfaces checked: `{len(rows)}`.",
         f"- Surfaces missing or insufficient for source-book closure: `{len(missing_sources)}`.",
     ]
-    if request_rows:
+    if package_rows:
+        lines.append(f"- Source-book request package is ready: `{package_rows[0]['evidence']}`.")
+    elif request_rows:
         lines.append("- Xolo support request is ready: `runs/xolo_support_request_short.md`.")
     if candidate_rows:
         lines.append(
@@ -256,6 +262,42 @@ def _support_request_row(path: Path) -> dict[str, str]:
         str(path),
         "Prepared source-first request for books, row-level IRPF basis, and asset schedule.",
         "Send or paste the request to Xolo support; do not infer source-book treatment from local fits.",
+    )
+
+
+def _request_package_row(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return _row(
+            "xolo_source_book_request_package",
+            "missing",
+            "0",
+            str(path),
+            "The safe source-book request package manifest was not found.",
+            "Build the package before sending a Xolo source-book request.",
+        )
+    rows = _load_rows(path)
+    included = [row for row in rows if row.get("status") == "included"]
+    missing_or_broken = [row for row in rows if row.get("status", "").startswith("missing_")]
+    safety_excluded = [row for row in rows if row.get("status", "").startswith("excluded_")]
+    message_rows = [row for row in included if row.get("role") == "message"]
+    status = "ready_to_send_package" if message_rows and not missing_or_broken else "package_attention"
+    evidence = (
+        f"{path}; included={len(included)}; safety_excluded={len(safety_excluded)}; "
+        f"missing_or_broken={len(missing_or_broken)}"
+    )
+    if status == "ready_to_send_package":
+        conclusion = "A safe request package exists with the message and markdown/text support context manifest."
+        next_action = "Send or paste message_to_xolo.md; attach markdown support context only if Xolo asks for it."
+    else:
+        conclusion = "The request package manifest is present but not ready to send."
+        next_action = "Regenerate the request package and resolve missing or broken inputs before sending."
+    return _row(
+        "xolo_source_book_request_package",
+        status,
+        str(len(rows)),
+        evidence,
+        conclusion,
+        next_action,
     )
 
 
