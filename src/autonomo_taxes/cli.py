@@ -72,6 +72,11 @@ from .material_gap_context import (
     write_material_gap_context_csv,
     write_material_gap_context_markdown,
 )
+from .p1_near_fit_context import (
+    build_p1_near_fit_context,
+    write_p1_near_fit_context_csv,
+    write_p1_near_fit_context_markdown,
+)
 from .modelo130 import (
     calculate_modelo130,
     extract_modelo130_values,
@@ -373,6 +378,16 @@ def main(argv: list[str] | None = None) -> int:
     audit_material_gap_context.add_argument("--out-csv", type=Path, required=True)
     audit_material_gap_context.add_argument("--out-md", type=Path, required=True)
 
+    audit_p1_near_fit_context = subparsers.add_parser(
+        "audit-p1-near-fit-context",
+        help="Summarize strongest local arithmetic forks for P1 near-fit quarters",
+    )
+    audit_p1_near_fit_context.add_argument("--quarter-acceptance", type=Path, required=True)
+    audit_p1_near_fit_context.add_argument("--quarter-balance-bridge", type=Path, required=True)
+    audit_p1_near_fit_context.add_argument("--hypotheses", type=Path, required=True)
+    audit_p1_near_fit_context.add_argument("--out-csv", type=Path, required=True)
+    audit_p1_near_fit_context.add_argument("--out-md", type=Path, required=True)
+
     audit_closure_request = subparsers.add_parser(
         "audit-closure-request",
         help="Build a draft request to Xolo from the quarter closure checklist",
@@ -385,6 +400,7 @@ def main(argv: list[str] | None = None) -> int:
     audit_closure_request.add_argument("--local-attention-bridge", type=Path)
     audit_closure_request.add_argument("--material-gap-drilldown", type=Path)
     audit_closure_request.add_argument("--material-gap-context", type=Path)
+    audit_closure_request.add_argument("--p1-near-fit-context", type=Path)
     audit_closure_request.add_argument("--out-md", type=Path, required=True)
 
     audit_root_cause_narrowing = subparsers.add_parser(
@@ -430,6 +446,7 @@ def main(argv: list[str] | None = None) -> int:
     audit_sequential_summary.add_argument("--annual-categories", type=Path)
     audit_sequential_summary.add_argument("--material-gap-drilldown", type=Path)
     audit_sequential_summary.add_argument("--material-gap-context", type=Path)
+    audit_sequential_summary.add_argument("--p1-near-fit-context", type=Path)
     audit_sequential_summary.add_argument("--out-md", type=Path, required=True)
 
     audit_timing = subparsers.add_parser(
@@ -647,6 +664,16 @@ def main(argv: list[str] | None = None) -> int:
         write_material_gap_context_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} material gap context rows to {args.out_csv} and {args.out_md}")
         return 0
+    if args.command == "audit-p1-near-fit-context":
+        rows = build_p1_near_fit_context(
+            args.quarter_acceptance,
+            args.quarter_balance_bridge,
+            args.hypotheses,
+        )
+        write_p1_near_fit_context_csv(args.out_csv, rows)
+        write_p1_near_fit_context_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} P1 near-fit context rows to {args.out_csv} and {args.out_md}")
+        return 0
     if args.command == "audit-closure-request":
         markdown = build_xolo_closure_request(
             args.quarter_closure,
@@ -657,6 +684,7 @@ def main(argv: list[str] | None = None) -> int:
             args.local_attention_bridge,
             args.material_gap_drilldown,
             args.material_gap_context,
+            args.p1_near_fit_context,
         )
         write_xolo_closure_request(args.out_md, markdown)
         print(f"Wrote Xolo closure request to {args.out_md}")
@@ -699,6 +727,7 @@ def main(argv: list[str] | None = None) -> int:
             args.annual_categories,
             args.material_gap_drilldown,
             args.material_gap_context,
+            args.p1_near_fit_context,
         )
         write_sequential_summary(args.out_md, markdown)
         print(f"Wrote sequential audit summary to {args.out_md}")

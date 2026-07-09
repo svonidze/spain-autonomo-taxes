@@ -15,6 +15,7 @@ def build_xolo_closure_request(
     local_attention_bridge_csv: Path | None = None,
     material_gap_drilldown_csv: Path | None = None,
     material_gap_context_csv: Path | None = None,
+    p1_near_fit_context_csv: Path | None = None,
 ) -> str:
     rows = _load_rows(quarter_closure_csv)
     material = [row for row in rows if row["closure_status"] == "blocked_material_unexplained_adjustment"]
@@ -27,6 +28,7 @@ def build_xolo_closure_request(
     local_attention_rows = _local_attention_highlights(local_attention_bridge_csv) if local_attention_bridge_csv else []
     material_gap_rows = _material_gap_highlights(material_gap_drilldown_csv) if material_gap_drilldown_csv else []
     material_context_rows = _material_context_highlights(material_gap_context_csv) if material_gap_context_csv else []
+    p1_context_rows = _p1_context_highlights(p1_near_fit_context_csv) if p1_near_fit_context_csv else []
 
     lines = [
         "# Xolo Modelo 130 Closure Request",
@@ -154,6 +156,35 @@ def build_xolo_closure_request(
                         _cell(row["gap_sized_asset_candidate_rows"] or "none"),
                         _cell(row.get("gap_sized_asset_candidate_fit", "") or "none"),
                         _cell(row["next_xolo_question"]),
+                    ]
+                )
+                + " |"
+            )
+
+    if p1_context_rows:
+        lines.extend(
+            [
+                "",
+                "## P1 Near-Fit Context",
+                "",
+                "These are the strongest local arithmetic forks after the P0 material gaps. Please confirm the submitted row set and basis rather than treating these fits as proof.",
+                "",
+                "| Period | Signal | Target | Model | Diff | Components | Xolo question |",
+                "|---|---|---:|---:|---:|---|---|",
+            ]
+        )
+        for row in p1_context_rows:
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        row["period"],
+                        _cell(row["context_signal"]),
+                        _fmt(row["target_delta_eur"]),
+                        _fmt(row["model_amount_eur"]),
+                        _fmt(row["diff_to_target_eur"]),
+                        _cell(row["components"]),
+                        _cell(row["xolo_question"]),
                     ]
                 )
                 + " |"
@@ -415,6 +446,10 @@ def _material_gap_highlights(path: Path) -> list[dict[str, str]]:
 
 
 def _material_context_highlights(path: Path) -> list[dict[str, str]]:
+    return sorted(_load_rows(path), key=lambda row: row["period"])
+
+
+def _p1_context_highlights(path: Path) -> list[dict[str, str]]:
     return sorted(_load_rows(path), key=lambda row: row["period"])
 
 
