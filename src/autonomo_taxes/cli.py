@@ -26,6 +26,11 @@ from .annual_constrained_assets import (
     write_annual_constrained_asset_reconciliation_csv,
     write_annual_constrained_asset_reconciliation_markdown,
 )
+from .amortization_chain import (
+    build_amortization_chain,
+    write_amortization_chain_csvs,
+    write_amortization_chain_markdown,
+)
 from .asset_audit import (
     build_asset_audit,
     build_asset_scenarios,
@@ -275,6 +280,19 @@ def main(argv: list[str] | None = None) -> int:
     audit_annual_constrained_assets.add_argument("--modelo100-summary", type=Path, required=True)
     audit_annual_constrained_assets.add_argument("--out-csv", type=Path, required=True)
     audit_annual_constrained_assets.add_argument("--out-md", type=Path, required=True)
+
+    audit_amortization_chain = subparsers.add_parser(
+        "audit-amortization-chain",
+        help="Summarize the quarter-by-quarter asset amortization chain and remaining evidence",
+    )
+    audit_amortization_chain.add_argument("--candidate-quarter-reconciliation", type=Path, required=True)
+    audit_amortization_chain.add_argument("--annual-constrained-assets", type=Path, required=True)
+    audit_amortization_chain.add_argument("--quarter-closure", type=Path, required=True)
+    audit_amortization_chain.add_argument("--asset-candidates", type=Path, required=True)
+    audit_amortization_chain.add_argument("--modelo100-summary", type=Path, required=True)
+    audit_amortization_chain.add_argument("--out-csv", type=Path, required=True)
+    audit_amortization_chain.add_argument("--out-years-csv", type=Path, required=True)
+    audit_amortization_chain.add_argument("--out-md", type=Path, required=True)
 
     audit_quarter_evidence = subparsers.add_parser(
         "audit-quarter-evidence",
@@ -591,6 +609,21 @@ def main(argv: list[str] | None = None) -> int:
         write_annual_constrained_asset_reconciliation_csv(args.out_csv, rows)
         write_annual_constrained_asset_reconciliation_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} annual-constrained asset rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-amortization-chain":
+        rows, years = build_amortization_chain(
+            args.candidate_quarter_reconciliation,
+            args.annual_constrained_assets,
+            args.quarter_closure,
+            args.asset_candidates,
+            args.modelo100_summary,
+        )
+        write_amortization_chain_csvs(args.out_csv, args.out_years_csv, rows, years)
+        write_amortization_chain_markdown(args.out_md, rows, years)
+        print(
+            f"Wrote {len(rows)} amortization-chain rows and {len(years)} year rows "
+            f"to {args.out_csv}, {args.out_years_csv}, and {args.out_md}"
+        )
         return 0
     if args.command == "audit-quarter-evidence":
         rows = build_quarter_evidence(
