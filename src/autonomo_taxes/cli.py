@@ -157,6 +157,7 @@ from .register_answer_intake import (
     write_register_answer_intake_csv,
     write_register_answer_intake_markdown,
 )
+from .register_answer_import import import_register_answer_sheet_json, write_imported_register_answer_csv
 from .register_answer_apply import (
     apply_register_answers,
     write_applied_register_review_csv,
@@ -468,6 +469,13 @@ def main(argv: list[str] | None = None) -> int:
     audit_support_request_short.add_argument("--asset-gap-matrix", type=Path, required=True)
     audit_support_request_short.add_argument("--max-questions", type=int, default=8)
     audit_support_request_short.add_argument("--out-md", type=Path, required=True)
+
+    audit_register_answer_import = subparsers.add_parser(
+        "audit-register-answer-import",
+        help="Normalize a Google Sheets JSON export of register_answer_intake back to CSV",
+    )
+    audit_register_answer_import.add_argument("--sheet-json", type=Path, required=True)
+    audit_register_answer_import.add_argument("--out-csv", type=Path, required=True)
 
     audit_register_answer_status = subparsers.add_parser(
         "audit-register-answer-status",
@@ -888,6 +896,11 @@ def main(argv: list[str] | None = None) -> int:
         )
         write_xolo_support_request_short(args.out_md, markdown)
         print(f"Wrote short Xolo support request to {args.out_md}")
+        return 0
+    if args.command == "audit-register-answer-import":
+        rows = import_register_answer_sheet_json(args.sheet_json)
+        write_imported_register_answer_csv(args.out_csv, rows)
+        print(f"Imported {len(rows)} register answer rows from {args.sheet_json} to {args.out_csv}")
         return 0
     if args.command == "audit-register-answer-status":
         rows = build_register_answer_status(args.answer_intake)
