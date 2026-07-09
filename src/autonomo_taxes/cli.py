@@ -74,6 +74,7 @@ from .register_reconcile import (
 )
 from .reports import write_compare, write_ledger, write_manifest, write_markdown_report
 from .row_audit import build_row_audit, write_row_audit_csv, write_row_audit_markdown
+from .sequential_summary import build_sequential_summary, write_sequential_summary
 from .xolo_ledger import (
     import_xolo_expense_csv,
     load_xolo_expense_ledger,
@@ -252,6 +253,14 @@ def main(argv: list[str] | None = None) -> int:
     audit_quarter_packets.add_argument("--source-findings", type=Path)
     audit_quarter_packets.add_argument("--out-dir", type=Path, required=True)
 
+    audit_sequential_summary = subparsers.add_parser(
+        "audit-sequential-summary",
+        help="Build a chronological root-cause summary from quarter closure and source findings",
+    )
+    audit_sequential_summary.add_argument("--quarter-closure", type=Path, required=True)
+    audit_sequential_summary.add_argument("--source-findings", type=Path, required=True)
+    audit_sequential_summary.add_argument("--out-md", type=Path, required=True)
+
     args = parser.parse_args(argv)
     config = _load_config(args.config)
     _merge_config(args, config)
@@ -385,6 +394,11 @@ def main(argv: list[str] | None = None) -> int:
         )
         write_quarter_packets(args.out_dir, packets)
         print(f"Wrote {len(packets)} quarter packets to {args.out_dir}")
+        return 0
+    if args.command == "audit-sequential-summary":
+        markdown = build_sequential_summary(args.quarter_closure, args.source_findings)
+        write_sequential_summary(args.out_md, markdown)
+        print(f"Wrote sequential audit summary to {args.out_md}")
         return 0
     raise AssertionError(args.command)
 
