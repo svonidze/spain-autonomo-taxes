@@ -16,6 +16,11 @@ except Exception:  # pragma: no cover - dependency guard for clearer CLI errors.
     yaml = None
 
 from .annual import compare_annual_to_quarterly, write_annual_comparison_csv, write_annual_comparison_markdown
+from .annual_categories import (
+    build_annual_category_reconciliation,
+    write_annual_category_reconciliation_csv,
+    write_annual_category_reconciliation_markdown,
+)
 from .annual_constrained_assets import (
     build_annual_constrained_asset_reconciliation,
     write_annual_constrained_asset_reconciliation_csv,
@@ -173,6 +178,16 @@ def main(argv: list[str] | None = None) -> int:
     audit_annual.add_argument("--xolo-raw-expenses", type=Path, required=True)
     audit_annual.add_argument("--out-csv", type=Path, required=True)
     audit_annual.add_argument("--out-md", type=Path, required=True)
+
+    audit_annual_categories = subparsers.add_parser(
+        "audit-annual-categories",
+        help="Compare Modelo 100 annual expense categories with raw Xolo expense categories",
+    )
+    audit_annual_categories.add_argument("--modelo100-summary", type=Path, required=True)
+    audit_annual_categories.add_argument("--history-audit", type=Path, required=True)
+    audit_annual_categories.add_argument("--xolo-raw-expenses", type=Path, required=True)
+    audit_annual_categories.add_argument("--out-csv", type=Path, required=True)
+    audit_annual_categories.add_argument("--out-md", type=Path, required=True)
 
     audit_modelo303 = subparsers.add_parser(
         "audit-modelo303-vat",
@@ -360,6 +375,16 @@ def main(argv: list[str] | None = None) -> int:
         write_annual_comparison_csv(args.out_csv, rows)
         write_annual_comparison_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} annual comparison rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-annual-categories":
+        rows = build_annual_category_reconciliation(
+            args.modelo100_summary,
+            args.history_audit,
+            args.xolo_raw_expenses,
+        )
+        write_annual_category_reconciliation_csv(args.out_csv, rows)
+        write_annual_category_reconciliation_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} annual category reconciliation rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-modelo303-vat":
         rows = build_modelo303_vat_crosscheck(args.tax_report_dir, args.xolo_raw_expenses)
