@@ -16,6 +16,11 @@ except Exception:  # pragma: no cover - dependency guard for clearer CLI errors.
     yaml = None
 
 from .annual import compare_annual_to_quarterly, write_annual_comparison_csv, write_annual_comparison_markdown
+from .annual_constrained_assets import (
+    build_annual_constrained_asset_reconciliation,
+    write_annual_constrained_asset_reconciliation_csv,
+    write_annual_constrained_asset_reconciliation_markdown,
+)
 from .asset_audit import (
     build_asset_audit,
     build_asset_scenarios,
@@ -168,6 +173,15 @@ def main(argv: list[str] | None = None) -> int:
     audit_questions.add_argument("--candidate-quarter-reconciliation", type=Path, required=True)
     audit_questions.add_argument("--out-csv", type=Path, required=True)
     audit_questions.add_argument("--out-md", type=Path, required=True)
+
+    audit_annual_constrained_assets = subparsers.add_parser(
+        "audit-annual-constrained-assets",
+        help="Constrain candidate quarterly asset amortization to annual Modelo 100 line 0208",
+    )
+    audit_annual_constrained_assets.add_argument("--candidate-quarter-reconciliation", type=Path, required=True)
+    audit_annual_constrained_assets.add_argument("--modelo100-summary", type=Path, required=True)
+    audit_annual_constrained_assets.add_argument("--out-csv", type=Path, required=True)
+    audit_annual_constrained_assets.add_argument("--out-md", type=Path, required=True)
 
     audit_quarter_evidence = subparsers.add_parser(
         "audit-quarter-evidence",
@@ -328,6 +342,15 @@ def main(argv: list[str] | None = None) -> int:
         write_questions_csv(args.out_csv, questions)
         write_questions_markdown(args.out_md, questions)
         print(f"Wrote {len(questions)} Xolo questions to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-annual-constrained-assets":
+        rows = build_annual_constrained_asset_reconciliation(
+            args.candidate_quarter_reconciliation,
+            args.modelo100_summary,
+        )
+        write_annual_constrained_asset_reconciliation_csv(args.out_csv, rows)
+        write_annual_constrained_asset_reconciliation_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} annual-constrained asset rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-quarter-evidence":
         rows = build_quarter_evidence(
