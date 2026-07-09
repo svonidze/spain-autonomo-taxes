@@ -105,6 +105,7 @@ from .root_cause_narrowing import (
     write_root_cause_narrowing_markdown,
 )
 from .sequential_summary import build_sequential_summary, write_sequential_summary
+from .timing_audit import build_timing_audit, write_timing_audit_csv, write_timing_audit_markdown
 from .xolo_ledger import (
     import_xolo_expense_csv,
     load_xolo_expense_ledger,
@@ -354,6 +355,15 @@ def main(argv: list[str] | None = None) -> int:
     audit_sequential_summary.add_argument("--annual-categories", type=Path)
     audit_sequential_summary.add_argument("--out-md", type=Path, required=True)
 
+    audit_timing = subparsers.add_parser(
+        "audit-timing",
+        help="Diagnose timing, carry-forward, and netting patterns across Modelo 130 quarter balances",
+    )
+    audit_timing.add_argument("--quarter-closure", type=Path, required=True)
+    audit_timing.add_argument("--source-findings", type=Path)
+    audit_timing.add_argument("--out-csv", type=Path, required=True)
+    audit_timing.add_argument("--out-md", type=Path, required=True)
+
     args = parser.parse_args(argv)
     config = _load_config(args.config)
     _merge_config(args, config)
@@ -553,6 +563,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         write_sequential_summary(args.out_md, markdown)
         print(f"Wrote sequential audit summary to {args.out_md}")
+        return 0
+    if args.command == "audit-timing":
+        rows = build_timing_audit(args.quarter_closure, args.source_findings)
+        write_timing_audit_csv(args.out_csv, rows)
+        write_timing_audit_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} timing audit rows to {args.out_csv} and {args.out_md}")
         return 0
     raise AssertionError(args.command)
 
