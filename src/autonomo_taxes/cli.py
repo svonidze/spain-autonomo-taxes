@@ -40,6 +40,11 @@ from .parsers import (
     scan_expense_dir,
     scan_income_dir,
 )
+from .quarter_evidence import (
+    build_quarter_evidence,
+    write_quarter_evidence_csv,
+    write_quarter_evidence_markdown,
+)
 from .reports import write_compare, write_ledger, write_manifest, write_markdown_report
 from .xolo_ledger import (
     import_xolo_expense_csv,
@@ -135,6 +140,17 @@ def main(argv: list[str] | None = None) -> int:
     audit_questions.add_argument("--out-csv", type=Path, required=True)
     audit_questions.add_argument("--out-md", type=Path, required=True)
 
+    audit_quarter_evidence = subparsers.add_parser(
+        "audit-quarter-evidence",
+        help="Package every Modelo 130 quarter with raw rows, candidate amortization, and Xolo questions",
+    )
+    audit_quarter_evidence.add_argument("--history-audit", type=Path, required=True)
+    audit_quarter_evidence.add_argument("--candidate-quarter-reconciliation", type=Path, required=True)
+    audit_quarter_evidence.add_argument("--xolo-raw-expenses", type=Path, required=True)
+    audit_quarter_evidence.add_argument("--xolo-questions", type=Path)
+    audit_quarter_evidence.add_argument("--out-csv", type=Path, required=True)
+    audit_quarter_evidence.add_argument("--out-md", type=Path, required=True)
+
     args = parser.parse_args(argv)
     config = _load_config(args.config)
     _merge_config(args, config)
@@ -202,6 +218,17 @@ def main(argv: list[str] | None = None) -> int:
         write_questions_csv(args.out_csv, questions)
         write_questions_markdown(args.out_md, questions)
         print(f"Wrote {len(questions)} Xolo questions to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-quarter-evidence":
+        rows = build_quarter_evidence(
+            args.history_audit,
+            args.candidate_quarter_reconciliation,
+            args.xolo_raw_expenses,
+            args.xolo_questions,
+        )
+        write_quarter_evidence_csv(args.out_csv, rows)
+        write_quarter_evidence_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} quarter evidence rows to {args.out_csv} and {args.out_md}")
         return 0
     raise AssertionError(args.command)
 
