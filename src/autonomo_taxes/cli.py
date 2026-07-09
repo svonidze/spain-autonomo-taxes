@@ -36,6 +36,11 @@ from .asset_audit import (
     write_candidate_quarter_reconciliation_csv,
 )
 from .closure_request import build_xolo_closure_request, write_xolo_closure_request
+from .evidence_inventory import (
+    build_evidence_inventory,
+    write_evidence_inventory_csv,
+    write_evidence_inventory_markdown,
+)
 from .history import run_history_audit, write_history_audit_csv, write_history_audit_markdown
 from .hypothesis_ledger import (
     build_hypothesis_ledger,
@@ -172,6 +177,14 @@ def main(argv: list[str] | None = None) -> int:
     audit_history.add_argument("--out-csv", type=Path, required=True)
     audit_history.add_argument("--out-md", type=Path, required=True)
 
+    audit_evidence_inventory = subparsers.add_parser(
+        "audit-evidence-inventory",
+        help="Inventory local Xolo archive evidence for submitted registers and asset schedules",
+    )
+    audit_evidence_inventory.add_argument("--xolo-root", type=Path, required=True)
+    audit_evidence_inventory.add_argument("--out-csv", type=Path, required=True)
+    audit_evidence_inventory.add_argument("--out-md", type=Path, required=True)
+
     audit_annual = subparsers.add_parser("audit-annual", help="Compare annual Modelo 100 summaries to Q4 Modelo 130")
     audit_annual.add_argument("--modelo100-summary", type=Path, required=True)
     audit_annual.add_argument("--history-audit", type=Path, required=True)
@@ -296,6 +309,7 @@ def main(argv: list[str] | None = None) -> int:
     audit_closure_request.add_argument("--source-findings", type=Path)
     audit_closure_request.add_argument("--row-decisions", type=Path)
     audit_closure_request.add_argument("--root-cause-narrowing", type=Path)
+    audit_closure_request.add_argument("--evidence-inventory", type=Path)
     audit_closure_request.add_argument("--out-md", type=Path, required=True)
 
     audit_root_cause_narrowing = subparsers.add_parser(
@@ -374,6 +388,12 @@ def main(argv: list[str] | None = None) -> int:
         write_history_audit_csv(args.out_csv, rows)
         write_history_audit_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} historical audit rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-evidence-inventory":
+        rows = build_evidence_inventory(args.xolo_root)
+        write_evidence_inventory_csv(args.out_csv, rows)
+        write_evidence_inventory_markdown(args.out_md, rows, args.xolo_root)
+        print(f"Wrote {len(rows)} evidence inventory rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-annual":
         rows = compare_annual_to_quarterly(args.modelo100_summary, args.history_audit, args.xolo_raw_expenses)
@@ -490,6 +510,7 @@ def main(argv: list[str] | None = None) -> int:
             args.source_findings,
             args.row_decisions,
             args.root_cause_narrowing,
+            args.evidence_inventory,
         )
         write_xolo_closure_request(args.out_md, markdown)
         print(f"Wrote Xolo closure request to {args.out_md}")

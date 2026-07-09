@@ -11,6 +11,7 @@ def build_xolo_closure_request(
     source_findings_csv: Path | None = None,
     row_decisions_csv: Path | None = None,
     root_cause_narrowing_csv: Path | None = None,
+    evidence_inventory_csv: Path | None = None,
 ) -> str:
     rows = _load_rows(quarter_closure_csv)
     material = [row for row in rows if row["closure_status"] == "blocked_material_unexplained_adjustment"]
@@ -19,6 +20,7 @@ def build_xolo_closure_request(
     source_findings = _source_finding_highlights(source_findings_csv) if source_findings_csv else []
     row_decisions = _row_decision_highlights(row_decisions_csv) if row_decisions_csv else []
     root_cause_rows = _root_cause_highlights(root_cause_narrowing_csv) if root_cause_narrowing_csv else []
+    inventory = _inventory_summary(evidence_inventory_csv) if evidence_inventory_csv else {}
 
     lines = [
         "# Xolo Modelo 130 Closure Request",
@@ -188,9 +190,16 @@ def build_xolo_closure_request(
             "- Local Xolo export contains expense documents and submitted PDF declarations, but no submitted Modelo 130 expense register.",
             "- Local Xolo expense API snapshot contains UI expense rows only; it does not contain row-level Modelo 130 inclusion or asset amortization schedule.",
             "- Modelo 100 PDFs expose annual aggregate amortization, not the per-asset schedule needed to close quarterly Modelo 130.",
-            "",
         ]
     )
+    if inventory:
+        lines.append(
+            "- Evidence inventory found "
+            f"{inventory.get('modelo130_report', '0')} Modelo 130 reports, "
+            f"{inventory.get('candidate_submitted_register', '0')} candidate submitted-register files, and "
+            f"{inventory.get('candidate_asset_schedule', '0')} candidate asset/amortization schedule files."
+        )
+    lines.append("")
     return "\n".join(lines)
 
 
@@ -241,6 +250,10 @@ def _root_cause_highlights(path: Path) -> list[dict[str, str]]:
             "pending_row_exclusion_confirmation",
         }
     ]
+
+
+def _inventory_summary(path: Path) -> dict[str, str]:
+    return {row["category"]: row["count"] for row in _load_rows(path)}
 
 
 def _row_label(row: dict[str, str]) -> str:
