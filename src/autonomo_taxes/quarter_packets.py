@@ -13,6 +13,7 @@ def build_quarter_packets(
     source_findings_csv: Path | None = None,
     root_cause_narrowing_csv: Path | None = None,
     row_decisions_csv: Path | None = None,
+    quarter_balance_bridge_csv: Path | None = None,
 ) -> list[dict[str, object]]:
     history_by_period = {
         f"{row['year']}-Q{row['quarter']}": row
@@ -26,6 +27,10 @@ def build_quarter_packets(
         for row in _load_rows(root_cause_narrowing_csv)
     } if root_cause_narrowing_csv else {}
     row_decisions_by_period = _group_by_period(_load_rows(row_decisions_csv)) if row_decisions_csv else {}
+    balance_bridge_by_period = {
+        row["period"]: row
+        for row in _load_rows(quarter_balance_bridge_csv)
+    } if quarter_balance_bridge_csv else {}
 
     packets: list[dict[str, object]] = []
     for closure in closure_rows:
@@ -34,6 +39,7 @@ def build_quarter_packets(
         packet_rows = audit_by_period.get(period, [])
         root_cause = root_cause_by_period.get(period, {})
         row_decisions = row_decisions_by_period.get(period, [])
+        balance_bridge = balance_bridge_by_period.get(period, {})
         packets.append(
             {
                 "period": period,
@@ -42,6 +48,7 @@ def build_quarter_packets(
                 "closure": closure,
                 "root_cause": root_cause,
                 "row_decisions": row_decisions,
+                "balance_bridge": balance_bridge,
                 "rows": packet_rows,
                 "source_findings": source_findings_by_period.get(period, []),
                 "markdown": _packet_markdown(
@@ -50,6 +57,7 @@ def build_quarter_packets(
                     closure,
                     root_cause,
                     row_decisions,
+                    balance_bridge,
                     packet_rows,
                     source_findings_by_period.get(period, []),
                 ),
@@ -71,6 +79,7 @@ def _packet_markdown(
     closure: dict[str, str],
     root_cause: dict[str, str],
     row_decisions: list[dict[str, str]],
+    balance_bridge: dict[str, str],
     rows: list[dict[str, str]],
     source_findings: list[dict[str, str]] | None = None,
 ) -> str:
@@ -108,9 +117,17 @@ def _packet_markdown(
         f"- Excluded asset direct amount: `{_fmt(closure['excluded_asset_direct_eur'])}`",
         f"- Nearest excluded subset: `{_fmt(closure['excluded_nearest_subset_eur'])}`",
         "",
-        "## Root-Cause Gates",
+        "## Balance Bridge",
         "",
     ]
+    lines.extend(_balance_bridge_table(balance_bridge))
+    lines.extend(
+        [
+            "",
+            "## Root-Cause Gates",
+            "",
+        ]
+    )
     lines.extend(_root_cause_table(root_cause))
     lines.extend(
         [
@@ -230,6 +247,37 @@ def _root_cause_table(row: dict[str, str]) -> list[str]:
                 _fmt(row.get("annual_professional_base_diff", "")),
                 _cell(row.get("eliminated_causes", "")),
                 _cell(row.get("remaining_causes", "")),
+            ]
+        )
+        + " |",
+    ]
+
+
+def _balance_bridge_table(row: dict[str, str]) -> list[str]:
+    if not row:
+        return ["not supplied"]
+    return [
+        "| Equation | Annual balance | Signal |",
+        "|---|---:|---|",
+        "| "
+        + " | ".join(
+            [
+                f"`{_cell(row.get('equation', ''))}`",
+                _fmt(row.get("annual_constrained_balance_to_target", "")),
+                _cell(row.get("balance_signal", "")),
+            ]
+        )
+        + " |",
+        "",
+        "| Raw non-asset | Annual-constrained amortization | Excluded/netted | Required evidence |",
+        "|---:|---:|---:|---|",
+        "| "
+        + " | ".join(
+            [
+                _fmt(row.get("raw_non_asset_delta", "")),
+                _fmt(row.get("annual_constrained_amortization_delta", "")),
+                _fmt(row.get("nearest_excluded_or_netted_eur", "")),
+                _cell(row.get("required_xolo_evidence", "")),
             ]
         )
         + " |",

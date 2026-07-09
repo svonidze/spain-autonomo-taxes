@@ -91,6 +91,11 @@ from .quarter_closure import (
     write_quarter_closure_csv,
     write_quarter_closure_markdown,
 )
+from .quarter_balance_bridge import (
+    build_quarter_balance_bridge,
+    write_quarter_balance_bridge_csv,
+    write_quarter_balance_bridge_markdown,
+)
 from .quarter_packets import build_quarter_packets, write_quarter_packets
 from .register_review import (
     build_register_review_template,
@@ -312,6 +317,16 @@ def main(argv: list[str] | None = None) -> int:
     audit_quarter_closure.add_argument("--out-csv", type=Path, required=True)
     audit_quarter_closure.add_argument("--out-md", type=Path, required=True)
 
+    audit_quarter_balance_bridge = subparsers.add_parser(
+        "audit-quarter-balance-bridge",
+        help="Rewrite each Modelo 130 quarter as raw expenses plus amortization minus exclusions plus balance",
+    )
+    audit_quarter_balance_bridge.add_argument("--candidate-quarter-reconciliation", type=Path, required=True)
+    audit_quarter_balance_bridge.add_argument("--quarter-closure", type=Path, required=True)
+    audit_quarter_balance_bridge.add_argument("--annual-constrained-assets", type=Path)
+    audit_quarter_balance_bridge.add_argument("--out-csv", type=Path, required=True)
+    audit_quarter_balance_bridge.add_argument("--out-md", type=Path, required=True)
+
     audit_closure_request = subparsers.add_parser(
         "audit-closure-request",
         help="Build a draft request to Xolo from the quarter closure checklist",
@@ -354,6 +369,7 @@ def main(argv: list[str] | None = None) -> int:
     audit_quarter_packets.add_argument("--source-findings", type=Path)
     audit_quarter_packets.add_argument("--root-cause-narrowing", type=Path)
     audit_quarter_packets.add_argument("--row-decisions", type=Path)
+    audit_quarter_packets.add_argument("--quarter-balance-bridge", type=Path)
     audit_quarter_packets.add_argument("--out-dir", type=Path, required=True)
 
     audit_sequential_summary = subparsers.add_parser(
@@ -543,6 +559,16 @@ def main(argv: list[str] | None = None) -> int:
         write_quarter_closure_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} quarter closure rows to {args.out_csv} and {args.out_md}")
         return 0
+    if args.command == "audit-quarter-balance-bridge":
+        rows = build_quarter_balance_bridge(
+            args.candidate_quarter_reconciliation,
+            args.quarter_closure,
+            args.annual_constrained_assets,
+        )
+        write_quarter_balance_bridge_csv(args.out_csv, rows)
+        write_quarter_balance_bridge_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} quarter balance bridge rows to {args.out_csv} and {args.out_md}")
+        return 0
     if args.command == "audit-closure-request":
         markdown = build_xolo_closure_request(
             args.quarter_closure,
@@ -580,6 +606,7 @@ def main(argv: list[str] | None = None) -> int:
             args.source_findings,
             args.root_cause_narrowing,
             args.row_decisions,
+            args.quarter_balance_bridge,
         )
         write_quarter_packets(args.out_dir, packets)
         print(f"Wrote {len(packets)} quarter packets to {args.out_dir}")
