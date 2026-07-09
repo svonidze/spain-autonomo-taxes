@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 import re
 import unicodedata
@@ -65,13 +66,11 @@ def build_source_book_import(
     content_rows = _load_rows(source_book_content_check_csv)
     ready_rows = [row for row in content_rows if row.get("status") == "content_ready"]
     output: list[dict[str, str]] = []
-    for content_row in ready_rows:
-        check = content_row.get("check", "")
-        for source_file in _content_ready_files(response_root, content_row.get("content_ready_files", "")):
-            try:
-                output.extend(_import_file(source_file, check, content_row.get("scope", "")))
-            except Exception as exc:
-                output.append(_unreadable_row(source_file, check, content_row.get("scope", ""), exc))
+    for task in _unique_import_tasks(response_root, ready_rows):
+        try:
+            output.extend(_import_file(task.path, task.check, task.scope))
+        except Exception as exc:
+            output.append(_unreadable_row(task.path, task.check, task.scope, exc))
     return output
 
 
@@ -130,6 +129,53 @@ def write_source_book_import_markdown(path: Path, rows: list[dict[str, str]]) ->
         )
     lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
+
+
+@dataclass(frozen=True)
+class _ImportTask:
+    check: str
+    path: Path
+    scope: str
+
+
+@dataclass
+class _PendingImportTask:
+    check: str
+    path: Path
+    scopes: list[str]
+
+
+def _unique_import_tasks(response_root: Path, ready_rows: list[dict[str, str]]) -> list[_ImportTask]:
+    """Collapse one full-history file matched to multiple deliverables.
+
+    Filename-level intake intentionally lets a single Xolo source-book export
+    satisfy several years or quarters. Importing that same file once per
+    deliverable would multiply every row during reconciliation.
+    """
+    tasks: dict[tuple[str, str], _PendingImportTask] = {}
+    order: list[tuple[str, str]] = []
+    for content_row in ready_rows:
+        check = content_row.get("check", "")
+        scope = content_row.get("scope", "")
+        for source_file in _content_ready_files(response_root, content_row.get("content_ready_files", "")):
+            key = (check, _canonical_source_file(source_file))
+            if key not in tasks:
+                tasks[key] = _PendingImportTask(check=check, path=source_file, scopes=[])
+                order.append(key)
+            if scope and scope not in tasks[key].scopes:
+                tasks[key].scopes.append(scope)
+    output: list[_ImportTask] = []
+    for key in order:
+        task = tasks[key]
+        output.append(_ImportTask(task.check, task.path, "; ".join(sorted(task.scopes))))
+    return output
+
+
+def _canonical_source_file(path: Path) -> str:
+    try:
+        return str(path.resolve()).casefold()
+    except OSError:
+        return str(path.absolute()).casefold()
 
 
 def _import_file(path: Path, check: str, scope: str) -> list[dict[str, str]]:
@@ -399,15 +445,17 @@ def _content_ready_files(response_root: Path, raw: str) -> list[Path]:
     paths: list[Path] = []
     for value in [part.strip() for part in raw.split(";") if part.strip()]:
         path = Path(value)
+        if path.is_absolute():
+            paths.append(path)
+            continue
+        rooted = response_root / path
+        if rooted.exists():
+            paths.append(rooted)
+            continue
         if path.exists():
             paths.append(path)
             continue
-        if not path.is_absolute():
-            rooted = response_root / value
-            if rooted.exists():
-                paths.append(rooted)
-                continue
-        paths.append(path)
+        paths.append(rooted)
     return paths
 
 
