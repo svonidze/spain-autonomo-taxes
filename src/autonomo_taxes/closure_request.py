@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from collections import Counter
 from pathlib import Path
 
 from .money import format_es, parse_amount
@@ -17,6 +18,7 @@ def build_xolo_closure_request(
     material_gap_context_csv: Path | None = None,
     p1_near_fit_context_csv: Path | None = None,
     p2_near_target_context_csv: Path | None = None,
+    asset_gap_matrix_csv: Path | None = None,
 ) -> str:
     rows = _load_rows(quarter_closure_csv)
     material = [row for row in rows if row["closure_status"] == "blocked_material_unexplained_adjustment"]
@@ -31,6 +33,7 @@ def build_xolo_closure_request(
     material_context_rows = _material_context_highlights(material_gap_context_csv) if material_gap_context_csv else []
     p1_context_rows = _p1_context_highlights(p1_near_fit_context_csv) if p1_near_fit_context_csv else []
     p2_context_rows = _p2_context_highlights(p2_near_target_context_csv) if p2_near_target_context_csv else []
+    asset_gap_rows = _asset_gap_highlights(asset_gap_matrix_csv) if asset_gap_matrix_csv else []
 
     lines = [
         "# Xolo Modelo 130 Closure Request",
@@ -49,6 +52,7 @@ def build_xolo_closure_request(
         "1. The submitted Modelo 130 expense register for every quarter from 2023-Q2 through 2026-Q2, with date, supplier, invoice number, category, original amount, EUR deductible amount used in casilla 02, and whether the amount was gross, VAT-base, excluded, netted, reversed, or adjusted.",
         "2. The full asset amortization schedule used for Modelo 130 and annual Renta/Modelo 100: asset, acquisition date, acquisition basis, VAT treatment, start date, amortization rate, quarterly amortization amount, and accumulated amortization by quarter.",
         "3. The source rows or accounting adjustments for the material quarter gaps listed below.",
+        "4. Please answer with the register/schedule exports if available; local target-fitting arithmetic is only being used to route the questions and should not be treated as confirmed Xolo accounting.",
         "",
     ]
     if root_cause_rows:
@@ -72,6 +76,38 @@ def build_xolo_closure_request(
                         _fmt(row.get("annual_professional_base_diff", "")),
                         _cell(row["eliminated_causes"]),
                         _cell(row["remaining_causes"]),
+                    ]
+                )
+                + " |"
+            )
+        lines.append("")
+
+    if asset_gap_rows:
+        signal_counts = _signal_counts(asset_gap_rows)
+        lines.extend(
+            [
+                "## Asset/Register Split From Local Matrix",
+                "",
+                "The local matrix separates quarters where an asset schedule could explain the gap from quarters where row exclusions, netting, VAT/base treatment, or catch-up must also exist. This is why the requested Xolo answer needs source exports rather than a narrative explanation.",
+                "",
+                "- Signals: " + "; ".join(f"`{signal}`={count}" for signal, count in sorted(signal_counts.items())) + ".",
+                "",
+                "| Period | Signal | Required amort./catch-up | Annual-constrained amort. | Required - annual | Active assets | Required answer |",
+                "|---|---|---:|---:|---:|---:|---|",
+            ]
+        )
+        for row in asset_gap_rows:
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        row["period"],
+                        _cell(row["amortization_gap_signal"]),
+                        _fmt(row["required_amortization_or_catchup_delta"]),
+                        _fmt(row["annual_constrained_amortization_delta"]),
+                        _fmt(row["required_minus_annual_constrained_amortization"]),
+                        row["active_asset_count"],
+                        _cell(row["next_action"]),
                     ]
                 )
                 + " |"
@@ -488,6 +524,30 @@ def _p1_context_highlights(path: Path) -> list[dict[str, str]]:
 
 def _p2_context_highlights(path: Path) -> list[dict[str, str]]:
     return sorted(_load_rows(path), key=lambda row: (row["period"], row["context_signal"], row["row_ref"]))
+
+
+def _asset_gap_highlights(path: Path) -> list[dict[str, str]]:
+    rows = _load_rows(path)
+    priority_order = {
+        "ordinary_amortization_too_small": 0,
+        "excluded_asset_or_register_adjustment_required": 1,
+        "asset_amortization_above_required_row_exclusions_needed": 2,
+        "raw_non_asset_above_target": 3,
+        "annual_constrained_amortization_near_required": 4,
+        "candidate_amortization_near_required": 5,
+    }
+    focus_signals = set(priority_order)
+    return sorted(
+        [row for row in rows if row.get("amortization_gap_signal") in focus_signals],
+        key=lambda row: (
+            priority_order.get(row.get("amortization_gap_signal", ""), 9),
+            row.get("period", ""),
+        ),
+    )
+
+
+def _signal_counts(rows: list[dict[str, str]]) -> dict[str, int]:
+    return dict(Counter(row["amortization_gap_signal"] for row in rows))
 
 
 def _row_label(row: dict[str, str]) -> str:
