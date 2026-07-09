@@ -62,6 +62,11 @@ from .evidence_inventory import (
     write_evidence_inventory_markdown,
 )
 from .first_gate_report import build_first_gate_report, write_first_gate_csv, write_first_gate_markdown
+from .first_gate_answer_check import (
+    build_first_gate_answer_check,
+    write_first_gate_answer_check_csv,
+    write_first_gate_answer_check_markdown,
+)
 from .history import run_history_audit, write_history_audit_csv, write_history_audit_markdown
 from .hypothesis_ledger import (
     build_hypothesis_ledger,
@@ -683,6 +688,15 @@ def main(argv: list[str] | None = None) -> int:
     audit_first_gate.add_argument("--out-csv", type=Path, required=True)
     audit_first_gate.add_argument("--out-md", type=Path, required=True)
 
+    audit_first_gate_answer_check = subparsers.add_parser(
+        "audit-first-gate-answer-check",
+        help="Check whether Xolo answer intake is ready to rebuild the first Modelo 130 gate",
+    )
+    audit_first_gate_answer_check.add_argument("--first-gate", type=Path, required=True)
+    audit_first_gate_answer_check.add_argument("--answer-intake", type=Path, required=True)
+    audit_first_gate_answer_check.add_argument("--out-csv", type=Path, required=True)
+    audit_first_gate_answer_check.add_argument("--out-md", type=Path, required=True)
+
     audit_source_book_availability = subparsers.add_parser(
         "audit-source-book-availability",
         help="Consolidate source-book and asset-schedule availability evidence",
@@ -1128,6 +1142,12 @@ def main(argv: list[str] | None = None) -> int:
         write_first_gate_csv(args.out_csv, rows)
         write_first_gate_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} first-gate rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "audit-first-gate-answer-check":
+        rows = build_first_gate_answer_check(args.first_gate, args.answer_intake)
+        write_first_gate_answer_check_csv(args.out_csv, rows)
+        write_first_gate_answer_check_markdown(args.out_md, rows)
+        print(f"Wrote {len(rows)} first-gate answer-check rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-source-book-availability":
         rows = build_source_book_availability(
