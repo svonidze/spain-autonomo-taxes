@@ -89,11 +89,16 @@ class NetworkObservation:
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Probe authenticated Xolo self-service pages through Playwright storage state. "
+            "Probe authenticated Xolo self-service pages through Playwright storage state or a persistent profile. "
             "The output intentionally strips query values and never serializes cookies or CSRF tokens."
         )
     )
     parser.add_argument("--storage-state", type=Path, default=Path(".omx/xolo-storage-state.json"))
+    parser.add_argument(
+        "--profile-dir",
+        type=Path,
+        help="Use a persistent Playwright profile instead of a saved storage-state JSON.",
+    )
     parser.add_argument("--out-json", type=Path, required=True)
     parser.add_argument("--out-md", type=Path, required=True)
     parser.add_argument("--endpoint", action="append", default=[], help="Additional endpoint or URL to probe")
@@ -107,7 +112,10 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if not args.storage_state.exists():
+    if args.profile_dir is not None:
+        if not args.profile_dir.exists():
+            raise SystemExit(f"Profile directory not found: {args.profile_dir}. Run scripts/xolo_playwright_login.py first.")
+    elif not args.storage_state.exists():
         raise SystemExit(f"Storage state not found: {args.storage_state}. Run scripts/xolo_playwright_login.py first.")
 
     try:
@@ -119,15 +127,17 @@ def main() -> int:
     pages, network = probe(
         sync_playwright=sync_playwright,
         timeout_error=PlaywrightTimeoutError,
-        storage_state=args.storage_state,
+        storage_state=None if args.profile_dir is not None else args.storage_state,
+        profile_dir=args.profile_dir,
         endpoints=DEFAULT_ENDPOINTS + args.endpoint,
         max_pages=args.max_pages,
         discover_links=not args.no_discover_links,
         network_idle_ms=args.network_idle_ms,
         settle_ms=args.settle_ms,
     )
-    write_json(args.out_json, pages, network)
-    write_markdown(args.out_md, pages, network)
+    auth_source = f"profile-dir:{args.profile_dir}" if args.profile_dir is not None else f"storage-state:{args.storage_state}"
+    write_json(args.out_json, pages, network, auth_source=auth_source)
+    write_markdown(args.out_md, pages, network, auth_source=auth_source)
     print(f"Probed {len(pages)} Xolo pages and {len(network)} network responses into {args.out_json} and {args.out_md}")
     return 0
 
@@ -136,7 +146,8 @@ def probe(
     *,
     sync_playwright: Any,
     timeout_error: type[Exception],
-    storage_state: Path,
+    storage_state: Path | None,
+    profile_dir: Path | None,
     endpoints: list[str],
     max_pages: int,
     discover_links: bool,
@@ -148,9 +159,17 @@ def probe(
     current_page = {"url": ""}
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
-        context = browser.new_context(storage_state=str(storage_state), viewport={"width": 1600, "height": 1200})
-        page = context.new_page()
+        browser = None
+        if profile_dir is not None:
+            context = playwright.chromium.launch_persistent_context(
+                str(profile_dir),
+                headless=True,
+                viewport={"width": 1600, "height": 1200},
+            )
+        else:
+            browser = playwright.chromium.launch(headless=True)
+            context = browser.new_context(storage_state=str(storage_state), viewport={"width": 1600, "height": 1200})
+        page = context.pages[0] if context.pages else context.new_page()
 
         def on_response(response: Any) -> None:
             observation = _network_observation(response, current_page.get("url", ""))
@@ -175,15 +194,18 @@ def probe(
                 if link not in seen and _should_queue_link(link) and len(seen) + len(queue) < max_pages * 4:
                     queue.append(link)
 
-        browser.close()
+        context.close()
+        if browser is not None:
+            browser.close()
 
     return pages, network
 
 
-def write_json(path: Path, pages: list[PageProbe], network: list[NetworkObservation]) -> None:
+def write_json(path: Path, pages: list[PageProbe], network: list[NetworkObservation], *, auth_source: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "page_count": len(pages),
+        "auth_source": auth_source,
         "network_observation_count": len(network),
         "pages": [asdict(page) for page in pages],
         "network_observations": [asdict(item) for item in network],
@@ -192,7 +214,7 @@ def write_json(path: Path, pages: list[PageProbe], network: list[NetworkObservat
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-def write_markdown(path: Path, pages: list[PageProbe], network: list[NetworkObservation]) -> None:
+def write_markdown(path: Path, pages: list[PageProbe], network: list[NetworkObservation], *, auth_source: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     login_like_pages = [page for page in pages if "log in" in page.title.lower() or "/hub/login" in page.final_url]
     candidate_rows = [
@@ -202,12 +224,13 @@ def write_markdown(path: Path, pages: list[PageProbe], network: list[NetworkObse
     ]
 
     lines = [
-        "# Xolo Storage-State Endpoint Probe",
+        "# Xolo Auth Endpoint Probe",
         "",
-        "Read-only authenticated probe through Playwright storage state. Query values, cookies, and CSRF token values are not written to this artifact.",
+        "Read-only authenticated probe through Playwright storage state or a persistent profile. Query values, cookies, and CSRF token values are not written to this artifact.",
         "",
         "## Summary",
         "",
+        f"- Auth source: `{auth_source}`.",
         f"- Pages probed: `{len(pages)}`.",
         f"- Network responses captured: `{len(network)}`.",
         f"- Distinct same-origin Xolo network endpoints: `{len(_network_summary_rows(network))}`.",
