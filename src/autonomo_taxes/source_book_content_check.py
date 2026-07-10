@@ -25,40 +25,86 @@ SOURCE_BOOK_CONTENT_CHECK_FIELDS = [
 ]
 
 REQUIRED_GROUPS = {
-    "compras_gastos_book": {
-        "date": ["date", "fecha", "invoice date", "booking date", "posting date"],
-        "counterparty": ["supplier", "proveedor", "recipient", "vendor", "party", "counterparty", "emisor"],
-        "document_number": ["number", "invoice number", "invoice_number", "factura", "document number", "numero"],
-        "included_period": ["period", "quarter", "trimestre", "deducted in period", "modelo 130 period", "inclusion quarter"],
+    "ingresos_book": {
+        "date": ["date", "fecha", "fecha factura", "invoice date", "fecha expedicion", "fecha operacion"],
+        "counterparty": ["customer", "cliente", "recipient", "destinatario", "party", "counterparty", "nombre"],
+        "document_number": ["number", "invoice number", "invoice_number", "factura", "document number", "numero", "serie"],
+        "concept": ["concept", "concepto", "description", "descripcion", "detalle", "operation", "operacion"],
+        "income_amount_eur": ["income eur", "revenue eur", "sales eur", "ingresos", "importe", "base imponible", "total eur", "amount"],
+    },
+    "gastos_book": {
+        "date": ["date", "fecha", "invoice date", "booking date", "posting date", "fecha factura", "fecha registro"],
+        "counterparty": ["supplier", "proveedor", "recipient", "vendor", "party", "counterparty", "emisor", "nombre"],
+        "document_number": ["number", "invoice number", "invoice_number", "factura", "document number", "numero", "serie"],
+        "concept": ["concept", "concepto", "description", "descripcion", "detalle", "operation", "operacion"],
         "irpf_deductible_eur": [
             "irpf deductible eur",
             "deductible eur",
             "deductible base eur",
             "tax deductible eur",
             "importe deducible",
+            "gasto irpf",
+            "gasto a efectos del irpf",
+            "importe gasto irpf",
+            "importe que es considerado gasto",
             "casilla 02",
         ],
     },
-    "bienes_inversion_or_asset_schedule": {
-        "asset_id": ["asset id", "asset", "fixed asset", "bien inversion", "bien de inversion", "investment good"],
-        "acquisition_date": ["acquisition date", "purchase date", "fecha adquisicion", "date"],
-        "amortizable_base_eur": ["amortizable base eur", "base amortizable", "cost basis", "acquisition cost"],
-        "amortization_period": ["period", "quarter", "trimestre", "amortization period"],
-        "amortization_amount_eur": [
+    "bienes_inversion_book": {
+        "acquisition_date": ["acquisition date", "purchase date", "fecha adquisicion", "fecha inicio utilizacion", "date"],
+        "description_or_document": [
+            "description",
+            "descripcion",
+            "bien inversion",
+            "bien de inversion",
+            "investment good",
+            "document number",
+            "factura",
+            "numero",
+        ],
+        "supplier_or_counterparty": ["supplier", "proveedor", "vendor", "counterparty", "emisor", "nombre"],
+        "acquisition_or_amortizable_value": [
+            "acquisition value",
+            "valor adquisicion",
+            "amortizable base eur",
+            "base amortizable",
+            "cost basis",
+            "acquisition cost",
+        ],
+        "amortization_method": ["method", "metodo", "metodo amortizacion", "depreciation method", "amortization method"],
+        "amortization_rate_or_quota": [
+            "rate",
+            "coefficient",
+            "coeficiente",
+            "percent",
+            "%",
+            "quota",
+            "cuota",
             "amortization amount eur",
             "amortizacion eur",
             "depreciation amount",
             "deducted amortization",
+            "amortizacion anual",
+            "annual amortization",
         ],
-        "rate_or_life": ["rate", "coefficient", "coeficiente", "useful life", "vida util", "percent", "%"],
+        "accumulated_amortization": [
+            "accumulated amortization",
+            "amortizacion acumulada",
+            "depreciation accumulated",
+            "accumulated depreciation",
+        ],
     },
-    "modelo130_source_book_tieout": {
-        "period": ["period", "quarter", "trimestre", "modelo 130 period"],
-        "casilla01_ytd": ["casilla 01", "casilla01", "sales ytd", "income ytd", "ingresos"],
-        "casilla02_ytd": ["casilla 02", "casilla02", "expenses ytd", "gastos deducibles"],
-        "casilla07": ["casilla 07", "casilla07", "payment due before reductions"],
-        "casilla19": ["casilla 19", "casilla19", "payable", "amount due", "resultado"],
+    "provisiones_suplidos_book": {
+        "date": ["date", "fecha", "movement date", "fecha movimiento", "fecha registro"],
+        "counterparty": ["customer", "cliente", "supplier", "proveedor", "counterparty", "party", "nombre"],
+        "movement_type_or_concept": ["type", "tipo", "concept", "concepto", "description", "descripcion", "suplido", "provision"],
+        "amount_eur": ["amount", "importe", "total eur", "amount eur", "importe eur"],
     },
+}
+
+LEGACY_REQUIRED_GROUP_ALIASES = {
+    "compras_gastos_book": "gastos_book",
+    "bienes_inversion_or_asset_schedule": "bienes_inversion_book",
 }
 
 
@@ -102,7 +148,7 @@ def write_source_book_content_check_markdown(path: Path, rows: list[dict[str, st
     lines = [
         "# Xolo Source-Book Content Check",
         "",
-        "This report checks whether matched Xolo source-book files have the columns needed for row-level Modelo 130 reconciliation.",
+        "This report checks whether matched Xolo official register files have the columns needed for row-level Modelo 130 reconciliation.",
         "It does not interpret the accounting treatment; it only blocks import when required structure is missing.",
         "",
         "## Verdict",
@@ -159,7 +205,7 @@ def _deliverable_content_row(response_root: Path, row: dict[str, str]) -> dict[s
     ready = [item for item in inspections if item.status == "content_ready"]
     if not files:
         status = "missing_response_file"
-        missing = sorted(REQUIRED_GROUPS.get(check, {}))
+        missing = sorted(_required_groups(check))
         evidence = "No matched response file was listed by audit-source-book-response-check."
         next_action = row.get("next_action", "Add the missing Xolo source-book file.")
     elif ready:
@@ -169,7 +215,7 @@ def _deliverable_content_row(response_root: Path, row: dict[str, str]) -> dict[s
         next_action = "Import and reconcile this deliverable against answer-intake rows."
     elif inspections and all(item.status == "unsupported_format" for item in inspections):
         status = "unsupported_content_format"
-        missing = sorted(REQUIRED_GROUPS.get(check, {}))
+        missing = sorted(_required_groups(check))
         evidence = _inspection_evidence(inspections)
         next_action = "Ask Xolo for CSV/XLSX source-book exports with machine-readable headers."
     else:
@@ -227,16 +273,16 @@ def _inspect_file(path: Path, check: str) -> _Inspection:
             return _inspection(path, check, suffix.removeprefix("."), headers, row_count)
         if suffix == ".xlsx":
             return _best_xlsx_inspection(path, check)
-        return _Inspection(str(path), "unsupported_format", suffix.removeprefix(".") or "unknown", 0, [], sorted(REQUIRED_GROUPS.get(check, {})))
+        return _Inspection(str(path), "unsupported_format", suffix.removeprefix(".") or "unknown", 0, [], sorted(_required_groups(check)))
     except Exception as exc:  # pragma: no cover - exact parser failures are environment/file dependent.
-        return _Inspection(str(path), "unreadable", suffix.removeprefix(".") or "unknown", 0, [], sorted(REQUIRED_GROUPS.get(check, {})), str(exc))
+        return _Inspection(str(path), "unreadable", suffix.removeprefix(".") or "unknown", 0, [], sorted(_required_groups(check)), str(exc))
 
 
 def _inspection(path: Path, check: str, file_format: str, headers: list[str], row_count: int) -> _Inspection:
     missing = _missing_groups(check, headers)
     if not headers:
         status = "empty_or_no_header"
-    elif row_count <= 0:
+    elif row_count <= 0 and (check != "provisiones_suplidos_book" or missing):
         status = "empty_or_no_data_rows"
     elif missing:
         status = "content_incomplete"
@@ -247,11 +293,11 @@ def _inspection(path: Path, check: str, file_format: str, headers: list[str], ro
 
 def _missing_groups(check: str, headers: list[str]) -> list[str]:
     mapping = required_group_header_map(check, headers)
-    return [group for group in REQUIRED_GROUPS.get(check, {}) if group not in mapping]
+    return [group for group in _required_groups(check) if group not in mapping]
 
 
 def required_group_header_map(check: str, headers: list[str]) -> dict[str, str]:
-    groups = REQUIRED_GROUPS.get(check, {})
+    groups = required_groups_for_check(check)
     normalized_headers = [_normalize(header) for header in headers]
     compact_headers = [_compact(header) for header in normalized_headers]
     mapping: dict[str, str] = {}
@@ -260,6 +306,10 @@ def required_group_header_map(check: str, headers: list[str]) -> dict[str, str]:
         if match:
             mapping[group] = match
     return mapping
+
+
+def required_groups_for_check(check: str) -> dict[str, list[str]]:
+    return _required_groups(check)
 
 
 def _matched_header(
@@ -416,8 +466,12 @@ def _matched_paths(root: Path, raw: str) -> list[Path]:
 
 def _least_missing_groups(inspections: list[_Inspection], check: str) -> list[str]:
     if not inspections:
-        return sorted(REQUIRED_GROUPS.get(check, {}))
-    return min((item.missing_groups for item in inspections), key=len, default=sorted(REQUIRED_GROUPS.get(check, {})))
+        return sorted(_required_groups(check))
+    return min((item.missing_groups for item in inspections), key=len, default=sorted(_required_groups(check)))
+
+
+def _required_groups(check: str) -> dict[str, list[str]]:
+    return REQUIRED_GROUPS.get(check) or REQUIRED_GROUPS.get(LEGACY_REQUIRED_GROUP_ALIASES.get(check, ""), {})
 
 
 def _inspection_evidence(inspections: list[_Inspection]) -> str:

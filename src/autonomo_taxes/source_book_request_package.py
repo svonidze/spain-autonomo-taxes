@@ -96,7 +96,7 @@ def write_source_book_request_package_manifest_markdown(path: Path, rows: list[d
         "",
         f"Created at: `{datetime.now(timezone.utc).isoformat()}`",
         "",
-        "This package is for requesting Xolo's source books and asset schedule.",
+        "This package is for requesting Xolo's official IRPF register exports.",
         "It intentionally excludes spreadsheet/data attachment formats by default.",
         "Allowed markdown/text attachments still require human content review before sending.",
         "",
@@ -133,7 +133,7 @@ def write_source_book_request_package_manifest_markdown(path: Path, rows: list[d
             "",
             "Start with `message_to_xolo.md`.",
             "Attach markdown reports only if Xolo asks for supporting context.",
-            "Do not attach CSV/JSON/XLSX target-fitting outputs unless Xolo explicitly asks for local calculations; source books should come from Xolo's accounting records.",
+            "Do not attach CSV/JSON/XLSX target-fitting outputs unless Xolo explicitly asks for local calculations; official registers should come from Xolo's accounting records.",
             "",
         ]
     )

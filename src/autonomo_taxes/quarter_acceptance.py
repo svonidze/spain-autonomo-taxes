@@ -29,6 +29,10 @@ _ACTIONABLE_MATERIAL_STATUSES = {
     "unresolved_required_evidence",
     "strong_candidate_pending_confirmation",
 }
+_RECONCILED_SOURCE_BOOK_STATUSES = {
+    "rows_and_tieout_match_target",
+    "rows_match_target_no_tieout",
+}
 
 
 def build_quarter_acceptance_matrix(
@@ -94,7 +98,7 @@ def write_quarter_acceptance_markdown(path: Path, rows: list[dict[str, str]]) ->
         "# Modelo 130 Quarter Acceptance Matrix",
         "",
         "This matrix is the evidence gate for the sequential Modelo 130 audit.",
-        "No quarter is accepted from local arithmetic alone; acceptance requires Xolo's source books and any applicable asset schedule.",
+        "No quarter is accepted from local arithmetic alone; acceptance requires Xolo's official registers and any applicable investment-goods amortization rows.",
         "",
         "## Summary",
         "",
@@ -164,7 +168,7 @@ def _acceptance_gate(
     annual_balance: Decimal,
     reconciliation: dict[str, str],
 ) -> tuple[str, str]:
-    if reconciliation.get("status") == "rows_and_tieout_match_target":
+    if reconciliation.get("status") in _RECONCILED_SOURCE_BOOK_STATUSES:
         return "accepted_from_source_books", "accepted"
     closure_status = closure["closure_status"]
     if any(_is_actionable_material(row) for row in material):
@@ -187,7 +191,7 @@ def _required_evidence(
     material: list[dict[str, str]],
     reconciliation: dict[str, str],
 ) -> str:
-    if reconciliation.get("status") == "rows_and_tieout_match_target":
+    if reconciliation.get("status") in _RECONCILED_SOURCE_BOOK_STATUSES:
         return _source_book_reconciliation_evidence(reconciliation)
     evidence = closure.get("required_xolo_evidence", "").strip()
     material_questions = _material_questions(material)
@@ -211,17 +215,17 @@ def _next_action(
         return "Resolve material-gap question(s): " + " | ".join(questions)
     if acceptance_status == "not_closed_material_status_near_fit_requires_source_books":
         return (
-            "Confirm the source books and asset schedule before treating this near-fit material-status "
+            "Confirm the official registers and investment-goods amortization rows before treating this near-fit material-status "
             "quarter as closed."
         )
     if acceptance_status == "not_closed_row_exclusion_requires_source_books":
         return "Confirm whether the candidate rows were excluded, netted, deferred, or used on another tax basis."
     if acceptance_status.startswith("not_closed_near_target") or acceptance_status.startswith("not_closed_minor"):
         return (
-            "Confirm Xolo's source books and asset amortization schedule; the small residual is not "
+            "Confirm Xolo's official registers and investment-goods amortization rows; the small residual is not "
             "enough to prove row-level treatment."
         )
-    return closure.get("next_question", "") or "Confirm the source books used for Modelo 130."
+    return closure.get("next_question", "") or "Confirm the official registers used for Modelo 130."
 
 
 def _material_by_period(rows: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
@@ -254,10 +258,10 @@ def _source_book_reconciliation_by_period(path: Path | None) -> dict[str, dict[s
 
 def _source_book_reconciliation_evidence(row: dict[str, str]) -> str:
     return (
-        "source-book rows, asset amortization rows, and Modelo 130 tie-out reconcile to filed casilla 02; "
+        "official register rows and any investment-goods amortization rows reconcile to filed casilla 02; "
         f"expenses={_fmt(row.get('imported_expense_delta', ''))}; "
         f"amortization={_fmt(row.get('imported_amortization_delta', ''))}; "
-        f"tieout_delta={_fmt(row.get('tieout_casilla02_delta', ''))}; "
+        f"tieout_delta={_fmt(row.get('tieout_casilla02_delta', '')) or 'not provided'}; "
         f"diff={_fmt(row.get('imported_minus_target_delta', ''))}; "
         "source-book evidence supersedes local material-gap hypotheses for this period"
     )
@@ -265,7 +269,7 @@ def _source_book_reconciliation_evidence(row: dict[str, str]) -> str:
 
 def _source_book_reconciliation_next_action(row: dict[str, str]) -> str:
     return (
-        "Accepted from imported Xolo source-book evidence for this period; keep the source files, "
+        "Accepted from imported Xolo official-register evidence for this period; keep the source files, "
         f"source rows={row.get('expense_row_count', '0')} expense / "
         f"{row.get('asset_row_count', '0')} asset / {row.get('tieout_row_count', '0')} tie-out."
     )

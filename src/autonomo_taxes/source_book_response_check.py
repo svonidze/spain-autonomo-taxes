@@ -40,34 +40,41 @@ def build_source_book_response_check(
 
     rows: list[dict[str, str]] = []
     for year in years:
-        rows.append(
-            _deliverable_row(
-                check="compras_gastos_book",
-                scope=year,
-                matches=_matching_files(files, lambda item, year=year: _matches_compras_gastos(item.normalized, year)),
-                required_for=", ".join(period for period in periods if period.startswith(year)),
-                missing_action=f"Ask Xolo for libro registro de compras y gastos for {year}, with IRPF deductible EUR per row.",
-            )
-        )
-    for year in years:
-        rows.append(
-            _deliverable_row(
-                check="bienes_inversion_or_asset_schedule",
-                scope=year,
-                matches=_matching_files(files, lambda item, year=year: _matches_asset_schedule(item.normalized, year)),
-                required_for=", ".join(period for period in periods if period.startswith(year)),
-                missing_action=f"Ask Xolo for libro registro de bienes de inversion / asset amortization schedule covering {year}.",
-            )
-        )
-    for period in periods:
-        rows.append(
-            _deliverable_row(
-                check="modelo130_source_book_tieout",
-                scope=period,
-                matches=_matching_files(files, lambda item, period=period: _matches_quarter_tieout(item.normalized, period)),
-                required_for=period,
-                missing_action=f"Ask Xolo for a source-book tie-out to filed Modelo 130 casillas for {period}.",
-            )
+        required_for = _periods_for_year(periods, year)
+        rows.extend(
+            [
+                _deliverable_row(
+                    check="ingresos_book",
+                    scope=year,
+                    matches=_matching_files(files, lambda item, year=year: _matches_ingresos_book(item.normalized, year)),
+                    required_for=required_for,
+                    missing_action=f"Ask Xolo for the official Libro registro de ingresos for {year}.",
+                ),
+                _deliverable_row(
+                    check="gastos_book",
+                    scope=year,
+                    matches=_matching_files(files, lambda item, year=year: _matches_gastos_book(item.normalized, year)),
+                    required_for=required_for,
+                    missing_action=f"Ask Xolo for the official Libro registro de gastos for {year}.",
+                ),
+                _deliverable_row(
+                    check="bienes_inversion_book",
+                    scope=year,
+                    matches=_matching_files(files, lambda item, year=year: _matches_bienes_inversion_book(item.normalized, year)),
+                    required_for=required_for,
+                    missing_action=f"Ask Xolo for the official Libro registro de bienes de inversion for {year}.",
+                ),
+                _deliverable_row(
+                    check="provisiones_suplidos_book",
+                    scope=year,
+                    matches=_matching_files(files, lambda item, year=year: _matches_provisiones_suplidos_book(item.normalized, year)),
+                    required_for=required_for,
+                    missing_action=(
+                        "Ask Xolo for the official Libro registro de provisiones de fondos y suplidos "
+                        f"for {year}, even if empty or not applicable."
+                    ),
+                ),
+            ]
         )
 
     rows.append(_verdict_row(rows, periods, response_root))
@@ -90,9 +97,9 @@ def write_source_book_response_check_markdown(path: Path, rows: list[dict[str, s
     ]
     found = [row for row in rows if row["status"] == "found"]
     lines = [
-        "# Xolo Source-Book Response Package Check",
+        "# Xolo Official Register Response Package Check",
         "",
-        "This report checks whether a received Xolo response folder contains the source-book deliverables needed to continue the chronological Modelo 130 audit.",
+        "This report checks whether a received Xolo response folder contains the official IRPF register exports needed to continue the chronological Modelo 130 audit.",
         "It is a filename-level intake check only; matched files still need row-level import and reconciliation.",
         "",
         "## Verdict",
@@ -157,6 +164,10 @@ def _periods_from_acceptance(path: Path) -> list[str]:
     return sorted(dict.fromkeys(periods))
 
 
+def _periods_for_year(periods: list[str], year: str) -> str:
+    return ", ".join(period for period in periods if period.startswith(year))
+
+
 def _scan_files(root: Path) -> list[_FileItem]:
     if not root.exists():
         return []
@@ -167,7 +178,29 @@ def _matching_files(files: list[_FileItem], predicate) -> list[_FileItem]:
     return [item for item in files if predicate(item)]
 
 
-def _matches_compras_gastos(name: str, year: str) -> bool:
+def _matches_ingresos_book(name: str, year: str) -> bool:
+    has_book = _has_any(name, ["libro", "registro", "register", "book", "ledger"])
+    has_income = _has_any(
+        name,
+        [
+            "ingresos",
+            "ventas",
+            "ventas ingresos",
+            "facturas expedidas",
+            "issued invoices",
+            "income",
+            "revenue",
+            "sales",
+        ],
+    )
+    if not (has_book and has_income):
+        return False
+    if _has_any(name, ["gastos", "compras", "expenses", "purchases", "recibidas"]):
+        return False
+    return _has_year_scope(name, year, allow_unscoped=True)
+
+
+def _matches_gastos_book(name: str, year: str) -> bool:
     has_book = _has_any(name, ["libro", "registro", "register", "book", "ledger"])
     has_expense = _has_any(
         name,
@@ -187,7 +220,8 @@ def _matches_compras_gastos(name: str, year: str) -> bool:
     return _has_year_scope(name, year, allow_unscoped=True)
 
 
-def _matches_asset_schedule(name: str, year: str) -> bool:
+def _matches_bienes_inversion_book(name: str, year: str) -> bool:
+    has_book = _has_any(name, ["libro", "registro", "register", "book", "ledger"])
     has_asset = _has_any(
         name,
         [
@@ -196,29 +230,37 @@ def _matches_asset_schedule(name: str, year: str) -> bool:
             "investment goods",
             "asset schedule",
             "fixed asset",
+            "fixed assets",
             "amortizacion",
             "amortization",
             "depreciation",
         ],
     )
+    if not (has_book or _has_any(name, ["asset schedule", "amortization schedule", "depreciation schedule"])):
+        return False
     if not has_asset:
         return False
     return _has_year_scope(name, year, allow_unscoped=True)
 
 
-def _matches_quarter_tieout(name: str, period: str) -> bool:
-    year, quarter = period.split("-")
-    quarter_number = quarter.removeprefix("Q")
-    quarter_tokens = [
-        f"{quarter_number}t",
-        f"q{quarter_number}",
-        f"{quarter_number} trimestre",
-        f"trimestre {quarter_number}",
-        f"quarter {quarter_number}",
-    ]
-    if year not in name or not _has_any(name, quarter_tokens):
+def _matches_provisiones_suplidos_book(name: str, year: str) -> bool:
+    has_book = _has_any(name, ["libro", "registro", "register", "book", "ledger"])
+    has_provisions = _has_any(
+        name,
+        [
+            "provisiones",
+            "provision",
+            "provisions",
+            "provisiones de fondos",
+            "suplidos",
+            "funds",
+            "disbursements",
+            "advances",
+        ],
+    )
+    if not (has_book and has_provisions):
         return False
-    return _has_any(name, ["tieout", "tie out", "casilla", "calculo", "calculation", "source book"])
+    return _has_year_scope(name, year, allow_unscoped=True)
 
 
 def _deliverable_row(

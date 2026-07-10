@@ -14,6 +14,11 @@ GOAL_STATUS_FIELDS = [
     "next_action",
 ]
 
+_RECONCILED_SOURCE_BOOK_STATUSES = {
+    "rows_and_tieout_match_target",
+    "rows_match_target_no_tieout",
+}
+
 
 def build_goal_status(
     *,
@@ -122,7 +127,7 @@ def _quarter_acceptance_gate(rows: list[dict[str, str]]) -> dict[str, str]:
     return _row(
         "quarter_acceptance",
         status,
-        "all quarters accepted from source-book and asset-schedule evidence",
+        "all quarters accepted from official-register and investment-goods evidence",
         f"{len(rows) - len(open_rows)}/{len(rows)} accepted",
         f"statuses: {evidence}; open priorities: {priority_text}",
         "Import Xolo source books and rerun quarter acceptance." if open_rows else "No quarter-acceptance action needed.",
@@ -227,16 +232,16 @@ def _source_book_content_gate(rows: list[dict[str, str]]) -> dict[str, str]:
 
 def _source_book_reconciliation_gate(rows: list[dict[str, str]]) -> dict[str, str]:
     status_counts = Counter(row.get("status", "") for row in rows)
-    matched = [row for row in rows if row.get("status") == "rows_and_tieout_match_target"]
+    matched = [row for row in rows if row.get("status") in _RECONCILED_SOURCE_BOOK_STATUSES]
     status = "complete" if rows and len(matched) == len(rows) else "not_reconciled"
     evidence = "; ".join(f"{key}={value}" for key, value in sorted(status_counts.items()) if key)
     return _row(
         "source_book_reconciliation",
         status,
-        "imported source-book rows, asset amortization rows, and Modelo 130 tie-outs match every filed casilla 02 quarter movement",
+        "imported official-register rows and any investment-goods amortization rows match every filed casilla 02 quarter movement",
         f"{len(matched)}/{len(rows)} reconciled",
         f"statuses: {evidence}",
-        "Continue to quarter acceptance rebuild." if status == "complete" else "Import/reconcile Xolo source-book rows until every quarter has matching rows and tie-outs.",
+        "Continue to quarter acceptance rebuild." if status == "complete" else "Import/reconcile Xolo official-register rows until every quarter has matching rows.",
     )
 
 

@@ -62,7 +62,7 @@ def write_source_book_dropzone_markdown(path: Path, rows: list[dict[str, str]], 
     lines = [
         "# Xolo Source-Book Dropzone Guide",
         "",
-        f"Drop Xolo's source-book response files into `{response_root_display}`.",
+        f"Drop Xolo's official-register response files into `{response_root_display}`.",
         "Do not edit the original Google Drive `Xolo export` archive; this folder is the controlled evidence intake area.",
         "",
         "## Current Status",
@@ -159,7 +159,7 @@ def write_source_book_dropzone_markdown(path: Path, rows: list[dict[str, str]], 
             '  --out-md "C:\\projects\\spain-autonomo-taxes\\runs\\modelo130_goal_status.md"',
             "```",
             "",
-            "A quarter is not closed merely because a file exists. It closes only after imported source-book rows, asset amortization rows, and Modelo 130 tie-outs reconcile to the filed values and the refreshed acceptance matrix marks it `accepted_from_source_books`.",
+            "A quarter is not closed merely because a file exists. It closes only after imported official-register rows and any investment-goods amortization rows reconcile to the filed values and the refreshed acceptance matrix marks it `accepted_from_source_books`.",
             "",
         ]
     )
@@ -171,22 +171,26 @@ def write_source_book_dropzone_readme(path: Path, rows: list[dict[str, str]], *,
 
 
 def _suggested_filename(check: str, scope: str) -> str:
-    if check == "compras_gastos_book":
-        return f"libro_registro_compras_gastos_{scope}.xlsx"
-    if check == "bienes_inversion_or_asset_schedule":
+    if check == "ingresos_book":
+        return f"libro_registro_ingresos_{scope}.xlsx"
+    if check == "gastos_book":
+        return f"libro_registro_gastos_{scope}.xlsx"
+    if check == "bienes_inversion_book":
         return f"libro_registro_bienes_inversion_{scope}.xlsx"
-    if check == "modelo130_source_book_tieout":
-        return f"modelo130_source_book_tieout_{scope}.xlsx"
+    if check == "provisiones_suplidos_book":
+        return f"libro_registro_provisiones_suplidos_{scope}.xlsx"
     return f"{check}_{scope}.xlsx"
 
 
 def _accepted_pattern(check: str, scope: str) -> str:
-    if check == "compras_gastos_book":
-        return f"filename contains libro/register/book + compras/gastos/expense + {scope}"
-    if check == "bienes_inversion_or_asset_schedule":
-        return f"filename contains bienes inversion/asset/amortization/depreciation + {scope}"
-    if check == "modelo130_source_book_tieout":
-        return f"filename contains Modelo 130/source-book/tieout/casilla/calculation + {scope}"
+    if check == "ingresos_book":
+        return f"filename contains libro/register/book + ingresos/ventas/income/sales + {scope}"
+    if check == "gastos_book":
+        return f"filename contains libro/register/book + gastos/compras/expense/purchases + {scope}"
+    if check == "bienes_inversion_book":
+        return f"filename contains libro/register/book + bienes inversion/asset/amortization/depreciation + {scope}"
+    if check == "provisiones_suplidos_book":
+        return f"filename contains libro/register/book + provisiones/suplidos/provisions/disbursements + {scope}"
     return f"filename identifies {check} for {scope}"
 
 

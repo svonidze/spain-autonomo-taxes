@@ -59,7 +59,7 @@ def write_source_book_availability_markdown(path: Path, rows: list[dict[str, str
         "# Xolo Source-Book Availability",
         "",
         "This report consolidates the local archive, Xolo data-export archives, authenticated UI probe, and first-gate status.",
-        "It is an evidence availability report, not tax advice and not source-book evidence.",
+        "It is an evidence availability report, not tax advice and not official-register evidence.",
         "",
         "## Conclusion",
         "",
@@ -76,11 +76,11 @@ def write_source_book_availability_markdown(path: Path, rows: list[dict[str, str
         )
     else:
         lines.append(
-            "- Current local conclusion: source-book rows and the asset/amortization schedule are not available in the discovered local/export/UI surfaces."
+            "- Current local conclusion: official-register rows and the investment-goods amortization book are not available in the discovered local/export/UI surfaces."
         )
     lines.extend(
         [
-            "- Do not tune downstream amortization as confirmed accounting until Xolo provides the source books or an explicit asset schedule.",
+            "- Do not tune downstream amortization as confirmed accounting until Xolo provides the official registers.",
             "",
             "## Evidence Matrix",
             "",
@@ -260,8 +260,8 @@ def _support_request_row(path: Path) -> dict[str, str]:
         "ready_to_send" if exists else "missing",
         "1" if exists else "0",
         str(path),
-        "Prepared source-first request for books, row-level IRPF basis, and asset schedule.",
-        "Send or paste the request to Xolo support; do not infer source-book treatment from local fits.",
+        "Prepared first-contact request for official IRPF registers.",
+        "Send or paste the request to Xolo support; do not infer accounting treatment from local fits.",
     )
 
 
@@ -272,8 +272,8 @@ def _request_package_row(path: Path) -> dict[str, str]:
             "missing",
             "0",
             str(path),
-            "The safe source-book request package manifest was not found.",
-            "Build the package before sending a Xolo source-book request.",
+            "The safe official-register request package manifest was not found.",
+            "Build the package before sending a Xolo official-register request.",
         )
     rows = _load_rows(path)
     included = [row for row in rows if row.get("status") == "included"]
@@ -286,7 +286,7 @@ def _request_package_row(path: Path) -> dict[str, str]:
         f"missing_or_broken={len(missing_or_broken)}"
     )
     if status == "ready_to_send_package":
-        conclusion = "A safe request package exists with the message and markdown/text support context manifest."
+        conclusion = "A safe request package exists with the official-register message manifest."
         next_action = "Send or paste message_to_xolo.md; attach markdown support context only if Xolo asks for it."
     else:
         conclusion = "The request package manifest is present but not ready to send."

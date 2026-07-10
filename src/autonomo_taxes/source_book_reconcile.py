@@ -31,6 +31,10 @@ SOURCE_BOOK_RECONCILIATION_FIELDS = [
     "notes",
 ]
 
+EXPENSE_BOOK_TYPES = {"gastos_book", "compras_gastos_book"}
+ASSET_BOOK_TYPES = {"bienes_inversion_book", "bienes_inversion_or_asset_schedule"}
+TIEOUT_BOOK_TYPES = {"modelo130_source_book_tieout"}
+
 
 def build_source_book_reconciliation(
     history_audit_csv: Path,
@@ -49,8 +53,8 @@ def build_source_book_reconciliation(
         target_delta = parse_amount(history["target_casilla_02_delta"])
         period_rows = rows_by_period.get(period, [])
         tieout_rows = tieout_by_period.get(period, [])
-        expense_rows = [row for row in period_rows if row["source_book_type"] == "compras_gastos_book"]
-        asset_rows = [row for row in period_rows if row["source_book_type"] == "bienes_inversion_or_asset_schedule"]
+        expense_rows = [row for row in period_rows if row["source_book_type"] in EXPENSE_BOOK_TYPES]
+        asset_rows = [row for row in period_rows if row["source_book_type"] in ASSET_BOOK_TYPES]
         expense_total, expense_errors = _sum_row_amounts(expense_rows, "irpf_deductible_eur")
         asset_total, asset_errors = _sum_row_amounts(asset_rows, "amortization_amount_eur")
         amount_errors = [*expense_errors, *asset_errors]
@@ -88,9 +92,9 @@ def build_source_book_reconciliation(
                 "tieout_casilla02_ytd_minus_target": _optional_money(tieout_ytd_diff),
                 "tieout_casilla02_delta": _optional_money(tieout_delta),
                 "tieout_delta_minus_target": _optional_money(tieout_delta_diff),
-                "expense_row_count": str(row_counts["compras_gastos_book"]),
-                "asset_row_count": str(row_counts["bienes_inversion_or_asset_schedule"]),
-                "tieout_row_count": str(row_counts["modelo130_source_book_tieout"]),
+                "expense_row_count": str(sum(row_counts[source_type] for source_type in EXPENSE_BOOK_TYPES)),
+                "asset_row_count": str(sum(row_counts[source_type] for source_type in ASSET_BOOK_TYPES)),
+                "tieout_row_count": str(sum(row_counts[source_type] for source_type in TIEOUT_BOOK_TYPES)),
                 "skipped_row_count": str(skipped_count),
                 "amount_parse_error_count": str(amount_error_count),
                 "unassigned_row_count": str(len(unassigned_rows)),
@@ -116,7 +120,7 @@ def write_source_book_reconciliation_markdown(path: Path, rows: list[dict[str, s
         "# Xolo Source-Book Quarter Reconciliation",
         "",
         "This report compares imported Xolo source-book rows against filed Modelo 130 `casilla 02` quarter movements.",
-        "It is not a tax-treatment decision. Quarters close only after source rows, asset schedule rows, and tie-outs match the filed values.",
+        "It is not a tax-treatment decision. Quarters close only after imported official-register rows match the filed values; Modelo 130 tie-outs are used when Xolo provides them.",
         "",
         "## Summary",
         "",
@@ -172,7 +176,7 @@ def _source_rows_by_period(rows: list[dict[str, str]]) -> dict[str, list[dict[st
 def _tieout_by_period(rows: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
     grouped: dict[str, list[dict[str, str]]] = {}
     for row in rows:
-        if row.get("source_book_type") != "modelo130_source_book_tieout":
+        if row.get("source_book_type") not in TIEOUT_BOOK_TYPES:
             continue
         period = row.get("period", "")
         if period:
@@ -185,7 +189,7 @@ def _unassigned_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
 
 
 def _row_period(row: dict[str, str]) -> str:
-    if row.get("source_book_type") == "bienes_inversion_or_asset_schedule":
+    if row.get("source_book_type") in ASSET_BOOK_TYPES:
         return row.get("amortization_period", "")
     return row.get("period", "")
 

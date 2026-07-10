@@ -186,6 +186,7 @@ from .register_answer_status import (
     write_register_answer_status_csv,
     write_register_answer_status_markdown,
 )
+from .official_register_request import build_official_register_request, write_official_register_request
 from .reports import write_compare, write_ledger, write_manifest, write_markdown_report
 from .row_audit import build_row_audit, write_row_audit_csv, write_row_audit_markdown
 from .row_decision_report import (
@@ -587,6 +588,14 @@ def main(argv: list[str] | None = None) -> int:
     audit_support_request_short.add_argument("--dataexport-archives", type=Path)
     audit_support_request_short.add_argument("--max-questions", type=int, default=8)
     audit_support_request_short.add_argument("--out-md", type=Path, required=True)
+
+    audit_official_register_request = subparsers.add_parser(
+        "audit-official-register-request",
+        help="Generate the concise first-contact Xolo request for official IRPF registers",
+    )
+    audit_official_register_request.add_argument("--out-md", type=Path, required=True)
+    audit_official_register_request.add_argument("--year", action="append", help="Requested tax year; repeat for multiple years")
+    audit_official_register_request.add_argument("--through-period", default="2T 2026")
 
     audit_source_book_request_package = subparsers.add_parser(
         "audit-source-book-request-package",
@@ -1194,6 +1203,11 @@ def main(argv: list[str] | None = None) -> int:
         )
         write_xolo_support_request_short(args.out_md, markdown)
         print(f"Wrote short Xolo support request to {args.out_md}")
+        return 0
+    if args.command == "audit-official-register-request":
+        markdown = build_official_register_request(years=args.year, through_period=args.through_period)
+        write_official_register_request(args.out_md, markdown)
+        print(f"Wrote official-register Xolo request to {args.out_md}")
         return 0
     if args.command == "audit-source-book-request-package":
         try:

@@ -151,12 +151,12 @@ def run_source_book_refresh(
             step="source_book_reconciliation",
             rows=reconciliation_rows,
             status_field="status",
-            complete_status="rows_and_tieout_match_target",
+            complete_status={"rows_and_tieout_match_target", "rows_match_target_no_tieout"},
             complete_label="complete",
             incomplete_label="not_reconciled",
             csv_path=paths.source_book_reconciliation_csv,
             markdown_path=paths.source_book_reconciliation_md,
-            next_action="Resolve source-book import/reconciliation rows until every quarter matches Xolo's filed casilla 02.",
+            next_action="Resolve official-register import/reconciliation rows until every quarter matches Xolo's filed casilla 02.",
         )
     )
 
@@ -179,7 +179,7 @@ def run_source_book_refresh(
             incomplete_label="not_closed",
             csv_path=paths.quarter_acceptance_csv,
             markdown_path=paths.quarter_acceptance_md,
-            next_action="Keep asking Xolo for source-book rows, asset schedule, and tie-outs until every quarter is accepted.",
+            next_action="Keep asking Xolo for official registers until every quarter is accepted.",
         )
     )
 
@@ -223,7 +223,7 @@ def write_source_book_refresh_markdown(path: Path, rows: list[dict[str, str]]) -
         "# Xolo Source-Book Refresh",
         "",
         "This report is the one-command intake trail after Xolo provides source-book exports.",
-        "It treats Xolo source books, asset amortization rows, and Modelo 130 tie-outs as evidence; it does not infer accounting treatment from target fitting.",
+        "It treats Xolo official registers and investment-goods amortization rows as evidence; it does not infer accounting treatment from target fitting.",
         "",
         "## Verdict",
         "",
@@ -336,7 +336,7 @@ def _counted_summary(
     step: str,
     rows: list[dict[str, str]],
     status_field: str,
-    complete_status: str,
+    complete_status: str | set[str],
     complete_label: str,
     incomplete_label: str,
     csv_path: Path,
@@ -344,7 +344,8 @@ def _counted_summary(
     next_action: str,
 ) -> dict[str, str]:
     counts = Counter(row.get(status_field, "") for row in rows)
-    complete = bool(rows) and counts.get(complete_status, 0) == len(rows)
+    complete_statuses = {complete_status} if isinstance(complete_status, str) else complete_status
+    complete = bool(rows) and sum(counts.get(status, 0) for status in complete_statuses) == len(rows)
     return {
         "step": step,
         "status": complete_label if complete else incomplete_label,

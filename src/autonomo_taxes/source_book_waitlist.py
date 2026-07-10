@@ -103,7 +103,7 @@ def write_source_book_waitlist_markdown(path: Path, rows: list[dict[str, str]]) 
         "# Xolo Source-Book Waitlist",
         "",
         "This report is the chronological stop list for the Modelo 130 audit.",
-        "It keeps quarter closure blocked on Xolo source books, asset/amortization schedule, and quarter tie-outs instead of fitting unknown accounting treatment from targets.",
+        "It keeps quarter closure blocked on Xolo's official IRPF registers instead of fitting unknown accounting treatment from targets.",
         "",
         "## Verdict",
         "",

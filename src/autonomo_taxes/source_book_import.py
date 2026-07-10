@@ -9,7 +9,7 @@ import unicodedata
 import xml.etree.ElementTree as ET
 import zipfile
 
-from .source_book_content_check import REQUIRED_GROUPS, required_group_header_map
+from .source_book_content_check import required_group_header_map, required_groups_for_check
 
 
 SOURCE_BOOK_IMPORT_FIELDS = [
@@ -47,6 +47,8 @@ SOURCE_BOOK_IMPORT_FIELDS = [
 
 
 OPTIONAL_ALIASES = {
+    "period": ["period", "quarter", "trimestre", "deducted in period", "modelo 130 period", "inclusion quarter"],
+    "amortization_period": ["period", "quarter", "trimestre", "amortization period"],
     "booking_date": ["booking date", "posting date", "fecha contabilizacion", "fecha registro"],
     "original_amount": ["original amount", "amount original", "importe original", "amount"],
     "original_currency": ["original currency", "currency", "moneda"],
@@ -55,7 +57,26 @@ OPTIONAL_ALIASES = {
     "vat_treatment": ["vat treatment", "iva treatment", "tratamiento iva", "reverse charge"],
     "reason_code": ["reason code", "reason", "source book treatment", "accounting treatment", "tratamiento contable"],
     "source_book_line_id": ["source book line id", "line id", "folio", "asiento", "row id"],
+    "income_amount_eur": ["income eur", "revenue eur", "sales eur", "ingresos", "importe", "base imponible", "total eur", "amount"],
+    "amount_eur": ["amount", "importe", "total eur", "amount eur", "importe eur"],
+    "concept": ["concept", "concepto", "description", "descripcion", "detalle", "operation", "operacion"],
+    "amortization_amount_eur": [
+        "amortization amount eur",
+        "amortizacion eur",
+        "depreciation amount",
+        "deducted amortization",
+        "amortizacion anual",
+        "annual amortization",
+        "cuota",
+    ],
+    "rate_or_life": ["rate", "coefficient", "coeficiente", "useful life", "vida util", "percent", "%"],
+    "casilla01_ytd": ["casilla 01", "casilla01", "sales ytd", "income ytd", "ingresos"],
+    "casilla02_ytd": ["casilla 02", "casilla02", "expenses ytd", "gastos deducibles"],
+    "casilla07": ["casilla 07", "casilla07", "payment due before reductions"],
+    "casilla19": ["casilla 19", "casilla19", "payable", "amount due", "resultado"],
 }
+
+EMPTY_OK_BOOK_TYPES = {"provisiones_suplidos_book"}
 
 
 def build_source_book_import(
@@ -182,8 +203,10 @@ def _import_file(path: Path, check: str, scope: str) -> list[dict[str, str]]:
     table = _read_table(path, check)
     mapping = _column_mapping(check, table.headers)
     required = required_group_header_map(check, table.headers)
-    missing = [group for group in REQUIRED_GROUPS.get(check, {}) if group not in required]
+    missing = [group for group in required_groups_for_check(check) if group not in required]
     if not table.rows:
+        if _canonical_check(check) in EMPTY_OK_BOOK_TYPES and not missing:
+            return []
         return [_empty_row(path, check, scope, table.file_format, missing)]
     rows: list[dict[str, str]] = []
     for index, values in enumerate(table.rows, start=2):
@@ -252,11 +275,13 @@ def _normalized_row(
             "missing_required_groups": "; ".join(missing),
         }
     )
-    if check == "compras_gastos_book":
+    kind = _canonical_check(check)
+    if kind == "gastos_book":
+        date = _value(values, mapping, "date")
         row.update(
             {
-                "period": _value(values, mapping, "included_period"),
-                "date": _value(values, mapping, "date"),
+                "period": _value(values, mapping, "period") or _period_from_date(date),
+                "date": date,
                 "booking_date": _value(values, mapping, "booking_date"),
                 "supplier": _value(values, mapping, "counterparty"),
                 "document_number": _value(values, mapping, "document_number"),
@@ -266,18 +291,43 @@ def _normalized_row(
                 "deductible_base_eur": _value(values, mapping, "deductible_base_eur"),
                 "irpf_deductible_eur": _value(values, mapping, "irpf_deductible_eur"),
                 "vat_treatment": _value(values, mapping, "vat_treatment"),
-                "reason_code": _value(values, mapping, "reason_code"),
+                "reason_code": _value(values, mapping, "reason_code") or _value(values, mapping, "concept"),
             }
         )
-    elif check == "bienes_inversion_or_asset_schedule":
+    elif kind == "ingresos_book":
+        date = _value(values, mapping, "date")
         row.update(
             {
-                "asset_id": _value(values, mapping, "asset_id"),
-                "date": _value(values, mapping, "acquisition_date"),
-                "amortizable_base_eur": _value(values, mapping, "amortizable_base_eur"),
+                "period": _value(values, mapping, "period") or _period_from_date(date),
+                "date": date,
+                "supplier": _value(values, mapping, "counterparty"),
+                "document_number": _value(values, mapping, "document_number"),
+                "gross_eur": _value(values, mapping, "income_amount_eur") or _value(values, mapping, "gross_eur"),
+                "reason_code": _value(values, mapping, "concept"),
+            }
+        )
+    elif kind == "bienes_inversion_book":
+        acquisition_date = _value(values, mapping, "acquisition_date")
+        row.update(
+            {
+                "asset_id": _value(values, mapping, "description_or_document"),
+                "date": acquisition_date,
+                "supplier": _value(values, mapping, "supplier_or_counterparty"),
+                "amortizable_base_eur": _value(values, mapping, "acquisition_or_amortizable_value"),
                 "amortization_period": _value(values, mapping, "amortization_period"),
                 "amortization_amount_eur": _value(values, mapping, "amortization_amount_eur"),
-                "rate_or_life": _value(values, mapping, "rate_or_life"),
+                "rate_or_life": _value(values, mapping, "rate_or_life") or _value(values, mapping, "amortization_rate_or_quota"),
+            }
+        )
+    elif kind == "provisiones_suplidos_book":
+        date = _value(values, mapping, "date")
+        row.update(
+            {
+                "period": _value(values, mapping, "period") or _period_from_date(date),
+                "date": date,
+                "supplier": _value(values, mapping, "counterparty"),
+                "gross_eur": _value(values, mapping, "amount_eur"),
+                "reason_code": _value(values, mapping, "movement_type_or_concept"),
             }
         )
     elif check == "modelo130_source_book_tieout":
@@ -291,6 +341,29 @@ def _normalized_row(
             }
         )
     return row
+
+
+def _canonical_check(check: str) -> str:
+    return {
+        "compras_gastos_book": "gastos_book",
+        "bienes_inversion_or_asset_schedule": "bienes_inversion_book",
+    }.get(check, check)
+
+
+def _period_from_date(value: str) -> str:
+    match = re.match(r"\s*(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})", value or "")
+    if match:
+        year = match.group(1)
+        month = int(match.group(2))
+        quarter = ((month - 1) // 3) + 1
+        return f"{year}-Q{quarter}"
+    match = re.match(r"\s*(\d{1,2})[-/.](\d{1,2})[-/.](20\d{2})", value or "")
+    if not match:
+        return ""
+    year = match.group(3)
+    month = int(match.group(2))
+    quarter = ((month - 1) // 3) + 1
+    return f"{year}-Q{quarter}"
 
 
 def _column_mapping(check: str, headers: list[str]) -> dict[str, str]:
@@ -377,7 +450,7 @@ def _best_xlsx_table(path: Path, check: str) -> _Table:
 
 def _missing_required(check: str, headers: list[str]) -> list[str]:
     mapping = required_group_header_map(check, headers)
-    return [group for group in REQUIRED_GROUPS.get(check, {}) if group not in mapping]
+    return [group for group in required_groups_for_check(check) if group not in mapping]
 
 
 def _read_xlsx_tables(path: Path) -> list[_Table]:
