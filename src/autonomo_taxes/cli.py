@@ -236,6 +236,11 @@ from .source_book_response_check import (
     write_source_book_response_check_csv,
     write_source_book_response_check_markdown,
 )
+from .source_book_waitlist import (
+    build_source_book_waitlist,
+    write_source_book_waitlist_csv,
+    write_source_book_waitlist_markdown,
+)
 from .support_request_short import build_xolo_support_request_short, write_xolo_support_request_short
 from .tax_report_sequence import (
     build_tax_report_sequence,
@@ -880,6 +885,22 @@ def main(argv: list[str] | None = None) -> int:
     audit_source_book_refresh.add_argument("--out-csv", type=Path)
     audit_source_book_refresh.add_argument("--out-md", type=Path)
 
+    audit_source_book_waitlist = subparsers.add_parser(
+        "audit-source-book-waitlist",
+        help="Build a chronological waitlist of Xolo source-book deliverables needed to close Modelo 130 quarters",
+    )
+    audit_source_book_waitlist.add_argument("--quarter-acceptance", type=Path, required=True)
+    audit_source_book_waitlist.add_argument("--source-book-response-check", type=Path, required=True)
+    audit_source_book_waitlist.add_argument("--source-book-reconciliation", type=Path, required=True)
+    audit_source_book_waitlist.add_argument("--source-book-availability", type=Path)
+    audit_source_book_waitlist.add_argument(
+        "--response-root",
+        type=Path,
+        default=Path("evidence") / "xolo-source-books",
+    )
+    audit_source_book_waitlist.add_argument("--out-csv", type=Path, required=True)
+    audit_source_book_waitlist.add_argument("--out-md", type=Path, required=True)
+
     audit_timing = subparsers.add_parser(
         "audit-timing",
         help="Diagnose timing, carry-forward, and netting patterns across Modelo 130 quarter balances",
@@ -1456,6 +1477,19 @@ def main(argv: list[str] | None = None) -> int:
         write_source_book_refresh_markdown(out_md, rows)
         final_status = rows[-1]["status"] if rows else "unknown"
         print(f"Wrote {len(rows)} source-book refresh rows to {out_csv} and {out_md}; final status: {final_status}")
+        return 0
+    if args.command == "audit-source-book-waitlist":
+        rows = build_source_book_waitlist(
+            quarter_acceptance_csv=args.quarter_acceptance,
+            source_book_response_check_csv=args.source_book_response_check,
+            source_book_reconciliation_csv=args.source_book_reconciliation,
+            source_book_availability_csv=args.source_book_availability,
+            response_root=args.response_root,
+        )
+        write_source_book_waitlist_csv(args.out_csv, rows)
+        write_source_book_waitlist_markdown(args.out_md, rows)
+        open_count = sum(1 for row in rows if row["acceptance_status"] != "accepted_from_source_books")
+        print(f"Wrote {len(rows)} source-book waitlist rows to {args.out_csv} and {args.out_md}; open: {open_count}")
         return 0
     if args.command == "audit-timing":
         rows = build_timing_audit(args.quarter_closure, args.source_findings)
