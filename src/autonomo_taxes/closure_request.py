@@ -55,9 +55,9 @@ def build_xolo_closure_request(
         "",
         "Please provide:",
         "",
-        "1. The `libro registro de compras y gastos` for 2023, 2024, 2025, and 2026 through 2T, with date, booking date/period, supplier, invoice number, category, original amount/currency, FX rate/date/source, deductible base, VAT treatment, EUR deductible amount used in casilla 02, and whether the row was included, excluded, netted, reversed, deferred, corrected, or adjusted.",
-        "2. The `libro registro de bienes de inversión` / full asset amortization schedule used for Modelo 130 and annual Renta/Modelo 100: asset id, acquisition date, acquisition basis, VAT treatment, start date, method, amortization rate, quarterly amortization amount, accumulated amortization by quarter, catch-up flag, and incentive flag if any.",
-        "3. Quarterly tie-outs from the source books to filed Modelo 130 casillas 01, 02, 03, and 07 for every quarter from 2023-Q2 through 2026-Q2.",
+        "1. The `libro registro de compras y gastos` for 2023, 2024, 2025, and 2026 through 2T, with the columns present in Xolo's standard export, such as date, booking date/period if available, supplier, invoice number, category, original amount/currency, FX data for foreign-currency rows, VAT/base treatment, and IRPF deductible amount where the export includes it.",
+        "2. The `libro registro de bienes de inversión` / asset amortization schedule used for Modelo 130 and annual Renta/Modelo 100, with the normal book columns available in Xolo's export, such as asset description/reference, acquisition date, acquisition basis, VAT treatment, start date, method/rate/life, quarterly amortization, and accumulated amortization.",
+        "3. Standard quarterly or annual summaries used to prepare the filed Modelo 130 casillas 01, 02, 03, and 07 for every quarter from 2023-Q2 through 2026-Q2, if Xolo can export them.",
         "4. Please answer with source-book and asset-schedule exports if available; local target-fitting arithmetic is only being used to route the questions and should not be treated as confirmed Xolo accounting.",
         "",
     ]

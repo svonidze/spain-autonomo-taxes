@@ -591,7 +591,7 @@ def main(argv: list[str] | None = None) -> int:
 
     audit_official_register_request = subparsers.add_parser(
         "audit-official-register-request",
-        help="Generate the concise first-contact Xolo request for official IRPF registers",
+        help="Generate the concise first-contact Xolo request for official accounting/register records",
     )
     audit_official_register_request.add_argument("--out-md", type=Path, required=True)
     audit_official_register_request.add_argument("--year", action="append", help="Requested tax year; repeat for multiple years")
@@ -599,7 +599,7 @@ def main(argv: list[str] | None = None) -> int:
 
     audit_source_book_request_package = subparsers.add_parser(
         "audit-source-book-request-package",
-        help="Build a safe local package for requesting Xolo source books",
+        help="Build a safe local package for requesting Xolo accounting records and source books",
     )
     audit_source_book_request_package.add_argument("--message", type=Path, required=True)
     audit_source_book_request_package.add_argument("--attachment", type=Path, action="append", default=[])
@@ -1207,7 +1207,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "audit-official-register-request":
         markdown = build_official_register_request(years=args.year, through_period=args.through_period)
         write_official_register_request(args.out_md, markdown)
-        print(f"Wrote official-register Xolo request to {args.out_md}")
+        print(f"Wrote Xolo records request to {args.out_md}")
         return 0
     if args.command == "audit-source-book-request-package":
         try:
@@ -1219,7 +1219,7 @@ def main(argv: list[str] | None = None) -> int:
         except (FileNotFoundError, ValueError) as exc:
             raise SystemExit(str(exc)) from exc
         included = sum(1 for row in rows if row["status"] == "included")
-        print(f"Wrote Xolo source-book request package to {args.out_dir}; included {included}/{len(rows)} files")
+        print(f"Wrote Xolo records request package to {args.out_dir}; included {included}/{len(rows)} files")
         return 0
     if args.command == "audit-register-answer-import":
         rows = import_register_answer_sheet_json(args.sheet_json)

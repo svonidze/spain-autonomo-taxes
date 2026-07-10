@@ -9,9 +9,9 @@ from .money import format_es, parse_amount
 
 
 SOURCE_BOOK_FIELD_ROWS = [
-    ("xolo_expense_id", "Stable join key to Xolo expense rows and local audit rows."),
+    ("document_reference", "Invoice/expense number or other human reference present in Xolo exports."),
     ("source_book_type", "`compras_gastos`, `bienes_inversion`, or quarterly tie-out source."),
-    ("source_book_line_id", "Book line, folio, or export row id that can be cited later."),
+    ("source_book_line_reference", "Book line, folio, or export reference if present."),
     ("date / booking_date / deducted_in_period", "Separates document date from the quarter where Xolo deducted the row."),
     ("supplier / invoice_number / category", "Human reconciliation fields."),
     ("original_amount / original_currency", "Original row economics before Xolo conversion."),
@@ -20,15 +20,15 @@ SOURCE_BOOK_FIELD_ROWS = [
     ("vat_treatment", "For example gross, VAT-base, reverse-charge, outside-scope, or non-deductible VAT."),
     ("irpf_deductible_eur", "Amount used for Modelo 130 casilla 02."),
     (
-        "reason_code",
-        "Controlled value: included, excluded, netted, reversed, reclassified, deferred, duplicate, corrected, personal-adjusted, non-deductible, amortized.",
+        "accounting_treatment_notes",
+        "Any standard bookkeeping treatment or note shown in the export, such as non-deductible, amortized, corrected, or personal-use adjustment.",
     ),
-    ("asset_id / method / coefficient_% / useful_life", "Investment-goods book derivation fields."),
+    ("asset_reference / method / coefficient_% / useful_life", "Investment-goods book fields if present."),
     (
         "asset_amortizable_base_eur / quarterly_amortization_eur / accumulated_amortization_eur",
         "Quarterly and cumulative asset tie-out.",
     ),
-    ("catch_up_flag / incentive_flag", "Marks catch-up, accelerated, or special treatment instead of ordinary amortization."),
+    ("special_treatment_notes", "Notes on accelerated, reduced, or other special amortization treatment if present."),
     ("casilla01_ytd / casilla02_ytd / casilla03 / casilla07", "Quarterly filed tie-out values."),
 ]
 
@@ -99,7 +99,7 @@ def build_xolo_support_request_short(
             "",
             "## Machine-Import Field Spec",
             "",
-            "If Xolo can export CSV/Excel, please include these fields or equivalent column names:",
+            "If Xolo can export CSV/Excel, please include these fields or equivalent column names where they exist in the standard export:",
             "",
             "| Field(s) | Why needed |",
             "|---|---|",
@@ -224,7 +224,7 @@ def build_xolo_support_request_short(
             "- `confirmed_irpf_deductible_eur`: exact deductible EUR amount used in Modelo 130 casilla 02.",
             "- `confirmed_amortization_eur`: exact quarter amortization amount from the asset schedule.",
             "- `confirmed_basis`: gross, VAT-base, FX-rate, excluded, netted, amortized, principal-only, surcharge-excluded, or another precise basis.",
-            "- `source_book_type` and `source_book_line_id`: the book and line/folio that support the confirmation.",
+            "- `source_book_type` and `source_book_line_reference`: the book and line/folio that support the confirmation.",
             "- FX, VAT, booking-period, reason-code, asset-derivation, and casilla tie-out fields when present in the export.",
             "",
             "The local model can reproduce or nearly reproduce many quarters arithmetically, but these fits are not proof of Xolo's submitted treatment.",
@@ -311,7 +311,7 @@ def _first_gate_questions(period: str, context: dict[str, str] | None) -> list[s
         )
     questions.extend(
         [
-            "For any row that was deducted only partly or through amortization, provide the deductible EUR basis, booking period, asset id, amortization method, coefficient, and schedule line.",
+            "For any row that was deducted only partly or through amortization, provide the deductible EUR basis, booking period, asset reference if present, amortization method, coefficient, and schedule line.",
             "If the visible row was not the source-book explanation, identify the actual source-book row, correction, reclassification, deferral, or adjustment used instead.",
             "Confirm whether active asset-like rows were direct-expensed, capitalized and amortized, excluded, or booked in another quarter.",
         ]

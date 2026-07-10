@@ -92,11 +92,12 @@ def write_source_book_request_package_manifest_markdown(path: Path, rows: list[d
     safety_excluded = [row for row in rows if row["status"].startswith("excluded_")]
     missing_or_broken = [row for row in rows if row["status"].startswith("missing_")]
     lines = [
-        "# Xolo Source-Book Request Package Manifest",
+        "# Xolo Records Request Package Manifest",
         "",
         f"Created at: `{datetime.now(timezone.utc).isoformat()}`",
         "",
-        "This package is for requesting Xolo's official IRPF register exports.",
+        "This package is for requesting Xolo's official accounting/register offboarding records.",
+        "IRPF source books remain the blocking evidence gate for the Modelo 130 audit; IVA books, filing receipts, and standard bookkeeping summaries are requested as supporting records.",
         "It intentionally excludes spreadsheet/data attachment formats by default.",
         "Allowed markdown/text attachments still require human content review before sending.",
         "",
@@ -133,7 +134,7 @@ def write_source_book_request_package_manifest_markdown(path: Path, rows: list[d
             "",
             "Start with `message_to_xolo.md`.",
             "Attach markdown reports only if Xolo asks for supporting context.",
-            "Do not attach CSV/JSON/XLSX target-fitting outputs unless Xolo explicitly asks for local calculations; official registers should come from Xolo's accounting records.",
+            "Do not attach CSV/JSON/XLSX target-fitting outputs unless Xolo explicitly asks for local calculations; official records should come from Xolo's accounting records.",
             "",
         ]
     )

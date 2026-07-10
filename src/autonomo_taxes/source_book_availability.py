@@ -67,7 +67,7 @@ def write_source_book_availability_markdown(path: Path, rows: list[dict[str, str
         f"- Surfaces missing or insufficient for source-book closure: `{len(missing_sources)}`.",
     ]
     if package_rows:
-        lines.append(f"- Source-book request package is ready: `{package_rows[0]['evidence']}`.")
+        lines.append(f"- Xolo records request package is ready: `{package_rows[0]['evidence']}`.")
     elif request_rows:
         lines.append("- Xolo support request is ready: `runs/xolo_support_request_short.md`.")
     if candidate_rows:
@@ -238,7 +238,7 @@ def _authenticated_probe_row(path: Path) -> dict[str, str]:
     else:
         status = "available_but_insufficient"
         conclusion = "Discovered UI/API surface exposes expense rows/details and quarter-level calculations, but not source-book rows or an asset schedule."
-        next_action = "Treat UI data as supporting evidence only; ask Xolo for internal books/schedule."
+        next_action = "Treat UI data as supporting evidence only; ask Xolo for the official books/schedule."
     evidence = (
         f"Authenticated probe pages={len(pages)}; login-like pages={len(login_like)}; "
         f"Modelo 130 calculation pages={len(calculation_pages)}; forbidden asset/amortization routes={len(forbidden_asset_routes)}."
@@ -260,7 +260,7 @@ def _support_request_row(path: Path) -> dict[str, str]:
         "ready_to_send" if exists else "missing",
         "1" if exists else "0",
         str(path),
-        "Prepared first-contact request for official IRPF registers.",
+        "Prepared first-contact request for official accounting/register records missing from the standard Xolo Data export.",
         "Send or paste the request to Xolo support; do not infer accounting treatment from local fits.",
     )
 
@@ -272,8 +272,8 @@ def _request_package_row(path: Path) -> dict[str, str]:
             "missing",
             "0",
             str(path),
-            "The safe official-register request package manifest was not found.",
-            "Build the package before sending a Xolo official-register request.",
+            "The safe Xolo records request package manifest was not found.",
+            "Build the package before sending a Xolo records request.",
         )
     rows = _load_rows(path)
     included = [row for row in rows if row.get("status") == "included"]
@@ -286,7 +286,7 @@ def _request_package_row(path: Path) -> dict[str, str]:
         f"missing_or_broken={len(missing_or_broken)}"
     )
     if status == "ready_to_send_package":
-        conclusion = "A safe request package exists with the official-register message manifest."
+        conclusion = "A safe request package exists with the Xolo records message manifest."
         next_action = "Send or paste message_to_xolo.md; attach markdown support context only if Xolo asks for it."
     else:
         conclusion = "The request package manifest is present but not ready to send."
