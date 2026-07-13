@@ -61,6 +61,15 @@ from .chronological_walkthrough import (
     write_chronological_walkthrough_markdown,
 )
 from .closure_request import build_xolo_closure_request, write_xolo_closure_request
+from .drive_archive_index import (
+    build_document_index,
+    build_source_books_index,
+    build_xolo_correspondence_index,
+    load_drive_map,
+    write_document_index_csv,
+    write_source_books_index_csv,
+    write_xolo_correspondence_index_csv,
+)
 from .evidence_inventory import (
     build_evidence_inventory,
     write_evidence_inventory_csv,
@@ -426,6 +435,19 @@ def main(argv: list[str] | None = None) -> int:
     audit_xolo_dataexport_inventory.add_argument("--zip", type=Path, required=True)
     audit_xolo_dataexport_inventory.add_argument("--out-csv", type=Path, required=True)
     audit_xolo_dataexport_inventory.add_argument("--out-md", type=Path, required=True)
+
+    build_drive_archive_index = subparsers.add_parser(
+        "build-drive-archive-index",
+        help="Build Google Drive/Sheets archive index CSVs for Xolo evidence",
+    )
+    build_drive_archive_index.add_argument("--xolo-root", type=Path, required=True)
+    build_drive_archive_index.add_argument("--source-books-root", type=Path, required=True)
+    build_drive_archive_index.add_argument("--runs-root", type=Path, default=Path("runs"))
+    build_drive_archive_index.add_argument("--drive-map", type=Path)
+    build_drive_archive_index.add_argument("--xolo-export-folder-url", default="")
+    build_drive_archive_index.add_argument("--archive-folder-url", default="")
+    build_drive_archive_index.add_argument("--indexed-at", default="")
+    build_drive_archive_index.add_argument("--out-dir", type=Path, required=True)
 
     audit_annual = subparsers.add_parser("audit-annual", help="Compare annual Modelo 100 summaries to Q4 Modelo 130")
     audit_annual.add_argument("--modelo100-summary", type=Path, required=True)
@@ -1046,6 +1068,40 @@ def main(argv: list[str] | None = None) -> int:
         write_xolo_dataexport_inventory_csv(args.out_csv, rows)
         write_xolo_dataexport_inventory_markdown(args.out_md, rows, args.zip)
         print(f"Wrote {len(rows)} Xolo data export inventory rows to {args.out_csv} and {args.out_md}")
+        return 0
+    if args.command == "build-drive-archive-index":
+        drive_map = load_drive_map(args.drive_map)
+        out_dir = Path(args.out_dir)
+        indexed_at = args.indexed_at or None
+        document_rows = build_document_index(
+            xolo_root=args.xolo_root,
+            source_books_root=args.source_books_root,
+            runs_root=args.runs_root,
+            drive_map=drive_map,
+            xolo_export_folder_url=args.xolo_export_folder_url,
+            archive_folder_url=args.archive_folder_url,
+            indexed_at=indexed_at,
+        )
+        source_book_rows = build_source_books_index(
+            content_check_csv=args.runs_root / "xolo_source_book_content_check.csv",
+            imported_rows_csv=args.runs_root / "xolo_source_book_rows.csv",
+            reconciliation_csv=args.runs_root / "xolo_source_book_reconciliation.csv",
+            drive_map=drive_map,
+        )
+        correspondence_rows = build_xolo_correspondence_index(
+            runs_root=args.runs_root,
+            source_books_root=args.source_books_root,
+            drive_map=drive_map,
+            indexed_at=indexed_at,
+        )
+        write_document_index_csv(out_dir / "document_index.csv", document_rows)
+        write_source_books_index_csv(out_dir / "source_books.csv", source_book_rows)
+        write_xolo_correspondence_index_csv(out_dir / "xolo_correspondence.csv", correspondence_rows)
+        print(
+            "Wrote Drive archive index CSVs: "
+            f"{len(document_rows)} documents, {len(source_book_rows)} source-book rows, "
+            f"{len(correspondence_rows)} correspondence rows"
+        )
         return 0
     if args.command == "audit-annual":
         rows = compare_annual_to_quarterly(args.modelo100_summary, args.history_audit, args.xolo_raw_expenses)
