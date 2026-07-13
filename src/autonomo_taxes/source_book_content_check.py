@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 import re
 import unicodedata
-import xml.etree.ElementTree as ET
-import zipfile
+
+from .source_book_xlsx import read_xlsx_tables
 
 
 SOURCE_BOOK_CONTENT_CHECK_FIELDS = [
@@ -27,17 +27,40 @@ SOURCE_BOOK_CONTENT_CHECK_FIELDS = [
 REQUIRED_GROUPS = {
     "ingresos_book": {
         "date": ["date", "fecha", "fecha factura", "invoice date", "fecha expedicion", "fecha operacion"],
-        "counterparty": ["customer", "cliente", "recipient", "destinatario", "party", "counterparty", "nombre"],
-        "document_number": ["number", "invoice number", "invoice_number", "factura", "document number", "numero", "serie"],
+        "counterparty": ["nombre destinatario", "customer", "cliente", "recipient", "destinatario", "party", "counterparty", "nombre"],
+        "document_number": [
+            "identificacion de la factura numero",
+            "identificacion de la factura serie numero",
+            "serie numero",
+            "number",
+            "invoice number",
+            "invoice_number",
+            "document number",
+            "numero",
+            "serie",
+            "factura",
+        ],
         "concept": ["concept", "concepto", "description", "descripcion", "detalle", "operation", "operacion"],
-        "income_amount_eur": ["income eur", "revenue eur", "sales eur", "ingresos", "importe", "base imponible", "total eur", "amount"],
+        "income_amount_eur": ["ingreso computable", "income eur", "revenue eur", "sales eur", "ingresos", "importe", "base imponible", "total eur", "amount"],
     },
     "gastos_book": {
-        "date": ["date", "fecha", "invoice date", "booking date", "posting date", "fecha factura", "fecha registro"],
-        "counterparty": ["supplier", "proveedor", "recipient", "vendor", "party", "counterparty", "emisor", "nombre"],
-        "document_number": ["number", "invoice number", "invoice_number", "factura", "document number", "numero", "serie"],
+        "date": ["fecha expedicion", "fecha operacion", "date", "fecha", "invoice date", "booking date", "posting date", "fecha factura", "fecha registro"],
+        "counterparty": ["nombre expedidor", "supplier", "proveedor", "recipient", "vendor", "party", "counterparty", "emisor", "nombre"],
+        "document_number": [
+            "identificacion factura del expedidor serie numero",
+            "identificacion factura del expedidor",
+            "serie numero",
+            "number",
+            "invoice number",
+            "invoice_number",
+            "document number",
+            "numero",
+            "serie",
+            "factura",
+        ],
         "concept": ["concept", "concepto", "description", "descripcion", "detalle", "operation", "operacion"],
         "irpf_deductible_eur": [
+            "gasto deducible",
             "irpf deductible eur",
             "deductible eur",
             "deductible base eur",
@@ -53,6 +76,8 @@ REQUIRED_GROUPS = {
     "bienes_inversion_book": {
         "acquisition_date": ["acquisition date", "purchase date", "fecha adquisicion", "fecha inicio utilizacion", "date"],
         "description_or_document": [
+            "descripcion del bien literal",
+            "descripcion del bien",
             "description",
             "descripcion",
             "bien inversion",
@@ -64,6 +89,7 @@ REQUIRED_GROUPS = {
         ],
         "supplier_or_counterparty": ["supplier", "proveedor", "vendor", "counterparty", "emisor", "nombre"],
         "acquisition_or_amortizable_value": [
+            "valor amortizable",
             "acquisition value",
             "valor adquisicion",
             "amortizable base eur",
@@ -73,6 +99,7 @@ REQUIRED_GROUPS = {
         ],
         "amortization_method": ["method", "metodo", "metodo amortizacion", "depreciation method", "amortization method"],
         "amortization_rate_or_quota": [
+            "amortizacion cuota resultante",
             "rate",
             "coefficient",
             "coeficiente",
@@ -88,6 +115,8 @@ REQUIRED_GROUPS = {
             "annual amortization",
         ],
         "accumulated_amortization": [
+            "amortizacion acumulada al final",
+            "amortizacion acumulada al inicio",
             "accumulated amortization",
             "amortizacion acumulada",
             "depreciation accumulated",
@@ -106,6 +135,8 @@ LEGACY_REQUIRED_GROUP_ALIASES = {
     "compras_gastos_book": "gastos_book",
     "bienes_inversion_or_asset_schedule": "bienes_inversion_book",
 }
+
+EMPTY_OK_BOOK_TYPES = {"bienes_inversion_book", "provisiones_suplidos_book"}
 
 
 @dataclass(frozen=True)
@@ -372,14 +403,33 @@ def _read_text(path: Path) -> str:
 
 
 def _best_xlsx_inspection(path: Path, check: str) -> _Inspection:
-    sheets = _read_xlsx_sheets(path)
-    if not sheets:
+    tables = read_xlsx_tables(path)
+    if not tables:
         return _inspection(path, check, "xlsx", [], 0)
-    inspections = [
-        _inspection(path, check, f"xlsx:{sheet_name}", headers, row_count)
-        for sheet_name, headers, row_count in sheets
-    ]
-    return min(inspections, key=_inspection_rank)
+    if _canonical_check(check) in EMPTY_OK_BOOK_TYPES and _is_xolo_combined_accounting_book(path):
+        has_matching_table = any(
+            _table_type_rank(check, table.headers) == 0 and not _missing_groups(check, table.headers)
+            for table in tables
+        )
+        if not has_matching_table:
+            return _Inspection(
+                str(path),
+                "content_ready",
+                f"xlsx:{_canonical_check(check)}:empty-not-applicable",
+                0,
+                _synthetic_required_headers(check),
+                [],
+            )
+    best_table = min(
+        tables,
+        key=lambda table: (
+            _table_type_rank(check, table.headers),
+            _table_data_penalty(table.rows),
+            len(_missing_groups(check, table.headers)),
+            -len(table.rows),
+        ),
+    )
+    return _inspection(path, check, best_table.file_format, best_table.headers, len(best_table.rows))
 
 
 def _inspection_rank(item: _Inspection) -> tuple[int, int, int]:
@@ -392,66 +442,43 @@ def _inspection_rank(item: _Inspection) -> tuple[int, int, int]:
     return (status_rank, len(item.missing_groups), -item.row_count)
 
 
-def _read_xlsx_sheets(path: Path) -> list[tuple[str, list[str], int]]:
-    with zipfile.ZipFile(path) as archive:
-        shared_strings = _shared_strings(archive)
-        sheet_names = sorted(name for name in archive.namelist() if name.startswith("xl/worksheets/sheet") and name.endswith(".xml"))
-        if not sheet_names:
-            return []
-        sheets: list[tuple[str, list[str], int]] = []
-        for sheet_name in sheet_names:
-            root = ET.fromstring(archive.read(sheet_name))
-            rows = [_xlsx_row_values(row, shared_strings) for row in root.findall(".//{*}sheetData/{*}row")]
-            rows = [row for row in rows if any(cell.strip() for cell in row)]
-            if not rows:
-                sheets.append((Path(sheet_name).stem, [], 0))
-            else:
-                sheets.append((Path(sheet_name).stem, rows[0], max(0, len(rows) - 1)))
-        return sheets
+def _table_type_rank(check: str, headers: list[str]) -> int:
+    kind = _canonical_check(check)
+    joined = " ".join(_normalize(header) for header in headers)
+    if kind == "ingresos_book":
+        if _contains_any(joined, ["ingreso computable", "concepto de ingreso", "nombre destinatario"]):
+            return 0
+        if _contains_any(joined, ["gasto deducible", "concepto de gasto", "nombre expedidor", "valor amortizable"]):
+            return 3
+    elif kind == "gastos_book":
+        if _contains_any(joined, ["gasto deducible", "concepto de gasto", "nombre expedidor", "irpf deductible"]):
+            return 0
+        if _contains_any(joined, ["ingreso computable", "concepto de ingreso", "nombre destinatario", "valor amortizable"]):
+            return 3
+    elif kind == "bienes_inversion_book":
+        if _contains_any(joined, ["descripcion del bien", "valor amortizable", "amortizacion cuota resultante", "acquisition value"]):
+            return 0
+        if _contains_any(joined, ["ingreso computable", "gasto deducible"]):
+            return 3
+    elif kind == "provisiones_suplidos_book":
+        if _contains_any(joined, ["provisiones", "suplidos", "disbursements", "advances"]):
+            return 0
+        if _contains_any(joined, ["ingreso computable", "gasto deducible", "valor amortizable"]):
+            return 3
+    return 1
 
 
-def _shared_strings(archive: zipfile.ZipFile) -> list[str]:
-    if "xl/sharedStrings.xml" not in archive.namelist():
-        return []
-    root = ET.fromstring(archive.read("xl/sharedStrings.xml"))
-    values: list[str] = []
-    for item in root.findall(".//{*}si"):
-        values.append("".join(text.text or "" for text in item.findall(".//{*}t")).strip())
-    return values
+def _contains_any(value: str, needles: list[str]) -> bool:
+    return any(needle in value for needle in needles)
 
 
-def _xlsx_row_values(row: ET.Element, shared_strings: list[str]) -> list[str]:
-    values_by_col: dict[int, str] = {}
-    for cell in row.findall("{*}c"):
-        ref = cell.attrib.get("r", "")
-        column_index = _column_index(ref)
-        values_by_col[column_index] = _xlsx_cell_value(cell, shared_strings)
-    if not values_by_col:
-        return []
-    return [values_by_col.get(index, "") for index in range(1, max(values_by_col) + 1)]
-
-
-def _xlsx_cell_value(cell: ET.Element, shared_strings: list[str]) -> str:
-    cell_type = cell.attrib.get("t", "")
-    if cell_type == "inlineStr":
-        return "".join(text.text or "" for text in cell.findall(".//{*}t")).strip()
-    value = cell.find("{*}v")
-    raw = value.text.strip() if value is not None and value.text else ""
-    if cell_type == "s" and raw.isdigit():
-        index = int(raw)
-        if 0 <= index < len(shared_strings):
-            return shared_strings[index]
-    return raw
-
-
-def _column_index(cell_reference: str) -> int:
-    letters = re.match(r"([A-Z]+)", cell_reference.upper())
-    if not letters:
-        return 1
-    index = 0
-    for char in letters.group(1):
-        index = index * 26 + (ord(char) - ord("A") + 1)
-    return index
+def _table_data_penalty(rows: list[list[str]]) -> int:
+    if not rows:
+        return 0
+    first = " ".join(_normalize(cell) for cell in rows[0])
+    if _contains_any(first, ["ejercicio periodo", "periodo grupo", "serie numero", "codigo pais identificacion"]):
+        return 5
+    return 0
 
 
 def _matched_paths(root: Path, raw: str) -> list[Path]:
@@ -472,6 +499,19 @@ def _least_missing_groups(inspections: list[_Inspection], check: str) -> list[st
 
 def _required_groups(check: str) -> dict[str, list[str]]:
     return REQUIRED_GROUPS.get(check) or REQUIRED_GROUPS.get(LEGACY_REQUIRED_GROUP_ALIASES.get(check, ""), {})
+
+
+def _canonical_check(check: str) -> str:
+    return LEGACY_REQUIRED_GROUP_ALIASES.get(check, check)
+
+
+def _synthetic_required_headers(check: str) -> list[str]:
+    return [aliases[0] for aliases in _required_groups(check).values()]
+
+
+def _is_xolo_combined_accounting_book(path: Path) -> bool:
+    name = _normalize(path.name)
+    return "libros contables" in name or "libro contable" in name
 
 
 def _inspection_evidence(inspections: list[_Inspection]) -> str:

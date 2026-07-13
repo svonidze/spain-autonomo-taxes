@@ -6,10 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 import re
 import unicodedata
-import xml.etree.ElementTree as ET
-import zipfile
 
 from .source_book_content_check import required_group_header_map, required_groups_for_check
+from .source_book_xlsx import read_xlsx_tables
 
 
 SOURCE_BOOK_IMPORT_FIELDS = [
@@ -47,20 +46,23 @@ SOURCE_BOOK_IMPORT_FIELDS = [
 
 
 OPTIONAL_ALIASES = {
-    "period": ["period", "quarter", "trimestre", "deducted in period", "modelo 130 period", "inclusion quarter"],
-    "amortization_period": ["period", "quarter", "trimestre", "amortization period"],
-    "booking_date": ["booking date", "posting date", "fecha contabilizacion", "fecha registro"],
+    "period": ["autoliquidacion periodo", "periodo", "period", "quarter", "trimestre", "deducted in period", "modelo 130 period", "inclusion quarter"],
+    "period_year": ["autoliquidacion ejercicio", "ejercicio", "year"],
+    "amortization_period": ["autoliquidacion periodo", "periodo", "period", "quarter", "trimestre", "amortization period"],
+    "booking_date": ["fecha recepcion", "booking date", "posting date", "fecha contabilizacion", "fecha registro"],
     "original_amount": ["original amount", "amount original", "importe original", "amount"],
-    "original_currency": ["original currency", "currency", "moneda"],
-    "gross_eur": ["gross eur", "gross amount eur", "importe total eur", "total eur"],
+    "original_currency": ["moneda original", "monedo original", "original currency", "currency", "moneda"],
+    "gross_eur": ["total factura", "gross eur", "gross amount eur", "importe total eur", "total eur"],
     "deductible_base_eur": ["deductible base eur", "base eur", "base imponible", "tax base eur"],
     "vat_treatment": ["vat treatment", "iva treatment", "tratamiento iva", "reverse charge"],
     "reason_code": ["reason code", "reason", "source book treatment", "accounting treatment", "tratamiento contable"],
     "source_book_line_id": ["source book line id", "line id", "folio", "asiento", "row id"],
-    "income_amount_eur": ["income eur", "revenue eur", "sales eur", "ingresos", "importe", "base imponible", "total eur", "amount"],
+    "income_amount_eur": ["ingreso computable", "income eur", "revenue eur", "sales eur", "ingresos", "importe", "base imponible", "total eur", "amount"],
     "amount_eur": ["amount", "importe", "total eur", "amount eur", "importe eur"],
     "concept": ["concept", "concepto", "description", "descripcion", "detalle", "operation", "operacion"],
+    "irpf_deductible_eur": ["gasto deducible", "irpf deductible eur", "deductible eur", "tax deductible eur", "importe deducible"],
     "amortization_amount_eur": [
+        "amortizacion cuota resultante",
         "amortization amount eur",
         "amortizacion eur",
         "depreciation amount",
@@ -69,14 +71,14 @@ OPTIONAL_ALIASES = {
         "annual amortization",
         "cuota",
     ],
-    "rate_or_life": ["rate", "coefficient", "coeficiente", "useful life", "vida util", "percent", "%"],
+    "rate_or_life": ["porcentaje de amortizacion", "rate", "coefficient", "coeficiente", "useful life", "vida util", "percent", "%"],
     "casilla01_ytd": ["casilla 01", "casilla01", "sales ytd", "income ytd", "ingresos"],
     "casilla02_ytd": ["casilla 02", "casilla02", "expenses ytd", "gastos deducibles"],
     "casilla07": ["casilla 07", "casilla07", "payment due before reductions"],
     "casilla19": ["casilla 19", "casilla19", "payable", "amount due", "resultado"],
 }
 
-EMPTY_OK_BOOK_TYPES = {"provisiones_suplidos_book"}
+EMPTY_OK_BOOK_TYPES = {"bienes_inversion_book", "provisiones_suplidos_book"}
 
 
 def build_source_book_import(
@@ -278,9 +280,14 @@ def _normalized_row(
     kind = _canonical_check(check)
     if kind == "gastos_book":
         date = _value(values, mapping, "date")
+        period = _source_book_period(
+            _value(values, mapping, "period"),
+            _value(values, mapping, "period_year"),
+            date,
+        )
         row.update(
             {
-                "period": _value(values, mapping, "period") or _period_from_date(date),
+                "period": period,
                 "date": date,
                 "booking_date": _value(values, mapping, "booking_date"),
                 "supplier": _value(values, mapping, "counterparty"),
@@ -296,9 +303,14 @@ def _normalized_row(
         )
     elif kind == "ingresos_book":
         date = _value(values, mapping, "date")
+        period = _source_book_period(
+            _value(values, mapping, "period"),
+            _value(values, mapping, "period_year"),
+            date,
+        )
         row.update(
             {
-                "period": _value(values, mapping, "period") or _period_from_date(date),
+                "period": period,
                 "date": date,
                 "supplier": _value(values, mapping, "counterparty"),
                 "document_number": _value(values, mapping, "document_number"),
@@ -321,9 +333,14 @@ def _normalized_row(
         )
     elif kind == "provisiones_suplidos_book":
         date = _value(values, mapping, "date")
+        period = _source_book_period(
+            _value(values, mapping, "period"),
+            _value(values, mapping, "period_year"),
+            date,
+        )
         row.update(
             {
-                "period": _value(values, mapping, "period") or _period_from_date(date),
+                "period": period,
                 "date": date,
                 "supplier": _value(values, mapping, "counterparty"),
                 "gross_eur": _value(values, mapping, "amount_eur"),
@@ -364,6 +381,18 @@ def _period_from_date(value: str) -> str:
     month = int(match.group(2))
     quarter = ((month - 1) // 3) + 1
     return f"{year}-Q{quarter}"
+
+
+def _source_book_period(period: str, year: str, fallback_date: str) -> str:
+    period = (period or "").strip()
+    year = (year or "").strip()
+    match = re.match(r"^(20\d{2})[-/ ]?Q([1-4])$", period, flags=re.IGNORECASE)
+    if match:
+        return f"{match.group(1)}-Q{match.group(2)}"
+    match = re.match(r"^([1-4])\s*T$", period, flags=re.IGNORECASE)
+    if match and re.match(r"^20\d{2}$", year):
+        return f"{year}-Q{match.group(1)}"
+    return _period_from_date(fallback_date)
 
 
 def _column_mapping(check: str, headers: list[str]) -> dict[str, str]:
@@ -442,76 +471,36 @@ def _read_text(path: Path) -> str:
 
 
 def _best_xlsx_table(path: Path, check: str) -> _Table:
-    tables = _read_xlsx_tables(path)
+    tables = [
+        _Table(table.file_format, table.headers, table.rows)
+        for table in read_xlsx_tables(path)
+    ]
     if not tables:
         return _Table("xlsx", [], [])
-    return min(tables, key=lambda table: (len(_missing_required(check, table.headers)), -len(table.rows)))
+    if _canonical_check(check) in EMPTY_OK_BOOK_TYPES and _is_xolo_combined_accounting_book(path):
+        has_matching_table = any(
+            _table_type_rank(check, table.headers) == 0 and not _missing_required(check, table.headers)
+            for table in tables
+        )
+        if not has_matching_table:
+            return _Table(f"xlsx:{_canonical_check(check)}:empty-not-applicable", _synthetic_required_headers(check), [])
+    best = min(
+        tables,
+        key=lambda table: (
+            _table_type_rank(check, table.headers),
+            _table_data_penalty(table.rows),
+            len(_missing_required(check, table.headers)),
+            -len(table.rows),
+        ),
+    )
+    if _missing_required(check, best.headers) and _canonical_check(check) in EMPTY_OK_BOOK_TYPES and _is_xolo_combined_accounting_book(path):
+        return _Table(f"xlsx:{_canonical_check(check)}:empty-not-applicable", _synthetic_required_headers(check), [])
+    return best
 
 
 def _missing_required(check: str, headers: list[str]) -> list[str]:
     mapping = required_group_header_map(check, headers)
     return [group for group in required_groups_for_check(check) if group not in mapping]
-
-
-def _read_xlsx_tables(path: Path) -> list[_Table]:
-    with zipfile.ZipFile(path) as archive:
-        shared_strings = _shared_strings(archive)
-        sheet_names = sorted(name for name in archive.namelist() if name.startswith("xl/worksheets/sheet") and name.endswith(".xml"))
-        tables: list[_Table] = []
-        for sheet_name in sheet_names:
-            root = ET.fromstring(archive.read(sheet_name))
-            rows = [_xlsx_row_values(row, shared_strings) for row in root.findall(".//{*}sheetData/{*}row")]
-            rows = [row for row in rows if any(cell.strip() for cell in row)]
-            sheet_id = Path(sheet_name).stem
-            if rows:
-                tables.append(_Table(f"xlsx:{sheet_id}", rows[0], rows[1:]))
-            else:
-                tables.append(_Table(f"xlsx:{sheet_id}", [], []))
-        return tables
-
-
-def _shared_strings(archive: zipfile.ZipFile) -> list[str]:
-    if "xl/sharedStrings.xml" not in archive.namelist():
-        return []
-    root = ET.fromstring(archive.read("xl/sharedStrings.xml"))
-    values: list[str] = []
-    for item in root.findall(".//{*}si"):
-        values.append("".join(text.text or "" for text in item.findall(".//{*}t")).strip())
-    return values
-
-
-def _xlsx_row_values(row: ET.Element, shared_strings: list[str]) -> list[str]:
-    values_by_col: dict[int, str] = {}
-    for cell in row.findall("{*}c"):
-        ref = cell.attrib.get("r", "")
-        column_index = _column_index(ref)
-        values_by_col[column_index] = _xlsx_cell_value(cell, shared_strings)
-    if not values_by_col:
-        return []
-    return [values_by_col.get(index, "") for index in range(1, max(values_by_col) + 1)]
-
-
-def _xlsx_cell_value(cell: ET.Element, shared_strings: list[str]) -> str:
-    cell_type = cell.attrib.get("t", "")
-    if cell_type == "inlineStr":
-        return "".join(text.text or "" for text in cell.findall(".//{*}t")).strip()
-    value = cell.find("{*}v")
-    raw = value.text.strip() if value is not None and value.text else ""
-    if cell_type == "s" and raw.isdigit():
-        index = int(raw)
-        if 0 <= index < len(shared_strings):
-            return shared_strings[index]
-    return raw
-
-
-def _column_index(cell_reference: str) -> int:
-    letters = re.match(r"([A-Z]+)", cell_reference.upper())
-    if not letters:
-        return 1
-    index = 0
-    for char in letters.group(1):
-        index = index * 26 + (ord(char) - ord("A") + 1)
-    return index
 
 
 def _content_ready_files(response_root: Path, raw: str) -> list[Path]:
@@ -554,6 +543,54 @@ def _normalize(value: str) -> str:
 
 def _compact(value: str) -> str:
     return re.sub(r"[^a-z0-9%]+", "", value.lower())
+
+
+def _synthetic_required_headers(check: str) -> list[str]:
+    return [aliases[0] for aliases in required_groups_for_check(check).values()]
+
+
+def _is_xolo_combined_accounting_book(path: Path) -> bool:
+    name = _normalize(path.name)
+    return "libros contables" in name or "libro contable" in name
+
+
+def _table_type_rank(check: str, headers: list[str]) -> int:
+    kind = _canonical_check(check)
+    joined = " ".join(_normalize(header) for header in headers)
+    if kind == "ingresos_book":
+        if _contains_any(joined, ["ingreso computable", "concepto de ingreso", "nombre destinatario"]):
+            return 0
+        if _contains_any(joined, ["gasto deducible", "concepto de gasto", "nombre expedidor", "valor amortizable"]):
+            return 3
+    elif kind == "gastos_book":
+        if _contains_any(joined, ["gasto deducible", "concepto de gasto", "nombre expedidor", "irpf deductible"]):
+            return 0
+        if _contains_any(joined, ["ingreso computable", "concepto de ingreso", "nombre destinatario", "valor amortizable"]):
+            return 3
+    elif kind == "bienes_inversion_book":
+        if _contains_any(joined, ["descripcion del bien", "valor amortizable", "amortizacion cuota resultante", "acquisition value"]):
+            return 0
+        if _contains_any(joined, ["ingreso computable", "gasto deducible"]):
+            return 3
+    elif kind == "provisiones_suplidos_book":
+        if _contains_any(joined, ["provisiones", "suplidos", "disbursements", "advances"]):
+            return 0
+        if _contains_any(joined, ["ingreso computable", "gasto deducible", "valor amortizable"]):
+            return 3
+    return 1
+
+
+def _contains_any(value: str, needles: list[str]) -> bool:
+    return any(needle in value for needle in needles)
+
+
+def _table_data_penalty(rows: list[list[str]]) -> int:
+    if not rows:
+        return 0
+    first = " ".join(_normalize(cell) for cell in rows[0])
+    if _contains_any(first, ["ejercicio periodo", "periodo grupo", "serie numero", "codigo pais identificacion"]):
+        return 5
+    return 0
 
 
 def _cell(value: str) -> str:

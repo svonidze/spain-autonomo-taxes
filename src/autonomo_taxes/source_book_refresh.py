@@ -53,6 +53,7 @@ class _RefreshPaths:
     quarter_closure_csv: Path
     quarter_balance_bridge_csv: Path
     material_gap_drilldown_csv: Path
+    annual_comparison_csv: Path
     packets_dir: Path
     tax_report_sequence_csv: Path
     target_values_coverage_csv: Path
@@ -79,6 +80,7 @@ def run_source_book_refresh(
     quarter_closure_csv: Path | None = None,
     quarter_balance_bridge_csv: Path | None = None,
     material_gap_drilldown_csv: Path | None = None,
+    annual_comparison_csv: Path | None = None,
     packets_dir: Path | None = None,
     tax_report_sequence_csv: Path | None = None,
     target_values_coverage_csv: Path | None = None,
@@ -92,6 +94,7 @@ def run_source_book_refresh(
         quarter_closure_csv=quarter_closure_csv,
         quarter_balance_bridge_csv=quarter_balance_bridge_csv,
         material_gap_drilldown_csv=material_gap_drilldown_csv,
+        annual_comparison_csv=annual_comparison_csv,
         packets_dir=packets_dir,
         tax_report_sequence_csv=tax_report_sequence_csv,
         target_values_coverage_csv=target_values_coverage_csv,
@@ -143,7 +146,11 @@ def run_source_book_refresh(
     write_source_book_import_markdown(paths.source_book_rows_md, imported_rows)
     summary.append(_import_summary(imported_rows, paths.source_book_rows_csv, paths.source_book_rows_md))
 
-    reconciliation_rows = build_source_book_reconciliation(paths.history_audit_csv, paths.source_book_rows_csv)
+    reconciliation_rows = build_source_book_reconciliation(
+        paths.history_audit_csv,
+        paths.source_book_rows_csv,
+        paths.annual_comparison_csv if paths.annual_comparison_csv.exists() else None,
+    )
     write_source_book_reconciliation_csv(paths.source_book_reconciliation_csv, reconciliation_rows)
     write_source_book_reconciliation_markdown(paths.source_book_reconciliation_md, reconciliation_rows)
     summary.append(
@@ -151,7 +158,11 @@ def run_source_book_refresh(
             step="source_book_reconciliation",
             rows=reconciliation_rows,
             status_field="status",
-            complete_status={"rows_and_tieout_match_target", "rows_match_target_no_tieout"},
+            complete_status={
+                "rows_and_tieout_match_target",
+                "rows_match_target_no_tieout",
+                "rows_match_target_after_annual_adjustment_no_tieout",
+            },
             complete_label="complete",
             incomplete_label="not_reconciled",
             csv_path=paths.source_book_reconciliation_csv,
@@ -174,7 +185,7 @@ def run_source_book_refresh(
             step="quarter_acceptance",
             rows=acceptance_rows,
             status_field="acceptance_status",
-            complete_status="accepted_from_source_books",
+            complete_status={"accepted_from_source_books", "accepted_from_source_books_with_annual_adjustment"},
             complete_label="complete",
             incomplete_label="not_closed",
             csv_path=paths.quarter_acceptance_csv,
@@ -264,6 +275,7 @@ def _refresh_paths(
     quarter_closure_csv: Path | None,
     quarter_balance_bridge_csv: Path | None,
     material_gap_drilldown_csv: Path | None,
+    annual_comparison_csv: Path | None,
     packets_dir: Path | None,
     tax_report_sequence_csv: Path | None,
     target_values_coverage_csv: Path | None,
@@ -277,6 +289,7 @@ def _refresh_paths(
         quarter_closure_csv=quarter_closure_csv or runs_root / "modelo130_quarter_closure.csv",
         quarter_balance_bridge_csv=quarter_balance_bridge_csv or runs_root / "modelo130_quarter_balance_bridge.csv",
         material_gap_drilldown_csv=material_gap_drilldown_csv or runs_root / "modelo130_material_gap_drilldown.csv",
+        annual_comparison_csv=annual_comparison_csv or runs_root / "modelo100_annual_comparison.csv",
         packets_dir=packets_dir or runs_root / "modelo130_quarter_packets",
         tax_report_sequence_csv=tax_report_sequence_csv or runs_root / "modelo130_tax_report_sequence.csv",
         target_values_coverage_csv=target_values_coverage_csv or runs_root / "modelo130_target_values_coverage.csv",

@@ -873,6 +873,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     audit_source_book_reconcile.add_argument("--history-audit", type=Path, required=True)
     audit_source_book_reconcile.add_argument("--source-book-rows", type=Path, required=True)
+    audit_source_book_reconcile.add_argument("--annual-comparison", type=Path)
     audit_source_book_reconcile.add_argument("--out-csv", type=Path, required=True)
     audit_source_book_reconcile.add_argument("--out-md", type=Path, required=True)
 
@@ -887,6 +888,7 @@ def main(argv: list[str] | None = None) -> int:
     audit_source_book_refresh.add_argument("--quarter-closure", type=Path)
     audit_source_book_refresh.add_argument("--quarter-balance-bridge", type=Path)
     audit_source_book_refresh.add_argument("--material-gap-drilldown", type=Path)
+    audit_source_book_refresh.add_argument("--annual-comparison", type=Path)
     audit_source_book_refresh.add_argument("--packets-dir", type=Path)
     audit_source_book_refresh.add_argument("--tax-report-sequence", type=Path)
     audit_source_book_refresh.add_argument("--target-values-coverage", type=Path)
@@ -1466,7 +1468,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Wrote {len(rows)} imported source-book rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-source-book-reconcile":
-        rows = build_source_book_reconciliation(args.history_audit, args.source_book_rows)
+        annual_comparison = args.annual_comparison
+        if annual_comparison is None and Path("runs/modelo100_annual_comparison.csv").exists():
+            annual_comparison = Path("runs/modelo100_annual_comparison.csv")
+        rows = build_source_book_reconciliation(args.history_audit, args.source_book_rows, annual_comparison)
         write_source_book_reconciliation_csv(args.out_csv, rows)
         write_source_book_reconciliation_markdown(args.out_md, rows)
         print(f"Wrote {len(rows)} source-book reconciliation rows to {args.out_csv} and {args.out_md}")
@@ -1480,6 +1485,7 @@ def main(argv: list[str] | None = None) -> int:
             quarter_closure_csv=args.quarter_closure,
             quarter_balance_bridge_csv=args.quarter_balance_bridge,
             material_gap_drilldown_csv=args.material_gap_drilldown,
+            annual_comparison_csv=args.annual_comparison,
             packets_dir=args.packets_dir,
             tax_report_sequence_csv=args.tax_report_sequence,
             target_values_coverage_csv=args.target_values_coverage,

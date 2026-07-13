@@ -17,6 +17,7 @@ GOAL_STATUS_FIELDS = [
 _RECONCILED_SOURCE_BOOK_STATUSES = {
     "rows_and_tieout_match_target",
     "rows_match_target_no_tieout",
+    "rows_match_target_after_annual_adjustment_no_tieout",
 }
 
 
@@ -38,15 +39,28 @@ def build_goal_status(
     content_rows = _load_rows(source_book_content_check_csv)
     reconciliation_rows = _load_rows(source_book_reconciliation_csv)
 
+    tax_report_sequence_gate = _tax_report_sequence_gate(sequence_rows)
+    target_values_gate = _target_values_gate(target_rows)
+    quarter_acceptance_gate = _quarter_acceptance_gate(acceptance_rows)
+    scope_alignment_gate = _scope_alignment_gate(sequence_rows, target_rows, acceptance_rows, response_rows, content_rows, reconciliation_rows)
+    source_book_response_gate = _source_book_response_gate(response_rows)
+    source_book_content_gate = _source_book_content_gate(content_rows)
+    source_book_reconciliation_gate = _source_book_reconciliation_gate(reconciliation_rows)
+    source_books_close_scope = (
+        quarter_acceptance_gate["status"] == "complete"
+        and source_book_response_gate["status"] == "ready_for_intake"
+        and source_book_content_gate["status"] == "ready_for_import"
+        and source_book_reconciliation_gate["status"] == "complete"
+    )
     rows = [
-        _tax_report_sequence_gate(sequence_rows),
-        _target_values_gate(target_rows),
-        _quarter_acceptance_gate(acceptance_rows),
-        _scope_alignment_gate(sequence_rows, target_rows, acceptance_rows, response_rows, content_rows, reconciliation_rows),
-        _first_gate_answer_gate(first_gate_rows),
-        _source_book_response_gate(response_rows),
-        _source_book_content_gate(content_rows),
-        _source_book_reconciliation_gate(reconciliation_rows),
+        tax_report_sequence_gate,
+        target_values_gate,
+        quarter_acceptance_gate,
+        scope_alignment_gate,
+        _first_gate_answer_gate(first_gate_rows, source_books_close_scope=source_books_close_scope),
+        source_book_response_gate,
+        source_book_content_gate,
+        source_book_reconciliation_gate,
     ]
     rows.append(_goal_verdict(rows))
     return rows
@@ -188,9 +202,18 @@ def _scope_alignment_gate(
     )
 
 
-def _first_gate_answer_gate(rows: list[dict[str, str]]) -> dict[str, str]:
+def _first_gate_answer_gate(rows: list[dict[str, str]], *, source_books_close_scope: bool = False) -> dict[str, str]:
     verdict = next((row for row in rows if row.get("check") == "closure_verdict"), {})
     status = verdict.get("status", "missing")
+    if source_books_close_scope and status != "ready_for_rebuild":
+        return _row(
+            "first_gate_answer_check",
+            "superseded_by_source_books",
+            "ready_for_rebuild or source-book reconciliation complete",
+            status,
+            f"{verdict.get('evidence', '')}; all quarters accepted from imported official source books",
+            "No first-gate answer-intake action needed; source-book reconciliation is the controlling evidence.",
+        )
     return _row(
         "first_gate_answer_check",
         status,
@@ -250,7 +273,10 @@ def _goal_verdict(rows: list[dict[str, str]]) -> dict[str, str]:
     sequence_ok = by_gate.get("filed_pdf_sequence", {}).get("status") == "complete"
     targets_ok = by_gate.get("target_values_coverage", {}).get("status") == "complete"
     quarters_ok = by_gate.get("quarter_acceptance", {}).get("status") == "complete"
-    first_gate_ok = by_gate.get("first_gate_answer_check", {}).get("status") == "ready_for_rebuild"
+    first_gate_ok = by_gate.get("first_gate_answer_check", {}).get("status") in {
+        "ready_for_rebuild",
+        "superseded_by_source_books",
+    }
     response_ok = by_gate.get("source_book_response_package", {}).get("status") == "ready_for_intake"
     content_ok = by_gate.get("source_book_content_check", {}).get("status") == "ready_for_import"
     reconciliation_ok = by_gate.get("source_book_reconciliation", {}).get("status") == "complete"

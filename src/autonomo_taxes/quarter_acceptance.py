@@ -32,6 +32,7 @@ _ACTIONABLE_MATERIAL_STATUSES = {
 _RECONCILED_SOURCE_BOOK_STATUSES = {
     "rows_and_tieout_match_target",
     "rows_match_target_no_tieout",
+    "rows_match_target_after_annual_adjustment_no_tieout",
 }
 
 
@@ -93,6 +94,7 @@ def write_quarter_acceptance_markdown(path: Path, rows: list[dict[str, str]]) ->
     priority_counts = Counter(row["priority"] for row in rows)
     status_counts = Counter(row["acceptance_status"] for row in rows)
     p0_rows = [row for row in rows if row["priority"] == "P0"]
+    accepted_count = sum(1 for row in rows if row["acceptance_status"].startswith("accepted"))
 
     lines = [
         "# Modelo 130 Quarter Acceptance Matrix",
@@ -103,7 +105,7 @@ def write_quarter_acceptance_markdown(path: Path, rows: list[dict[str, str]]) ->
         "## Summary",
         "",
         f"- Quarters reviewed: `{len(rows)}`.",
-        f"- Accepted/closed from source-book evidence: `{sum(1 for row in rows if row['acceptance_status'] == 'accepted_from_source_books')}`.",
+        f"- Accepted/closed from source-book evidence: `{accepted_count}`.",
         "- Highest-priority external confirmations: " + _period_list(p0_rows) + ".",
         "",
         "| Priority | Count |",
@@ -168,6 +170,8 @@ def _acceptance_gate(
     annual_balance: Decimal,
     reconciliation: dict[str, str],
 ) -> tuple[str, str]:
+    if reconciliation.get("status") == "rows_match_target_after_annual_adjustment_no_tieout":
+        return "accepted_from_source_books_with_annual_adjustment", "accepted"
     if reconciliation.get("status") in _RECONCILED_SOURCE_BOOK_STATUSES:
         return "accepted_from_source_books", "accepted"
     closure_status = closure["closure_status"]
@@ -210,6 +214,8 @@ def _next_action(
 ) -> str:
     if acceptance_status == "accepted_from_source_books":
         return _source_book_reconciliation_next_action(reconciliation)
+    if acceptance_status == "accepted_from_source_books_with_annual_adjustment":
+        return _source_book_reconciliation_next_action(reconciliation) + " Annual adjustment is accepted as filed-annual evidence, not row-level tie-out."
     questions = _material_questions(material)
     if acceptance_status == "not_closed_material_gap_requires_source_books" and questions:
         return "Resolve material-gap question(s): " + " | ".join(questions)
@@ -257,12 +263,19 @@ def _source_book_reconciliation_by_period(path: Path | None) -> dict[str, dict[s
 
 
 def _source_book_reconciliation_evidence(row: dict[str, str]) -> str:
-    return (
-        "official register rows and any investment-goods amortization rows reconcile to filed casilla 02; "
+    annual_adjusted = row.get("status") == "rows_match_target_after_annual_adjustment_no_tieout"
+    opening = (
+        "official register rows plus filed annual Modelo 100 adjustment reconcile to filed casilla 02; "
+        if annual_adjusted
+        else "official register rows and any investment-goods amortization rows reconcile to filed casilla 02; "
+    )
+    return opening + (
         f"expenses={_fmt(row.get('imported_expense_delta', ''))}; "
         f"amortization={_fmt(row.get('imported_amortization_delta', ''))}; "
+        f"annual_adjustment={_fmt(row.get('annual_adjustment_delta', ''))}; "
+        f"adjusted_delta={_fmt(row.get('adjusted_imported_total_delta', ''))}; "
         f"tieout_delta={_fmt(row.get('tieout_casilla02_delta', '')) or 'not provided'}; "
-        f"diff={_fmt(row.get('imported_minus_target_delta', ''))}; "
+        f"diff={_fmt(row.get('adjusted_minus_target_delta', '') or row.get('imported_minus_target_delta', ''))}; "
         "source-book evidence supersedes local material-gap hypotheses for this period"
     )
 

@@ -179,6 +179,8 @@ def _matching_files(files: list[_FileItem], predicate) -> list[_FileItem]:
 
 
 def _matches_ingresos_book(name: str, year: str) -> bool:
+    if _matches_xolo_combined_accounting_book(name, year):
+        return True
     has_book = _has_any(name, ["libro", "registro", "register", "book", "ledger"])
     has_income = _has_any(
         name,
@@ -201,6 +203,8 @@ def _matches_ingresos_book(name: str, year: str) -> bool:
 
 
 def _matches_gastos_book(name: str, year: str) -> bool:
+    if _matches_xolo_combined_accounting_book(name, year):
+        return True
     has_book = _has_any(name, ["libro", "registro", "register", "book", "ledger"])
     has_expense = _has_any(
         name,
@@ -221,6 +225,8 @@ def _matches_gastos_book(name: str, year: str) -> bool:
 
 
 def _matches_bienes_inversion_book(name: str, year: str) -> bool:
+    if _matches_xolo_combined_accounting_book(name, year):
+        return True
     has_book = _has_any(name, ["libro", "registro", "register", "book", "ledger"])
     has_asset = _has_any(
         name,
@@ -244,6 +250,8 @@ def _matches_bienes_inversion_book(name: str, year: str) -> bool:
 
 
 def _matches_provisiones_suplidos_book(name: str, year: str) -> bool:
+    if _matches_xolo_combined_accounting_book(name, year):
+        return True
     has_book = _has_any(name, ["libro", "registro", "register", "book", "ledger"])
     has_provisions = _has_any(
         name,
@@ -335,6 +343,11 @@ def _has_year_scope(value: str, year: str, *, allow_unscoped: bool = False) -> b
     if allow_unscoped:
         return True
     return False
+
+
+def _matches_xolo_combined_accounting_book(value: str, year: str) -> bool:
+    has_xolo_name = _has_any(value, ["libros contables", "libro contable"])
+    return has_xolo_name and _has_year_scope(value, year, allow_unscoped=False)
 
 
 def _has_year_range_scope(value: str) -> bool:

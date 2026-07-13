@@ -13,3 +13,5 @@ dist/
 data/xolo_live_*
 data/xolo-expense-page-*.json
 data/*.secret.*
+evidence/xolo-source-books/*.xlsx
+evidence/xolo-source-books/*.pdf

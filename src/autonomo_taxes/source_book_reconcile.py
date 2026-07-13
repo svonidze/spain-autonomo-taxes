@@ -17,6 +17,9 @@ SOURCE_BOOK_RECONCILIATION_FIELDS = [
     "imported_amortization_delta",
     "imported_total_delta",
     "imported_minus_target_delta",
+    "annual_adjustment_delta",
+    "adjusted_imported_total_delta",
+    "adjusted_minus_target_delta",
     "tieout_casilla02_ytd",
     "tieout_casilla02_ytd_minus_target",
     "tieout_casilla02_delta",
@@ -39,12 +42,14 @@ TIEOUT_BOOK_TYPES = {"modelo130_source_book_tieout"}
 def build_source_book_reconciliation(
     history_audit_csv: Path,
     source_book_rows_csv: Path,
+    annual_comparison_csv: Path | None = None,
 ) -> list[dict[str, str]]:
     histories = _history_rows(history_audit_csv)
     source_rows = _load_rows(source_book_rows_csv)
     rows_by_period = _source_rows_by_period(source_rows)
     tieout_by_period = _tieout_by_period(source_rows)
     unassigned_rows = _unassigned_rows(source_rows)
+    annual_adjustments = _annual_q4_adjustments(annual_comparison_csv)
 
     output: list[dict[str, str]] = []
     for period in sorted(histories, key=_period_sort_key):
@@ -66,6 +71,9 @@ def build_source_book_reconciliation(
         amount_error_count = len(amount_errors)
         imported_total = cents(expense_total + asset_total)
         imported_diff = cents(imported_total - target_delta)
+        annual_adjustment = _usable_annual_adjustment(period, imported_diff, annual_adjustments)
+        adjusted_imported_total = cents(imported_total - annual_adjustment)
+        adjusted_diff = cents(adjusted_imported_total - target_delta)
         tieout_ytd_diff = cents(tieout_ytd - target_ytd) if tieout_ytd is not None else None
         tieout_delta_diff = cents(tieout_delta - target_delta) if tieout_delta is not None else None
         skipped_count = sum(1 for row in period_rows if row.get("import_status", "") != "imported")
@@ -79,6 +87,8 @@ def build_source_book_reconciliation(
                     amount_error_count=amount_error_count,
                     unassigned_count=len(unassigned_rows),
                     imported_diff=imported_diff,
+                    annual_adjustment=annual_adjustment,
+                    adjusted_diff=adjusted_diff,
                     tieout_ytd_diff=tieout_ytd_diff,
                     tieout_delta_diff=tieout_delta_diff,
                 ),
@@ -88,6 +98,9 @@ def build_source_book_reconciliation(
                 "imported_amortization_delta": _money(asset_total),
                 "imported_total_delta": _money(imported_total),
                 "imported_minus_target_delta": _money(imported_diff),
+                "annual_adjustment_delta": _money(annual_adjustment),
+                "adjusted_imported_total_delta": _money(adjusted_imported_total),
+                "adjusted_minus_target_delta": _money(adjusted_diff),
                 "tieout_casilla02_ytd": _optional_money(tieout_ytd),
                 "tieout_casilla02_ytd_minus_target": _optional_money(tieout_ytd_diff),
                 "tieout_casilla02_delta": _optional_money(tieout_delta),
@@ -99,7 +112,16 @@ def build_source_book_reconciliation(
                 "amount_parse_error_count": str(amount_error_count),
                 "unassigned_row_count": str(len(unassigned_rows)),
                 "source_files": "; ".join(sorted({row.get("source_file", "") for row in period_rows if row.get("source_file", "")})),
-                "notes": _notes(period_rows, skipped_count, amount_errors, unassigned_rows, tieout_ytd, tieout_delta),
+                "notes": _notes(
+                    period_rows,
+                    skipped_count,
+                    amount_errors,
+                    unassigned_rows,
+                    tieout_ytd,
+                    tieout_delta,
+                    annual_adjustment,
+                    adjusted_diff,
+                ),
             }
         )
     return output
@@ -132,8 +154,8 @@ def write_source_book_reconciliation_markdown(path: Path, rows: list[dict[str, s
             "",
             "## Quarters",
             "",
-            "| Period | Status | Target 02 delta | Imported rows delta | Diff | Tie-out 02 delta | Tie-out diff | Rows | Notes |",
-            "|---|---|---:|---:|---:|---:|---:|---:|---|",
+            "| Period | Status | Target 02 delta | Imported rows delta | Annual adj. | Adjusted delta | Adjusted diff | Tie-out 02 delta | Rows | Notes |",
+            "|---|---|---:|---:|---:|---:|---:|---:|---:|---|",
         ]
     )
     for row in rows:
@@ -146,9 +168,10 @@ def write_source_book_reconciliation_markdown(path: Path, rows: list[dict[str, s
                     row["status"],
                     _fmt(row["target_casilla_02_delta"]),
                     _fmt(row["imported_total_delta"]),
-                    _fmt(row["imported_minus_target_delta"]),
+                    _fmt(row["annual_adjustment_delta"]),
+                    _fmt(row["adjusted_imported_total_delta"]),
+                    _fmt(row["adjusted_minus_target_delta"]),
                     _fmt(row["tieout_casilla02_delta"]),
-                    _fmt(row["tieout_delta_minus_target"]),
                     str(row_count),
                     _cell(row["notes"]),
                 ]
@@ -248,6 +271,8 @@ def _status(
     amount_error_count: int,
     unassigned_count: int,
     imported_diff: Decimal,
+    annual_adjustment: Decimal,
+    adjusted_diff: Decimal,
     tieout_ytd_diff: Decimal | None,
     tieout_delta_diff: Decimal | None,
 ) -> str:
@@ -258,6 +283,7 @@ def _status(
     if skipped_count or amount_error_count:
         return "import_attention"
     imported_matches = abs(imported_diff) <= Decimal("0.02")
+    adjusted_matches = annual_adjustment != Decimal("0.00") and abs(adjusted_diff) <= Decimal("0.02")
     tieout_ytd_matches = tieout_ytd_diff is not None and abs(tieout_ytd_diff) <= Decimal("0.02")
     tieout_delta_matches = tieout_delta_diff is not None and abs(tieout_delta_diff) <= Decimal("0.02")
     if imported_matches and tieout_ytd_matches and tieout_delta_matches:
@@ -266,6 +292,8 @@ def _status(
         return "rows_and_ytd_tieout_match_target_delta_missing"
     if imported_matches and tieout_ytd_diff is None:
         return "rows_match_target_no_tieout"
+    if adjusted_matches and tieout_ytd_diff is None:
+        return "rows_match_target_after_annual_adjustment_no_tieout"
     if (tieout_ytd_matches or tieout_delta_matches) and not imported_matches:
         return "tieout_matches_rows_mismatch"
     return "source_book_rows_mismatch"
@@ -278,6 +306,8 @@ def _notes(
     unassigned_rows: list[dict[str, str]],
     tieout_ytd: Decimal | None,
     tieout_delta: Decimal | None,
+    annual_adjustment: Decimal,
+    adjusted_diff: Decimal,
 ) -> str:
     if unassigned_rows:
         refs = "; ".join(_row_ref(row) for row in unassigned_rows[:5])
@@ -288,6 +318,11 @@ def _notes(
         return "At least one content-ready source-book file could not be imported cleanly."
     if amount_errors:
         return "Malformed amount cell(s): " + "; ".join(amount_errors[:5])
+    if annual_adjustment != Decimal("0.00") and abs(adjusted_diff) <= Decimal("0.02"):
+        return (
+            "Official annual Modelo 100 comparison explains annual source-book rows above filed Q4 Modelo 130: "
+            f"annual_adjustment_delta={_money(annual_adjustment)}; adjusted_diff={_money(adjusted_diff)}."
+        )
     if tieout_ytd is None:
         return "No Modelo 130 tie-out row imported for this period."
     if tieout_delta is None:
@@ -334,6 +369,38 @@ def _dedupe(values: list[str]) -> list[str]:
 
 def _amount(value: str) -> Decimal:
     return parse_amount(value) if value else Decimal("0.00")
+
+
+def _annual_q4_adjustments(path: Path | None) -> dict[str, Decimal]:
+    if path is None or not path.exists():
+        return {}
+    adjustments: dict[str, Decimal] = {}
+    for row in _load_rows(path):
+        year = row.get("year", "").strip()
+        amount_text = row.get("annual_minus_m130_q4", "").strip()
+        status = row.get("status", "").strip().lower()
+        if not status.startswith("filed_"):
+            continue
+        if not year or not amount_text:
+            continue
+        try:
+            amount = parse_amount(amount_text)
+        except ValueError:
+            continue
+        if amount != Decimal("0.00"):
+            adjustments[f"{year}-Q4"] = cents(amount)
+    return adjustments
+
+
+def _usable_annual_adjustment(period: str, imported_diff: Decimal, annual_adjustments: dict[str, Decimal]) -> Decimal:
+    annual_adjustment = annual_adjustments.get(period, Decimal("0.00"))
+    if annual_adjustment <= Decimal("0.00"):
+        return Decimal("0.00")
+    if abs(imported_diff) <= Decimal("0.02"):
+        return Decimal("0.00")
+    if abs(imported_diff - annual_adjustment) <= Decimal("0.02"):
+        return annual_adjustment
+    return Decimal("0.00")
 
 
 def _money(value: Decimal) -> str:
