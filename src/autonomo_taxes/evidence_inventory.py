@@ -6,6 +6,8 @@ from pathlib import Path
 import re
 import zipfile
 
+from .tax_rules import recognize_tax_form_filename
+
 
 @dataclass(frozen=True)
 class EvidenceFile:
@@ -16,10 +18,6 @@ class EvidenceFile:
     size_bytes: int
 
 
-M130_PATTERN = re.compile(r"(?:M130|MOD 130|Mod 130)\s+([1-4])T\s+(20\d{2})", re.I)
-M303_PATTERN = re.compile(r"(?:M303|MOD 303|Mod 303)\s+([1-4])T\s+(20\d{2})", re.I)
-M100_PATTERN = re.compile(r"(?:M100|MOD 100|DRAFT_MOD 100|Mod 100)\s+0A\s+(20\d{2})", re.I)
-M390_PATTERN = re.compile(r"(?:M390|MOD 390|Mod 390)\s+(20\d{2})", re.I)
 REGISTER_PATTERN = re.compile(r"(libro|ledger|register|registro)", re.I)
 ASSET_PATTERN = re.compile(r"(amort|activo|asset|bienes|invers|fixed|depreci)", re.I)
 ARCHIVE_SUFFIXES = {".zip"}
@@ -140,21 +138,10 @@ def _classify_file(root: Path, path: Path) -> EvidenceFile | None:
 
 
 def _tax_report_category(name: str) -> tuple[str | None, str]:
-    for pattern, category in (
-        (M130_PATTERN, "modelo130_report"),
-        (M303_PATTERN, "modelo303_report"),
-    ):
-        match = pattern.search(name)
-        if match:
-            quarter, year = match.group(1), match.group(2)
-            return category, f"{year}-Q{quarter}"
-    match = M100_PATTERN.search(name)
-    if match:
-        return "modelo100_report", match.group(1)
-    match = M390_PATTERN.search(name)
-    if match:
-        return "modelo390_report", match.group(1)
-    return None, ""
+    recognized = recognize_tax_form_filename(name)
+    if recognized is None:
+        return None, ""
+    return recognized.category, recognized.period
 
 
 def _supporting_category(path: Path, root: Path) -> str:
@@ -205,7 +192,7 @@ def _classify_archive_members(root: Path, archive_path: Path) -> tuple[list[Evid
     rows: list[EvidenceFile] = []
     for name in names:
         member_name = Path(name).name
-        category = _archive_member_candidate_category(member_name)
+        category, period = _archive_member_candidate_category(member_name)
         if category is None:
             continue
         rows.append(
@@ -213,21 +200,24 @@ def _classify_archive_members(root: Path, archive_path: Path) -> tuple[list[Evid
                 relative_path=f"{rel_archive}!/{name}",
                 name=member_name,
                 category=category,
-                period="",
+                period=period,
                 size_bytes=0,
             )
         )
     return rows, len(names), []
 
 
-def _archive_member_candidate_category(name: str) -> str | None:
+def _archive_member_candidate_category(name: str) -> tuple[str | None, str]:
+    recognized = recognize_tax_form_filename(name)
+    if recognized is not None:
+        return recognized.category, recognized.period
     if _is_candidate_asset_schedule(name):
-        return ASSET_CATEGORY
+        return ASSET_CATEGORY, ""
     if _is_known_register_false_positive(name):
-        return "archive_source_book_keyword_false_positive"
+        return "archive_source_book_keyword_false_positive", ""
     if _is_candidate_source_book(name):
-        return SOURCE_BOOK_CATEGORY
-    return None
+        return SOURCE_BOOK_CATEGORY, ""
+    return None, ""
 
 
 def _archive_error(path: Path, root: Path, category: str) -> EvidenceFile:

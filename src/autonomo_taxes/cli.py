@@ -294,6 +294,7 @@ from .xolo_dataexport_inventory import (
     write_xolo_dataexport_inventory_markdown,
 )
 from .xolo_questions import build_xolo_questions, write_questions_csv, write_questions_markdown
+from .operational_cli import register_operational_commands, run_operational_handler
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -961,9 +962,15 @@ def main(argv: list[str] | None = None) -> int:
     audit_local_attention.add_argument("--out-csv", type=Path, required=True)
     audit_local_attention.add_argument("--out-md", type=Path, required=True)
 
+    register_operational_commands(subparsers)
+
     args = parser.parse_args(argv)
     config = _load_config(args.config)
     _merge_config(args, config)
+
+    operational_result = run_operational_handler(args)
+    if operational_result is not None:
+        return operational_result
 
     if args.command == "modelo130":
         return _cmd_modelo130(args)

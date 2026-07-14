@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "spain-autonomo-taxes"
 version = "0.1.0"
-description = "Reusable audit toolkit for Spanish autonomo tax declarations."
+description = "SQLite-backed accounting and tax preparation toolkit for a Spanish autonomo."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

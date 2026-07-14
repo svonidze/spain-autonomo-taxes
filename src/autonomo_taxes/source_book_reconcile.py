@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import csv
-from collections import Counter
+from collections import Counter, defaultdict
 from decimal import Decimal
 from pathlib import Path
+import re
 
 from .money import cents, format_es, parse_amount
+from .parsers import parse_any_date
 
 
 SOURCE_BOOK_RECONCILIATION_FIELDS = [
@@ -37,6 +39,8 @@ SOURCE_BOOK_RECONCILIATION_FIELDS = [
 EXPENSE_BOOK_TYPES = {"gastos_book", "compras_gastos_book"}
 ASSET_BOOK_TYPES = {"bienes_inversion_book", "bienes_inversion_or_asset_schedule"}
 TIEOUT_BOOK_TYPES = {"modelo130_source_book_tieout"}
+QUARTER_PERIOD_RE = re.compile(r"^(20\d{2})-Q([1-4])$", re.IGNORECASE)
+ANNUAL_ASSET_MARKER_RE = re.compile(r"^(0A|A|ANUAL|ANNUAL)$", re.IGNORECASE)
 
 
 def build_source_book_reconciliation(
@@ -46,18 +50,25 @@ def build_source_book_reconciliation(
 ) -> list[dict[str, str]]:
     histories = _history_rows(history_audit_csv)
     source_rows = _load_rows(source_book_rows_csv)
-    rows_by_period = _source_rows_by_period(source_rows)
-    tieout_by_period = _tieout_by_period(source_rows)
-    unassigned_rows = _unassigned_rows(source_rows)
+    rows_by_period, tieout_by_period, unassigned_rows, year_issue_notes = _classified_source_rows(source_rows)
     annual_adjustments = _annual_q4_adjustments(annual_comparison_csv)
+    first_period = min(histories, key=_period_sort_key) if histories else ""
 
     output: list[dict[str, str]] = []
     for period in sorted(histories, key=_period_sort_key):
         history = histories[period]
+        period_year = _period_year(period)
+        period_unassigned_rows = [
+            row
+            for row in unassigned_rows
+            if _unassigned_scope(row) in {period, period_year}
+            or (_unassigned_scope(row) == "" and period == first_period)
+        ]
         target_ytd = parse_amount(history["target_casilla_02"])
         target_delta = parse_amount(history["target_casilla_02_delta"])
         period_rows = rows_by_period.get(period, [])
         tieout_rows = tieout_by_period.get(period, [])
+        period_issue_notes = year_issue_notes.get(period_year, [])
         expense_rows = [row for row in period_rows if row["source_book_type"] in EXPENSE_BOOK_TYPES]
         asset_rows = [row for row in period_rows if row["source_book_type"] in ASSET_BOOK_TYPES]
         expense_total, expense_errors = _sum_row_amounts(expense_rows, "irpf_deductible_eur")
@@ -85,7 +96,8 @@ def build_source_book_reconciliation(
                     period_rows=period_rows,
                     skipped_count=skipped_count,
                     amount_error_count=amount_error_count,
-                    unassigned_count=len(unassigned_rows),
+                    unassigned_count=len(period_unassigned_rows),
+                    period_issue_count=len(period_issue_notes),
                     imported_diff=imported_diff,
                     annual_adjustment=annual_adjustment,
                     adjusted_diff=adjusted_diff,
@@ -110,13 +122,14 @@ def build_source_book_reconciliation(
                 "tieout_row_count": str(sum(row_counts[source_type] for source_type in TIEOUT_BOOK_TYPES)),
                 "skipped_row_count": str(skipped_count),
                 "amount_parse_error_count": str(amount_error_count),
-                "unassigned_row_count": str(len(unassigned_rows)),
+                "unassigned_row_count": str(len(period_unassigned_rows)),
                 "source_files": "; ".join(sorted({row.get("source_file", "") for row in period_rows if row.get("source_file", "")})),
                 "notes": _notes(
                     period_rows,
                     skipped_count,
                     amount_errors,
-                    unassigned_rows,
+                    period_unassigned_rows,
+                    period_issue_notes,
                     tieout_ytd,
                     tieout_delta,
                     annual_adjustment,
@@ -187,34 +200,136 @@ def _history_rows(path: Path) -> dict[str, dict[str, str]]:
     return {f"{row['year']}-Q{row['quarter']}": row for row in rows}
 
 
-def _source_rows_by_period(rows: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
-    grouped: dict[str, list[dict[str, str]]] = {}
+def _classified_source_rows(
+    rows: list[dict[str, str]],
+) -> tuple[
+    dict[str, list[dict[str, str]]],
+    dict[str, list[dict[str, str]]],
+    list[dict[str, str]],
+    dict[str, list[str]],
+]:
+    by_period: dict[str, list[dict[str, str]]] = {}
+    tieout_by_period: dict[str, list[dict[str, str]]] = {}
+    unassigned_rows: list[dict[str, str]] = []
+    annual_asset_rows_by_year: dict[str, list[dict[str, str]]] = defaultdict(list)
+    quarterly_asset_rows_by_key: dict[tuple[str, str, str, str], list[dict[str, str]]] = defaultdict(list)
+    year_issue_notes: dict[str, list[str]] = defaultdict(list)
     for row in rows:
-        period = _row_period(row)
-        if period:
-            grouped.setdefault(period, []).append(row)
-    return grouped
-
-
-def _tieout_by_period(rows: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
-    grouped: dict[str, list[dict[str, str]]] = {}
-    for row in rows:
-        if row.get("source_book_type") not in TIEOUT_BOOK_TYPES:
+        source_type = row.get("source_book_type", "")
+        if source_type in ASSET_BOOK_TYPES:
+            period_kind, period_value, issue_note = _classify_asset_row_period(row)
+            if period_kind == "quarter":
+                by_period.setdefault(period_value, []).append(row)
+                quarterly_asset_rows_by_key[_asset_year_key(row, _period_year(period_value))].append(row)
+                continue
+            if period_kind == "annual":
+                annual_asset_rows_by_year[period_value].append(row)
+                continue
+            if period_value:
+                year_issue_notes[period_value].append(issue_note)
+            else:
+                unassigned_rows.append(row)
             continue
-        period = row.get("period", "")
-        if period:
-            grouped.setdefault(period, []).append(row)
-    return grouped
+        period = row.get("period", "").strip()
+        if _is_quarter_period(period):
+            by_period.setdefault(period, []).append(row)
+            if source_type in TIEOUT_BOOK_TYPES:
+                tieout_by_period.setdefault(period, []).append(row)
+            continue
+        unassigned_rows.append(row)
+    _append_annual_asset_issues(annual_asset_rows_by_year, quarterly_asset_rows_by_key, year_issue_notes)
+    return by_period, tieout_by_period, unassigned_rows, {year: _dedupe(notes) for year, notes in year_issue_notes.items()}
 
 
-def _unassigned_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
-    return [row for row in rows if not _row_period(row)]
+def _unassigned_scope(row: dict[str, str]) -> str:
+    for field in ("date", "booking_date"):
+        parsed = parse_any_date(row.get(field, ""))
+        if parsed is not None:
+            return f"{parsed.year}-Q{((parsed.month - 1) // 3) + 1}"
+    source_scope = row.get("source_scope", "").strip()
+    if re.fullmatch(r"20\d{2}", source_scope):
+        return source_scope
+    for field in ("period", "amortization_period", "source_file"):
+        match = re.search(r"20\d{2}", row.get(field, ""))
+        if match:
+            return match.group(0)
+    return ""
 
 
-def _row_period(row: dict[str, str]) -> str:
-    if row.get("source_book_type") in ASSET_BOOK_TYPES:
-        return row.get("amortization_period", "")
-    return row.get("period", "")
+def _classify_asset_row_period(row: dict[str, str]) -> tuple[str, str, str]:
+    raw_period = row.get("amortization_period", "").strip()
+    if _is_quarter_period(raw_period):
+        return "quarter", raw_period, ""
+    if not raw_period:
+        return "invalid", "", ""
+    if _is_annual_asset_marker(raw_period):
+        annual_year = _annual_asset_year(row)
+        if annual_year:
+            return "annual", annual_year, ""
+        return (
+            "invalid",
+            "",
+            "Annual asset marker "
+            f"{_row_period_marker(row)} cannot be mapped to a single asset/year from source_scope={row.get('source_scope', '')!r}.",
+        )
+    annual_year = _annual_asset_year(row)
+    if annual_year:
+        return (
+            "invalid",
+            annual_year,
+            "Unsupported annual asset period "
+            f"{_row_period_marker(row)} for {_asset_year_label(row, annual_year)}.",
+        )
+    return "invalid", "", ""
+
+
+def _append_annual_asset_issues(
+    annual_asset_rows_by_year: dict[str, list[dict[str, str]]],
+    quarterly_asset_rows_by_key: dict[tuple[str, str, str, str], list[dict[str, str]]],
+    year_issue_notes: dict[str, list[str]],
+) -> None:
+    quarterly_totals_by_key: dict[tuple[str, str, str, str], Decimal] = {}
+    quarterly_error_keys: set[tuple[str, str, str, str]] = set()
+    for key, rows in quarterly_asset_rows_by_key.items():
+        total, errors = _sum_row_amounts(rows, "amortization_amount_eur")
+        if errors:
+            quarterly_error_keys.add(key)
+            year_issue_notes[key[0]].append(
+                "Quarterly amortization rows contain malformed amounts and cannot cross-check annual asset rows: "
+                + "; ".join(errors[:5])
+            )
+            continue
+        quarterly_totals_by_key[key] = total
+    for year, annual_rows in annual_asset_rows_by_year.items():
+        annual_rows_by_key: dict[tuple[str, str, str, str], list[dict[str, str]]] = defaultdict(list)
+        for row in annual_rows:
+            annual_rows_by_key[_asset_year_key(row, year)].append(row)
+        for key, key_rows in annual_rows_by_key.items():
+            annual_total, annual_errors = _sum_row_amounts(key_rows, "amortization_amount_eur")
+            if annual_errors:
+                year_issue_notes[year].append(
+                    "Annual asset rows contain malformed amortization amounts and cannot be cross-checked: "
+                    + "; ".join(annual_errors[:5])
+                )
+                continue
+            label = _asset_year_label(key_rows[0], year)
+            if key in quarterly_error_keys:
+                year_issue_notes[year].append(
+                    f"Annual asset row(s) for {label} cannot be cross-checked because matching quarterly amortization rows have malformed amounts."
+                )
+                continue
+            quarterly_total = quarterly_totals_by_key.get(key)
+            if quarterly_total is None:
+                year_issue_notes[year].append(
+                    f"Annual asset row(s) for {label} use {_row_period_marker(key_rows[0])}, "
+                    "but no quarterly amortization row matches this asset/year."
+                )
+                continue
+            if abs(cents(quarterly_total - annual_total)) > Decimal("0.02"):
+                year_issue_notes[year].append(
+                    f"Annual asset row(s) for {label} total {_money(annual_total)}, "
+                    f"but matching quarterly amortization totals {_money(quarterly_total)}."
+                )
 
 
 def _single_tieout_amount(rows: list[dict[str, str]], field: str) -> tuple[Decimal | None, list[str]]:
@@ -270,13 +385,14 @@ def _status(
     skipped_count: int,
     amount_error_count: int,
     unassigned_count: int,
+    period_issue_count: int,
     imported_diff: Decimal,
     annual_adjustment: Decimal,
     adjusted_diff: Decimal,
     tieout_ytd_diff: Decimal | None,
     tieout_delta_diff: Decimal | None,
 ) -> str:
-    if unassigned_count:
+    if unassigned_count or period_issue_count:
         return "import_attention"
     if not period_rows:
         return "no_imported_source_book_rows"
@@ -304,14 +420,17 @@ def _notes(
     skipped_count: int,
     amount_errors: list[str],
     unassigned_rows: list[dict[str, str]],
+    period_issue_notes: list[str],
     tieout_ytd: Decimal | None,
     tieout_delta: Decimal | None,
     annual_adjustment: Decimal,
     adjusted_diff: Decimal,
 ) -> str:
     if unassigned_rows:
-        refs = "; ".join(_row_ref(row) for row in unassigned_rows[:5])
-        return "Imported source-book row(s) have no period/amortization_period and cannot be assigned: " + refs
+        refs = "; ".join(f"{_row_ref(row)} {_row_period_marker(row)}" for row in unassigned_rows[:5])
+        return "Imported source-book row(s) have no valid quarter period and cannot be assigned: " + refs
+    if period_issue_notes:
+        return period_issue_notes[0]
     if not period_rows:
         return "No imported source-book rows for this quarter."
     if skipped_count:
@@ -371,6 +490,45 @@ def _amount(value: str) -> Decimal:
     return parse_amount(value) if value else Decimal("0.00")
 
 
+def _annual_asset_year(row: dict[str, str]) -> str:
+    years = sorted(set(re.findall(r"20\d{2}", row.get("source_scope", ""))))
+    if len(years) == 1:
+        return years[0]
+    return ""
+
+
+def _asset_year_key(row: dict[str, str], year: str) -> tuple[str, str, str, str]:
+    return (
+        year,
+        _asset_key_part(row.get("asset_id", "")) or _asset_key_part(row.get("source_book_line_id", "")),
+        _asset_key_part(row.get("date", "")),
+        _asset_key_part(row.get("amortizable_base_eur", "")),
+    )
+
+
+def _asset_key_part(value: str) -> str:
+    return " ".join(value.strip().casefold().split())
+
+
+def _asset_year_label(row: dict[str, str], year: str) -> str:
+    asset_name = row.get("asset_id") or _row_ref(row)
+    return f"{asset_name!r} in {year}"
+
+
+def _is_quarter_period(period: str) -> bool:
+    return bool(QUARTER_PERIOD_RE.match((period or "").strip()))
+
+
+def _is_annual_asset_marker(period: str) -> bool:
+    return bool(ANNUAL_ASSET_MARKER_RE.match((period or "").strip()))
+
+
+def _row_period_marker(row: dict[str, str]) -> str:
+    if row.get("source_book_type") in ASSET_BOOK_TYPES:
+        return f"amortization_period={row.get('amortization_period', '')!r}"
+    return f"period={row.get('period', '')!r}"
+
+
 def _annual_q4_adjustments(path: Path | None) -> dict[str, Decimal]:
     if path is None or not path.exists():
         return {}
@@ -418,6 +576,10 @@ def _fmt(value: str) -> str:
 def _period_sort_key(period: str) -> tuple[int, int]:
     year, quarter = period.split("-Q", 1)
     return int(year), int(quarter)
+
+
+def _period_year(period: str) -> str:
+    return period.split("-", 1)[0]
 
 
 def _load_rows(path: Path) -> list[dict[str, str]]:
