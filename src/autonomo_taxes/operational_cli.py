@@ -608,22 +608,31 @@ def _cmd_bank_import_revolut(args: argparse.Namespace) -> int:
                 )
             )
         matches = {match.payment_id: match for match in match_revolut_payments(payments, candidates)}
-        imported = []
-        for payment in payments:
-            match = matches[payment.payment_id]
-            transaction_id = match.matched_candidate_ids[0] if match.outcome == "exact" else None
-            row = db.add_payment(
-                transaction_id=transaction_id,
-                paid_on=payment.payment_date.isoformat(),
-                amount_minor=int(payment.amount_original * 100),
-                currency=payment.currency,
-                original_reference=payment.reference,
-                fee_minor=int(payment.fee_original * 100) if payment.fee_original is not None else None,
-                fee_currency=payment.currency if payment.fee_original is not None else None,
-                match_status=match.outcome,
-                source_hash=hashlib.sha256(f"{source_digest}:{payment.payment_id}".encode()).hexdigest(),
-            )
-            imported.append({"payment_id": row["payment_id"], "match": asdict(match)})
+        rollback = sqlite3.connect(":memory:")
+        db.connection.backup(rollback)
+        try:
+            imported = []
+            for payment in payments:
+                match = matches[payment.payment_id]
+                transaction_id = match.matched_candidate_ids[0] if match.outcome == "exact" else None
+                row = db.add_payment(
+                    transaction_id=transaction_id,
+                    paid_on=payment.payment_date.isoformat(),
+                    amount_minor=int(payment.amount_original * 100),
+                    currency=payment.currency,
+                    original_reference=payment.reference,
+                    fee_minor=int(payment.fee_original * 100) if payment.fee_original is not None else None,
+                    fee_currency=payment.currency if payment.fee_original is not None else None,
+                    match_status=match.outcome,
+                    source_hash=hashlib.sha256(f"{source_digest}:{payment.payment_id}".encode()).hexdigest(),
+                )
+                imported.append({"payment_id": row["payment_id"], "match": asdict(match)})
+        except Exception:
+            db.connection.rollback()
+            rollback.backup(db.connection)
+            raise
+        finally:
+            rollback.close()
     _emit({"source_sha256": source_digest, "payments": imported})
     return 0
 
@@ -865,17 +874,46 @@ def _cmd_calculate(args: argparse.Namespace) -> int:
             modelo303_periods = _modelo303_inventory_periods(db, args.year)
             periods = list(modelo303_periods)
         if args.mode == "production":
-            for period_key in periods:
-                if any(row["period_key"] == period_key for row in db.list_periods()):
-                    validation = db.validate_period(period_key)
-                    data_blockers = (
-                        validation["blocking_issues"],
-                        validation["review_documents"],
-                        validation["review_transactions"],
-                        validation["target_derived_fx"],
+            period_rows = {row["period_key"]: row for row in db.list_periods()}
+            current_period = f"{args.year}-Q{args.quarter}" if args.quarter else None
+            if args.form == "130" and current_period is not None:
+                available_quarters = [
+                    quarter
+                    for quarter in range(1, args.quarter + 1)
+                    if f"{args.year}-Q{quarter}" in period_rows
+                ]
+                if not available_quarters:
+                    raise CalculationBlocked(f"{current_period} is missing from the production ledger")
+                first_quarter = min(available_quarters)
+                periods = [f"{args.year}-Q{quarter}" for quarter in range(first_quarter, args.quarter + 1)]
+                missing = [period_key for period_key in periods if period_key not in period_rows]
+                if missing:
+                    raise CalculationBlocked(
+                        f"Production YTD ledger has missing periods: {', '.join(missing)}"
                     )
-                    if any(data_blockers):
-                        raise CalculationBlocked(f"{period_key} has unresolved production accounting data")
+            for period_key in periods:
+                if period_key not in period_rows:
+                    raise CalculationBlocked(f"{period_key} is missing from the production ledger")
+                validation = db.validate_period(period_key)
+                is_current = period_key == current_period
+                obligation_blockers = [
+                    row
+                    for row in validation["unresolved_obligations"]
+                    if not is_current or row["determination"] == "unknown"
+                ]
+                data_blockers = (
+                    validation["blocking_issues"],
+                    obligation_blockers,
+                    validation["review_documents"],
+                    validation["review_transactions"],
+                    validation["target_derived_fx"],
+                )
+                if any(data_blockers):
+                    raise CalculationBlocked(f"{period_key} has unresolved production accounting data")
+                if not is_current and period_rows[period_key]["status"] not in {"closed", "amended"}:
+                    raise CalculationBlocked(
+                        f"Prior YTD period {period_key} must be closed before production calculation"
+                    )
         rows = _tax_rows_from_db(db, args.year, mode=args.mode)
         if args.form == "130" and args.previous_positive_07 is None:
             args.previous_positive_07 = str(_previous_filed_positive(db, args.year, args.quarter))

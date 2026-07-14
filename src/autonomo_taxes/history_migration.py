@@ -237,26 +237,48 @@ def _import_historical_adjustment(
         return False
     period_key = _require_quarter_period(row.get("period", ""))
     amount_minor = _minor_from_text(row.get("annual_adjustment_delta", "0"))
-    if amount_minor == 0:
-        return False
 
-    source_hash = _stable_payload_hash(
+    transaction_source_hash = _stable_payload_hash(
         {"kind": "verify_history_annual_close_adjustment", "row": row}
     )
-    external_key = _external_key("verify-history-adjustment", period_key, source_hash)
-    existing = db.connection.execute(
+    treatment_source_hash = _stable_payload_hash(
+        {"kind": "verify_history_adjustment_treatment", "row": row}
+    )
+    existing_rows = db.connection.execute(
         """
-        SELECT transaction_id FROM transactions
-        WHERE external_key = ? AND source_hash = ?
+        SELECT t.transaction_id, t.external_key, t.source_hash,
+               tt.source_hash AS treatment_source_hash
+        FROM transactions t
+        JOIN periods p ON p.period_id = t.period_id
+        LEFT JOIN tax_treatments tt
+          ON tt.transaction_id = t.transaction_id
+         AND tt.treatment_type = 'adjustment'
+         AND tt.jurisdiction = 'ES'
+        WHERE p.period_key = ?
+          AND t.entry_type = 'verify_history_adjustment'
         """,
-        (external_key, source_hash),
-    ).fetchone()
-    if existing is not None:
+        (period_key,),
+    ).fetchall()
+    if len(existing_rows) > 1:
+        raise ValueError(f"Multiple verify-history adjustments exist for {period_key}")
+    existing = existing_rows[0] if existing_rows else None
+    if amount_minor == 0 and existing is None:
+        return False
+    if (
+        existing is not None
+        and existing["source_hash"] == transaction_source_hash
+        and existing["treatment_source_hash"] == treatment_source_hash
+    ):
         return True
 
     period_end = _quarter_end(period_key)
+    external_key = _external_key("verify-history-adjustment", period_key)
     transaction = db.add_transaction(
-        transaction_id=_uuid_for("verify-history-adjustment", period_key, source_hash),
+        transaction_id=(
+            existing["transaction_id"]
+            if existing is not None
+            else _uuid_for("verify-history-adjustment", period_key)
+        ),
         external_key=external_key,
         period_key=period_key,
         transaction_date=period_end,
@@ -271,7 +293,7 @@ def _import_historical_adjustment(
         currency="EUR",
         direction="debit",
         lifecycle_status="approved",
-        source_hash=source_hash,
+        source_hash=transaction_source_hash,
     )
     db.add_detailed_tax_treatment(
         transaction_id=transaction["transaction_id"],
@@ -289,9 +311,7 @@ def _import_historical_adjustment(
             f"Verification-only annual/Q4 bridge. {row.get('notes', '').strip()} "
             "It is excluded from production calculations."
         ).strip(),
-        source_hash=_stable_payload_hash(
-            {"kind": "verify_history_adjustment_treatment", "row": row}
-        ),
+        source_hash=treatment_source_hash,
     )
     return True
 
@@ -486,8 +506,23 @@ def _import_quarterly_row(db: LedgerDB, *, row: dict[str, str], import_batch_id:
         return
     period_key = _require_quarter_period(row.get("period", ""))
     kind = QUARTERLY_BOOK_TYPES[row["source_book_type"].strip()]
-    counterparty_id = _upsert_counterparty(db, row)
     amount_minor = _minor_from_text(row.get("gross_eur", "0"))
+    taxable_base_minor = _optional_minor(row.get("deductible_base_eur"))
+    deductible_irpf_minor = _optional_minor(row.get("irpf_deductible_eur"))
+    if kind == "income":
+        if (row.get("vat_treatment") or "").strip() and taxable_base_minor is None:
+            raise ValueError(
+                "VAT-marked income requires an explicit taxable base; "
+                "gross cannot be assumed VAT-free"
+            )
+        taxable_base_minor = taxable_base_minor if taxable_base_minor is not None else amount_minor
+        deductible_irpf_minor = 0
+    else:
+        taxable_base_minor = taxable_base_minor if taxable_base_minor is not None else amount_minor
+        deductible_irpf_minor = deductible_irpf_minor if deductible_irpf_minor is not None else amount_minor
+
+    vat_minor = amount_minor - taxable_base_minor
+    counterparty_id = _upsert_counterparty(db, row)
     document = _upsert_source_document(
         db,
         row=row,
@@ -517,19 +552,6 @@ def _import_quarterly_row(db: LedgerDB, *, row: dict[str, str], import_batch_id:
         source_hash=transaction_source_hash,
     )
 
-    taxable_base_minor = _optional_minor(row.get("deductible_base_eur"))
-    deductible_irpf_minor = _optional_minor(row.get("irpf_deductible_eur"))
-    if kind == "income":
-        taxable_base_minor = taxable_base_minor if taxable_base_minor is not None else amount_minor
-        deductible_irpf_minor = 0
-    else:
-        taxable_base_minor = taxable_base_minor if taxable_base_minor is not None else amount_minor
-        deductible_irpf_minor = deductible_irpf_minor if deductible_irpf_minor is not None else amount_minor
-
-    vat_minor = None
-    if taxable_base_minor is not None:
-        vat_minor = amount_minor - taxable_base_minor
-
     db.add_detailed_tax_treatment(
         transaction_id=transaction["transaction_id"],
         treatment_type=kind,
@@ -551,12 +573,28 @@ def _import_annual_asset_row(db: LedgerDB, *, row: dict[str, str], import_batch_
     line_key = _row_line_key(row)
     year = _asset_year(row)
     annual_period_key = year
-    asset_code = _external_key(
+    stable_asset_code = _external_key(
         "asset",
         row.get("asset_id", ""),
         row.get("date", ""),
-        row.get("amortizable_base_eur", ""),
     )
+    identity_rows = db.connection.execute(
+        """
+        SELECT DISTINCT a.asset_id, a.asset_code
+        FROM assets a
+        JOIN amortization_entries ae ON ae.asset_id = a.asset_id
+        WHERE ae.entry_kind = 'annual_evidence'
+          AND ae.tax_year = ?
+          AND ae.source_book_line_id = ?
+        """,
+        (int(year), _source_book_line_id(row)),
+    ).fetchall()
+    if len(identity_rows) > 1:
+        raise ValueError(
+            f"Multiple assets map to annual source row {_source_book_line_id(row)!r} for {year}"
+        )
+    # Preserve the code of a database imported before stable asset identities existed.
+    asset_code = identity_rows[0]["asset_code"] if identity_rows else stable_asset_code
     entry_source_hash = _stable_payload_hash(
         {"kind": "amortization_entry", "row": row, "period": annual_period_key}
     )
@@ -662,6 +700,27 @@ def _ensure_derived_quarter_schedule(
         tax_year=year,
         placed_in_service_on=placed_on,
     )
+    desired_periods = {period_key for period_key, _ in allocations}
+    derived_prefix = f"{_source_book_line_id(row)}:derived:"
+    existing_derived = db.connection.execute(
+        """
+        SELECT ae.amortization_entry_id, ae.source_book_line_id, p.period_key
+        FROM amortization_entries ae
+        JOIN periods p ON p.period_id = ae.period_id
+        WHERE ae.asset_id = ?
+          AND ae.entry_kind = 'quarter_schedule'
+          AND ae.tax_year = ?
+        """,
+        (asset_id, year),
+    ).fetchall()
+    for existing in existing_derived:
+        source_line = existing["source_book_line_id"] or ""
+        if (
+            source_line.startswith(derived_prefix)
+            and existing["period_key"] not in desired_periods
+        ):
+            db.delete_amortization_entry(existing["amortization_entry_id"])
+
     for period_key, amount_minor in allocations:
         source_hash = _stable_payload_hash(
             {

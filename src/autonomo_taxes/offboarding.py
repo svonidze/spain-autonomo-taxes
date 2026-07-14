@@ -34,7 +34,10 @@ def build_offboarding_manifest(
     *,
     category_overrides: Mapping[str, str] | None = None,
 ) -> list[dict[str, str]]:
-    overrides = {str(key): value for key, value in (category_overrides or {}).items()}
+    overrides = {
+        str(Path(key).resolve()).casefold(): value
+        for key, value in (category_overrides or {}).items()
+    }
     rows: list[dict[str, str]] = []
     expanded: dict[str, Path] = {}
     for raw_path in paths:
@@ -49,8 +52,8 @@ def build_offboarding_manifest(
             expanded[str(candidate.resolve()).casefold()] = candidate
 
     for path in sorted(expanded.values(), key=lambda item: str(item).lower()):
-        category = overrides.get(str(path)) or classify_offboarding_artifact(path)
         resolved = path.resolve()
+        category = overrides.get(str(resolved).casefold()) or classify_offboarding_artifact(path)
         rows.append(
             {
                 "path": str(resolved),
