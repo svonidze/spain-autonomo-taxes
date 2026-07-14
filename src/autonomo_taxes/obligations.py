@@ -255,7 +255,8 @@ def _modelo216(
             return "not_due", "Complete counterparty facts show no non-resident income reportable under IRNR."
     return (
         "unknown",
-        "Modelo 216 depends on non-resident payment, treaty, and tax-residence-certificate facts that were not fully provided.",
+        "Modelo 216 depends on whether any reviewed payment is income reportable under IRNR. "
+        "Supplier identity, country, and expense treatment alone do not determine that.",
     )
 
 

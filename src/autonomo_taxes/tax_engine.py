@@ -434,9 +434,12 @@ def calculate_retention_rows(
     if withholding_type == "nonresident":
         values["income_count"] = Decimal(len(selected))
         values["negative_return"] = "yes" if selected and values["withholding"] == ZERO else "no"
-        warnings = (
-            "Treaty relief requires a valid tax-residence certificate and does not by itself remove Modelo 216/296 reporting.",
-        )
+        if any(row.withholding_eur == ZERO for row in selected):
+            warnings = (
+                "Zero withholding on an explicitly classified IRNR row does not establish treaty relief. "
+                "This calculator does not decide treaty applicability; retain residence evidence only "
+                "when the reviewed tax treatment relies on a treaty.",
+            )
     return CalculationResult(
         form,
         period,
