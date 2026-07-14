@@ -99,8 +99,19 @@ def migrate_xolo_history(
         )
         counts["import_batches"] += 1
         period_key = _reconciliation_period_key(reconciliation_path, reconciliation_rows)
+        source_book_evidence = _source_book_reconciliation_index(source_rows)
         active_subject_ids: set[str] = set()
         for row in reconciliation_rows:
+            resolution_reason = _source_book_resolution_reason(row, source_book_evidence)
+            if resolution_reason is not None:
+                counts["reconciliation_rows_superseded_by_source_book"] += 1
+                counts["resolved_reconciliation_issues"] += _resolve_reconciliation_subject(
+                    db,
+                    period_key=period_key,
+                    subject_id=_reconciliation_row_key(row, period_key),
+                    reason=resolution_reason,
+                )
+                continue
             issue = _import_reconciliation_issue(
                 db,
                 row=row,
@@ -598,22 +609,71 @@ def _import_annual_asset_row(db: LedgerDB, *, row: dict[str, str], import_batch_
     entry_source_hash = _stable_payload_hash(
         {"kind": "amortization_entry", "row": row, "period": annual_period_key}
     )
+    counterparty_id, _ = _counterparty_identity(row)
+    annual_amount_minor = _minor_from_text(row.get("amortization_amount_eur", "0"))
+    amortizable_base_minor = _optional_minor(row.get("amortizable_base_eur"))
+
+    acquisition = _find_acquisition_transaction(
+        db,
+        counterparty_id=counterparty_id,
+        issued_on=_normalize_date(row.get("date", "")),
+    )
+    business_use_ratio = None
+    stored_amortizable_base_minor = amortizable_base_minor
+    stored_cost_minor = (
+        amortizable_base_minor if amortizable_base_minor is not None else annual_amount_minor
+    )
+    if acquisition is not None and amortizable_base_minor is not None:
+        acquisition_base = int(acquisition["taxable_base_minor"] or 0)
+        if acquisition_base > 0 and amortizable_base_minor <= acquisition_base:
+            business_use_ratio = amortizable_base_minor / acquisition_base
+            stored_amortizable_base_minor = acquisition_base
+            stored_cost_minor = int(
+                acquisition["amount_eur_minor"]
+                or acquisition["amount_minor"]
+                or acquisition_base
+            )
+
+    placed_in_service_on = _normalize_date(row.get("date", ""))
+    annual_rate_basis_points = _basis_points_from_text(row.get("rate_or_life", ""))
+    iva_treatment = (row.get("vat_treatment") or "unknown").strip() or "unknown"
+    asset_source_hash = _stable_payload_hash(
+        {
+            "kind": "asset",
+            "asset_code": asset_code,
+            "placed_in_service_on": placed_in_service_on,
+        }
+    )
     complete_existing = db.connection.execute(
         """
-        SELECT a.asset_id
+        SELECT a.*
         FROM assets a
         JOIN amortization_entries ae ON ae.asset_id = a.asset_id
         WHERE a.asset_code = ? AND ae.source_hash = ?
         """,
         (asset_code, entry_source_hash),
     ).fetchone()
-    if complete_existing is not None:
+    acquisition_transaction_id = (
+        acquisition["transaction_id"] if acquisition is not None else None
+    )
+    if complete_existing is not None and _asset_import_matches(
+        complete_existing,
+        cost_minor=stored_cost_minor,
+        acquisition_transaction_id=acquisition_transaction_id,
+        placed_in_service_on=placed_in_service_on,
+        source_hash=asset_source_hash,
+        amortizable_base_minor=stored_amortizable_base_minor,
+        iva_treatment=iva_treatment,
+        business_use_ratio=business_use_ratio,
+        annual_rate_basis_points=annual_rate_basis_points,
+    ):
         return _ensure_derived_quarter_schedule(
             db,
             asset_id=complete_existing["asset_id"],
             row=row,
             year=int(year),
         )
+
     db.ensure_period(
         annual_period_key,
         starts_on=f"{year}-01-01",
@@ -622,8 +682,6 @@ def _import_annual_asset_row(db: LedgerDB, *, row: dict[str, str], import_batch_
         source_hash=_stable_payload_hash({"kind": "annual_period", "year": year}),
     )
     counterparty_id = _upsert_counterparty(db, row)
-    annual_amount_minor = _minor_from_text(row.get("amortization_amount_eur", "0"))
-    amortizable_base_minor = _optional_minor(row.get("amortizable_base_eur"))
     document = _upsert_source_document(
         db,
         row=row,
@@ -633,40 +691,26 @@ def _import_annual_asset_row(db: LedgerDB, *, row: dict[str, str], import_batch_
         period_key=None,
         number_override=(row.get("asset_id") or "").strip() or None,
     )
-
-    acquisition = _find_acquisition_transaction(
-        db,
-        counterparty_id=counterparty_id,
-        issued_on=_normalize_date(row.get("date", "")),
-    )
-    business_use_ratio = None
-    if acquisition is not None and amortizable_base_minor is not None:
-        acquisition_base = int(acquisition["taxable_base_minor"] or 0)
-        if acquisition_base > 0 and amortizable_base_minor <= acquisition_base:
-            business_use_ratio = amortizable_base_minor / acquisition_base
+    existing_asset = complete_existing or db.connection.execute(
+        "SELECT * FROM assets WHERE asset_code = ?",
+        (asset_code,),
+    ).fetchone()
 
     asset = db.add_asset(
         asset_code=asset_code,
-        cost_minor=amortizable_base_minor if amortizable_base_minor is not None else annual_amount_minor,
+        cost_minor=stored_cost_minor,
         currency="EUR",
         depreciation_method="xolo_annual_evidence_active_day_schedule",
-        source_hash=_stable_payload_hash(
-            {
-                "kind": "asset",
-                "asset_code": asset_code,
-                "placed_in_service_on": _normalize_date(row.get("date", "")),
-            }
-        ),
+        source_hash=asset_source_hash,
         document_id=document["document_id"],
-        acquisition_transaction_id=(
-            acquisition["transaction_id"] if acquisition is not None else None
-        ),
-        placed_in_service_on=_normalize_date(row.get("date", "")),
-        amortizable_base_minor=amortizable_base_minor,
-        iva_treatment=(row.get("vat_treatment") or "unknown").strip() or "unknown",
+        acquisition_transaction_id=acquisition_transaction_id,
+        placed_in_service_on=placed_in_service_on,
+        amortizable_base_minor=stored_amortizable_base_minor,
+        iva_treatment=iva_treatment,
         business_use_ratio=business_use_ratio,
-        annual_rate_basis_points=_basis_points_from_text(row.get("rate_or_life", "")),
-        advisor_decision=None,
+        annual_rate_basis_points=annual_rate_basis_points,
+        advisor_decision=(existing_asset["advisor_decision"] if existing_asset else None),
+        advisor_decision_on=(existing_asset["advisor_decision_on"] if existing_asset else None),
     )
     db.add_amortization_entry(
         asset_id=asset["asset_id"],
@@ -683,6 +727,40 @@ def _import_annual_asset_row(db: LedgerDB, *, row: dict[str, str], import_batch_
         asset_id=asset["asset_id"],
         row=row,
         year=int(year),
+    )
+
+
+def _asset_import_matches(
+    asset: Any,
+    *,
+    cost_minor: int,
+    acquisition_transaction_id: str | None,
+    placed_in_service_on: str,
+    source_hash: str,
+    amortizable_base_minor: int | None,
+    iva_treatment: str,
+    business_use_ratio: float | None,
+    annual_rate_basis_points: int | None,
+) -> bool:
+    existing_ratio = asset["business_use_ratio"]
+    ratio_matches = (
+        existing_ratio is None and business_use_ratio is None
+    ) or (
+        existing_ratio is not None
+        and business_use_ratio is not None
+        and abs(float(existing_ratio) - business_use_ratio) < 1e-12
+    )
+    return (
+        int(asset["cost_minor"]) == cost_minor
+        and asset["currency"] == "EUR"
+        and asset["depreciation_method"] == "xolo_annual_evidence_active_day_schedule"
+        and asset["acquisition_transaction_id"] == acquisition_transaction_id
+        and asset["placed_in_service_on"] == placed_in_service_on
+        and asset["source_hash"] == source_hash
+        and asset["amortizable_base_minor"] == amortizable_base_minor
+        and asset["iva_treatment"] == iva_treatment
+        and ratio_matches
+        and asset["annual_rate_basis_points"] == annual_rate_basis_points
     )
 
 
@@ -802,7 +880,7 @@ def _find_acquisition_transaction(
 ) -> dict[str, Any] | None:
     row = db.connection.execute(
         """
-        SELECT t.transaction_id, tt.taxable_base_minor
+        SELECT t.transaction_id, t.amount_minor, t.amount_eur_minor, tt.taxable_base_minor
         FROM transactions t
         JOIN documents d ON d.document_id = t.document_id
         JOIN tax_treatments tt ON tt.transaction_id = t.transaction_id
@@ -829,13 +907,7 @@ def _import_reconciliation_issue(
     if status not in UNRESOLVED_RECONCILIATION_STATUSES:
         return None
 
-    row_key = _external_key(
-        "reconcile-row",
-        period_key,
-        row.get("xolo_id", ""),
-        row.get("number", ""),
-        row.get("date", ""),
-    )
+    row_key = _reconciliation_row_key(row, period_key)
     issue_source_hash = _stable_payload_hash(
         {"kind": "validation_issue", "period_key": period_key, "row": row}
     )
@@ -875,6 +947,105 @@ def _import_reconciliation_issue(
     }
 
 
+def _source_book_reconciliation_index(
+    source_rows: list[dict[str, str]],
+) -> dict[tuple[str, str, str], list[dict[str, str]]]:
+    index: dict[tuple[str, str, str], list[dict[str, str]]] = {}
+    for row in source_rows:
+        if (row.get("import_status") or "imported").strip().lower() != "imported":
+            continue
+        if (row.get("source_book_type") or "").strip() not in QUARTERLY_BOOK_TYPES:
+            continue
+        if not (row.get("irpf_deductible_eur") or "").strip():
+            continue
+        key = _source_book_evidence_key(
+            date_text=row.get("date", ""),
+            party=row.get("supplier", ""),
+            number=row.get("document_number", ""),
+        )
+        index.setdefault(key, []).append(row)
+    return index
+
+
+def _source_book_resolution_reason(
+    reconciliation_row: dict[str, str],
+    source_book_evidence: dict[tuple[str, str, str], list[dict[str, str]]],
+) -> str | None:
+    status = (reconciliation_row.get("status") or "").strip().lower()
+    if status not in {
+        "amount_mismatch",
+        "pending_confirmation",
+        "deductibility_pending_confirmation",
+    }:
+        return None
+    key = _source_book_evidence_key(
+        date_text=reconciliation_row.get("date", ""),
+        party=reconciliation_row.get("recipient", ""),
+        number=reconciliation_row.get("number", ""),
+    )
+    matches = source_book_evidence.get(key, [])
+    if len(matches) != 1:
+        return None
+    evidence = matches[0]
+    deductible = _amount_text(evidence.get("irpf_deductible_eur"))
+    source_line = _source_book_line_id(evidence) or _row_line_key(evidence)
+    return (
+        f"Official Xolo source-book row {source_line} records IRPF deductible EUR "
+        f"{deductible}; it supersedes the earlier {status} reconciliation."
+    )
+
+
+def _source_book_evidence_key(
+    *,
+    date_text: str,
+    party: str,
+    number: str,
+) -> tuple[str, str, str]:
+    return (
+        _normalize_date(date_text),
+        "".join(character for character in party.casefold() if character.isalnum()),
+        "".join(character for character in number.casefold() if character.isalnum()),
+    )
+
+
+def _reconciliation_row_key(row: dict[str, str], period_key: str) -> str:
+    return _external_key(
+        "reconcile-row",
+        period_key,
+        row.get("xolo_id", ""),
+        row.get("number", ""),
+        row.get("date", ""),
+    )
+
+
+def _resolve_reconciliation_subject(
+    db: LedgerDB,
+    *,
+    period_key: str,
+    subject_id: str,
+    reason: str,
+) -> int:
+    open_rows = db.connection.execute(
+        """
+        SELECT vi.validation_issue_id, vi.row_version
+        FROM validation_issues vi
+        JOIN periods p ON p.period_id = vi.period_id
+        WHERE p.period_key = ?
+          AND vi.subject_table = 'xolo_expense_reconcile'
+          AND vi.subject_id = ?
+          AND vi.issue_status = 'open'
+        """,
+        (period_key, subject_id),
+    ).fetchall()
+    for row in open_rows:
+        db.resolve_issue(
+            row["validation_issue_id"],
+            reason=reason,
+            expected_row_version=row["row_version"],
+        )
+    return len(open_rows)
+
+
 def _resolve_stale_reconciliation_issues(
     db: LedgerDB,
     *,
@@ -907,15 +1078,20 @@ def _resolve_stale_reconciliation_issues(
 
 
 def _upsert_counterparty(db: LedgerDB, row: dict[str, str]) -> str:
-    supplier = (row.get("supplier") or row.get("recipient") or "Unknown counterparty").strip()
+    counterparty_id, supplier = _counterparty_identity(row)
     counterparty = db.upsert_counterparty(
-        counterparty_id=_uuid_for("counterparty", supplier.casefold()),
+        counterparty_id=counterparty_id,
         external_key=_external_key("counterparty", supplier.casefold()),
         display_name=supplier,
         country_code="ZZ",
         source_hash=_stable_payload_hash({"kind": "counterparty", "supplier": supplier}),
     )
     return counterparty["counterparty_id"]
+
+
+def _counterparty_identity(row: dict[str, str]) -> tuple[str, str]:
+    supplier = (row.get("supplier") or row.get("recipient") or "Unknown counterparty").strip()
+    return _uuid_for("counterparty", supplier.casefold()), supplier
 
 
 def _upsert_source_document(

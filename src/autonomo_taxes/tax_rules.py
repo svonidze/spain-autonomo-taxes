@@ -11,8 +11,8 @@ from .money import cents
 
 TaxFormCadence = Literal["quarterly", "annual"]
 
-QUARTERLY_FORM_CODES = ("130", "303", "349", "111", "115")
-ANNUAL_FORM_CODES = ("390", "347", "190", "180", "100", "714", "720", "721")
+QUARTERLY_FORM_CODES = ("130", "303", "349", "111", "115", "216")
+ANNUAL_FORM_CODES = ("390", "347", "190", "180", "296", "100", "714", "720", "721")
 ALL_FORM_CODES = QUARTERLY_FORM_CODES + ANNUAL_FORM_CODES
 DIFFICULT_EXPENSE_CAP_EUR = Decimal("2000.00")
 
@@ -108,6 +108,21 @@ FORM_RULES: dict[str, FormRule] = {
         category="modelo180_report",
         cadence="annual",
         source_citation="AEAT Modelo 180: Resumen anual de retenciones por arrendamiento de inmuebles urbanos.",
+    ),
+    "216": FormRule(
+        code="216",
+        category="modelo216_report",
+        cadence="quarterly",
+        source_citation=(
+            "AEAT Modelo 216: IRNR. Retenciones e ingresos a cuenta sobre rentas obtenidas "
+            "sin establecimiento permanente, incluidas declaraciones negativas por exencion de convenio."
+        ),
+    ),
+    "296": FormRule(
+        code="296",
+        category="modelo296_report",
+        cadence="annual",
+        source_citation="AEAT Modelo 296: Resumen anual de retenciones e ingresos a cuenta del IRNR.",
     ),
     "100": FormRule(
         code="100",

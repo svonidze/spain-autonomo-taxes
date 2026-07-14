@@ -46,6 +46,11 @@ MODELO347_RULE_SOURCE = (
     "declaraciones-informativas/modelo-347-decla_____racion-anual-operaciones-personas_/"
     "importe-operaciones.html"
 )
+WITHHOLDING_TYPE_BY_TAX_CODE = {
+    "professional_withholding": "professional",
+    "rent_withholding": "rent",
+    "nonresident_income": "nonresident",
+}
 
 
 class CalculationBlocked(ValueError):
@@ -405,7 +410,7 @@ def calculate_retention_rows(
     quarter: int | None,
     withholding_type: str,
 ) -> CalculationResult:
-    if withholding_type not in {"professional", "rent"}:
+    if withholding_type not in {"professional", "rent", "nonresident"}:
         raise ValueError(f"Unsupported withholding type: {withholding_type}")
     selected = [
         row
@@ -417,17 +422,27 @@ def calculate_retention_rows(
     form = "111" if withholding_type == "professional" and quarter else "190"
     if withholding_type == "rent":
         form = "115" if quarter else "180"
+    if withholding_type == "nonresident":
+        form = "216" if quarter else "296"
     period = f"{year}-Q{quarter}" if quarter else str(year)
     values = {
         "recipient_count": Decimal(len({row.counterparty_id for row in selected})),
         "base": _sum(selected, "taxable_base_eur"),
         "withholding": _sum(selected, "withholding_eur"),
     }
+    warnings: tuple[str, ...] = ()
+    if withholding_type == "nonresident":
+        values["income_count"] = Decimal(len(selected))
+        values["negative_return"] = "yes" if selected and values["withholding"] == ZERO else "no"
+        warnings = (
+            "Treaty relief requires a valid tax-residence certificate and does not by itself remove Modelo 216/296 reporting.",
+        )
     return CalculationResult(
         form,
         period,
         values,
         {"withholding": tuple(row.transaction_id for row in selected)},
+        warnings,
     )
 
 

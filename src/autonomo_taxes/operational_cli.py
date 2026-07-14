@@ -21,6 +21,7 @@ from .tax_engine import (
     CalculationBlocked,
     CalculationResult,
     TaxRow,
+    WITHHOLDING_TYPE_BY_TAX_CODE,
     calculate_modelo100_business_support,
     calculate_modelo130_rows,
     calculate_modelo303_rows,
@@ -149,11 +150,21 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     period_validate = period_sub.add_parser("validate")
     _db_arg(period_validate)
     period_validate.add_argument("period")
+    period_validate.add_argument(
+        "--allow-authoritative-history",
+        action="store_true",
+        help="Accept approved Xolo source-book rows only when immutable lineage and filed-period evidence exist",
+    )
     period_validate.set_defaults(_operational_handler=_cmd_period_validate)
     period_close = period_sub.add_parser("close")
     _db_arg(period_close)
     period_close.add_argument("period")
     period_close.add_argument("--expected-row-version", type=int)
+    period_close.add_argument(
+        "--allow-authoritative-history",
+        action="store_true",
+        help="Accept approved Xolo source-book rows only when immutable lineage and filed-period evidence exist",
+    )
     period_close.set_defaults(_operational_handler=_cmd_period_close)
     period_amend = period_sub.add_parser("amend")
     _db_arg(period_amend)
@@ -237,11 +248,16 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     calculate.add_argument(
         "--form",
         required=True,
-        choices=["130", "303", "349", "390", "347", "111", "190", "115", "180", "100"],
+        choices=["130", "303", "349", "390", "347", "111", "190", "115", "180", "216", "296", "100"],
     )
     calculate.add_argument("--year", type=int, required=True)
     calculate.add_argument("--quarter", type=int, choices=[1, 2, 3, 4])
     calculate.add_argument("--mode", choices=["production", "verify_history"], default="production")
+    calculate.add_argument(
+        "--allow-authoritative-history",
+        action="store_true",
+        help="Use approved Xolo source-book rows with immutable lineage and filed-period evidence in production",
+    )
     calculate.add_argument(
         "--difficult-expenses-policy",
         choices=["calculate", "source_book_total", "exclude_by_documented_decision"],
@@ -524,7 +540,10 @@ def _cmd_issues_resolve(args: argparse.Namespace) -> int:
 
 def _cmd_period_validate(args: argparse.Namespace) -> int:
     with open_ledger_db(args.db) as db:
-        validation = db.validate_period(args.period)
+        validation = db.validate_period(
+            args.period,
+            allow_authoritative_history=args.allow_authoritative_history,
+        )
         if len(args.period) == 4 and args.period.isdigit():
             validation["asset_year"] = db.validate_asset_year(int(args.period))
             validation["ready"] = validation["ready"] and validation["asset_year"]["ready"]
@@ -534,7 +553,13 @@ def _cmd_period_validate(args: argparse.Namespace) -> int:
 
 def _cmd_period_close(args: argparse.Namespace) -> int:
     with open_ledger_db(args.db) as db:
-        _emit(db.close_period(args.period, expected_row_version=args.expected_row_version))
+        _emit(
+            db.close_period(
+                args.period,
+                expected_row_version=args.expected_row_version,
+                allow_authoritative_history=args.allow_authoritative_history,
+            )
+        )
     return 0
 
 
@@ -894,7 +919,10 @@ def _cmd_calculate(args: argparse.Namespace) -> int:
             for period_key in periods:
                 if period_key not in period_rows:
                     raise CalculationBlocked(f"{period_key} is missing from the production ledger")
-                validation = db.validate_period(period_key)
+                validation = db.validate_period(
+                    period_key,
+                    allow_authoritative_history=args.allow_authoritative_history,
+                )
                 is_current = period_key == current_period
                 obligation_blockers = [
                     row
@@ -914,7 +942,12 @@ def _cmd_calculate(args: argparse.Namespace) -> int:
                     raise CalculationBlocked(
                         f"Prior YTD period {period_key} must be closed before production calculation"
                     )
-        rows = _tax_rows_from_db(db, args.year, mode=args.mode)
+        rows = _tax_rows_from_db(
+            db,
+            args.year,
+            mode=args.mode,
+            allow_authoritative_history=args.allow_authoritative_history,
+        )
         if args.form == "130" and args.previous_positive_07 is None:
             args.previous_positive_07 = str(_previous_filed_positive(db, args.year, args.quarter))
         if args.form == "130" and args.previous_negative_carry is None:
@@ -933,6 +966,7 @@ def _cmd_calculate(args: argparse.Namespace) -> int:
             payload["filed_baseline"] = baseline
             payload["diff_from_filed"] = _calculation_diff(payload["values"], baseline["filed_values"])
     payload["calculation_mode"] = args.mode
+    payload["authoritative_history_mode"] = bool(args.allow_authoritative_history)
     payload["difficult_expenses_policy"] = args.difficult_expenses_policy
     if args.decision_ref:
         payload["decision_ref"] = args.decision_ref
@@ -1040,6 +1074,13 @@ def _calculate(
             quarter=args.quarter if args.form == "115" else None,
             withholding_type="rent",
         )
+    if args.form in {"216", "296"}:
+        return calculate_retention_rows(
+            rows,
+            year=args.year,
+            quarter=args.quarter if args.form == "216" else None,
+            withholding_type="nonresident",
+        )
     return calculate_modelo100_business_support(
         rows,
         year=args.year,
@@ -1083,13 +1124,22 @@ def _tax_rows_from_db(
     year: int,
     *,
     mode: str = "production",
+    allow_authoritative_history: bool = False,
 ) -> list[TaxRow]:
+    authoritative_ids = {
+        row["transaction_id"]
+        for row in db.list_authoritative_history_transactions(year=year)
+    } if mode == "production" and allow_authoritative_history else set()
     grouped: dict[str, dict[str, Any]] = {}
     for raw in db.list_tax_rows(year=year):
         if raw["entry_type"] == "verify_history_adjustment" and mode != "verify_history":
             continue
         if mode == "production" and raw["lifecycle_status"] not in {"posted", "included_in_snapshot"}:
-            continue
+            if not (
+                raw["lifecycle_status"] == "approved"
+                and raw["transaction_id"] in authoritative_ids
+            ):
+                continue
         if int(raw.get("asset_count") or 0) > 1:
             raise CalculationBlocked(
                 f"Transaction {raw['transaction_id']} is linked to multiple assets and must be split before tax calculation"
@@ -1146,7 +1196,10 @@ def _tax_rows_from_db(
                 include_modelo130=bool(row.get("include_modelo130")),
                 include_modelo303=bool(row.get("include_modelo303")),
                 include_modelo347=bool(row.get("include_modelo347")),
-                withholding_type=("rent" if row.get("tax_code") == "rent_withholding" else "professional" if row.get("withholding_minor") else ""),
+                withholding_type=WITHHOLDING_TYPE_BY_TAX_CODE.get(
+                    row.get("tax_code") or "",
+                    "professional" if row.get("withholding_minor") else "",
+                ),
                 asset_id=row.get("asset_id") or "",
             )
         )

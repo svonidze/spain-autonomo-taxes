@@ -11,11 +11,16 @@ REQUIRED_OFFBOARDING_CATEGORIES = (
     "books",
     "forms",
     "justificantes_csv_nrc",
+    "invoice_channel_evidence",
+)
+
+OPTIONAL_OFFBOARDING_CATEGORIES = (
     "presenter_role",
     "rectification_docs",
-    "invoice_channel_evidence",
     "advisor_signoff",
 )
+
+OFFBOARDING_CATEGORIES = REQUIRED_OFFBOARDING_CATEGORIES + OPTIONAL_OFFBOARDING_CATEGORIES
 
 _CATEGORY_PATTERNS = {
     "exports": re.compile(r"(xolo[_ -]?export|data[_ -]?export|export[_ -]?bundle|standard[_ -]?export)", re.I),
@@ -89,7 +94,10 @@ def verify_offboarding_manifest(rows: Iterable[Mapping[str, str]]) -> dict[str, 
         expected_hash = row.get("sha256", "")
         if re.fullmatch(r"[0-9a-f]{64}", expected_hash) and sha256_file(path) != expected_hash:
             hash_mismatch_paths.append(raw_path)
-    category_counts = {category: sum(1 for row in normalized_rows if row.get("category") == category) for category in REQUIRED_OFFBOARDING_CATEGORIES}
+    category_counts = {
+        category: sum(1 for row in normalized_rows if row.get("category") == category)
+        for category in OFFBOARDING_CATEGORIES
+    }
     blocked = bool(
         missing_categories
         or invalid_hashes
@@ -101,6 +109,11 @@ def verify_offboarding_manifest(rows: Iterable[Mapping[str, str]]) -> dict[str, 
         "ok": not blocked,
         "blocked": blocked,
         "missing_categories": missing_categories,
+        "optional_missing_categories": [
+            category
+            for category in OPTIONAL_OFFBOARDING_CATEGORIES
+            if category not in present_categories
+        ],
         "invalid_hash_paths": invalid_hashes,
         "missing_paths": sorted(missing_paths),
         "hash_mismatch_paths": sorted(hash_mismatch_paths),

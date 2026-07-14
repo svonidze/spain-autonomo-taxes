@@ -74,6 +74,12 @@ AUDIT_OUTPUT_NAMES = [
 
 CORRESPONDENCE_SOURCE_NAMES = ["MANIFEST.csv", "MANIFEST.md", "message_to_xolo.md"]
 
+ARCHIVED_EVIDENCE_CATEGORIES = {
+    "raw_exports": "raw_export",
+    "expense_evidence": "expense_evidence",
+    "tax_reports": "tax_report",
+}
+
 
 @dataclass(frozen=True)
 class DriveMapEntry:
@@ -106,6 +112,7 @@ def build_document_index(
     xolo_root: Path,
     source_books_root: Path,
     runs_root: Path,
+    archive_root: Path | None = None,
     drive_map: dict[str, DriveMapEntry] | None = None,
     xolo_export_folder_url: str = "",
     archive_folder_url: str = "",
@@ -116,6 +123,7 @@ def build_document_index(
     rows: list[dict[str, str]] = []
     rows.extend(_xolo_export_rows(xolo_root, drive_map, xolo_export_folder_url, indexed_at))
     rows.extend(_source_book_rows(source_books_root, drive_map, archive_folder_url, indexed_at))
+    rows.extend(_archived_evidence_rows(archive_root, drive_map, archive_folder_url, indexed_at))
     rows.extend(_audit_output_rows(runs_root, drive_map, archive_folder_url, indexed_at))
     rows.extend(_correspondence_document_rows(runs_root, drive_map, archive_folder_url, indexed_at))
     return sorted(rows, key=lambda row: (row["category"], row["year"], row["period"], row["drive_relative_path"]))
@@ -287,6 +295,46 @@ def _source_book_rows(
                 notes="Official Xolo accounting workbook stored as raw XLSX evidence.",
             )
         )
+    return rows
+
+
+def _archived_evidence_rows(
+    archive_root: Path | None,
+    drive_map: dict[str, DriveMapEntry],
+    archive_folder_url: str,
+    indexed_at: str,
+) -> list[dict[str, str]]:
+    if archive_root is None or not archive_root.exists():
+        return []
+    rows: list[dict[str, str]] = []
+    for directory_name, category in ARCHIVED_EVIDENCE_CATEGORIES.items():
+        evidence_root = archive_root / directory_name
+        if not evidence_root.exists():
+            continue
+        for path in sorted(item for item in evidence_root.rglob("*") if item.is_file()):
+            if _is_ignored_filesystem_artifact(path):
+                continue
+            relative = path.relative_to(archive_root).as_posix()
+            year, period = _infer_year_period(relative)
+            drive_relative_path = f"Xolo evidence archive/{relative}"
+            entry = _lookup_drive_map(drive_map, path, drive_relative_path)
+            rows.append(
+                _document_row(
+                    path=path,
+                    category=category,
+                    year=year,
+                    period=period,
+                    source_system="xolo_export_recovery",
+                    drive_relative_path=(
+                        entry.drive_relative_path if entry else drive_relative_path
+                    ),
+                    drive_url=entry.drive_url if entry else archive_folder_url,
+                    received_at=indexed_at,
+                    indexed_at=indexed_at,
+                    status="saved_to_drive",
+                    notes="Recovered from the immutable Xolo data export and stored in the controlled evidence archive.",
+                )
+            )
     return rows
 
 

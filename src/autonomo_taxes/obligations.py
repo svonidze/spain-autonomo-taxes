@@ -28,6 +28,7 @@ class CounterpartyFact:
     payment_subject_to_withholding: bool | None = None
     employee_compensation: bool | None = None
     counts_for_modelo347: bool | None = None
+    nonresident_income_reportable: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,7 @@ class ActivityFact:
     has_employees: bool | None = None
     pays_professionals_subject_to_withholding: bool | None = None
     rents_urban_property_subject_to_withholding: bool | None = None
+    pays_nonresident_income_reportable: bool | None = None
     uses_sii_for_vat: bool | None = None
     annual_vat_summary_exempt: bool | None = None
     required_to_file_income_tax_return: bool | None = None
@@ -87,6 +89,12 @@ def detect_obligations(
     base_status["190"] = _annual_from_base("190", base_status["111"][0], "Modelo 190 follows withholding payments reported via Modelo 111.")
     base_status["115"] = _modelo115(activity, counterparties)
     base_status["180"] = _annual_from_base("180", base_status["115"][0], "Modelo 180 follows rent withholding reported via Modelo 115.")
+    base_status["216"] = _modelo216(activity, counterparties)
+    base_status["296"] = _annual_from_base(
+        "296",
+        base_status["216"][0],
+        "Modelo 296 follows non-resident income reported via Modelo 216.",
+    )
     base_status["100"] = _modelo100(activity)
     base_status["714"] = _modelo714(activity)
     base_status["720"] = _modelo720(activity)
@@ -230,6 +238,25 @@ def _modelo115(
     if activity.rents_urban_property_subject_to_withholding is False:
         return "not_due", "The supplied facts show no urban-property rent subject to withholding."
     return "unknown", "Modelo 115 depends on rent-withholding facts that were not fully provided."
+
+
+def _modelo216(
+    activity: ActivityFact,
+    counterparties: list[CounterpartyFact] | tuple[CounterpartyFact, ...],
+) -> tuple[ObligationStatus, str]:
+    if activity.pays_nonresident_income_reportable is True:
+        return "due", "Payments to non-residents reportable under IRNR indicate a Modelo 216 obligation."
+    if any(counterparty.nonresident_income_reportable is True for counterparty in counterparties):
+        return "due", "Counterparty facts include non-resident income reportable under IRNR."
+    if activity.pays_nonresident_income_reportable is False:
+        return "not_due", "The supplied facts explicitly show no non-resident income reportable under IRNR."
+    if activity.counterparties_complete is True and counterparties:
+        if all(counterparty.nonresident_income_reportable is False for counterparty in counterparties):
+            return "not_due", "Complete counterparty facts show no non-resident income reportable under IRNR."
+    return (
+        "unknown",
+        "Modelo 216 depends on non-resident payment, treaty, and tax-residence-certificate facts that were not fully provided.",
+    )
 
 
 def _modelo100(activity: ActivityFact) -> tuple[ObligationStatus, str]:

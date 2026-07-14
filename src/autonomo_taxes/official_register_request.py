@@ -57,7 +57,7 @@ def build_official_register_request(
             "- Libro registro de determinadas operaciones intracomunitarias, if applicable",
             "",
             "3. Filed tax forms and filing evidence not already in the Data export:",
-            "- Returns prepared or filed on my behalf, e.g. Modelo 130, 303, 390, 100, 349, or any other model filed for my activity",
+            "- Returns prepared or filed on my behalf, e.g. Modelo 130, 303, 390, 100, 349, 216, 296, or any other model filed for my activity",
             "- The corresponding justificantes de presentación, NRC/payment references, and any payment or deferral receipts",
             "",
             "4. Standard bookkeeping exports and year-end summaries generated for my account, such as annual or quarterly ledgers, accounting exports, and the summaries used to prepare the returns.",

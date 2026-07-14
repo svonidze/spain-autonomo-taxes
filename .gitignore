@@ -16,6 +16,7 @@ personal-exports/
 personal_exports/
 build/
 dist/
+tmp/
 *.egg-info/
 .env
 data/xolo_live_*

@@ -354,6 +354,13 @@ def main(argv: list[str] | None = None) -> int:
     xolo_reconcile = xolo_subparsers.add_parser("reconcile", help="Compare a Xolo expense ledger to local EXPENSE files")
     _add_common_args(xolo_reconcile)
     xolo_reconcile.add_argument("--xolo-expense-ledger", type=Path, required=True)
+    xolo_reconcile.add_argument(
+        "--additional-expense-root",
+        type=Path,
+        action="append",
+        default=[],
+        help="Additional controlled evidence directory to scan; repeat for multiple directories",
+    )
     xolo_reconcile.add_argument("--out", type=Path, required=True)
     xolo_reconcile.add_argument("--fx-rate", action="append", default=[], help="Currency rate, e.g. USD=0.85679")
     xolo_reconcile.add_argument("--asset-review-threshold-eur", help="Expense amount threshold for asset/amortization review")
@@ -443,6 +450,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     build_drive_archive_index.add_argument("--xolo-root", type=Path, required=True)
     build_drive_archive_index.add_argument("--source-books-root", type=Path, required=True)
+    build_drive_archive_index.add_argument(
+        "--archive-root",
+        type=Path,
+        help="Existing Xolo evidence archive root containing recovered raw exports, expenses, and tax reports",
+    )
     build_drive_archive_index.add_argument("--runs-root", type=Path, default=Path("runs"))
     build_drive_archive_index.add_argument("--drive-map", type=Path)
     build_drive_archive_index.add_argument("--xolo-export-folder-url", default="")
@@ -1084,6 +1096,7 @@ def main(argv: list[str] | None = None) -> int:
             xolo_root=args.xolo_root,
             source_books_root=args.source_books_root,
             runs_root=args.runs_root,
+            archive_root=args.archive_root,
             drive_map=drive_map,
             xolo_export_folder_url=args.xolo_export_folder_url,
             archive_folder_url=args.archive_folder_url,
@@ -1728,6 +1741,13 @@ def _cmd_xolo_reconcile(args: argparse.Namespace) -> int:
     rows = load_xolo_expense_ledger(Path(args.xolo_expense_ledger))
     asset_threshold = parse_amount(args.asset_review_threshold_eur or "600.00")
     expense_entries, expense_manual = scan_expense_dir(xolo_root / "EXPENSE", asset_threshold)
+    for evidence_root in args.additional_expense_root:
+        additional_entries, additional_manual = scan_expense_dir(
+            Path(evidence_root),
+            asset_threshold,
+        )
+        expense_entries.extend(additional_entries)
+        expense_manual.extend(additional_manual)
     apply_fx(expense_entries + expense_manual, _parse_fx_rates(args.fx_rate))
     reconciliation = reconcile_xolo_expenses(rows, expense_entries + expense_manual, year, quarter)
     write_xolo_reconciliation(args.out, reconciliation)
