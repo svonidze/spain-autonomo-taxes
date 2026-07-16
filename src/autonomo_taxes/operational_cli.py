@@ -91,6 +91,19 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     ingest.add_argument("--tesseract-command", default="tesseract")
     ingest.set_defaults(_operational_handler=_cmd_ingest)
 
+    documents = subparsers.add_parser("documents", help="Review document lifecycle decisions")
+    document_sub = documents.add_subparsers(dest="document_command", required=True)
+    document_transition = document_sub.add_parser("transition", help="Advance a document lifecycle")
+    _db_arg(document_transition)
+    document_transition.add_argument("document_id")
+    document_transition.add_argument(
+        "--to-status",
+        required=True,
+        choices=["extracted", "needs_review", "approved", "posted", "duplicate", "rejected", "void"],
+    )
+    document_transition.add_argument("--expected-row-version", type=int, required=True)
+    document_transition.set_defaults(_operational_handler=_cmd_document_transition)
+
     transactions = subparsers.add_parser("transactions", help="Create and post reviewed ledger transactions")
     transaction_sub = transactions.add_subparsers(dest="transaction_command", required=True)
     transaction_add = transaction_sub.add_parser("add", help="Add a transaction from a typed JSON object")
@@ -236,13 +249,21 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     sheet_export.set_defaults(_operational_handler=_cmd_sheet_export)
     sheet_reconcile = sheet_sub.add_parser("reconcile")
     _db_arg(sheet_reconcile)
-    sheet_reconcile.add_argument("--tab", choices=["transactions", "issues", "assets"], required=True)
+    sheet_reconcile.add_argument(
+        "--tab",
+        choices=["inbox_review", "counterparties", "transactions", "issues", "assets"],
+        required=True,
+    )
     sheet_reconcile.add_argument("--remote-csv", type=Path, required=True)
     sheet_reconcile.add_argument("--out", type=Path)
     sheet_reconcile.set_defaults(_operational_handler=_cmd_sheet_reconcile)
     sheet_apply = sheet_sub.add_parser("apply", help="Apply reviewed rows with optimistic concurrency")
     _db_arg(sheet_apply)
-    sheet_apply.add_argument("--tab", choices=["transactions", "issues", "assets"], required=True)
+    sheet_apply.add_argument(
+        "--tab",
+        choices=["inbox_review", "counterparties", "transactions", "issues", "assets"],
+        required=True,
+    )
     sheet_apply.add_argument("--remote-csv", type=Path, required=True)
     sheet_apply.set_defaults(_operational_handler=_cmd_sheet_apply)
 
@@ -394,8 +415,10 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
         )
         counterparty_id = args.counterparty_id or _upsert_intake_counterparty(db, suggestion)
         document_number = args.document_number
-        if document_number is None and suggestion is not None and args.kind == "income_invoice":
-            document_number = suggestion.description or None
+        if document_number is None and suggestion is not None:
+            parsed_description = suggestion.description or ""
+            if args.kind == "income_invoice" or parsed_description != args.path.name:
+                document_number = parsed_description or None
         document = db.upsert_document(
             external_key=f"sha256:{result.sha256}",
             counterparty_id=counterparty_id,
@@ -407,8 +430,7 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
             currency=suggestion.currency if suggestion is not None else "EUR",
             total_minor=(
                 int(suggestion.amount_original * 100)
-                if args.kind == "income_invoice"
-                and suggestion is not None
+                if suggestion is not None
                 and suggestion.amount_original is not None
                 else None
             ),
@@ -483,6 +505,17 @@ def _cmd_transaction_add(args: argparse.Namespace) -> int:
         raise ValueError("Use transactions transition for lifecycle updates")
     with open_ledger_db(args.db) as db:
         row = db.add_transaction(**payload)
+    _emit(row)
+    return 0
+
+
+def _cmd_document_transition(args: argparse.Namespace) -> int:
+    with open_ledger_db(args.db) as db:
+        row = db.transition_document(
+            args.document_id,
+            lifecycle_status=args.to_status,
+            expected_row_version=args.expected_row_version,
+        )
     _emit(row)
     return 0
 
@@ -1456,6 +1489,17 @@ def _tax_rows_from_db(
 
 def _sheet_rows_from_db(db: LedgerDB, tab: str) -> list[SheetRow]:
     query = {
+        "inbox_review": """SELECT d.document_id AS uuid, d.row_version,
+                            d.lifecycle_status AS status, p.period_key, d.document_type,
+                            d.document_number, d.issued_on, c.display_name AS counterparty,
+                            d.currency, d.total_minor, d.source_path, d.drive_file_id, d.mime_type
+                         FROM documents d
+                         LEFT JOIN periods p ON p.period_id=d.period_id
+                         LEFT JOIN counterparties c ON c.counterparty_id=d.counterparty_id""",
+        "counterparties": """SELECT counterparty_id AS uuid, row_version, 'open' AS status,
+                            display_name, tax_id, country_code, vat_id, roi_status,
+                            professional_supplier, retention_expected, email, phone
+                         FROM counterparties""",
         "transactions": """SELECT t.transaction_id AS uuid, t.row_version,
                             CASE WHEN p.status IN ('closed', 'amended') THEN 'closed'
                                  ELSE 'open' END AS status,
@@ -1511,12 +1555,37 @@ def _read_sheet_rows(
     editable_only: bool = False,
 ) -> list[SheetRow]:
     fields = {
+        "inbox_review": set(),
+        "counterparties": {
+            "display_name",
+            "tax_id",
+            "country_code",
+            "vat_id",
+            "roi_status",
+            "professional_supplier",
+            "retention_expected",
+            "email",
+            "phone",
+        },
         "transactions": {"lifecycle_status"},
         "issues": {"resolution_reason", "waiver_reason"},
         "assets": {"advisor_decision", "advisor_decision_on"},
     }
     if not editable_only:
         fields = {
+            "inbox_review": {
+                "period_key",
+                "document_type",
+                "document_number",
+                "issued_on",
+                "counterparty",
+                "currency",
+                "total_minor",
+                "source_path",
+                "drive_file_id",
+                "mime_type",
+            },
+            "counterparties": fields["counterparties"],
             "transactions": fields["transactions"] | {"description", "amount_eur_minor"},
             "issues": fields["issues"] | {"issue_code", "message", "blocking"},
             "assets": fields["assets"] | {"asset_code"},
@@ -1527,12 +1596,15 @@ def _read_sheet_rows(
     normalized: list[SheetRow] = []
     for raw in rows:
         row = dict(raw)
+        values = {key: value for key, value in row.items() if key in selected_fields}
+        if tab == "counterparties":
+            values = _normalize_counterparty_sheet_values(values)
         normalized.append(
             SheetRow(
                 uuid=str(row.pop("uuid")),
                 row_version=int(row.pop("row_version")),
                 status=str(row.pop("status")),
-                values={key: value for key, value in row.items() if key in selected_fields},
+                values=values,
             )
         )
     return normalized
@@ -1540,6 +1612,18 @@ def _read_sheet_rows(
 
 def _editable_sheet_values(tab: str, values: dict[str, Any]) -> dict[str, Any]:
     editable_fields = {
+        "inbox_review": set(),
+        "counterparties": {
+            "display_name",
+            "tax_id",
+            "country_code",
+            "vat_id",
+            "roi_status",
+            "professional_supplier",
+            "retention_expected",
+            "email",
+            "phone",
+        },
         "transactions": {"lifecycle_status"},
         "issues": {"resolution_reason", "waiver_reason"},
         "assets": {"advisor_decision", "advisor_decision_on"},
@@ -1553,6 +1637,28 @@ def _apply_reviewed_sheet_row(
     local: SheetRow,
     remote: SheetRow,
 ) -> dict[str, Any]:
+    if tab == "inbox_review":
+        return db.transition_document(
+            remote.uuid,
+            lifecycle_status=remote.status,
+            expected_row_version=local.row_version,
+        )
+    if tab == "counterparties":
+        return db.update_counterparty_review(
+            remote.uuid,
+            display_name=str(remote.values.get("display_name", "")),
+            tax_id=_optional_sheet_text(remote.values.get("tax_id")),
+            country_code=str(remote.values.get("country_code", "")),
+            vat_id=_optional_sheet_text(remote.values.get("vat_id")),
+            roi_status=str(remote.values.get("roi_status", "unknown")) or "unknown",
+            professional_supplier=_optional_sheet_bool(
+                remote.values.get("professional_supplier")
+            ),
+            retention_expected=_optional_sheet_bool(remote.values.get("retention_expected")),
+            email=_optional_sheet_text(remote.values.get("email")),
+            phone=_optional_sheet_text(remote.values.get("phone")),
+            expected_row_version=local.row_version,
+        )
     if tab == "transactions":
         target = str(remote.values.get("lifecycle_status", "")).strip()
         if not target:
@@ -1582,6 +1688,39 @@ def _apply_reviewed_sheet_row(
         advisor_decision_on=str(remote.values.get("advisor_decision_on", "")).strip() or None,
         expected_row_version=local.row_version,
     )
+
+
+def _optional_sheet_text(value: Any) -> str | None:
+    normalized = str(value or "").strip()
+    return normalized or None
+
+
+def _optional_sheet_bool(value: Any) -> bool | None:
+    normalized = str(value or "").strip().casefold()
+    if not normalized:
+        return None
+    if normalized in {"1", "true", "yes"}:
+        return True
+    if normalized in {"0", "false", "no"}:
+        return False
+    raise ValueError(f"Unsupported optional boolean value: {value}")
+
+
+def _normalize_counterparty_sheet_values(values: dict[str, Any]) -> dict[str, Any]:
+    normalized = {
+        key: str(value or "").strip()
+        for key, value in values.items()
+    }
+    if "country_code" in normalized:
+        normalized["country_code"] = normalized["country_code"].upper()
+    if "roi_status" in normalized:
+        normalized["roi_status"] = normalized["roi_status"].casefold()
+    for key in ("professional_supplier", "retention_expected"):
+        if key not in normalized:
+            continue
+        parsed = _optional_sheet_bool(normalized[key])
+        normalized[key] = "" if parsed is None else str(int(parsed))
+    return normalized
 
 
 def _write_rows_csv(
