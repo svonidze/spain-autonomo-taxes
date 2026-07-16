@@ -20,6 +20,7 @@ from .intake_bundle import (
     review_requirements,
 )
 from .ledger_db import LedgerDB, LedgerDbError, initialize, open as open_ledger_db
+from .money import cents
 from .obligations import ActivityFact, CounterpartyFact, detect_obligations
 from .parsers import LedgerEntry, parse_expense, parse_income_invoice
 from .revolut import (
@@ -67,6 +68,37 @@ PAYMENT_SHEET_FIELDS = [
     "counterparty_name",
     "category",
     "comment",
+]
+TAX_TREATMENT_SHEET_FIELDS = [
+    "uuid",
+    "row_version",
+    "status",
+    "period_key",
+    "transaction_id",
+    "transaction_lifecycle",
+    "transaction_date",
+    "entry_type",
+    "description",
+    "counterparty",
+    "document_number",
+    "gross_original",
+    "original_currency",
+    "amount_eur",
+    "treatment_type",
+    "jurisdiction",
+    "tax_code",
+    "rate_basis_points",
+    "deductible_ratio",
+    "taxable_base_eur",
+    "vat_eur",
+    "deductible_irpf_eur",
+    "deductible_vat_eur",
+    "withholding_eur",
+    "include_modelo130",
+    "include_modelo303",
+    "include_modelo347",
+    "rule_version_id",
+    "notes",
 ]
 
 
@@ -294,7 +326,14 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     _db_arg(sheet_reconcile)
     sheet_reconcile.add_argument(
         "--tab",
-        choices=["inbox_review", "counterparties", "transactions", "issues", "assets"],
+        choices=[
+            "inbox_review",
+            "counterparties",
+            "transactions",
+            "tax_treatments",
+            "issues",
+            "assets",
+        ],
         required=True,
     )
     sheet_reconcile.add_argument("--remote-csv", type=Path, required=True)
@@ -304,7 +343,14 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     _db_arg(sheet_apply)
     sheet_apply.add_argument(
         "--tab",
-        choices=["inbox_review", "counterparties", "transactions", "issues", "assets"],
+        choices=[
+            "inbox_review",
+            "counterparties",
+            "transactions",
+            "tax_treatments",
+            "issues",
+            "assets",
+        ],
         required=True,
     )
     sheet_apply.add_argument("--remote-csv", type=Path, required=True)
@@ -1150,6 +1196,46 @@ def _cmd_sheet_export(args: argparse.Namespace) -> int:
                    LEFT JOIN tax_treatments tt ON tt.transaction_id=t.transaction_id
                    ORDER BY t.transaction_date, t.transaction_id"""
             ).fetchall(),
+            "tax_treatments": db.connection.execute(
+                """SELECT tt.treatment_id AS uuid, tt.row_version,
+                          CASE WHEN p.status = 'open'
+                                      AND tt.treatment_type = 'invoice_review'
+                                      AND t.lifecycle_status IN (
+                                          'received', 'extracted', 'needs_review', 'approved'
+                                      ) THEN 'open'
+                               ELSE 'closed' END AS status,
+                          p.period_key, t.transaction_id,
+                          t.lifecycle_status AS transaction_lifecycle,
+                          t.transaction_date, t.entry_type, t.description,
+                          COALESCE(c.display_name, '') AS counterparty,
+                          COALESCE(d.document_number, '') AS document_number,
+                          printf('%.2f', t.amount_original_minor / 100.0) AS gross_original,
+                          t.original_currency,
+                          CASE WHEN t.amount_eur_minor IS NULL THEN ''
+                               ELSE printf('%.2f', t.amount_eur_minor / 100.0) END AS amount_eur,
+                          tt.treatment_type, tt.jurisdiction, tt.tax_code,
+                          tt.rate_basis_points, tt.deductible_ratio,
+                          CASE WHEN tt.taxable_base_minor IS NULL THEN ''
+                               ELSE printf('%.2f', tt.taxable_base_minor / 100.0) END AS taxable_base_eur,
+                          CASE WHEN tt.vat_minor IS NULL THEN ''
+                               ELSE printf('%.2f', tt.vat_minor / 100.0) END AS vat_eur,
+                          CASE WHEN tt.deductible_irpf_minor IS NULL THEN ''
+                               ELSE printf('%.2f', tt.deductible_irpf_minor / 100.0) END AS deductible_irpf_eur,
+                          CASE WHEN tt.deductible_vat_minor IS NULL THEN ''
+                               ELSE printf('%.2f', tt.deductible_vat_minor / 100.0) END AS deductible_vat_eur,
+                          CASE WHEN tt.withholding_minor IS NULL THEN ''
+                               ELSE printf('%.2f', tt.withholding_minor / 100.0) END AS withholding_eur,
+                          tt.include_modelo130, tt.include_modelo303,
+                          tt.include_modelo347, COALESCE(tt.rule_version_id, '') AS rule_version_id,
+                          COALESCE(tt.notes, '') AS notes
+                   FROM tax_treatments tt
+                   JOIN transactions t ON t.transaction_id=tt.transaction_id
+                   JOIN periods p ON p.period_id=t.period_id
+                   LEFT JOIN counterparties c ON c.counterparty_id=t.counterparty_id
+                   LEFT JOIN documents d ON d.document_id=t.document_id
+                   WHERE tt.treatment_type = 'invoice_review'
+                   ORDER BY t.transaction_date, t.transaction_id, tt.treatment_id"""
+            ).fetchall(),
             "issues": db.connection.execute(
                 """SELECT vi.validation_issue_id AS uuid, vi.row_version,
                           CASE WHEN p.status IN ('closed', 'amended') THEN 'closed'
@@ -1217,7 +1303,13 @@ def _cmd_sheet_export(args: argparse.Namespace) -> int:
                 _write_rows_csv(
                     args.out_dir / f"{name}.csv",
                     rows,
-                    fieldnames=PAYMENT_SHEET_FIELDS if name == "payments" else None,
+                    fieldnames=(
+                        PAYMENT_SHEET_FIELDS
+                        if name == "payments"
+                        else TAX_TREATMENT_SHEET_FIELDS
+                        if name == "tax_treatments"
+                        else None
+                    ),
                 )
             )
             for name, rows in tables.items()
@@ -1665,6 +1757,43 @@ def _sheet_rows_from_db(db: LedgerDB, tab: str) -> list[SheetRow]:
                                  ELSE 'open' END AS status,
                             t.lifecycle_status, t.description, t.amount_eur_minor
                          FROM transactions t JOIN periods p ON p.period_id=t.period_id""",
+        "tax_treatments": """SELECT tt.treatment_id AS uuid, tt.row_version,
+                            CASE WHEN p.status = 'open'
+                                      AND tt.treatment_type = 'invoice_review'
+                                      AND t.lifecycle_status IN (
+                                          'received', 'extracted', 'needs_review', 'approved'
+                                      ) THEN 'open'
+                                 ELSE 'closed' END AS status,
+                            p.period_key, t.transaction_id,
+                            t.lifecycle_status AS transaction_lifecycle,
+                            t.transaction_date, t.entry_type, t.description,
+                            COALESCE(c.display_name, '') AS counterparty,
+                            COALESCE(d.document_number, '') AS document_number,
+                            printf('%.2f', t.amount_original_minor / 100.0) AS gross_original,
+                            t.original_currency,
+                            CASE WHEN t.amount_eur_minor IS NULL THEN ''
+                                 ELSE printf('%.2f', t.amount_eur_minor / 100.0) END AS amount_eur,
+                            tt.treatment_type, tt.jurisdiction, tt.tax_code,
+                            tt.rate_basis_points, tt.deductible_ratio,
+                            CASE WHEN tt.taxable_base_minor IS NULL THEN ''
+                                 ELSE printf('%.2f', tt.taxable_base_minor / 100.0) END AS taxable_base_eur,
+                            CASE WHEN tt.vat_minor IS NULL THEN ''
+                                 ELSE printf('%.2f', tt.vat_minor / 100.0) END AS vat_eur,
+                            CASE WHEN tt.deductible_irpf_minor IS NULL THEN ''
+                                 ELSE printf('%.2f', tt.deductible_irpf_minor / 100.0) END AS deductible_irpf_eur,
+                            CASE WHEN tt.deductible_vat_minor IS NULL THEN ''
+                                 ELSE printf('%.2f', tt.deductible_vat_minor / 100.0) END AS deductible_vat_eur,
+                            CASE WHEN tt.withholding_minor IS NULL THEN ''
+                                 ELSE printf('%.2f', tt.withholding_minor / 100.0) END AS withholding_eur,
+                            tt.include_modelo130, tt.include_modelo303,
+                            tt.include_modelo347, COALESCE(tt.rule_version_id, '') AS rule_version_id,
+                            COALESCE(tt.notes, '') AS notes
+                         FROM tax_treatments tt
+                         JOIN transactions t ON t.transaction_id=tt.transaction_id
+                         JOIN periods p ON p.period_id=t.period_id
+                         LEFT JOIN counterparties c ON c.counterparty_id=t.counterparty_id
+                         LEFT JOIN documents d ON d.document_id=t.document_id
+                         WHERE tt.treatment_type = 'invoice_review'""",
         "issues": """SELECT vi.validation_issue_id AS uuid, vi.row_version,
                             CASE WHEN p.status IN ('closed', 'amended') THEN 'closed'
                                  ELSE vi.issue_status END AS status,
@@ -1728,6 +1857,21 @@ def _read_sheet_rows(
             "phone",
         },
         "transactions": {"lifecycle_status"},
+        "tax_treatments": {
+            "tax_code",
+            "rate_basis_points",
+            "deductible_ratio",
+            "taxable_base_eur",
+            "vat_eur",
+            "deductible_irpf_eur",
+            "deductible_vat_eur",
+            "withholding_eur",
+            "include_modelo130",
+            "include_modelo303",
+            "include_modelo347",
+            "rule_version_id",
+            "notes",
+        },
         "issues": {"resolution_reason", "waiver_reason"},
         "assets": {"advisor_decision", "advisor_decision_on"},
     }
@@ -1747,6 +1891,22 @@ def _read_sheet_rows(
             },
             "counterparties": fields["counterparties"],
             "transactions": fields["transactions"] | {"description", "amount_eur_minor"},
+            "tax_treatments": fields["tax_treatments"]
+            | {
+                "period_key",
+                "transaction_id",
+                "transaction_lifecycle",
+                "transaction_date",
+                "entry_type",
+                "description",
+                "counterparty",
+                "document_number",
+                "gross_original",
+                "original_currency",
+                "amount_eur",
+                "treatment_type",
+                "jurisdiction",
+            },
             "issues": fields["issues"] | {"issue_code", "message", "blocking"},
             "assets": fields["assets"] | {"asset_code"},
         }
@@ -1785,6 +1945,21 @@ def _editable_sheet_values(tab: str, values: dict[str, Any]) -> dict[str, Any]:
             "phone",
         },
         "transactions": {"lifecycle_status"},
+        "tax_treatments": {
+            "tax_code",
+            "rate_basis_points",
+            "deductible_ratio",
+            "taxable_base_eur",
+            "vat_eur",
+            "deductible_irpf_eur",
+            "deductible_vat_eur",
+            "withholding_eur",
+            "include_modelo130",
+            "include_modelo303",
+            "include_modelo347",
+            "rule_version_id",
+            "notes",
+        },
         "issues": {"resolution_reason", "waiver_reason"},
         "assets": {"advisor_decision", "advisor_decision_on"},
     }[tab]
@@ -1828,6 +2003,55 @@ def _apply_reviewed_sheet_row(
             lifecycle_status=target,
             expected_row_version=local.row_version,
         )
+    if tab == "tax_treatments":
+        existing = db.connection.execute(
+            "SELECT * FROM tax_treatments WHERE treatment_id = ?",
+            (remote.uuid,),
+        ).fetchone()
+        if existing is None:
+            raise KeyError(f"Unknown tax treatment: {remote.uuid}")
+        tax_code = str(remote.values.get("tax_code", "")).strip()
+        if not tax_code:
+            raise ValueError(f"Reviewed tax treatment {remote.uuid} is missing tax_code")
+        return db.add_detailed_tax_treatment(
+            transaction_id=existing["transaction_id"],
+            treatment_type=existing["treatment_type"],
+            tax_code=tax_code,
+            jurisdiction=existing["jurisdiction"],
+            rate_basis_points=_optional_sheet_int(
+                remote.values.get("rate_basis_points")
+            ),
+            deductible_ratio=_optional_sheet_float(
+                remote.values.get("deductible_ratio")
+            ),
+            taxable_base_minor=_sheet_eur_minor(
+                remote.values.get("taxable_base_eur")
+            ),
+            vat_minor=_sheet_eur_minor(remote.values.get("vat_eur")),
+            deductible_irpf_minor=_sheet_eur_minor(
+                remote.values.get("deductible_irpf_eur")
+            ),
+            deductible_vat_minor=_sheet_eur_minor(
+                remote.values.get("deductible_vat_eur")
+            ),
+            withholding_minor=_sheet_eur_minor(
+                remote.values.get("withholding_eur")
+            ),
+            include_modelo130=bool(
+                _optional_sheet_bool(remote.values.get("include_modelo130"))
+            ),
+            include_modelo303=bool(
+                _optional_sheet_bool(remote.values.get("include_modelo303"))
+            ),
+            include_modelo347=bool(
+                _optional_sheet_bool(remote.values.get("include_modelo347"))
+            ),
+            rule_version_id=_optional_sheet_text(
+                remote.values.get("rule_version_id")
+            ),
+            notes=_optional_sheet_text(remote.values.get("notes")),
+            expected_row_version=local.row_version,
+        )
     if tab == "issues":
         if remote.status == "resolved":
             return db.resolve_issue(
@@ -1853,6 +2077,23 @@ def _apply_reviewed_sheet_row(
 def _optional_sheet_text(value: Any) -> str | None:
     normalized = str(value or "").strip()
     return normalized or None
+
+
+def _optional_sheet_int(value: Any) -> int | None:
+    normalized = str(value or "").strip()
+    return int(normalized) if normalized else None
+
+
+def _optional_sheet_float(value: Any) -> float | None:
+    normalized = str(value or "").strip()
+    return float(normalized) if normalized else None
+
+
+def _sheet_eur_minor(value: Any) -> int | None:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return None
+    return int(cents(Decimal(normalized)) * 100)
 
 
 def _optional_sheet_bool(value: Any) -> bool | None:
@@ -1957,7 +2198,83 @@ def _intake_transaction_draft(
                 "Existing intake transaction conflicts with the same source document: "
                 + ", ".join(sorted(set(changed)))
             )
-        return _intake_transaction_summary(dict(existing), created=False)
+        treatment = db.connection.execute(
+            """
+            SELECT * FROM tax_treatments
+            WHERE transaction_id = ? AND treatment_type = 'invoice_review'
+              AND jurisdiction = 'ES'
+            """,
+            (existing["transaction_id"],),
+        ).fetchone()
+        if treatment is not None and treatment["tax_code"] == "unknown":
+            treatment_changes: list[str] = []
+            backfill_base = treatment["taxable_base_minor"]
+            backfill_vat = treatment["vat_minor"]
+            if amounts.taxable_base is not None and treatment["taxable_base_minor"] not in {
+                None,
+                int(amounts.taxable_base * 100),
+            }:
+                treatment_changes.append("taxable_base_minor")
+            elif amounts.taxable_base is not None and treatment["taxable_base_minor"] is None:
+                backfill_base = int(amounts.taxable_base * 100)
+            if amounts.vat is not None and treatment["vat_minor"] not in {
+                None,
+                int(amounts.vat * 100),
+            }:
+                treatment_changes.append("vat_minor")
+            elif amounts.vat is not None and treatment["vat_minor"] is None:
+                backfill_vat = int(amounts.vat * 100)
+            if treatment_changes:
+                raise LedgerDbError(
+                    "Existing invoice review treatment conflicts with corrected re-ingest: "
+                    + ", ".join(treatment_changes)
+                )
+            if (
+                backfill_base != treatment["taxable_base_minor"]
+                or backfill_vat != treatment["vat_minor"]
+            ):
+                treatment = db.add_detailed_tax_treatment(
+                    transaction_id=existing["transaction_id"],
+                    treatment_type=treatment["treatment_type"],
+                    tax_code=treatment["tax_code"],
+                    jurisdiction=treatment["jurisdiction"],
+                    rate_basis_points=treatment["rate_basis_points"],
+                    deductible_ratio=treatment["deductible_ratio"],
+                    taxable_base_minor=backfill_base,
+                    vat_minor=backfill_vat,
+                    deductible_irpf_minor=treatment["deductible_irpf_minor"],
+                    deductible_vat_minor=treatment["deductible_vat_minor"],
+                    withholding_minor=treatment["withholding_minor"],
+                    include_modelo130=bool(treatment["include_modelo130"]),
+                    include_modelo303=bool(treatment["include_modelo303"]),
+                    include_modelo347=bool(treatment["include_modelo347"]),
+                    rule_version_id=treatment["rule_version_id"],
+                    notes=(treatment["notes"] or "")
+                    + "; candidate amounts backfilled by corrected re-ingest",
+                    expected_row_version=treatment["row_version"],
+                )
+                amount_summary = amounts.as_dict()
+                db.add_validation_issue(
+                    period_key=period_key,
+                    issue_code="transaction_tax_review",
+                    severity="warning",
+                    message=(
+                        "Review required after corrected re-ingest; "
+                        f"gross={amount_summary['gross']} {amounts.currency}; "
+                        f"taxable_base={amount_summary['taxable_base']}; "
+                        f"vat={amount_summary['vat']}; decisions="
+                        + ", ".join(requirements)
+                    ),
+                    subject_table="transactions",
+                    subject_id=existing["transaction_id"],
+                    blocking=True,
+                    source_hash=source_hash,
+                )
+        return _intake_transaction_summary(
+            dict(existing),
+            created=False,
+            treatment=dict(treatment) if treatment is not None else None,
+        )
 
     if document["lifecycle_status"] in {
         "approved",
@@ -2034,6 +2351,27 @@ def _intake_transaction_draft(
             lifecycle_status="needs_review",
             expected_row_version=transaction["row_version"],
         )
+    treatment = db.add_detailed_tax_treatment(
+        transaction_id=transaction["transaction_id"],
+        treatment_type="invoice_review",
+        tax_code="unknown",
+        jurisdiction="ES",
+        taxable_base_minor=(
+            int(amounts.taxable_base * 100)
+            if amounts.taxable_base is not None
+            else None
+        ),
+        vat_minor=int(amounts.vat * 100) if amounts.vat is not None else None,
+        notes=(
+            "Extraction candidate only; gross_source="
+            f"{amounts.gross_source or 'unknown'}; base_source="
+            f"{amounts.taxable_base_source or 'unknown'}; vat_source="
+            f"{amounts.vat_source or 'unknown'}"
+        ),
+        source_hash=hashlib.sha256(
+            f"intake-treatment:{source_hash}".encode("utf-8")
+        ).hexdigest(),
+    )
     amount_summary = amounts.as_dict()
     db.add_validation_issue(
         period_key=period_key,
@@ -2058,7 +2396,11 @@ def _intake_transaction_draft(
         subject_id=document["document_id"],
         reason="Reviewed invoice amounts supplied during corrected re-ingest.",
     )
-    return _intake_transaction_summary(transaction, created=True)
+    return _intake_transaction_summary(
+        transaction,
+        created=True,
+        treatment=treatment,
+    )
 
 
 def _backfill_existing_intake_document(
@@ -2156,9 +2498,9 @@ def _resolve_open_intake_issue(
 
 
 def _intake_transaction_summary(
-    transaction: dict[str, Any], *, created: bool
+    transaction: dict[str, Any], *, created: bool, treatment: dict[str, Any] | None = None
 ) -> dict[str, Any]:
-    return {
+    summary = {
         "created": created,
         "transaction_id": transaction["transaction_id"],
         "row_version": transaction["row_version"],
@@ -2169,6 +2511,11 @@ def _intake_transaction_summary(
         "amount_eur_minor": transaction["amount_eur_minor"],
         "document_id": transaction["document_id"],
     }
+    if treatment is not None:
+        summary["tax_treatment_id"] = treatment["treatment_id"]
+        summary["tax_treatment_row_version"] = treatment["row_version"]
+        summary["tax_code"] = treatment["tax_code"]
+    return summary
 
 
 def _upsert_intake_counterparty(db: LedgerDB, suggestion: LedgerEntry | None) -> str | None:
