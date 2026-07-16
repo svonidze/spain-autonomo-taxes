@@ -120,6 +120,14 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     )
     transaction_transition.add_argument("--expected-row-version", type=int, required=True)
     transaction_transition.set_defaults(_operational_handler=_cmd_transaction_transition)
+    transaction_fx = transaction_sub.add_parser(
+        "apply-fx", help="Apply a stored FX rate to an unposted transaction"
+    )
+    _db_arg(transaction_fx)
+    transaction_fx.add_argument("transaction_id")
+    transaction_fx.add_argument("--fx-rate-id", required=True)
+    transaction_fx.add_argument("--expected-row-version", type=int, required=True)
+    transaction_fx.set_defaults(_operational_handler=_cmd_transaction_apply_fx)
 
     treatment = subparsers.add_parser("tax-treatment", help="Classify a reviewed transaction for IRPF and IVA")
     treatment_sub = treatment.add_subparsers(dest="tax_treatment_command", required=True)
@@ -525,6 +533,17 @@ def _cmd_transaction_transition(args: argparse.Namespace) -> int:
         row = db.transition_transaction(
             args.transaction_id,
             lifecycle_status=args.to_status,
+            expected_row_version=args.expected_row_version,
+        )
+    _emit(row)
+    return 0
+
+
+def _cmd_transaction_apply_fx(args: argparse.Namespace) -> int:
+    with open_ledger_db(args.db) as db:
+        row = db.apply_transaction_fx(
+            args.transaction_id,
+            fx_rate_id=args.fx_rate_id,
             expected_row_version=args.expected_row_version,
         )
     _emit(row)
