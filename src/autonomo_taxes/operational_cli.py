@@ -132,6 +132,29 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     activity_upsert.add_argument("--input", type=Path, required=True)
     activity_upsert.set_defaults(_operational_handler=_cmd_activity_upsert)
 
+    counterparties = subparsers.add_parser(
+        "counterparties",
+        help="Maintain source-backed supplier and customer identities",
+    )
+    counterparty_sub = counterparties.add_subparsers(
+        dest="counterparty_command",
+        required=True,
+    )
+    identity_upsert = counterparty_sub.add_parser(
+        "identity-upsert",
+        help="Create or update an AEAT identity backed by an evidence document",
+    )
+    _db_arg(identity_upsert)
+    identity_upsert.add_argument("--input", type=Path, required=True)
+    identity_upsert.set_defaults(_operational_handler=_cmd_counterparty_identity_upsert)
+    identity_list = counterparty_sub.add_parser(
+        "identity-list",
+        help="List reviewed AEAT identities",
+    )
+    _db_arg(identity_list)
+    identity_list.add_argument("--counterparty-id")
+    identity_list.set_defaults(_operational_handler=_cmd_counterparty_identity_list)
+
     ingest = subparsers.add_parser("ingest", help="Extract a document into review without posting it")
     _db_arg(ingest)
     ingest.add_argument("path", type=Path)
@@ -621,6 +644,23 @@ def _cmd_activity_upsert(args: argparse.Namespace) -> int:
     with open_ledger_db(args.db) as db:
         row = db.upsert_business_activity(**payload)
     _emit(row)
+    return 0
+
+
+def _cmd_counterparty_identity_upsert(args: argparse.Namespace) -> int:
+    payload = _load_json_object(args.input)
+    with open_ledger_db(args.db) as db:
+        row = db.upsert_counterparty_identity(**payload)
+    _emit(row)
+    return 0
+
+
+def _cmd_counterparty_identity_list(args: argparse.Namespace) -> int:
+    with open_ledger_db(args.db, read_only=True) as db:
+        rows = db.list_counterparty_identities(
+            counterparty_id=args.counterparty_id,
+        )
+    _emit(rows)
     return 0
 
 

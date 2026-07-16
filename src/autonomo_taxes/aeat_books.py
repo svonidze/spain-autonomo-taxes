@@ -223,11 +223,16 @@ def _transaction_rows(
                d.lifecycle_status AS document_lifecycle,
                c.display_name AS counterparty_name, c.country_code,
                c.tax_id AS counterparty_tax_id, c.vat_id AS counterparty_vat_id,
+               ci.aeat_id_type AS counterparty_aeat_id_type,
+               ci.country_code AS counterparty_identity_country,
+               ci.identifier AS counterparty_identity_identifier,
                oi.external_series, oi.external_number
         FROM transactions t
         JOIN periods p ON p.period_id = t.period_id
         LEFT JOIN documents d ON d.document_id = t.document_id
         LEFT JOIN counterparties c ON c.counterparty_id = t.counterparty_id
+        LEFT JOIN counterparty_identities ci
+          ON ci.counterparty_id = c.counterparty_id AND ci.is_primary = 1
         LEFT JOIN outgoing_invoice_drafts oi
           ON oi.transaction_id = t.transaction_id AND oi.lifecycle_status = 'issued'
         WHERE t.transaction_date BETWEEN ? AND ?
@@ -421,18 +426,33 @@ def _activity_columns(activity: Mapping[str, Any]) -> dict[str, str]:
 
 def _counterparty_identity(transaction: Mapping[str, Any]) -> tuple[str, str, str]:
     country = str(transaction.get("country_code") or "").upper()
-    tax_id = str(
-        transaction.get("counterparty_vat_id")
-        or transaction.get("counterparty_tax_id")
-        or ""
-    ).strip()
-    if not country or not tax_id:
-        raise AeatBookProjectionError("Counterparty country and tax identity are required")
+    if not country:
+        raise AeatBookProjectionError("Counterparty country is required")
     if country == "ES":
+        tax_id = str(
+            transaction.get("counterparty_tax_id")
+            or transaction.get("counterparty_vat_id")
+            or ""
+        ).strip()
+        if not tax_id:
+            raise AeatBookProjectionError("Domestic counterparty tax identity is required")
         return "", "", tax_id.removeprefix("ES")
-    if transaction.get("counterparty_vat_id") and country in _EU_COUNTRY_CODES:
-        return "02", "", tax_id
-    return "04", country, tax_id
+    reviewed_id_type = str(transaction.get("counterparty_aeat_id_type") or "").strip()
+    reviewed_country = str(
+        transaction.get("counterparty_identity_country") or ""
+    ).strip().upper()
+    reviewed_identifier = str(
+        transaction.get("counterparty_identity_identifier") or ""
+    ).strip()
+    if reviewed_id_type or reviewed_country or reviewed_identifier:
+        if not all((reviewed_id_type, reviewed_country, reviewed_identifier)):
+            raise AeatBookProjectionError(
+                "Source-backed counterparty identity is incomplete"
+            )
+        return reviewed_id_type, reviewed_country, reviewed_identifier
+    raise AeatBookProjectionError(
+        "Foreign counterparty requires a primary source-backed AEAT identity"
+    )
 
 
 def _invoice_identity(transaction: Mapping[str, Any]) -> tuple[str, str]:
@@ -487,10 +507,15 @@ def _asset_book_rows(
         """
         SELECT a.*, d.issued_on, d.lifecycle_status AS document_lifecycle,
                c.display_name AS counterparty_name, c.country_code,
-               c.tax_id AS counterparty_tax_id, c.vat_id AS counterparty_vat_id
+               c.tax_id AS counterparty_tax_id, c.vat_id AS counterparty_vat_id,
+               ci.aeat_id_type AS counterparty_aeat_id_type,
+               ci.country_code AS counterparty_identity_country,
+               ci.identifier AS counterparty_identity_identifier
         FROM assets a
         LEFT JOIN documents d ON d.document_id = a.document_id
         LEFT JOIN counterparties c ON c.counterparty_id = d.counterparty_id
+        LEFT JOIN counterparty_identities ci
+          ON ci.counterparty_id = c.counterparty_id AND ci.is_primary = 1
         WHERE a.placed_in_service_on IS NOT NULL
           AND a.placed_in_service_on <= ?
           AND COALESCE(a.amortizable_base_minor, 0) <> 0
@@ -701,34 +726,3 @@ def _withholding_rate(base_minor: int, withholding_minor: int) -> str:
 
 def _blocker(code: str, reference: str, message: str) -> dict[str, str]:
     return {"code": code, "reference": reference, "message": message}
-
-
-_EU_COUNTRY_CODES = {
-    "AT",
-    "BE",
-    "BG",
-    "HR",
-    "CY",
-    "CZ",
-    "DE",
-    "DK",
-    "EE",
-    "ES",
-    "FI",
-    "FR",
-    "GR",
-    "HU",
-    "IE",
-    "IT",
-    "LT",
-    "LU",
-    "LV",
-    "MT",
-    "NL",
-    "PL",
-    "PT",
-    "RO",
-    "SE",
-    "SI",
-    "SK",
-}
