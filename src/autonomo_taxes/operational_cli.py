@@ -112,6 +112,26 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     _db_arg(db_status)
     db_status.set_defaults(_operational_handler=_cmd_db_status)
 
+    profile = subparsers.add_parser(
+        "profile",
+        help="Maintain the taxpayer and reviewed AEAT business activities",
+    )
+    profile_sub = profile.add_subparsers(dest="profile_command", required=True)
+    profile_set = profile_sub.add_parser("set", help="Create or update the taxpayer profile")
+    _db_arg(profile_set)
+    profile_set.add_argument("--input", type=Path, required=True)
+    profile_set.set_defaults(_operational_handler=_cmd_profile_set)
+    profile_show = profile_sub.add_parser("show", help="Show taxpayer profiles and activities")
+    _db_arg(profile_show)
+    profile_show.set_defaults(_operational_handler=_cmd_profile_show)
+    activity_upsert = profile_sub.add_parser(
+        "activity-upsert",
+        help="Create or update a source-backed business activity",
+    )
+    _db_arg(activity_upsert)
+    activity_upsert.add_argument("--input", type=Path, required=True)
+    activity_upsert.set_defaults(_operational_handler=_cmd_activity_upsert)
+
     ingest = subparsers.add_parser("ingest", help="Extract a document into review without posting it")
     _db_arg(ingest)
     ingest.add_argument("path", type=Path)
@@ -176,6 +196,15 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     transaction_counterparty.add_argument("--counterparty-id", required=True)
     transaction_counterparty.add_argument("--expected-row-version", type=int, required=True)
     transaction_counterparty.set_defaults(_operational_handler=_cmd_transaction_set_counterparty)
+    transaction_activity = transaction_sub.add_parser(
+        "set-activity",
+        help="Assign a reviewed AEAT business activity to a transaction",
+    )
+    _db_arg(transaction_activity)
+    transaction_activity.add_argument("transaction_id")
+    transaction_activity.add_argument("--business-activity-id", required=True)
+    transaction_activity.add_argument("--expected-row-version", type=int, required=True)
+    transaction_activity.set_defaults(_operational_handler=_cmd_transaction_set_activity)
     transaction_fx = transaction_sub.add_parser(
         "apply-fx", help="Apply a stored FX rate to an unposted transaction"
     )
@@ -263,6 +292,22 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     _db_arg(invoice_list)
     invoice_list.add_argument("--period")
     invoice_list.set_defaults(_operational_handler=_cmd_invoice_list)
+
+    assets = subparsers.add_parser(
+        "assets",
+        help="Review asset identity, tax basis, and AEAT book metadata",
+    )
+    assets_sub = assets.add_subparsers(dest="assets_command", required=True)
+    assets_list = assets_sub.add_parser("list", help="List assets and book-profile fields")
+    _db_arg(assets_list)
+    assets_list.set_defaults(_operational_handler=_cmd_assets_list)
+    asset_profile = assets_sub.add_parser(
+        "book-profile",
+        help="Apply a source-backed AEAT asset book profile",
+    )
+    _db_arg(asset_profile)
+    asset_profile.add_argument("--input", type=Path, required=True)
+    asset_profile.set_defaults(_operational_handler=_cmd_asset_book_profile)
 
     migration = subparsers.add_parser("migrate-history", help="Import Xolo source-book history into SQLite")
     _db_arg(migration)
@@ -428,6 +473,16 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     books_build.add_argument("--period", required=True)
     books_build.add_argument("--out-dir", type=Path, required=True)
     books_build.set_defaults(_operational_handler=_cmd_books_build)
+    books_aeat = books_sub.add_parser(
+        "aeat-preview",
+        help="Build a fail-closed cumulative AEAT row projection; this does not create XLSX",
+    )
+    _db_arg(books_aeat)
+    books_aeat.add_argument("--period", required=True)
+    books_aeat.add_argument("--taxpayer-tax-id")
+    books_aeat.add_argument("--allow-authoritative-history", action="store_true")
+    books_aeat.add_argument("--out", type=Path, required=True)
+    books_aeat.set_defaults(_operational_handler=_cmd_books_aeat_preview)
 
     filing_package = subparsers.add_parser(
         "filing-package",
@@ -537,6 +592,35 @@ def _cmd_db_status(args: argparse.Namespace) -> int:
             "open_blocking_issues": len(db.list_issues()),
         }
         _emit(payload)
+    return 0
+
+
+def _cmd_profile_set(args: argparse.Namespace) -> int:
+    payload = _load_json_object(args.input)
+    with open_ledger_db(args.db) as db:
+        row = db.upsert_taxpayer_profile(**payload)
+    _emit(row)
+    return 0
+
+
+def _cmd_profile_show(args: argparse.Namespace) -> int:
+    with open_ledger_db(args.db, read_only=True) as db:
+        profiles = [
+            dict(row)
+            for row in db.connection.execute(
+                "SELECT * FROM taxpayer_profile ORDER BY taxpayer_profile_id"
+            ).fetchall()
+        ]
+        activities = db.list_business_activities()
+    _emit({"profiles": profiles, "activities": activities})
+    return 0
+
+
+def _cmd_activity_upsert(args: argparse.Namespace) -> int:
+    payload = _load_json_object(args.input)
+    with open_ledger_db(args.db) as db:
+        row = db.upsert_business_activity(**payload)
+    _emit(row)
     return 0
 
 
@@ -750,6 +834,17 @@ def _cmd_transaction_set_counterparty(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_transaction_set_activity(args: argparse.Namespace) -> int:
+    with open_ledger_db(args.db) as db:
+        row = db.set_transaction_business_activity(
+            args.transaction_id,
+            business_activity_id=args.business_activity_id,
+            expected_row_version=args.expected_row_version,
+        )
+    _emit(row)
+    return 0
+
+
 def _cmd_transaction_apply_fx(args: argparse.Namespace) -> int:
     with open_ledger_db(args.db) as db:
         row = db.apply_transaction_fx(
@@ -862,6 +957,29 @@ def _cmd_invoice_list(args: argparse.Namespace) -> int:
     with open_ledger_db(args.db, read_only=True) as db:
         rows = db.list_outgoing_invoice_drafts(period_key=args.period)
     _emit(rows)
+    return 0
+
+
+def _cmd_assets_list(args: argparse.Namespace) -> int:
+    with open_ledger_db(args.db, read_only=True) as db:
+        rows = [
+            dict(row)
+            for row in db.connection.execute(
+                "SELECT * FROM assets ORDER BY placed_in_service_on, asset_code"
+            ).fetchall()
+        ]
+    _emit(rows)
+    return 0
+
+
+def _cmd_asset_book_profile(args: argparse.Namespace) -> int:
+    payload = _load_json_object(args.input)
+    asset_id = str(payload.pop("asset_id", "")).strip()
+    if not asset_id:
+        raise ValueError("Asset book profile requires asset_id")
+    with open_ledger_db(args.db) as db:
+        row = db.update_asset_book_profile(asset_id, **payload)
+    _emit(row)
     return 0
 
 
@@ -1542,6 +1660,41 @@ def _cmd_books_build(args: argparse.Namespace) -> int:
         result = write_accounting_books(db, args.out_dir, period_key=args.period)
     _emit(_jsonable(result))
     return 0
+
+
+def _cmd_books_aeat_preview(args: argparse.Namespace) -> int:
+    from .aeat_books import (
+        AeatBookProjectionError,
+        build_aeat_book_projection,
+        failed_aeat_book_projection,
+        write_aeat_book_projection,
+    )
+
+    try:
+        with open_ledger_db(args.db, read_only=True) as db:
+            projection = build_aeat_book_projection(
+                db,
+                period_key=args.period,
+                taxpayer_tax_id=args.taxpayer_tax_id,
+                allow_authoritative_history=args.allow_authoritative_history,
+            )
+    except AeatBookProjectionError as exc:
+        projection = failed_aeat_book_projection(
+            period_key=args.period,
+            message=str(exc),
+            allow_authoritative_history=args.allow_authoritative_history,
+        )
+    target = write_aeat_book_projection(args.out, projection)
+    _emit(
+        {
+            "projection": str(target.resolve()),
+            "period": args.period,
+            "data_projection_ready": projection["data_projection_ready"],
+            "xlsx_generation_supported": False,
+            "counts": projection["counts"],
+        }
+    )
+    return 0 if projection["data_projection_ready"] else 2
 
 
 def _cmd_filing_package_build(args: argparse.Namespace) -> int:
