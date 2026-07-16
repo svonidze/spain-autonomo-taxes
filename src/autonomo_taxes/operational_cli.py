@@ -199,6 +199,71 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     fx_add.add_argument("--input", type=Path, required=True)
     fx_add.set_defaults(_operational_handler=_cmd_fx_add)
 
+    invoice = subparsers.add_parser(
+        "invoice",
+        help="Prepare outgoing invoice drafts and link final issued evidence",
+    )
+    invoice_sub = invoice.add_subparsers(dest="invoice_command", required=True)
+    invoice_template = invoice_sub.add_parser(
+        "template-upsert",
+        help="Create or version a reviewed recurring invoice template",
+    )
+    _db_arg(invoice_template)
+    invoice_template.add_argument("--input", type=Path, required=True)
+    invoice_template.set_defaults(_operational_handler=_cmd_invoice_template_upsert)
+    invoice_templates = invoice_sub.add_parser(
+        "templates",
+        help="List recurring invoice templates",
+    )
+    _db_arg(invoice_templates)
+    invoice_templates.add_argument("--include-inactive", action="store_true")
+    invoice_templates.set_defaults(_operational_handler=_cmd_invoice_templates)
+    invoice_draft = invoice_sub.add_parser(
+        "draft",
+        help="Create a non-issued outgoing invoice draft from a reviewed template",
+    )
+    _db_arg(invoice_draft)
+    invoice_draft.add_argument("--input", type=Path, required=True)
+    invoice_draft.set_defaults(_operational_handler=_cmd_invoice_draft)
+    invoice_review = invoice_sub.add_parser(
+        "review",
+        help="Mark a complete outgoing invoice draft ready for an external channel",
+    )
+    _db_arg(invoice_review)
+    invoice_review.add_argument("outgoing_invoice_draft_id")
+    invoice_review.add_argument("--expected-row-version", type=int, required=True)
+    invoice_review.set_defaults(_operational_handler=_cmd_invoice_review)
+    invoice_finalize = invoice_sub.add_parser(
+        "finalize",
+        help="Link a reviewed draft to the issued PDF and income transaction",
+    )
+    _db_arg(invoice_finalize)
+    invoice_finalize.add_argument("outgoing_invoice_draft_id")
+    invoice_finalize.add_argument("--document-id", required=True)
+    invoice_finalize.add_argument("--transaction-id", required=True)
+    invoice_finalize.add_argument("--external-number", required=True)
+    invoice_finalize.add_argument("--external-series")
+    invoice_finalize.add_argument("--expected-row-version", type=int, required=True)
+    invoice_finalize.set_defaults(_operational_handler=_cmd_invoice_finalize)
+    invoice_void = invoice_sub.add_parser(
+        "void",
+        help="Void an unissued outgoing invoice draft with an audit reason",
+    )
+    _db_arg(invoice_void)
+    invoice_void.add_argument("outgoing_invoice_draft_id")
+    invoice_void.add_argument("--reason", required=True)
+    invoice_void.add_argument("--expected-row-version", type=int, required=True)
+    invoice_void.set_defaults(_operational_handler=_cmd_invoice_void)
+    invoice_show = invoice_sub.add_parser("show", help="Show a draft and all invoice lines")
+    _db_arg(invoice_show)
+    invoice_show.add_argument("outgoing_invoice_draft_id")
+    invoice_show.add_argument("--out", type=Path)
+    invoice_show.set_defaults(_operational_handler=_cmd_invoice_show)
+    invoice_list = invoice_sub.add_parser("list", help="List outgoing invoice drafts")
+    _db_arg(invoice_list)
+    invoice_list.add_argument("--period")
+    invoice_list.set_defaults(_operational_handler=_cmd_invoice_list)
+
     migration = subparsers.add_parser("migrate-history", help="Import Xolo source-book history into SQLite")
     _db_arg(migration)
     migration.add_argument("--source-book", type=Path, required=True)
@@ -723,6 +788,80 @@ def _cmd_fx_add(args: argparse.Namespace) -> int:
     with open_ledger_db(args.db) as db:
         row = db.add_fx_rate(**payload)
     _emit(row)
+    return 0
+
+
+def _cmd_invoice_template_upsert(args: argparse.Namespace) -> int:
+    payload = _load_json_object(args.input)
+    with open_ledger_db(args.db) as db:
+        row = db.upsert_invoice_template(**payload)
+    normalized = dict(row)
+    normalized["default_lines"] = json.loads(normalized.pop("default_lines_json"))
+    _emit(normalized)
+    return 0
+
+
+def _cmd_invoice_templates(args: argparse.Namespace) -> int:
+    with open_ledger_db(args.db, read_only=True) as db:
+        rows = db.list_invoice_templates(include_inactive=args.include_inactive)
+    _emit(rows)
+    return 0
+
+
+def _cmd_invoice_draft(args: argparse.Namespace) -> int:
+    payload = _load_json_object(args.input)
+    with open_ledger_db(args.db) as db:
+        row = db.create_outgoing_invoice_draft(**payload)
+    _emit(row)
+    return 0
+
+
+def _cmd_invoice_review(args: argparse.Namespace) -> int:
+    with open_ledger_db(args.db) as db:
+        row = db.review_outgoing_invoice_draft(
+            args.outgoing_invoice_draft_id,
+            expected_row_version=args.expected_row_version,
+        )
+    _emit(row)
+    return 0
+
+
+def _cmd_invoice_finalize(args: argparse.Namespace) -> int:
+    with open_ledger_db(args.db) as db:
+        row = db.finalize_outgoing_invoice_draft(
+            args.outgoing_invoice_draft_id,
+            document_id=args.document_id,
+            transaction_id=args.transaction_id,
+            external_number=args.external_number,
+            external_series=args.external_series,
+            expected_row_version=args.expected_row_version,
+        )
+    _emit(row)
+    return 0
+
+
+def _cmd_invoice_void(args: argparse.Namespace) -> int:
+    with open_ledger_db(args.db) as db:
+        row = db.void_outgoing_invoice_draft(
+            args.outgoing_invoice_draft_id,
+            reason=args.reason,
+            expected_row_version=args.expected_row_version,
+        )
+    _emit(row)
+    return 0
+
+
+def _cmd_invoice_show(args: argparse.Namespace) -> int:
+    with open_ledger_db(args.db, read_only=True) as db:
+        row = db.get_outgoing_invoice_draft(args.outgoing_invoice_draft_id)
+    _write_or_emit(row, args.out)
+    return 0
+
+
+def _cmd_invoice_list(args: argparse.Namespace) -> int:
+    with open_ledger_db(args.db, read_only=True) as db:
+        rows = db.list_outgoing_invoice_drafts(period_key=args.period)
+    _emit(rows)
     return 0
 
 
