@@ -12,10 +12,16 @@ import sqlite3
 from typing import Any, Callable, Iterable
 
 from .fx_policy import ALLOWED_PRODUCTION_SOURCES
-from .intake import inspect_document
-from .ledger_db import LedgerDB, initialize, open as open_ledger_db
+from .intake import archive_evidence, inspect_document
+from .ledger_db import LedgerDB, LedgerDbError, initialize, open as open_ledger_db
 from .obligations import ActivityFact, CounterpartyFact, detect_obligations
-from .revolut import RevolutMatchCandidate, load_revolut_payments_csv, match_revolut_payments
+from .parsers import LedgerEntry, parse_expense, parse_income_invoice
+from .revolut import (
+    RevolutMatchCandidate,
+    RevolutPayment,
+    load_revolut_payments_csv,
+    match_revolut_payments,
+)
 from .sheet_sync import SheetRow, diff_sheet_rows
 from .tax_engine import (
     CalculationBlocked,
@@ -31,10 +37,31 @@ from .tax_engine import (
     calculate_retention_rows,
 )
 from .tax_rules import ANNUAL_FORM_CODES, QUARTERLY_FORM_CODES, difficult_expense_rule_for_year
+from .zenmoney import ZenMoneyPayment, load_zenmoney_payments_csv
 
 
 DEFAULT_DB = Path(".local") / "autonomo.sqlite"
 Handler = Callable[[argparse.Namespace], int]
+PAYMENT_SHEET_FIELDS = [
+    "uuid",
+    "row_version",
+    "status",
+    "transaction_id",
+    "obligation_id",
+    "paid_on",
+    "amount_minor",
+    "currency",
+    "amount_eur_minor",
+    "original_reference",
+    "fee_minor",
+    "fee_currency",
+    "source_system",
+    "external_id",
+    "account_name",
+    "counterparty_name",
+    "category",
+    "comment",
+]
 
 
 def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -> None:
@@ -55,11 +82,12 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
         required=True,
         choices=["income_invoice", "expense_invoice", "bank_statement", "tax_report", "other"],
     )
-    ingest.add_argument("--period", required=True)
-    ingest.add_argument("--issued-on", required=True)
+    ingest.add_argument("--period")
+    ingest.add_argument("--issued-on")
     ingest.add_argument("--document-number")
     ingest.add_argument("--counterparty-id")
     ingest.add_argument("--drive-file-id")
+    ingest.add_argument("--archive-root", type=Path)
     ingest.add_argument("--tesseract-command", default="tesseract")
     ingest.set_defaults(_operational_handler=_cmd_ingest)
 
@@ -191,6 +219,14 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     _db_arg(bank_import)
     bank_import.add_argument("--csv", type=Path, required=True)
     bank_import.set_defaults(_operational_handler=_cmd_bank_import_revolut)
+    zenmoney_import = bank_sub.add_parser("import-zenmoney")
+    _db_arg(zenmoney_import)
+    zenmoney_import.add_argument("--csv", type=Path, required=True)
+    zenmoney_import.add_argument("--period", required=True)
+    zenmoney_import.add_argument("--account", action="append", required=True)
+    zenmoney_import.add_argument("--default-currency")
+    zenmoney_import.add_argument("--archive-root", type=Path)
+    zenmoney_import.set_defaults(_operational_handler=_cmd_bank_import_zenmoney)
 
     sheet = subparsers.add_parser("sheet", help="Export or reconcile the Google Sheet review projection")
     sheet_sub = sheet.add_subparsers(dest="sheet_command", required=True)
@@ -331,6 +367,24 @@ def _cmd_db_status(args: argparse.Namespace) -> int:
 
 def _cmd_ingest(args: argparse.Namespace) -> int:
     result = inspect_document(args.path, args.kind, tesseract_command=args.tesseract_command)
+    suggestion = _document_suggestion(args.path, args.kind, result.extracted_text)
+    issued_on = args.issued_on or (
+        suggestion.date.isoformat() if suggestion is not None and suggestion.date is not None else None
+    )
+    if issued_on is None:
+        raise ValueError("--issued-on is required when the document parser cannot identify a date")
+    period_key = args.period or _quarter_key(date.fromisoformat(issued_on))
+    archived_path = (
+        archive_evidence(
+            args.path,
+            args.archive_root,
+            period_key=period_key,
+            evidence_kind=args.kind,
+            digest=result.sha256,
+        )
+        if args.archive_root is not None
+        else Path(result.source_path)
+    )
     with open_ledger_db(args.db) as db:
         batch = db.add_import_batch(
             source_name=str(args.path.resolve()),
@@ -338,27 +392,39 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
             batch_key=f"document:{result.sha256}",
             notes=f"Extraction method: {result.extraction_method}",
         )
+        counterparty_id = args.counterparty_id or _upsert_intake_counterparty(db, suggestion)
+        document_number = args.document_number
+        if document_number is None and suggestion is not None and args.kind == "income_invoice":
+            document_number = suggestion.description or None
         document = db.upsert_document(
             external_key=f"sha256:{result.sha256}",
-            counterparty_id=args.counterparty_id,
+            counterparty_id=counterparty_id,
             import_batch_id=batch["import_batch_id"],
             document_type=args.kind,
-            document_number=args.document_number,
-            issued_on=args.issued_on,
-            period_key=args.period,
+            document_number=document_number,
+            issued_on=issued_on,
+            period_key=period_key,
+            currency=suggestion.currency if suggestion is not None else "EUR",
+            total_minor=(
+                int(suggestion.amount_original * 100)
+                if args.kind == "income_invoice"
+                and suggestion is not None
+                and suggestion.amount_original is not None
+                else None
+            ),
             lifecycle_status=result.status,
             source_hash=result.sha256,
         )
         document = db.set_document_storage(
             document["document_id"],
-            source_path=result.source_path,
+            source_path=str(archived_path),
             drive_file_id=args.drive_file_id,
             mime_type=result.mime_type,
             expected_row_version=document["row_version"],
         )
         if result.needs_review:
             db.add_validation_issue(
-                period_key=args.period,
+                period_key=period_key,
                 issue_code="document_structural_review",
                 severity="error",
                 message="; ".join(result.structural_errors),
@@ -367,7 +433,44 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
                 blocking=True,
                 source_hash=result.sha256,
             )
-    _emit({**asdict(result), "document_id": document["document_id"], "row_version": document["row_version"]})
+        if suggestion is not None and suggestion.review_required:
+            db.add_validation_issue(
+                period_key=period_key,
+                issue_code="document_classification_review",
+                severity="warning",
+                message=suggestion.notes or "Document requires classification review",
+                subject_table="documents",
+                subject_id=document["document_id"],
+                blocking=True,
+                source_hash=result.sha256,
+            )
+        if counterparty_id is not None:
+            counterparty = db.connection.execute(
+                "SELECT country_code FROM counterparties WHERE counterparty_id = ?",
+                (counterparty_id,),
+            ).fetchone()
+            if counterparty["country_code"] == "ZZ":
+                db.add_validation_issue(
+                    period_key=period_key,
+                    issue_code="counterparty_tax_profile_review",
+                    severity="warning",
+                    message="Review country and tax identity before posting this counterparty.",
+                    subject_table="counterparties",
+                    subject_id=counterparty_id,
+                    blocking=True,
+                    source_hash=result.sha256,
+                )
+    _emit(
+        {
+            **asdict(result),
+            "archived_path": str(archived_path),
+            "period": period_key,
+            "issued_on": issued_on,
+            "suggested_entry": suggestion.as_row() if suggestion is not None else None,
+            "document_id": document["document_id"],
+            "row_version": document["row_version"],
+        }
+    )
     return 0
 
 
@@ -607,37 +710,38 @@ def _cmd_bank_import_revolut(args: argparse.Namespace) -> int:
     payments = load_revolut_payments_csv(args.csv)
     source_digest = _sha256(args.csv)
     with open_ledger_db(args.db) as db:
-        candidates = []
-        transactions = db.list_transactions()
-        for row in transactions:
-            if row["lifecycle_status"] not in {"approved", "posted", "included_in_snapshot"}:
-                continue
-            if row["entry_type"] not in {"income", "expense"}:
-                continue
-            signed_minor = row["amount_original_minor"] or row["amount_minor"]
-            if str(row["entry_type"]).startswith("expense"):
-                signed_minor = -abs(signed_minor)
-            candidates.append(
-                RevolutMatchCandidate(
-                    candidate_id=row["transaction_id"],
-                    recognition_date=date.fromisoformat(row["transaction_date"]),
-                    payment_date=None,
-                    reference=row["external_key"] or row["description"],
-                    amount_original=Decimal(signed_minor) / 100,
-                    currency=row["original_currency"] or row["currency"],
-                    amount_eur=(
-                        (Decimal(-abs(row["amount_eur_minor"])) if str(row["entry_type"]).startswith("expense") else Decimal(row["amount_eur_minor"])) / 100
-                        if row["amount_eur_minor"] is not None
-                        else None
-                    ),
-                )
-            )
-        matches = {match.payment_id: match for match in match_revolut_payments(payments, candidates)}
         rollback = sqlite3.connect(":memory:")
         db.connection.backup(rollback)
         try:
-            imported = []
+            existing_by_external_id = {
+                row["external_id"]: row
+                for row in db.connection.execute(
+                    "SELECT * FROM payments WHERE source_system = 'revolut'"
+                ).fetchall()
+                if row["external_id"]
+            }
+            claimed_legacy = 0
             for payment in payments:
+                existing = existing_by_external_id.get(payment.payment_id)
+                if existing is not None:
+                    _validate_existing_revolut_payment(existing, payment)
+                    continue
+                claimed = _claim_legacy_revolut_payment(db, payment)
+                if claimed is not None:
+                    existing_by_external_id[payment.payment_id] = claimed
+                    claimed_legacy += 1
+            new_payments = [
+                payment
+                for payment in payments
+                if payment.payment_id not in existing_by_external_id
+            ]
+            candidates = _payment_match_candidates(db, exclude_settled=True)
+            matches = {
+                match.payment_id: match
+                for match in match_revolut_payments(new_payments, candidates)
+            }
+            imported = []
+            for payment in new_payments:
                 match = matches[payment.payment_id]
                 transaction_id = match.matched_candidate_ids[0] if match.outcome == "exact" else None
                 row = db.add_payment(
@@ -649,7 +753,21 @@ def _cmd_bank_import_revolut(args: argparse.Namespace) -> int:
                     fee_minor=int(payment.fee_original * 100) if payment.fee_original is not None else None,
                     fee_currency=payment.currency if payment.fee_original is not None else None,
                     match_status=match.outcome,
-                    source_hash=hashlib.sha256(f"{source_digest}:{payment.payment_id}".encode()).hexdigest(),
+                    source_hash=hashlib.sha256(f"revolut:{payment.payment_id}".encode()).hexdigest(),
+                    source_system="revolut",
+                    external_id=payment.payment_id,
+                    account_name="Revolut",
+                    counterparty_name=payment.counterparty,
+                    comment=payment.description,
+                    amount_eur_minor=(
+                        int(payment.amount_eur * 100) if payment.amount_eur is not None else None
+                    ),
+                    source_row_json=json.dumps(
+                        payment.source_row,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
                 )
                 imported.append({"payment_id": row["payment_id"], "match": asdict(match)})
         except Exception:
@@ -658,7 +776,124 @@ def _cmd_bank_import_revolut(args: argparse.Namespace) -> int:
             raise
         finally:
             rollback.close()
-    _emit({"source_sha256": source_digest, "payments": imported})
+    _emit(
+        {
+            "source_sha256": source_digest,
+            "payments": imported,
+            "already_imported": len(payments) - len(new_payments),
+            "claimed_legacy": claimed_legacy,
+        }
+    )
+    return 0
+
+
+def _cmd_bank_import_zenmoney(args: argparse.Namespace) -> int:
+    source_digest = _sha256(args.csv)
+    with open_ledger_db(args.db) as db:
+        period = db.ensure_period(args.period)
+        load_result = load_zenmoney_payments_csv(
+            args.csv,
+            business_accounts=set(args.account),
+            starts_on=date.fromisoformat(period["starts_on"]),
+            ends_on=date.fromisoformat(period["ends_on"]),
+            default_currency=args.default_currency,
+        )
+        archived_path = (
+            archive_evidence(
+                args.csv,
+                args.archive_root,
+                period_key=args.period,
+                evidence_kind="zenmoney_exports",
+                digest=source_digest,
+            )
+            if args.archive_root is not None
+            else args.csv.resolve()
+        )
+        existing_by_external_id = {
+            row["external_id"]: row
+            for row in db.connection.execute(
+                "SELECT * FROM payments WHERE source_system = 'zenmoney'"
+            ).fetchall()
+            if row["external_id"]
+        }
+        for payment in load_result.payments:
+            existing = existing_by_external_id.get(payment.external_id)
+            if existing is not None:
+                _validate_existing_zenmoney_payment(existing, payment)
+        new_payments = [
+            payment
+            for payment in load_result.payments
+            if payment.external_id not in existing_by_external_id
+        ]
+        candidates = _payment_match_candidates(db, exclude_settled=True)
+        matches = {
+            match.payment_id: match
+            for match in match_revolut_payments(new_payments, candidates)  # type: ignore[arg-type]
+        }
+        imported: list[dict[str, Any]] = []
+        rollback = sqlite3.connect(":memory:")
+        db.connection.backup(rollback)
+        try:
+            db.add_import_batch(
+                source_name=str(archived_path),
+                source_hash=source_digest,
+                batch_key=f"zenmoney:{source_digest}",
+                notes=f"Period {args.period}; business accounts: {', '.join(sorted(args.account))}",
+            )
+            for payment in new_payments:
+                match = matches[payment.payment_id]
+                transaction_id = match.matched_candidate_ids[0] if match.outcome == "exact" else None
+                source_hash = hashlib.sha256(
+                    f"zenmoney:{payment.external_id}".encode("utf-8")
+                ).hexdigest()
+                stored = db.add_payment(
+                    transaction_id=transaction_id,
+                    paid_on=payment.payment_date.isoformat(),
+                    amount_minor=int(payment.amount_original * 100),
+                    currency=payment.currency,
+                    original_reference=payment.reference,
+                    match_status=match.outcome,
+                    source_hash=source_hash,
+                    source_system="zenmoney",
+                    external_id=payment.external_id,
+                    account_name=payment.account_name,
+                    counterparty_name=payment.counterparty,
+                    category=payment.category,
+                    comment=payment.comment,
+                    amount_eur_minor=(
+                        int(payment.amount_eur * 100) if payment.amount_eur is not None else None
+                    ),
+                    source_row_json=json.dumps(
+                        payment.source_row,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                )
+                imported.append({"payment_id": stored["payment_id"], "match": asdict(match)})
+            missing_from_export = _sync_zenmoney_missing_issues(
+                db,
+                period_key=args.period,
+                business_accounts=set(args.account),
+                present_external_ids={payment.external_id for payment in load_result.payments},
+            )
+        except Exception:
+            db.connection.rollback()
+            rollback.backup(db.connection)
+            raise
+        finally:
+            rollback.close()
+    _emit(
+        {
+            "source_sha256": source_digest,
+            "archived_path": str(archived_path),
+            "period": args.period,
+            "imported": imported,
+            "already_imported": len(load_result.payments) - len(new_payments),
+            "skipped": [asdict(row) for row in load_result.skipped],
+            "missing_from_export": missing_from_export,
+        }
+    )
     return 0
 
 
@@ -731,7 +966,9 @@ def _cmd_sheet_export(args: argparse.Namespace) -> int:
             "payments": db.connection.execute(
                 """SELECT payment_id AS uuid, row_version, match_status AS status,
                           transaction_id, obligation_id, paid_on, amount_minor, currency,
-                          original_reference, fee_minor, fee_currency
+                          amount_eur_minor, original_reference, fee_minor, fee_currency,
+                          source_system, external_id, account_name, counterparty_name,
+                          category, comment
                    FROM payments ORDER BY paid_on, payment_id"""
             ).fetchall(),
             "filings": db.connection.execute(
@@ -755,7 +992,16 @@ def _cmd_sheet_export(args: argparse.Namespace) -> int:
                    FROM rule_versions ORDER BY rule_name, version"""
             ).fetchall(),
         }
-        outputs = {name: str(_write_rows_csv(args.out_dir / f"{name}.csv", rows)) for name, rows in tables.items()}
+        outputs = {
+            name: str(
+                _write_rows_csv(
+                    args.out_dir / f"{name}.csv",
+                    rows,
+                    fieldnames=PAYMENT_SHEET_FIELDS if name == "payments" else None,
+                )
+            )
+            for name, rows in tables.items()
+        }
     _emit({"outputs": outputs})
     return 0
 
@@ -1338,15 +1584,279 @@ def _apply_reviewed_sheet_row(
     )
 
 
-def _write_rows_csv(path: Path, rows: Iterable[sqlite3.Row]) -> Path:
+def _write_rows_csv(
+    path: Path,
+    rows: Iterable[sqlite3.Row],
+    *,
+    fieldnames: list[str] | None = None,
+) -> Path:
     materialized = list(rows)
     path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = list(materialized[0].keys()) if materialized else ["uuid", "row_version", "status"]
+    columns = fieldnames or (
+        list(materialized[0].keys()) if materialized else ["uuid", "row_version", "status"]
+    )
     with path.open("w", newline="", encoding="utf-8-sig") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
+        writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(dict(row) for row in materialized)
     return path
+
+
+def _document_suggestion(path: Path, kind: str, text: str) -> LedgerEntry | None:
+    if kind == "income_invoice":
+        return parse_income_invoice(path, text)
+    if kind == "expense_invoice":
+        extraction_error = None if text.strip() else "No readable text extracted"
+        return parse_expense(path, text, extraction_error=extraction_error)
+    return None
+
+
+def _upsert_intake_counterparty(db: LedgerDB, suggestion: LedgerEntry | None) -> str | None:
+    if suggestion is None or not suggestion.counterparty or suggestion.counterparty == "Unknown":
+        return None
+    matches = db.connection.execute(
+        "SELECT * FROM counterparties WHERE display_name = ? COLLATE NOCASE",
+        (suggestion.counterparty,),
+    ).fetchall()
+    if len(matches) == 1:
+        return matches[0]["counterparty_id"]
+    normalized = "".join(character for character in suggestion.counterparty.casefold() if character.isalnum())
+    row = db.upsert_counterparty(
+        external_key=f"intake-name:{normalized}",
+        display_name=suggestion.counterparty,
+        country_code="ZZ",
+        source_hash=hashlib.sha256(
+            f"intake-counterparty:{normalized}".encode("utf-8")
+        ).hexdigest(),
+    )
+    return row["counterparty_id"]
+
+
+def _quarter_key(value: date) -> str:
+    return f"{value.year}-Q{((value.month - 1) // 3) + 1}"
+
+
+def _payment_match_candidates(
+    db: LedgerDB,
+    *,
+    exclude_settled: bool,
+) -> list[RevolutMatchCandidate]:
+    rows = db.connection.execute(
+        """
+        SELECT t.*, d.document_number
+        FROM transactions t
+        LEFT JOIN documents d ON d.document_id = t.document_id
+        WHERE t.lifecycle_status IN ('approved', 'posted', 'included_in_snapshot')
+          AND t.entry_type IN ('income', 'expense')
+          AND (
+              ? = 0 OR NOT EXISTS (
+                  SELECT 1 FROM payments pay
+                  WHERE pay.transaction_id = t.transaction_id
+                    AND pay.match_status IN ('exact', 'manual')
+              )
+          )
+        ORDER BY t.transaction_date, t.transaction_id
+        """,
+        (1 if exclude_settled else 0,),
+    ).fetchall()
+    candidates: list[RevolutMatchCandidate] = []
+    for row in rows:
+        signed_minor = (
+            row["amount_original_minor"]
+            if row["amount_original_minor"] is not None
+            else row["amount_minor"]
+        )
+        if row["entry_type"] == "expense":
+            signed_minor = -abs(signed_minor)
+        amount_eur_minor = row["amount_eur_minor"]
+        if amount_eur_minor is not None and row["entry_type"] == "expense":
+            amount_eur_minor = -abs(amount_eur_minor)
+        candidates.append(
+            RevolutMatchCandidate(
+                candidate_id=row["transaction_id"],
+                recognition_date=date.fromisoformat(row["transaction_date"]),
+                payment_date=None,
+                reference=row["document_number"] or row["external_key"] or row["description"],
+                amount_original=Decimal(signed_minor) / 100,
+                currency=row["original_currency"] or row["currency"],
+                amount_eur=(
+                    Decimal(amount_eur_minor) / 100 if amount_eur_minor is not None else None
+                ),
+            )
+        )
+    return candidates
+
+
+def _validate_existing_zenmoney_payment(
+    existing: sqlite3.Row,
+    payment: ZenMoneyPayment,
+) -> None:
+    desired = {
+        "paid_on": payment.payment_date.isoformat(),
+        "amount_minor": int(payment.amount_original * 100),
+        "currency": payment.currency,
+        "amount_eur_minor": (
+            int(payment.amount_eur * 100) if payment.amount_eur is not None else None
+        ),
+        "account_name": payment.account_name,
+    }
+    changed = [key for key, value in desired.items() if existing[key] != value]
+    if changed:
+        raise LedgerDbError(
+            "ZenMoney external_id already exists with changed accounting fields: "
+            + ", ".join(sorted(changed))
+        )
+
+
+def _validate_existing_revolut_payment(
+    existing: sqlite3.Row,
+    payment: RevolutPayment,
+) -> None:
+    desired = {
+        "paid_on": payment.payment_date.isoformat(),
+        "amount_minor": int(payment.amount_original * 100),
+        "currency": payment.currency,
+        "amount_eur_minor": (
+            int(payment.amount_eur * 100) if payment.amount_eur is not None else None
+        ),
+        "original_reference": payment.reference,
+        "fee_minor": (
+            int(payment.fee_original * 100) if payment.fee_original is not None else None
+        ),
+        "fee_currency": payment.currency if payment.fee_original is not None else None,
+    }
+    changed = [key for key, value in desired.items() if existing[key] != value]
+    if changed:
+        raise LedgerDbError(
+            "Revolut external_id already exists with changed accounting fields: "
+            + ", ".join(sorted(changed))
+        )
+
+
+def _claim_legacy_revolut_payment(
+    db: LedgerDB,
+    payment: RevolutPayment,
+) -> sqlite3.Row | None:
+    candidates = db.connection.execute(
+        """
+        SELECT * FROM payments
+        WHERE source_system IS NULL
+          AND paid_on = ?
+          AND amount_minor = ?
+          AND currency = ?
+          AND COALESCE(original_reference, '') = ?
+        ORDER BY created_at, payment_id
+        """,
+        (
+            payment.payment_date.isoformat(),
+            int(payment.amount_original * 100),
+            payment.currency,
+            payment.reference,
+        ),
+    ).fetchall()
+    if not candidates:
+        return None
+    if len(candidates) > 1:
+        raise LedgerDbError(
+            f"Multiple legacy payments match Revolut row {payment.payment_id}; manual review required"
+        )
+    existing = candidates[0]
+    source_row = {
+        "legacy_source_hash": existing["source_hash"],
+        "revolut_source_row": payment.source_row,
+    }
+    timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    with db.connection:
+        db.connection.execute(
+            """
+            UPDATE payments
+            SET source_system = 'revolut', external_id = ?, account_name = 'Revolut',
+                counterparty_name = ?, comment = ?, amount_eur_minor = ?,
+                source_row_json = ?, fee_minor = ?, fee_currency = ?,
+                row_version = row_version + 1, updated_at = ?
+            WHERE payment_id = ?
+            """,
+            (
+                payment.payment_id,
+                payment.counterparty,
+                payment.description,
+                int(payment.amount_eur * 100) if payment.amount_eur is not None else None,
+                json.dumps(source_row, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+                int(payment.fee_original * 100) if payment.fee_original is not None else None,
+                payment.currency if payment.fee_original is not None else None,
+                timestamp,
+                existing["payment_id"],
+            ),
+        )
+    return db.connection.execute(
+        "SELECT * FROM payments WHERE payment_id = ?",
+        (existing["payment_id"],),
+    ).fetchone()
+
+
+def _sync_zenmoney_missing_issues(
+    db: LedgerDB,
+    *,
+    period_key: str,
+    business_accounts: set[str],
+    present_external_ids: set[str],
+) -> list[str]:
+    period = db.ensure_period(period_key)
+    selected_accounts = {value.casefold().strip() for value in business_accounts}
+    existing = db.connection.execute(
+        """
+        SELECT * FROM payments
+        WHERE source_system = 'zenmoney'
+          AND paid_on BETWEEN ? AND ?
+        ORDER BY paid_on, payment_id
+        """,
+        (period["starts_on"], period["ends_on"]),
+    ).fetchall()
+    missing = [
+        row
+        for row in existing
+        if (row["account_name"] or "").casefold().strip() in selected_accounts
+        and row["external_id"] not in present_external_ids
+    ]
+    missing_ids = {row["payment_id"] for row in missing}
+    if period["status"] in {"closed", "amended"}:
+        return sorted(missing_ids)
+
+    for row in missing:
+        db.add_validation_issue(
+            period_key=period_key,
+            issue_code="payment_missing_from_zenmoney_export",
+            severity="error",
+            message=(
+                f"Previously imported ZenMoney payment is absent from the current full export: "
+                f"{row['paid_on']} {row['amount_minor']} {row['currency']} {row['account_name']}."
+            ),
+            subject_table="payments",
+            subject_id=row["payment_id"],
+            blocking=True,
+            source_hash=row["source_hash"],
+            dedupe_key=f"zenmoney-missing:{row['payment_id']}",
+        )
+
+    stale_issues = db.connection.execute(
+        """
+        SELECT vi.*
+        FROM validation_issues vi
+        WHERE vi.period_id = ?
+          AND vi.issue_code = 'payment_missing_from_zenmoney_export'
+          AND vi.issue_status = 'open'
+        """,
+        (period["period_id"],),
+    ).fetchall()
+    for issue in stale_issues:
+        if issue["subject_id"] in missing_ids:
+            continue
+        db.resolve_issue(
+            issue["validation_issue_id"],
+            reason="Payment is present in the latest full ZenMoney export.",
+            expected_row_version=issue["row_version"],
+        )
+    return sorted(missing_ids)
 
 
 def _obligation_period(code: str, year: int, quarter: int | None) -> str:

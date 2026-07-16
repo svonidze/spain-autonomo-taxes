@@ -92,6 +92,33 @@ def inspect_document(
     )
 
 
+def archive_evidence(
+    path: Path,
+    archive_root: Path,
+    *,
+    period_key: str,
+    evidence_kind: str,
+    digest: str | None = None,
+) -> Path:
+    """Copy evidence into a content-addressed archive without changing the source."""
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    source_digest = (digest or _sha256(path)).lower()
+    safe_name = re.sub(r"[^0-9A-Za-z._ -]+", "_", path.name).strip(" ._") or "evidence"
+    target_dir = archive_root / period_key / evidence_kind
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / f"{source_digest[:12]}-{safe_name}"
+    if target.exists():
+        if _sha256(target).lower() != source_digest:
+            raise ValueError(f"Archive collision for {target}")
+        return target.resolve()
+    shutil.copy2(path, target)
+    if _sha256(target).lower() != source_digest:
+        target.unlink(missing_ok=True)
+        raise IOError(f"Archived evidence hash mismatch for {target}")
+    return target.resolve()
+
+
 def structural_errors(kind: str, text: str) -> tuple[str, ...]:
     normalized = " ".join(text.split())
     if not normalized:

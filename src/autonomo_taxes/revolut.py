@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -66,10 +66,17 @@ _STATE_KEYS = ("state", "status")
 def load_revolut_payments_csv(path: Path) -> list[RevolutPayment]:
     with path.open("r", newline="", encoding="utf-8-sig") as handle:
         reader = csv.DictReader(handle)
-        return [
+        parsed = [
             normalize_revolut_payment(row, source_row_number=row_number)
             for row_number, row in enumerate(reader, start=2)
         ]
+    occurrences: dict[str, int] = {}
+    result: list[RevolutPayment] = []
+    for payment in parsed:
+        occurrence = occurrences.get(payment.payment_id, 0) + 1
+        occurrences[payment.payment_id] = occurrence
+        result.append(replace(payment, payment_id=f"{payment.payment_id}|{occurrence}"))
+    return result
 
 
 def normalize_revolut_payment(
@@ -96,6 +103,8 @@ def normalize_revolut_payment(
         fee_eur = fee_original
     state = _pick(lowered, *_STATE_KEYS)
     source_row = {str(key): _stringify(value) for key, value in row.items() if key is not None}
+    if source_row_number is not None:
+        source_row["__source_row_number"] = str(source_row_number)
 
     payment_id = "|".join(
         [
@@ -105,7 +114,6 @@ def normalize_revolut_payment(
             f"{amount_eur:.2f}" if amount_eur is not None else "",
             _normalize_reference(reference),
             _normalize_reference(counterparty),
-            str(source_row_number or ""),
         ]
     )
     return RevolutPayment(
@@ -185,11 +193,11 @@ def _is_candidate_match(payment: RevolutPayment, candidate: RevolutMatchCandidat
         return False
     payment_reference = _normalize_reference(payment.reference)
     candidate_reference = _normalize_reference(candidate.reference)
-    if payment_reference and candidate_reference:
-        return payment_reference == candidate_reference
+    if payment_reference or candidate_reference:
+        return bool(payment_reference and candidate_reference) and payment_reference == candidate_reference
     if candidate.payment_date is not None:
         return candidate.payment_date == payment.payment_date
-    return True
+    return False
 
 
 def _amounts_match(payment: RevolutPayment, candidate: RevolutMatchCandidate) -> bool:
