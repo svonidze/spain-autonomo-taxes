@@ -13,6 +13,12 @@ from typing import Any, Callable, Iterable
 
 from .fx_policy import ALLOWED_PRODUCTION_SOURCES
 from .intake import archive_evidence, inspect_document
+from .intake_bundle import (
+    InvoiceAmounts,
+    extract_invoice_amounts,
+    extract_invoice_number,
+    review_requirements,
+)
 from .ledger_db import LedgerDB, LedgerDbError, initialize, open as open_ledger_db
 from .obligations import ActivityFact, CounterpartyFact, detect_obligations
 from .parsers import LedgerEntry, parse_expense, parse_income_invoice
@@ -89,6 +95,15 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     ingest.add_argument("--drive-file-id")
     ingest.add_argument("--archive-root", type=Path)
     ingest.add_argument("--tesseract-command", default="tesseract")
+    ingest.add_argument("--gross", type=Decimal)
+    ingest.add_argument("--taxable-base", type=Decimal)
+    ingest.add_argument("--vat", type=Decimal)
+    ingest.add_argument("--currency")
+    ingest.add_argument(
+        "--document-only",
+        action="store_true",
+        help="Archive and review the document without creating an invoice transaction draft",
+    )
     ingest.set_defaults(_operational_handler=_cmd_ingest)
 
     documents = subparsers.add_parser("documents", help="Review document lifecycle decisions")
@@ -415,8 +430,21 @@ def _cmd_db_status(args: argparse.Namespace) -> int:
 
 
 def _cmd_ingest(args: argparse.Namespace) -> int:
+    if args.document_only and any(
+        value is not None for value in (args.gross, args.taxable_base, args.vat, args.currency)
+    ):
+        raise ValueError("Invoice amount overrides cannot be combined with --document-only")
     result = inspect_document(args.path, args.kind, tesseract_command=args.tesseract_command)
     suggestion = _document_suggestion(args.path, args.kind, result.extracted_text)
+    amounts = extract_invoice_amounts(
+        result.extracted_text,
+        suggestion,
+        gross_override=args.gross,
+        taxable_base_override=args.taxable_base,
+        vat_override=args.vat,
+        currency_override=args.currency,
+    )
+    requirements = review_requirements(args.kind, suggestion, amounts)
     issued_on = args.issued_on or (
         suggestion.date.isoformat() if suggestion is not None and suggestion.date is not None else None
     )
@@ -442,29 +470,51 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
             notes=f"Extraction method: {result.extraction_method}",
         )
         counterparty_id = args.counterparty_id or _upsert_intake_counterparty(db, suggestion)
-        document_number = args.document_number
+        document_number = args.document_number or extract_invoice_number(result.extracted_text)
         if document_number is None and suggestion is not None:
             parsed_description = suggestion.description or ""
             if args.kind == "income_invoice" or parsed_description != args.path.name:
                 document_number = parsed_description or None
-        document = db.upsert_document(
-            external_key=f"sha256:{result.sha256}",
-            counterparty_id=counterparty_id,
-            import_batch_id=batch["import_batch_id"],
-            document_type=args.kind,
-            document_number=document_number,
-            issued_on=issued_on,
-            period_key=period_key,
-            currency=suggestion.currency if suggestion is not None else "EUR",
-            total_minor=(
-                int(suggestion.amount_original * 100)
-                if suggestion is not None
-                and suggestion.amount_original is not None
-                else None
-            ),
-            lifecycle_status=result.status,
-            source_hash=result.sha256,
-        )
+        existing_document = db.connection.execute(
+            """
+            SELECT d.*, p.period_key
+            FROM documents d
+            LEFT JOIN periods p ON p.period_id = d.period_id
+            WHERE d.source_hash = ?
+            """,
+            (result.sha256,),
+        ).fetchone()
+        is_new_document = existing_document is None
+        if existing_document is None:
+            document = db.upsert_document(
+                external_key=f"sha256:{result.sha256}",
+                counterparty_id=counterparty_id,
+                import_batch_id=batch["import_batch_id"],
+                document_type=args.kind,
+                document_number=document_number,
+                issued_on=issued_on,
+                period_key=period_key,
+                currency=amounts.currency or (
+                    suggestion.currency if suggestion is not None else ""
+                ),
+                total_minor=(
+                    int(amounts.gross * 100) if amounts.gross is not None else None
+                ),
+                lifecycle_status=result.status,
+                source_hash=result.sha256,
+            )
+        else:
+            document = _backfill_existing_intake_document(
+                db,
+                existing_document,
+                import_batch_id=batch["import_batch_id"],
+                counterparty_id=counterparty_id,
+                document_kind=args.kind,
+                period_key=period_key,
+                issued_on=issued_on,
+                document_number=document_number,
+                amounts=amounts,
+            )
         document = db.set_document_storage(
             document["document_id"],
             source_path=str(archived_path),
@@ -472,7 +522,7 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
             mime_type=result.mime_type,
             expected_row_version=document["row_version"],
         )
-        if result.needs_review:
+        if is_new_document and result.needs_review:
             db.add_validation_issue(
                 period_key=period_key,
                 issue_code="document_structural_review",
@@ -483,7 +533,7 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
                 blocking=True,
                 source_hash=result.sha256,
             )
-        if suggestion is not None and suggestion.review_required:
+        if is_new_document and suggestion is not None and suggestion.review_required:
             db.add_validation_issue(
                 period_key=period_key,
                 issue_code="document_classification_review",
@@ -494,7 +544,7 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
                 blocking=True,
                 source_hash=result.sha256,
             )
-        if counterparty_id is not None:
+        if is_new_document and counterparty_id is not None:
             counterparty = db.connection.execute(
                 "SELECT country_code FROM counterparties WHERE counterparty_id = ?",
                 (counterparty_id,),
@@ -510,6 +560,22 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
                     blocking=True,
                     source_hash=result.sha256,
                 )
+        transaction = _intake_transaction_draft(
+            db,
+            document=document,
+            document_kind=args.kind,
+            period_key=period_key,
+            issued_on=issued_on,
+            document_number=document_number,
+            counterparty_id=counterparty_id,
+            suggestion=suggestion,
+            amounts=amounts,
+            requirements=requirements,
+            source_hash=result.sha256,
+            structural_review=result.needs_review,
+            document_only=args.document_only,
+            create_missing_issue=is_new_document,
+        )
     _emit(
         {
             **asdict(result),
@@ -517,8 +583,11 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
             "period": period_key,
             "issued_on": issued_on,
             "suggested_entry": suggestion.as_row() if suggestion is not None else None,
+            "invoice_amounts": amounts.as_dict(),
+            "review_requirements": list(requirements),
             "document_id": document["document_id"],
             "row_version": document["row_version"],
+            "transaction": transaction,
         }
     )
     return 0
@@ -1839,6 +1908,267 @@ def _document_suggestion(path: Path, kind: str, text: str) -> LedgerEntry | None
         extraction_error = None if text.strip() else "No readable text extracted"
         return parse_expense(path, text, extraction_error=extraction_error)
     return None
+
+
+def _intake_transaction_draft(
+    db: LedgerDB,
+    *,
+    document: dict[str, Any],
+    document_kind: str,
+    period_key: str,
+    issued_on: str,
+    document_number: str | None,
+    counterparty_id: str | None,
+    suggestion: LedgerEntry | None,
+    amounts: InvoiceAmounts,
+    requirements: tuple[str, ...],
+    source_hash: str,
+    structural_review: bool,
+    document_only: bool,
+    create_missing_issue: bool,
+) -> dict[str, Any] | None:
+    if document_only or document_kind not in {"income_invoice", "expense_invoice"}:
+        return None
+
+    external_key = f"intake-document:{document['document_id']}"
+    existing = db.connection.execute(
+        """
+        SELECT t.*, p.period_key
+        FROM transactions t
+        JOIN periods p ON p.period_id = t.period_id
+        WHERE t.external_key = ?
+        """,
+        (external_key,),
+    ).fetchone()
+    if existing is not None:
+        expected = {
+            "period_key": period_key,
+            "transaction_date": issued_on,
+            "entry_type": "income" if document_kind == "income_invoice" else "expense",
+            "document_id": document["document_id"],
+        }
+        changed = [key for key, value in expected.items() if existing[key] != value]
+        if amounts.gross is not None and existing["amount_minor"] != int(amounts.gross * 100):
+            changed.append("amount_minor")
+        if amounts.currency and existing["currency"] != amounts.currency:
+            changed.append("currency")
+        if changed:
+            raise LedgerDbError(
+                "Existing intake transaction conflicts with the same source document: "
+                + ", ".join(sorted(set(changed)))
+            )
+        return _intake_transaction_summary(dict(existing), created=False)
+
+    if document["lifecycle_status"] in {
+        "approved",
+        "posted",
+        "included_in_snapshot",
+        "duplicate",
+        "rejected",
+        "void",
+    }:
+        return {
+            "created": False,
+            "reason": f"document_lifecycle:{document['lifecycle_status']}",
+        }
+
+    if not amounts.draft_ready:
+        if create_missing_issue:
+            db.add_validation_issue(
+                period_key=period_key,
+                issue_code="transaction_draft_missing_amount",
+                severity="error",
+                message="; ".join(amounts.errors) or "Invoice amount is incomplete",
+                subject_table="documents",
+                subject_id=document["document_id"],
+                blocking=True,
+                source_hash=source_hash,
+            )
+        return {"created": False, "reason": "invoice_amounts_incomplete"}
+
+    assert amounts.gross is not None
+    entry_type = "income" if document_kind == "income_invoice" else "expense"
+    effective_counterparty_id = document.get("counterparty_id") or counterparty_id
+    description = (
+        document_number
+        or (suggestion.description if suggestion is not None else None)
+        or Path(document.get("source_path") or "invoice").name
+    )
+    transaction = db.add_transaction(
+        external_key=external_key,
+        period_key=period_key,
+        transaction_date=issued_on,
+        booking_date=issued_on,
+        entry_type=entry_type,
+        description=description,
+        amount_minor=int(amounts.gross * 100),
+        currency=amounts.currency,
+        amount_original_minor=int(amounts.gross * 100),
+        original_currency=amounts.currency,
+        amount_eur_minor=(
+            int(amounts.gross * 100) if amounts.currency == "EUR" else None
+        ),
+        direction="credit" if entry_type == "income" else "debit",
+        lifecycle_status="received",
+        document_id=document["document_id"],
+        counterparty_id=effective_counterparty_id,
+        source_hash=hashlib.sha256(
+            f"intake-transaction:{source_hash}".encode("utf-8")
+        ).hexdigest(),
+    )
+    transaction = db.transition_transaction(
+        transaction["transaction_id"],
+        lifecycle_status="extracted",
+        expected_row_version=transaction["row_version"],
+    )
+    needs_review = bool(
+        structural_review
+        or amounts.errors
+        or suggestion is None
+        or suggestion.review_required
+        or effective_counterparty_id is None
+    )
+    if needs_review:
+        transaction = db.transition_transaction(
+            transaction["transaction_id"],
+            lifecycle_status="needs_review",
+            expected_row_version=transaction["row_version"],
+        )
+    amount_summary = amounts.as_dict()
+    db.add_validation_issue(
+        period_key=period_key,
+        issue_code="transaction_tax_review",
+        severity="warning",
+        message=(
+            "Review required before approval; "
+            f"gross={amount_summary['gross']} {amounts.currency}; "
+            f"taxable_base={amount_summary['taxable_base']}; "
+            f"vat={amount_summary['vat']}; decisions="
+            + ", ".join(requirements)
+        ),
+        subject_table="transactions",
+        subject_id=transaction["transaction_id"],
+        blocking=True,
+        source_hash=source_hash,
+    )
+    _resolve_open_intake_issue(
+        db,
+        issue_code="transaction_draft_missing_amount",
+        subject_table="documents",
+        subject_id=document["document_id"],
+        reason="Reviewed invoice amounts supplied during corrected re-ingest.",
+    )
+    return _intake_transaction_summary(transaction, created=True)
+
+
+def _backfill_existing_intake_document(
+    db: LedgerDB,
+    document: sqlite3.Row,
+    *,
+    import_batch_id: str,
+    counterparty_id: str | None,
+    document_kind: str,
+    period_key: str,
+    issued_on: str,
+    document_number: str | None,
+    amounts: InvoiceAmounts,
+) -> dict[str, Any]:
+    expected = {
+        "document_type": document_kind,
+        "period_key": period_key,
+        "issued_on": issued_on,
+    }
+    changed = [key for key, value in expected.items() if document[key] != value]
+    if document_number and document["document_number"] not in {None, "", document_number}:
+        changed.append("document_number")
+    if amounts.gross is not None and document["total_minor"] not in {
+        None,
+        int(amounts.gross * 100),
+    }:
+        changed.append("total_minor")
+    if amounts.currency and document["currency"] not in {None, "", amounts.currency}:
+        changed.append("currency")
+    if changed:
+        raise LedgerDbError(
+            "Existing intake document conflicts with the same content hash: "
+            + ", ".join(sorted(set(changed)))
+        )
+
+    active = document["lifecycle_status"] in {"received", "extracted", "needs_review"}
+    desired_counterparty_id = document["counterparty_id"] or counterparty_id
+    desired_import_batch_id = document["import_batch_id"] or import_batch_id
+    desired_document_number = document["document_number"] or document_number
+    desired_currency = document["currency"] or amounts.currency
+    desired_total_minor = document["total_minor"]
+    if desired_total_minor is None and amounts.gross is not None:
+        desired_total_minor = int(amounts.gross * 100)
+    backfill_changed = any(
+        (
+            desired_counterparty_id != document["counterparty_id"],
+            desired_import_batch_id != document["import_batch_id"],
+            desired_document_number != document["document_number"],
+            desired_currency != document["currency"],
+            desired_total_minor != document["total_minor"],
+        )
+    )
+    if not active or not backfill_changed:
+        return dict(document)
+    return db.upsert_document(
+        document_id=document["document_id"],
+        external_key=document["external_key"],
+        counterparty_id=desired_counterparty_id,
+        import_batch_id=desired_import_batch_id,
+        document_type=document["document_type"],
+        document_number=desired_document_number,
+        issued_on=document["issued_on"],
+        period_key=document["period_key"],
+        currency=desired_currency,
+        total_minor=desired_total_minor,
+        lifecycle_status=document["lifecycle_status"],
+        source_hash=document["source_hash"],
+        expected_row_version=document["row_version"],
+    )
+
+
+def _resolve_open_intake_issue(
+    db: LedgerDB,
+    *,
+    issue_code: str,
+    subject_table: str,
+    subject_id: str,
+    reason: str,
+) -> None:
+    issue = db.connection.execute(
+        """
+        SELECT * FROM validation_issues
+        WHERE issue_code = ? AND subject_table = ? AND subject_id = ?
+          AND issue_status = 'open'
+        """,
+        (issue_code, subject_table, subject_id),
+    ).fetchone()
+    if issue is None:
+        return
+    db.resolve_issue(
+        issue["validation_issue_id"],
+        reason=reason,
+        expected_row_version=issue["row_version"],
+    )
+
+
+def _intake_transaction_summary(
+    transaction: dict[str, Any], *, created: bool
+) -> dict[str, Any]:
+    return {
+        "created": created,
+        "transaction_id": transaction["transaction_id"],
+        "row_version": transaction["row_version"],
+        "lifecycle_status": transaction["lifecycle_status"],
+        "entry_type": transaction["entry_type"],
+        "amount_minor": transaction["amount_minor"],
+        "currency": transaction["currency"],
+        "amount_eur_minor": transaction["amount_eur_minor"],
+        "document_id": transaction["document_id"],
+    }
 
 
 def _upsert_intake_counterparty(db: LedgerDB, suggestion: LedgerEntry | None) -> str | None:
