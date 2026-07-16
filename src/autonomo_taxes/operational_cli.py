@@ -27,7 +27,6 @@ from .tax_engine import (
     CalculationBlocked,
     CalculationResult,
     TaxRow,
-    WITHHOLDING_TYPE_BY_TAX_CODE,
     calculate_modelo100_business_support,
     calculate_modelo130_rows,
     calculate_modelo303_rows,
@@ -36,6 +35,7 @@ from .tax_engine import (
     calculate_modelo390,
     calculate_retention_rows,
 )
+from .tax_row_loader import load_tax_rows
 from .tax_rules import ANNUAL_FORM_CODES, QUARTERLY_FORM_CODES, difficult_expense_rule_for_year
 from .zenmoney import ZenMoneyPayment, load_zenmoney_payments_csv
 
@@ -120,6 +120,15 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     )
     transaction_transition.add_argument("--expected-row-version", type=int, required=True)
     transaction_transition.set_defaults(_operational_handler=_cmd_transaction_transition)
+    transaction_counterparty = transaction_sub.add_parser(
+        "set-counterparty",
+        help="Correct a reviewed transaction counterparty with optimistic concurrency",
+    )
+    _db_arg(transaction_counterparty)
+    transaction_counterparty.add_argument("transaction_id")
+    transaction_counterparty.add_argument("--counterparty-id", required=True)
+    transaction_counterparty.add_argument("--expected-row-version", type=int, required=True)
+    transaction_counterparty.set_defaults(_operational_handler=_cmd_transaction_set_counterparty)
     transaction_fx = transaction_sub.add_parser(
         "apply-fx", help="Apply a stored FX rate to an unposted transaction"
     )
@@ -171,6 +180,7 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     obligation_mark.add_argument("--filing-status", choices=["unknown", "due", "filed", "waived"], required=True)
     obligation_mark.add_argument("--explanation", required=True)
     obligation_mark.add_argument("--source-citation")
+    obligation_mark.add_argument("--due-on")
     obligation_mark.add_argument("--filed-at")
     obligation_mark.add_argument("--expected-row-version", type=int)
     obligation_mark.set_defaults(_operational_handler=_cmd_obligation_mark)
@@ -205,6 +215,16 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
         help="Accept approved Xolo source-book rows only when immutable lineage and filed-period evidence exist",
     )
     period_validate.set_defaults(_operational_handler=_cmd_period_validate)
+    period_dashboard = period_sub.add_parser(
+        "dashboard",
+        help="Build a read-only current-quarter actual and approved forecast dashboard",
+    )
+    _db_arg(period_dashboard)
+    period_dashboard.add_argument("period")
+    period_dashboard.add_argument("--as-of", type=date.fromisoformat, default=date.today())
+    period_dashboard.add_argument("--out-dir", type=Path, required=True)
+    period_dashboard.add_argument("--xolo-modelo130-calculations", type=Path)
+    period_dashboard.set_defaults(_operational_handler=_cmd_period_dashboard)
     period_close = period_sub.add_parser("close")
     _db_arg(period_close)
     period_close.add_argument("period")
@@ -539,6 +559,17 @@ def _cmd_transaction_transition(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_transaction_set_counterparty(args: argparse.Namespace) -> int:
+    with open_ledger_db(args.db) as db:
+        row = db.update_transaction_counterparty(
+            args.transaction_id,
+            counterparty_id=args.counterparty_id,
+            expected_row_version=args.expected_row_version,
+        )
+    _emit(row)
+    return 0
+
+
 def _cmd_transaction_apply_fx(args: argparse.Namespace) -> int:
     with open_ledger_db(args.db) as db:
         row = db.apply_transaction_fx(
@@ -656,6 +687,7 @@ def _cmd_obligation_mark(args: argparse.Namespace) -> int:
             filing_status=args.filing_status,
             explanation=args.explanation,
             source_citation=args.source_citation,
+            due_on=args.due_on,
             filed_at=args.filed_at,
             expected_row_version=args.expected_row_version,
         )
@@ -704,6 +736,73 @@ def _cmd_period_validate(args: argparse.Namespace) -> int:
             validation["ready"] = validation["ready"] and validation["asset_year"]["ready"]
     _emit(validation)
     return 0 if validation["ready"] else 2
+
+
+def _cmd_period_dashboard(args: argparse.Namespace) -> int:
+    from .current_quarter import (
+        add_xolo_comparison,
+        build_current_quarter_dashboard,
+        load_xolo_modelo130_forecast,
+        write_current_quarter_dashboard,
+    )
+
+    try:
+        year_text, quarter_text = args.period.split("-Q", 1)
+        year = int(year_text)
+        quarter = int(quarter_text)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("Dashboard period must use YYYY-QN format") from exc
+    if quarter not in {1, 2, 3, 4} or args.period != f"{year}-Q{quarter}":
+        raise ValueError("Dashboard period must use YYYY-QN format")
+
+    with open_ledger_db(args.db, read_only=True) as db:
+        actual_rows = _tax_rows_from_db(
+            db,
+            year,
+            mode="production",
+            allow_authoritative_history=True,
+        )
+        projected_rows = _tax_rows_from_db(
+            db,
+            year,
+            mode="production",
+            allow_authoritative_history=True,
+            include_approved_periods={args.period},
+        )
+        rule = difficult_expense_rule_for_year(year)
+        dashboard = build_current_quarter_dashboard(
+            actual_rows=actual_rows,
+            projected_rows=projected_rows,
+            period_key=args.period,
+            as_of=args.as_of,
+            difficult_expenses_rate=rule.rate,
+            previous_positive_casilla_07=_previous_filed_positive(db, year, quarter),
+            previous_negative_carry=_previous_filed_negative_carry(db, year, quarter),
+            approved_current_rows=_approved_forecast_rows(db, args.period),
+            obligations=db.list_obligations(period_key=args.period),
+            period_validation=db.validate_period(args.period),
+        )
+
+    if args.xolo_modelo130_calculations:
+        add_xolo_comparison(
+            dashboard,
+            load_xolo_modelo130_forecast(
+                args.xolo_modelo130_calculations,
+                period=args.period,
+            ),
+        )
+    outputs = write_current_quarter_dashboard(dashboard, args.out_dir)
+    _emit(
+        {
+            "period": args.period,
+            "filing_assessment_performed": False,
+            "filing_ready": False,
+            "submission_ready": False,
+            "outputs": {key: str(path.resolve()) for key, path in outputs.items()},
+            "blocking_item_count": len(dashboard["blocking_items"]),
+        }
+    )
+    return 0
 
 
 def _cmd_period_close(args: argparse.Namespace) -> int:
@@ -1034,7 +1133,7 @@ def _cmd_sheet_export(args: argparse.Namespace) -> int:
             "obligations": db.connection.execute(
                 """SELECT o.obligation_id AS uuid, o.row_version, o.filing_status AS status,
                           p.period_key, o.obligation_code, o.determination, o.explanation,
-                          o.source_citation, o.blocking
+                          o.source_citation, o.blocking, o.due_on
                    FROM obligations o JOIN periods p ON p.period_id=o.period_id
                    ORDER BY p.starts_on, o.obligation_code"""
             ).fetchall(),
@@ -1425,85 +1524,58 @@ def _tax_rows_from_db(
     *,
     mode: str = "production",
     allow_authoritative_history: bool = False,
+    include_approved_periods: Iterable[str] = (),
 ) -> list[TaxRow]:
-    authoritative_ids = {
-        row["transaction_id"]
-        for row in db.list_authoritative_history_transactions(year=year)
-    } if mode == "production" and allow_authoritative_history else set()
+    return load_tax_rows(
+        db,
+        year,
+        mode=mode,
+        allow_authoritative_history=allow_authoritative_history,
+        include_approved_periods=include_approved_periods,
+    )
+
+
+def _approved_forecast_rows(db: LedgerDB, period_key: str) -> list[dict[str, Any]]:
+    year = int(period_key[:4])
     grouped: dict[str, dict[str, Any]] = {}
     for raw in db.list_tax_rows(year=year):
-        if raw["entry_type"] == "verify_history_adjustment" and mode != "verify_history":
+        if raw["period_key"] != period_key or raw["lifecycle_status"] != "approved":
             continue
-        if mode == "production" and raw["lifecycle_status"] not in {"posted", "included_in_snapshot"}:
-            if not (
-                raw["lifecycle_status"] == "approved"
-                and raw["transaction_id"] in authoritative_ids
-            ):
-                continue
-        if int(raw.get("asset_count") or 0) > 1:
-            raise CalculationBlocked(
-                f"Transaction {raw['transaction_id']} is linked to multiple assets and must be split before tax calculation"
-            )
-        bucket = grouped.get(raw["transaction_id"])
-        if bucket is None:
-            grouped[raw["transaction_id"]] = dict(raw)
-            continue
-        if raw.get("tax_code") and raw["tax_code"] != "unknown":
-            current = bucket.get("tax_code")
-            if current not in {None, "", "unknown", raw["tax_code"]}:
-                raise CalculationBlocked(f"Conflicting tax codes for {raw['transaction_id']}")
-            bucket["tax_code"] = raw["tax_code"]
-        for key in (
-            "taxable_base_minor",
-            "vat_minor",
-            "deductible_irpf_minor",
-            "deductible_vat_minor",
-            "withholding_minor",
-        ):
-            value = raw.get(key)
-            if value is None:
-                continue
-            current = bucket.get(key)
-            if current is not None and int(current) != int(value):
-                raise CalculationBlocked(
-                    f"Conflicting {key} values for transaction {raw['transaction_id']}"
-                )
-            bucket[key] = int(value)
-        for key in ("include_modelo130", "include_modelo303", "include_modelo347"):
-            bucket[key] = int(bool(bucket.get(key)) or bool(raw.get(key)))
-
-    output: list[TaxRow] = []
-    for row in grouped.values():
-        entry_type = str(row["entry_type"])
-        kind = "income" if entry_type.startswith("income") else "expense" if entry_type.startswith("expense") else "adjustment"
-        amount_minor = row["amount_eur_minor"] if row["amount_eur_minor"] is not None else row["amount_minor"]
-        output.append(
-            TaxRow(
-                transaction_id=row["transaction_id"],
-                tax_date=date.fromisoformat(row["transaction_date"]),
-                kind=kind,
-                amount_eur=Decimal(amount_minor) / 100,
-                taxable_base_eur=Decimal(row.get("taxable_base_minor") or 0) / 100,
-                vat_eur=Decimal(row.get("vat_minor") or 0) / 100,
-                deductible_irpf_eur=Decimal(row.get("deductible_irpf_minor") or 0) / 100,
-                deductible_vat_eur=Decimal(row.get("deductible_vat_minor") or 0) / 100,
-                withholding_eur=Decimal(row.get("withholding_minor") or 0) / 100,
-                tax_code=row.get("tax_code") or "unknown",
-                counterparty_id=row.get("counterparty_id") or "",
-                counterparty_name=row.get("counterparty_name") or "",
-                country_code=row.get("country_code") or "",
-                vat_id=row.get("vat_id") or "",
-                include_modelo130=bool(row.get("include_modelo130")),
-                include_modelo303=bool(row.get("include_modelo303")),
-                include_modelo347=bool(row.get("include_modelo347")),
-                withholding_type=WITHHOLDING_TYPE_BY_TAX_CODE.get(
-                    row.get("tax_code") or "",
-                    "professional" if row.get("withholding_minor") else "",
-                ),
-                asset_id=row.get("asset_id") or "",
-            )
+        bucket = grouped.setdefault(
+            raw["transaction_id"],
+            {
+                "transaction_id": raw["transaction_id"],
+                "transaction_date": raw["transaction_date"],
+                "description": raw["description"],
+                "counterparty_name": raw.get("counterparty_name") or "",
+                "amount_eur_minor": raw.get("amount_eur_minor"),
+                "document_id": raw.get("document_id") or "",
+                "document_type": "",
+                "document_source_path": "",
+                "tax_code": raw.get("tax_code") or "unknown",
+                "deductible_irpf_minor": raw.get("deductible_irpf_minor"),
+                "deductible_vat_minor": raw.get("deductible_vat_minor"),
+                "asset_id": raw.get("asset_id") or "",
+            },
         )
-    return output
+        for key in ("tax_code", "deductible_irpf_minor", "deductible_vat_minor", "asset_id"):
+            value = raw.get(key)
+            if value not in {None, "", "unknown"}:
+                bucket[key] = value
+    for bucket in grouped.values():
+        if not bucket["document_id"]:
+            continue
+        document = db.connection.execute(
+            "SELECT document_type, source_path FROM documents WHERE document_id = ?",
+            (bucket["document_id"],),
+        ).fetchone()
+        if document is not None:
+            bucket["document_type"] = document["document_type"]
+            bucket["document_source_path"] = document["source_path"] or ""
+    return sorted(
+        grouped.values(),
+        key=lambda row: (row["transaction_date"], row["description"], row["transaction_id"]),
+    )
 
 
 def _sheet_rows_from_db(db: LedgerDB, tab: str) -> list[SheetRow]:
