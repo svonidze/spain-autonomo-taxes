@@ -736,9 +736,11 @@ def _cmd_sheet_export(args: argparse.Namespace) -> int:
             ).fetchall(),
             "filings": db.connection.execute(
                 """SELECT fs.filing_snapshot_id AS uuid, fs.row_version, fs.status,
-                          p.period_key, fs.snapshot_hash, fs.filed_on, fs.manifest_path
+                          p.period_key, fs.form_code, fs.snapshot_hash, fs.filed_on,
+                          fs.submission_reference, fs.justificante_number, fs.verification_code,
+                          fs.source_reference, fs.manifest_path
                    FROM filing_snapshots fs JOIN periods p ON p.period_id=fs.period_id
-                   ORDER BY p.starts_on, fs.filed_on"""
+                   ORDER BY p.starts_on, fs.form_code, fs.filed_on"""
             ).fetchall(),
             "obligations": db.connection.execute(
                 """SELECT o.obligation_id AS uuid, o.row_version, o.filing_status AS status,

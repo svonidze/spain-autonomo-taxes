@@ -10,6 +10,7 @@ import re
 from typing import Any
 from uuid import UUID, uuid5
 
+from .filing_evidence import extract_filing_evidence
 from .ledger_db import LedgerDB
 from .money import parse_amount
 from .tax_rules import (
@@ -18,9 +19,39 @@ from .tax_rules import (
     QUARTERLY_FORM_CODES,
     recognize_tax_form_filename,
 )
+from .tax_engine import EU_349_CODES
 
 
 MIGRATION_NAMESPACE = UUID("adca0a24-7f65-4bde-9251-558c3d820889")
+EU_COUNTRY_CODES = {
+    "AT",
+    "BE",
+    "BG",
+    "CY",
+    "CZ",
+    "DE",
+    "DK",
+    "EE",
+    "ES",
+    "FI",
+    "FR",
+    "GR",
+    "HR",
+    "HU",
+    "IE",
+    "IT",
+    "LT",
+    "LU",
+    "LV",
+    "MT",
+    "NL",
+    "PL",
+    "PT",
+    "RO",
+    "SE",
+    "SI",
+    "SK",
+}
 QUARTERLY_BOOK_TYPES = {
     "ingresos_book": "income",
     "gastos_book": "expense",
@@ -35,6 +66,7 @@ UNRESOLVED_RECONCILIATION_STATUSES = {
 }
 QUARTER_KEY_RE = re.compile(r"^20\d{2}-Q[1-4]$", re.IGNORECASE)
 DATE_IN_FILE_RE = re.compile(r"20\d{2}-Q[1-4]", re.IGNORECASE)
+HISTORY_MIGRATION_RULE_VERSION = "official-source-book-v2"
 
 
 def migrate_xolo_history(
@@ -87,6 +119,8 @@ def migrate_xolo_history(
             continue
 
         counts["ignored_source_rows"] += 1
+
+    counts.update(_prune_superseded_source_book_records(db))
 
     if reconciliation_csv is not None:
         reconciliation_path = Path(reconciliation_csv)
@@ -186,6 +220,10 @@ def migrate_xolo_history(
             ):
                 counts["filed_obligations_from_inventory"] += 1
 
+    counts["classified_source_book_obligations"] += _classify_source_book_obligations(
+        db,
+        source_rows,
+    )
     counts["seeded_obligations"] += _seed_missing_obligations(db, source_rows)
 
     return {"counts": dict(counts), "issues": issues}
@@ -222,6 +260,7 @@ def _import_filed_baseline(db: LedgerDB, *, row: dict[str, str], import_batch_id
         period_key,
         status="baseline",
         filed_on=_normalize_submitted_date(row.get("submitted_date", "")),
+        form_code="130",
         payload={
             "form": "130",
             "baseline_kind": "xolo_submitted",
@@ -349,9 +388,6 @@ def _import_filing_inventory_row(
         """,
         (recognized.period, recognized.code),
     ).fetchone()
-    if existing is not None and existing["filing_status"] == "filed":
-        return True
-
     year = int(recognized.period[:4])
     rule_version_id = _obligation_rule_version(db, recognized.code, year)
     source_reference = (
@@ -359,21 +395,55 @@ def _import_filing_inventory_row(
         or row.get("local_source_path")
         or filename
     ).strip()
-    db.add_obligation(
-        period_key=recognized.period,
-        obligation_code=recognized.code,
-        filing_status="filed",
-        determination="due",
-        explanation=(
-            f"Filed Modelo {recognized.code} evidence was found in the Xolo archive inventory. "
-            f"Inventory batch: {import_batch_id}."
-        ),
-        source_citation=f"{recognized.source_citation} Evidence: {source_reference}",
-        blocking=False,
-        rule_version_id=rule_version_id,
-        source_hash=(row.get("sha256") or _stable_payload_hash(row)).strip(),
-        expected_row_version=(existing["row_version"] if existing is not None else None),
-    )
+    if existing is None or existing["filing_status"] != "filed":
+        db.add_obligation(
+            period_key=recognized.period,
+            obligation_code=recognized.code,
+            filing_status="filed",
+            determination="due",
+            explanation=(
+                f"Filed Modelo {recognized.code} evidence was found in the Xolo archive inventory. "
+                f"Inventory batch: {import_batch_id}."
+            ),
+            source_citation=f"{recognized.source_citation} Evidence: {source_reference}",
+            blocking=False,
+            rule_version_id=rule_version_id,
+            source_hash=(row.get("sha256") or _stable_payload_hash(row)).strip(),
+            expected_row_version=(existing["row_version"] if existing is not None else None),
+        )
+    local_source = Path((row.get("local_source_path") or "").strip())
+    if local_source.is_file():
+        evidence = extract_filing_evidence(local_source)
+        source_hash = (row.get("sha256") or evidence.source_sha256).strip().upper()
+        snapshot_exists = db.connection.execute(
+            "SELECT 1 FROM filing_snapshots WHERE source_hash = ?",
+            (source_hash,),
+        ).fetchone()
+        if snapshot_exists is None:
+            filed_on = evidence.filed_on or (row.get("received_at") or "").strip()
+            if not filed_on:
+                filed_on = db.connection.execute(
+                    "SELECT ends_on FROM periods WHERE period_key = ?",
+                    (recognized.period,),
+                ).fetchone()["ends_on"]
+            db.create_filing_snapshot(
+                recognized.period,
+                status="baseline",
+                filed_on=filed_on,
+                payload={
+                    **evidence.payload,
+                    "inventory_import_batch_id": import_batch_id,
+                    "drive_relative_path": (row.get("drive_relative_path") or "").strip(),
+                    "drive_url": (row.get("drive_url") or "").strip(),
+                },
+                snapshot_hash=source_hash,
+                source_hash=source_hash,
+                form_code=evidence.form_code,
+                submission_reference=evidence.submission_reference,
+                justificante_number=evidence.justificante_number,
+                verification_code=evidence.verification_code,
+                source_reference=(row.get("drive_relative_path") or str(local_source)).strip(),
+            )
     return True
 
 
@@ -454,6 +524,80 @@ def _seed_missing_obligations(db: LedgerDB, source_rows: list[dict[str, str]]) -
     return planned
 
 
+def _classify_source_book_obligations(
+    db: LedgerDB,
+    source_rows: list[dict[str, str]],
+) -> int:
+    periods = sorted(
+        {
+            (row.get("period") or "").strip().upper()
+            for row in source_rows
+            if (row.get("import_status") or "imported").strip().lower() == "imported"
+            and (row.get("source_book_type") or "").strip() in QUARTERLY_BOOK_TYPES
+            and QUARTER_KEY_RE.fullmatch((row.get("period") or "").strip().upper())
+        }
+    )
+    classified = 0
+    for period_key in periods:
+        existing = db.connection.execute(
+            """
+            SELECT * FROM obligations
+            WHERE period_id = (SELECT period_id FROM periods WHERE period_key = ?)
+              AND obligation_code = '349'
+            """,
+            (period_key,),
+        ).fetchone()
+        if existing is not None and existing["filing_status"] == "filed":
+            continue
+        tax_codes = {
+            row["tax_code"]
+            for row in db.connection.execute(
+                """
+                SELECT DISTINCT tt.tax_code
+                FROM tax_treatments tt
+                JOIN transactions t ON t.transaction_id = tt.transaction_id
+                JOIN periods p ON p.period_id = t.period_id
+                WHERE p.period_key = ?
+                """,
+                (period_key,),
+            ).fetchall()
+        }
+        reportable_codes = sorted(tax_codes & EU_349_CODES)
+        due = bool(reportable_codes)
+        year = int(period_key[:4])
+        db.add_obligation(
+            period_key=period_key,
+            obligation_code="349",
+            filing_status="due" if due else "waived",
+            determination="due" if due else "not_due",
+            explanation=(
+                "The official source books contain Modelo 349 operation codes: "
+                + ", ".join(reportable_codes)
+                if due
+                else "The official source books contain no taxable intra-Community goods or services for this period."
+            ),
+            source_citation=(
+                "AEAT Modelo 349: intra-Community supplies and acquisitions of goods and services are reportable; "
+                "periods without such operations are not filed. "
+                "https://sede.agenciatributaria.gob.es/Sede/iva/iva-operaciones-comercio-exterior/"
+                "identificacion-realizar-operaciones-otros-empresarios-ue/modelo-349.html"
+            ),
+            blocking=due,
+            rule_version_id=_obligation_rule_version(db, "349", year),
+            source_hash=_stable_payload_hash(
+                {
+                    "kind": "source_book_obligation",
+                    "period_key": period_key,
+                    "form": "349",
+                    "reportable_codes": reportable_codes,
+                }
+            ),
+            expected_row_version=(existing["row_version"] if existing is not None else None),
+        )
+        classified += 1
+    return classified
+
+
 def _obligation_rule_version(db: LedgerDB, code: str, year: int) -> str:
     rule = FORM_RULES[code]
     row = db.add_rule_version(
@@ -501,7 +645,13 @@ def _obligation_exists(db: LedgerDB, period_key: str, code: str) -> bool:
 def _import_quarterly_row(db: LedgerDB, *, row: dict[str, str], import_batch_id: str) -> None:
     line_key = _row_line_key(row)
     transaction_external_key = _external_key("transaction", line_key)
-    transaction_source_hash = _stable_payload_hash({"kind": "transaction", "row": row})
+    transaction_source_hash = _stable_payload_hash(
+        {
+            "kind": "transaction",
+            "rule_version": HISTORY_MIGRATION_RULE_VERSION,
+            "row": row,
+        }
+    )
     complete_existing = db.connection.execute(
         """
         SELECT t.transaction_id
@@ -518,7 +668,9 @@ def _import_quarterly_row(db: LedgerDB, *, row: dict[str, str], import_batch_id:
     period_key = _require_quarter_period(row.get("period", ""))
     kind = QUARTERLY_BOOK_TYPES[row["source_book_type"].strip()]
     amount_minor = _minor_from_text(row.get("gross_eur", "0"))
-    taxable_base_minor = _optional_minor(row.get("deductible_base_eur"))
+    taxable_base_minor = _optional_minor(row.get("taxable_base_eur"))
+    if taxable_base_minor is None:
+        taxable_base_minor = _optional_minor(row.get("deductible_base_eur"))
     deductible_irpf_minor = _optional_minor(row.get("irpf_deductible_eur"))
     if kind == "income":
         if (row.get("vat_treatment") or "").strip() and taxable_base_minor is None:
@@ -532,7 +684,12 @@ def _import_quarterly_row(db: LedgerDB, *, row: dict[str, str], import_batch_id:
         taxable_base_minor = taxable_base_minor if taxable_base_minor is not None else amount_minor
         deductible_irpf_minor = deductible_irpf_minor if deductible_irpf_minor is not None else amount_minor
 
-    vat_minor = amount_minor - taxable_base_minor
+    explicit_vat_minor = _optional_minor(row.get("vat_eur"))
+    deductible_vat_minor = _optional_minor(row.get("deductible_vat_eur")) or 0
+    reverse_charge = _is_yes(row.get("reverse_charge"))
+    vat_minor = explicit_vat_minor if explicit_vat_minor is not None else amount_minor - taxable_base_minor
+    if reverse_charge and vat_minor == 0 and deductible_vat_minor:
+        vat_minor = deductible_vat_minor
     counterparty_id = _upsert_counterparty(db, row)
     document = _upsert_source_document(
         db,
@@ -541,6 +698,7 @@ def _import_quarterly_row(db: LedgerDB, *, row: dict[str, str], import_batch_id:
         import_batch_id=import_batch_id,
         document_type=row["source_book_type"].strip(),
         period_key=period_key,
+        total_minor=_document_total_minor(row, amount_minor),
     )
 
     transaction = db.add_transaction(
@@ -567,16 +725,23 @@ def _import_quarterly_row(db: LedgerDB, *, row: dict[str, str], import_batch_id:
         transaction_id=transaction["transaction_id"],
         treatment_type=kind,
         tax_code=_tax_code_for_row(row, kind),
+        rate_basis_points=_vat_rate_basis_points(row.get("vat_rate_percent")),
         taxable_base_minor=taxable_base_minor,
         vat_minor=vat_minor,
         deductible_irpf_minor=deductible_irpf_minor,
-        deductible_vat_minor=0,
-        withholding_minor=0,
+        deductible_vat_minor=deductible_vat_minor,
+        withholding_minor=_optional_minor(row.get("withholding_eur")) or 0,
         include_modelo130=True,
-        include_modelo303=False,
+        include_modelo303=_include_modelo303(row, kind),
         include_modelo347=False,
         notes=_treatment_notes(row),
-        source_hash=_stable_payload_hash({"kind": "tax_treatment", "row": row}),
+        source_hash=_stable_payload_hash(
+            {
+                "kind": "tax_treatment",
+                "rule_version": HISTORY_MIGRATION_RULE_VERSION,
+                "row": row,
+            }
+        ),
     )
 
 
@@ -609,7 +774,7 @@ def _import_annual_asset_row(db: LedgerDB, *, row: dict[str, str], import_batch_
     entry_source_hash = _stable_payload_hash(
         {"kind": "amortization_entry", "row": row, "period": annual_period_key}
     )
-    counterparty_id, _ = _counterparty_identity(row)
+    counterparty_id = _upsert_counterparty(db, row)
     annual_amount_minor = _minor_from_text(row.get("amortization_amount_eur", "0"))
     amortizable_base_minor = _optional_minor(row.get("amortizable_base_eur"))
 
@@ -681,7 +846,6 @@ def _import_annual_asset_row(db: LedgerDB, *, row: dict[str, str], import_batch_
         period_type="annual",
         source_hash=_stable_payload_hash({"kind": "annual_period", "year": year}),
     )
-    counterparty_id = _upsert_counterparty(db, row)
     document = _upsert_source_document(
         db,
         row=row,
@@ -690,6 +854,7 @@ def _import_annual_asset_row(db: LedgerDB, *, row: dict[str, str], import_batch_
         document_type="xolo_annual_asset_evidence",
         period_key=None,
         number_override=(row.get("asset_id") or "").strip() or None,
+        total_minor=amortizable_base_minor or annual_amount_minor,
     )
     existing_asset = complete_existing or db.connection.execute(
         "SELECT * FROM assets WHERE asset_code = ?",
@@ -896,6 +1061,90 @@ def _find_acquisition_transaction(
     return dict(row) if row is not None else None
 
 
+def _prune_superseded_source_book_records(db: LedgerDB) -> Counter[str]:
+    counts: Counter[str] = Counter()
+    duplicate_lines = db.connection.execute(
+        """
+        SELECT d.document_type, ds.source_book_line_id
+        FROM document_sources ds
+        JOIN documents d ON d.document_id = ds.document_id
+        GROUP BY d.document_type, ds.source_book_line_id
+        HAVING COUNT(DISTINCT ds.document_id) > 1
+        """
+    ).fetchall()
+    for duplicate_line in duplicate_lines:
+        line_id = duplicate_line["source_book_line_id"]
+        document_type = duplicate_line["document_type"]
+        candidates = db.connection.execute(
+            """
+            SELECT ds.document_source_id, ds.document_id, ds.created_at,
+                   d.counterparty_id, p.status AS period_status,
+                   EXISTS(SELECT 1 FROM transactions t WHERE t.document_id = ds.document_id) AS has_transaction,
+                   EXISTS(SELECT 1 FROM assets a WHERE a.document_id = ds.document_id) AS has_asset
+            FROM document_sources ds
+            JOIN documents d ON d.document_id = ds.document_id
+            LEFT JOIN periods p ON p.period_id = d.period_id
+            WHERE ds.source_book_line_id = ? AND d.document_type = ?
+            ORDER BY has_transaction DESC, has_asset DESC, ds.created_at DESC, ds.document_source_id DESC
+            """,
+            (line_id, document_type),
+        ).fetchall()
+        referenced = [row for row in candidates if row["has_transaction"] or row["has_asset"]]
+        referenced_document_ids = {row["document_id"] for row in referenced}
+        if len(referenced_document_ids) > 1:
+            raise ValueError(
+                f"Source-book line {line_id!r} maps to multiple live documents and cannot be pruned"
+            )
+        canonical_document_id = (
+            referenced[0]["document_id"] if referenced else candidates[0]["document_id"]
+        )
+        superseded = [row for row in candidates if row["document_id"] != canonical_document_id]
+        if any(row["period_status"] in {"closed", "amended"} for row in superseded):
+            counts["prune_skipped_immutable"] += 1
+            continue
+        with db.connection:
+            for row in superseded:
+                db.connection.execute(
+                    "DELETE FROM document_sources WHERE document_source_id = ?",
+                    (row["document_source_id"],),
+                )
+                counts["pruned_document_sources"] += 1
+                document_references = db.connection.execute(
+                    """
+                    SELECT
+                        EXISTS(SELECT 1 FROM document_sources WHERE document_id = ?) OR
+                        EXISTS(SELECT 1 FROM transactions WHERE document_id = ?) OR
+                        EXISTS(SELECT 1 FROM assets WHERE document_id = ?) OR
+                        EXISTS(SELECT 1 FROM documents WHERE rectifies_document_id = ?) AS is_referenced
+                    """,
+                    (row["document_id"],) * 4,
+                ).fetchone()["is_referenced"]
+                if document_references:
+                    continue
+                db.connection.execute(
+                    "DELETE FROM documents WHERE document_id = ?",
+                    (row["document_id"],),
+                )
+                counts["pruned_documents"] += 1
+                if not row["counterparty_id"]:
+                    continue
+                counterparty_references = db.connection.execute(
+                    """
+                    SELECT
+                        EXISTS(SELECT 1 FROM documents WHERE counterparty_id = ?) OR
+                        EXISTS(SELECT 1 FROM transactions WHERE counterparty_id = ?) AS is_referenced
+                    """,
+                    (row["counterparty_id"], row["counterparty_id"]),
+                ).fetchone()["is_referenced"]
+                if not counterparty_references:
+                    db.connection.execute(
+                        "DELETE FROM counterparties WHERE counterparty_id = ?",
+                        (row["counterparty_id"],),
+                    )
+                    counts["pruned_counterparties"] += 1
+    return counts
+
+
 def _import_reconciliation_issue(
     db: LedgerDB,
     *,
@@ -911,23 +1160,22 @@ def _import_reconciliation_issue(
     issue_source_hash = _stable_payload_hash(
         {"kind": "validation_issue", "period_key": period_key, "row": row}
     )
+    dedupe_key = f"xolo-reconcile:{row_key}"
     existing = db.connection.execute(
         """
         SELECT * FROM validation_issues
         WHERE period_id = (SELECT period_id FROM periods WHERE period_key = ?)
-          AND issue_code = ? AND subject_table = 'xolo_expense_reconcile'
-          AND subject_id = ? AND source_hash = ?
+          AND dedupe_key = ?
         """,
-        (period_key, status, row_key, issue_source_hash),
+        (period_key, dedupe_key),
     ).fetchone()
-    if existing is not None:
-        issue = dict(existing)
-        return {
-            "period_key": period_key,
-            "issue_code": issue["issue_code"],
-            "subject_id": issue["subject_id"] or "",
-            "message": issue["message"],
-        }
+    issue_status = (
+        existing["issue_status"]
+        if existing is not None
+        and existing["issue_status"] in {"resolved", "ignored"}
+        and existing["source_hash"] == issue_source_hash
+        else "open"
+    )
     issue = db.add_validation_issue(
         period_key=period_key,
         issue_code=status,
@@ -936,8 +1184,9 @@ def _import_reconciliation_issue(
         blocking=True,
         subject_table="xolo_expense_reconcile",
         subject_id=row_key,
-        issue_status="open",
+        issue_status=issue_status,
         source_hash=issue_source_hash,
+        dedupe_key=dedupe_key,
     )
     return {
         "period_key": period_key,
@@ -1078,20 +1327,92 @@ def _resolve_stale_reconciliation_issues(
 
 
 def _upsert_counterparty(db: LedgerDB, row: dict[str, str]) -> str:
-    counterparty_id, supplier = _counterparty_identity(row)
+    desired_counterparty_id, supplier = _counterparty_identity(row)
+    country_code = (row.get("counterparty_country_code") or "ZZ").strip().upper() or "ZZ"
+    raw_tax_id = (row.get("counterparty_tax_id") or "").strip()
+    tax_id = raw_tax_id if _usable_tax_id(raw_tax_id) else None
+    vat_id = (row.get("counterparty_vat_id") or "").strip().upper() or None
+    external_key = _counterparty_external_key(row, supplier)
+    existing = db.connection.execute(
+        """
+        SELECT * FROM counterparties
+        WHERE external_key = ?
+           OR (? IS NOT NULL AND tax_id = ?)
+           OR (? IS NOT NULL AND vat_id = ?)
+        ORDER BY CASE WHEN external_key = ? THEN 0 ELSE 1 END, created_at
+        LIMIT 1
+        """,
+        (external_key, tax_id, tax_id, vat_id, vat_id, external_key),
+    ).fetchone()
+    if existing is None:
+        normalized_name = _normalized_counterparty_name(supplier)
+        name_matches = [
+            candidate
+            for candidate in db.connection.execute(
+                "SELECT * FROM counterparties ORDER BY created_at, counterparty_id"
+            ).fetchall()
+            if _normalized_counterparty_name(candidate["display_name"]) == normalized_name
+        ]
+        if len(name_matches) == 1:
+            existing = name_matches[0]
+    counterparty_id = existing["counterparty_id"] if existing is not None else desired_counterparty_id
     counterparty = db.upsert_counterparty(
         counterparty_id=counterparty_id,
-        external_key=_external_key("counterparty", supplier.casefold()),
+        external_key=external_key,
+        tax_id=tax_id,
         display_name=supplier,
-        country_code="ZZ",
+        country_code=country_code,
         source_hash=_stable_payload_hash({"kind": "counterparty", "supplier": supplier}),
     )
+    if vat_id and counterparty.get("vat_id") != vat_id:
+        counterparty = db.set_counterparty_tax_profile(
+            counterparty["counterparty_id"],
+            vat_id=vat_id,
+            roi_status=counterparty.get("roi_status") or "unknown",
+            professional_supplier=(
+                bool(counterparty["professional_supplier"])
+                if counterparty.get("professional_supplier") is not None
+                else None
+            ),
+            retention_expected=(
+                bool(counterparty["retention_expected"])
+                if counterparty.get("retention_expected") is not None
+                else None
+            ),
+            expected_row_version=counterparty["row_version"],
+        )
     return counterparty["counterparty_id"]
+
+
+def _normalized_counterparty_name(value: str) -> str:
+    return "".join(character for character in (value or "").casefold() if character.isalnum())
 
 
 def _counterparty_identity(row: dict[str, str]) -> tuple[str, str]:
     supplier = (row.get("supplier") or row.get("recipient") or "Unknown counterparty").strip()
-    return _uuid_for("counterparty", supplier.casefold()), supplier
+    identity = _counterparty_external_key(row, supplier)
+    return _uuid_for("counterparty", identity), supplier
+
+
+def _counterparty_external_key(row: dict[str, str], supplier: str) -> str:
+    vat_id = (row.get("counterparty_vat_id") or "").strip().upper()
+    tax_id = (row.get("counterparty_tax_id") or "").strip().upper()
+    country_code = (row.get("counterparty_country_code") or "").strip().upper()
+    if vat_id:
+        return _external_key("counterparty-vat", vat_id)
+    if _usable_tax_id(tax_id):
+        return _external_key("counterparty-tax", country_code, tax_id)
+    normalized_name = _normalized_counterparty_name(supplier)
+    return _external_key("counterparty-name", normalized_name)
+
+
+def _usable_tax_id(value: str) -> bool:
+    compact = re.sub(r"[^0-9A-Z]", "", (value or "").upper())
+    if not compact or compact in {"NA", "NONE", "UNKNOWN", "NODISPONIBLE", "SINDATOS"}:
+        return False
+    if re.fullmatch(r"0{7,9}[A-Z]?|9{7,9}[A-Z]?", compact):
+        return False
+    return True
 
 
 def _upsert_source_document(
@@ -1103,6 +1424,7 @@ def _upsert_source_document(
     document_type: str,
     period_key: str | None,
     number_override: str | None = None,
+    total_minor: int | None = None,
 ) -> dict[str, Any]:
     line_key = _row_line_key(row)
     issued_on = _normalize_date(row.get("date", ""))
@@ -1119,26 +1441,24 @@ def _upsert_source_document(
         ).fetchone()
         existing = dict(existing_row) if existing_row is not None else None
 
-    if existing is None:
-        canonical_key = "|".join(
-            [counterparty_id, document_type, document_number or line_key, issued_on]
-        )
-        document = db.upsert_document(
-            document_id=_uuid_for("document", canonical_key),
-            external_key=_external_key("document", canonical_key),
-            counterparty_id=counterparty_id,
-            import_batch_id=import_batch_id,
-            document_type=document_type,
-            document_number=document_number,
-            issued_on=issued_on,
-            period_key=period_key,
-            currency="EUR",
-            total_minor=None,
-            lifecycle_status="approved",
-            source_hash=_stable_payload_hash({"kind": "canonical_document", "key": canonical_key}),
-        )
-    else:
-        document = existing
+    canonical_key = "|".join(
+        [counterparty_id, document_type, document_number or line_key, issued_on]
+    )
+    document = db.upsert_document(
+        document_id=(existing["document_id"] if existing else _uuid_for("document", canonical_key)),
+        external_key=_external_key("document", canonical_key),
+        counterparty_id=counterparty_id,
+        import_batch_id=import_batch_id,
+        document_type=document_type,
+        document_number=document_number,
+        issued_on=issued_on,
+        period_key=period_key,
+        currency="EUR",
+        total_minor=total_minor,
+        lifecycle_status="approved",
+        source_hash=_stable_payload_hash({"kind": "canonical_document", "key": canonical_key}),
+        expected_row_version=(existing["row_version"] if existing else None),
+    )
 
     db.add_document_source(
         document_id=document["document_id"],
@@ -1194,6 +1514,16 @@ def _treatment_notes(row: dict[str, str]) -> str:
         notes.append(f"source_file_format={row['source_file_format'].strip()}")
     if row.get("notes"):
         notes.append(f"notes={row['notes'].strip()}")
+    if _minor_from_text(row.get("gross_eur", "0")) == 0:
+        notes.append("zero_amount_source_book_row=true")
+    period_key = (row.get("period") or "").strip().upper()
+    if period_key and row.get("date"):
+        document_period = _quarter_from_iso_date(_normalize_date(row["date"]))
+        if document_period != period_key:
+            notes.append(f"document_period={document_period}")
+            notes.append(f"tax_period={period_key}")
+            if row.get("booking_date"):
+                notes.append(f"booking_date={_normalize_date(row['booking_date'])}")
     return "; ".join(notes)
 
 
@@ -1212,12 +1542,74 @@ def _reconciliation_issue_message(row: dict[str, str], period_key: str, import_b
 
 
 def _tax_code_for_row(row: dict[str, str], kind: str) -> str:
+    country_code = (row.get("counterparty_country_code") or "").strip().upper()
+    operation_key = (row.get("operation_key") or "").strip()
+    qualification = (row.get("operation_qualification") or "").strip().upper()
+    reverse_charge = _is_yes(row.get("reverse_charge"))
+    taxable_base_minor = _optional_minor(row.get("taxable_base_eur")) or 0
+    deductible_vat_minor = _optional_minor(row.get("deductible_vat_eur")) or 0
+    vat_minor = _optional_minor(row.get("vat_eur")) or 0
+    has_vat_evidence = any(
+        (row.get(field) or "").strip()
+        for field in (
+            "operation_key",
+            "operation_qualification",
+            "reverse_charge",
+            "taxable_base_eur",
+            "vat_eur",
+            "deductible_vat_eur",
+        )
+    )
+    if kind == "income" and qualification.startswith("N2"):
+        return "outside_scope"
+    if kind == "income" and has_vat_evidence and (taxable_base_minor or vat_minor):
+        return "domestic_output" if vat_minor else "domestic_output_zero"
+    if kind == "expense" and operation_key == "09" and (taxable_base_minor or deductible_vat_minor):
+        return "eu_service_expense"
+    if kind == "expense" and reverse_charge:
+        if country_code == "ES":
+            return "domestic_reverse_charge_expense"
+        if country_code in EU_COUNTRY_CODES:
+            return "eu_service_expense"
+        return "non_eu_service_expense"
+    if kind == "expense" and has_vat_evidence and deductible_vat_minor:
+        return "domestic_input"
     reason_code = (row.get("reason_code") or "").strip().lower()
     if kind == "income":
         return "historical_income"
     if reason_code:
         return f"historical_{reason_code}"
     return "historical_expense"
+
+
+def _include_modelo303(row: dict[str, str], kind: str) -> bool:
+    return _tax_code_for_row(row, kind) in {
+        "outside_scope",
+        "domestic_output",
+        "domestic_output_zero",
+        "domestic_reverse_charge_expense",
+        "non_eu_service_expense",
+        "eu_service_expense",
+        "domestic_input",
+    }
+
+
+def _document_total_minor(row: dict[str, str], fallback: int) -> int:
+    return _optional_minor(row.get("invoice_total_eur")) or fallback
+
+
+def _vat_rate_basis_points(value: str | None) -> int | None:
+    text = (value or "").strip().replace("%", "").replace(",", ".")
+    if not text or text.casefold() == "sin iva":
+        return None
+    match = re.search(r"\d+(?:\.\d+)?", text)
+    if match is None:
+        return None
+    return int(round(float(match.group(0)) * 100))
+
+
+def _is_yes(value: str | None) -> bool:
+    return (value or "").strip().casefold() in {"s", "si", "sí", "y", "yes", "true", "1"}
 
 
 def _reconciliation_period_key(path: Path, rows: list[dict[str, str]]) -> str:
@@ -1258,6 +1650,11 @@ def _recognition_date(row: dict[str, str], period_key: str) -> str:
     document_date = _normalize_date(row.get("date", ""))
     if _quarter_from_iso_date(document_date) == period_key:
         return document_date
+    booking_text = (row.get("booking_date") or "").strip()
+    if booking_text:
+        booking_date = _normalize_date(booking_text)
+        if _quarter_from_iso_date(booking_date) == period_key:
+            return booking_date
     year = int(period_key[:4])
     quarter = int(period_key[-1])
     month = quarter * 3

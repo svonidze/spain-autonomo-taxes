@@ -23,9 +23,24 @@ SOURCE_BOOK_IMPORT_FIELDS = [
     "booking_date",
     "supplier",
     "document_number",
+    "counterparty_id_type",
+    "counterparty_country_code",
+    "counterparty_tax_id",
+    "counterparty_vat_id",
+    "operation_key",
+    "operation_qualification",
+    "exempt_operation",
+    "reverse_charge",
     "original_amount",
     "original_currency",
     "gross_eur",
+    "invoice_total_eur",
+    "taxable_base_eur",
+    "vat_rate_percent",
+    "vat_eur",
+    "deductible_vat_eur",
+    "withholding_rate_percent",
+    "withholding_eur",
     "deductible_base_eur",
     "irpf_deductible_eur",
     "vat_treatment",
@@ -53,6 +68,37 @@ OPTIONAL_ALIASES = {
     "original_amount": ["original amount", "amount original", "importe original", "amount"],
     "original_currency": ["moneda original", "monedo original", "original currency", "currency", "moneda"],
     "gross_eur": ["total factura", "gross eur", "gross amount eur", "importe total eur", "total eur"],
+    "invoice_total_eur": ["total factura", "invoice total eur", "invoice total", "total eur"],
+    "taxable_base_eur": ["base imponible", "taxable base eur", "vat base eur"],
+    "vat_rate_percent": ["tipo de iva", "vat rate", "vat rate percent"],
+    "vat_eur": [
+        "cuota iva soportado",
+        "cuota iva repercutida",
+        "vat eur",
+        "input vat eur",
+        "output vat eur",
+    ],
+    "deductible_vat_eur": ["cuota deducible", "deductible vat eur"],
+    "withholding_rate_percent": ["tipo retencion del irpf", "withholding rate", "irpf withholding rate"],
+    "withholding_eur": ["importe retenido del irpf", "withholding eur", "irpf withholding eur"],
+    "counterparty_id_type": ["nif expedidor tipo", "nif destinatario tipo", "counterparty id type"],
+    "counterparty_country_code": [
+        "nif expedidor codigo pais",
+        "nif destinatario codigo pais",
+        "counterparty country code",
+        "country code",
+    ],
+    "counterparty_tax_id": [
+        "nif expedidor identificacion",
+        "nif destinatario identification",
+        "nif destinatario identificacion",
+        "counterparty tax id",
+        "tax id",
+    ],
+    "operation_key": ["clave de operacion", "operation key"],
+    "operation_qualification": ["calificacion de la operacion", "operation qualification"],
+    "exempt_operation": ["operacion exenta", "exempt operation"],
+    "reverse_charge": ["inversion del sujeto pasivo", "reverse charge"],
     "deductible_base_eur": ["deductible base eur", "base eur", "base imponible", "tax base eur"],
     "vat_treatment": ["vat treatment", "iva treatment", "tratamiento iva", "reverse charge"],
     "reason_code": ["reason code", "reason", "source book treatment", "accounting treatment", "tratamiento contable"],
@@ -292,6 +338,7 @@ def _normalized_row(
                 "booking_date": _value(values, mapping, "booking_date"),
                 "supplier": _value(values, mapping, "counterparty"),
                 "document_number": _value(values, mapping, "document_number"),
+                **_tax_evidence(values, mapping),
                 "original_amount": _value(values, mapping, "original_amount"),
                 "original_currency": _value(values, mapping, "original_currency"),
                 "gross_eur": _value(values, mapping, "gross_eur"),
@@ -314,6 +361,7 @@ def _normalized_row(
                 "date": date,
                 "supplier": _value(values, mapping, "counterparty"),
                 "document_number": _value(values, mapping, "document_number"),
+                **_tax_evidence(values, mapping),
                 "gross_eur": _value(values, mapping, "income_amount_eur") or _value(values, mapping, "gross_eur"),
                 "reason_code": _value(values, mapping, "concept"),
             }
@@ -322,6 +370,7 @@ def _normalized_row(
         acquisition_date = _value(values, mapping, "acquisition_date")
         row.update(
             {
+                **_tax_evidence(values, mapping),
                 "asset_id": _value(values, mapping, "description_or_document"),
                 "date": acquisition_date,
                 "supplier": _value(values, mapping, "supplier_or_counterparty"),
@@ -358,6 +407,32 @@ def _normalized_row(
             }
         )
     return row
+
+
+def _tax_evidence(values: dict[str, str], mapping: dict[str, str]) -> dict[str, str]:
+    country_code = _value(values, mapping, "counterparty_country_code").upper()
+    tax_id = _value(values, mapping, "counterparty_tax_id").replace(" ", "")
+    id_type = _value(values, mapping, "counterparty_id_type")
+    vat_id = ""
+    if id_type == "02" and country_code and tax_id:
+        vat_id = tax_id if tax_id.upper().startswith(country_code) else f"{country_code}{tax_id}"
+    return {
+        "counterparty_id_type": id_type,
+        "counterparty_country_code": country_code,
+        "counterparty_tax_id": tax_id,
+        "counterparty_vat_id": vat_id,
+        "operation_key": _value(values, mapping, "operation_key"),
+        "operation_qualification": _value(values, mapping, "operation_qualification"),
+        "exempt_operation": _value(values, mapping, "exempt_operation"),
+        "reverse_charge": _value(values, mapping, "reverse_charge"),
+        "invoice_total_eur": _value(values, mapping, "invoice_total_eur"),
+        "taxable_base_eur": _value(values, mapping, "taxable_base_eur"),
+        "vat_rate_percent": _value(values, mapping, "vat_rate_percent"),
+        "vat_eur": _value(values, mapping, "vat_eur"),
+        "deductible_vat_eur": _value(values, mapping, "deductible_vat_eur"),
+        "withholding_rate_percent": _value(values, mapping, "withholding_rate_percent"),
+        "withholding_eur": _value(values, mapping, "withholding_eur"),
+    }
 
 
 def _canonical_check(check: str) -> str:
