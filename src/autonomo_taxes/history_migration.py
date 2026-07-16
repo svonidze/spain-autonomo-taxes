@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 from collections import Counter
 from datetime import date, datetime, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 import hashlib
 import json
 from pathlib import Path
@@ -66,7 +67,7 @@ UNRESOLVED_RECONCILIATION_STATUSES = {
 }
 QUARTER_KEY_RE = re.compile(r"^20\d{2}-Q[1-4]$", re.IGNORECASE)
 DATE_IN_FILE_RE = re.compile(r"20\d{2}-Q[1-4]", re.IGNORECASE)
-HISTORY_MIGRATION_RULE_VERSION = "official-source-book-v2"
+HISTORY_MIGRATION_RULE_VERSION = "official-source-book-v3"
 
 
 def migrate_xolo_history(
@@ -644,6 +645,7 @@ def _obligation_exists(db: LedgerDB, period_key: str, code: str) -> bool:
 
 def _import_quarterly_row(db: LedgerDB, *, row: dict[str, str], import_batch_id: str) -> None:
     line_key = _row_line_key(row)
+    kind = QUARTERLY_BOOK_TYPES[row["source_book_type"].strip()]
     transaction_external_key = _external_key("transaction", line_key)
     transaction_source_hash = _stable_payload_hash(
         {
@@ -652,21 +654,44 @@ def _import_quarterly_row(db: LedgerDB, *, row: dict[str, str], import_batch_id:
             "row": row,
         }
     )
+    treatment_source_hash = _stable_payload_hash(
+        {
+            "kind": "tax_treatment",
+            "rule_version": HISTORY_MIGRATION_RULE_VERSION,
+            "row": row,
+        }
+    )
     complete_existing = db.connection.execute(
         """
-        SELECT t.transaction_id
+        SELECT t.transaction_id, t.source_hash, t.lifecycle_status,
+               tt.source_hash AS treatment_source_hash,
+               tt.aeat_invoice_type, tt.aeat_operation_key, tt.aeat_reverse_charge
         FROM transactions t
         JOIN documents d ON d.document_id = t.document_id
         JOIN document_sources ds ON ds.document_id = d.document_id
-        JOIN tax_treatments tt ON tt.transaction_id = t.transaction_id
-        WHERE t.external_key = ? AND t.source_hash = ? AND ds.source_book_line_id = ?
+        JOIN tax_treatments tt
+          ON tt.transaction_id = t.transaction_id
+         AND tt.treatment_type = ?
+         AND tt.jurisdiction = 'ES'
+        WHERE t.external_key = ? AND ds.source_book_line_id = ?
         """,
-        (transaction_external_key, transaction_source_hash, _source_book_line_id(row)),
+        (kind, transaction_external_key, _source_book_line_id(row)),
     ).fetchone()
-    if complete_existing is not None:
+    if (
+        complete_existing is not None
+        and (
+            complete_existing["source_hash"] == transaction_source_hash
+            or (
+                complete_existing["lifecycle_status"] in {"duplicate", "rejected", "void"}
+                and complete_existing["treatment_source_hash"] == treatment_source_hash
+            )
+        )
+        and complete_existing["aeat_invoice_type"] is not None
+        and complete_existing["aeat_operation_key"] is not None
+        and (kind == "income" or complete_existing["aeat_reverse_charge"] is not None)
+    ):
         return
     period_key = _require_quarter_period(row.get("period", ""))
-    kind = QUARTERLY_BOOK_TYPES[row["source_book_type"].strip()]
     amount_minor = _minor_from_text(row.get("gross_eur", "0"))
     taxable_base_minor = _optional_minor(row.get("taxable_base_eur"))
     if taxable_base_minor is None:
@@ -690,42 +715,75 @@ def _import_quarterly_row(db: LedgerDB, *, row: dict[str, str], import_batch_id:
     vat_minor = explicit_vat_minor if explicit_vat_minor is not None else amount_minor - taxable_base_minor
     if reverse_charge and vat_minor == 0 and deductible_vat_minor:
         vat_minor = deductible_vat_minor
-    counterparty_id = _upsert_counterparty(db, row)
-    document = _upsert_source_document(
-        db,
-        row=row,
-        counterparty_id=counterparty_id,
-        import_batch_id=import_batch_id,
-        document_type=row["source_book_type"].strip(),
-        period_key=period_key,
-        total_minor=_document_total_minor(row, amount_minor),
+    terminal_existing = (
+        complete_existing is not None
+        and complete_existing["lifecycle_status"] in {"duplicate", "rejected", "void"}
     )
+    if terminal_existing:
+        transaction = db.connection.execute(
+            "SELECT * FROM transactions WHERE transaction_id = ?",
+            (complete_existing["transaction_id"],),
+        ).fetchone()
+    else:
+        counterparty_id = _upsert_counterparty(db, row)
+        document = _upsert_source_document(
+            db,
+            row=row,
+            counterparty_id=counterparty_id,
+            import_batch_id=import_batch_id,
+            document_type=row["source_book_type"].strip(),
+            period_key=period_key,
+            total_minor=_document_total_minor(row, amount_minor),
+        )
 
-    transaction = db.add_transaction(
-        transaction_id=_uuid_for("transaction", line_key),
-        external_key=transaction_external_key,
-        period_key=period_key,
-        transaction_date=_recognition_date(row, period_key),
-        booking_date=_normalize_date(row.get("booking_date") or row.get("date", "")),
-        entry_type=kind,
-        description=_transaction_description(row),
-        amount_minor=amount_minor,
-        currency="EUR",
-        amount_original_minor=_optional_minor(row.get("original_amount")),
-        original_currency=_optional_original_currency(row),
-        amount_eur_minor=amount_minor,
-        direction="credit" if kind == "income" else "debit",
-        lifecycle_status="approved",
-        document_id=document["document_id"],
-        counterparty_id=counterparty_id,
-        source_hash=transaction_source_hash,
-    )
+        transaction = db.add_transaction(
+            transaction_id=_uuid_for("transaction", line_key),
+            external_key=transaction_external_key,
+            period_key=period_key,
+            transaction_date=_recognition_date(row, period_key),
+            booking_date=_normalize_date(row.get("booking_date") or row.get("date", "")),
+            entry_type=kind,
+            description=_transaction_description(row),
+            amount_minor=amount_minor,
+            currency="EUR",
+            amount_original_minor=_optional_minor(row.get("original_amount")),
+            original_currency=_optional_original_currency(row),
+            amount_eur_minor=amount_minor,
+            direction="credit" if kind == "income" else "debit",
+            lifecycle_status=(
+                complete_existing["lifecycle_status"]
+                if complete_existing is not None
+                and complete_existing["lifecycle_status"]
+                in {"posted", "included_in_snapshot"}
+                else "approved"
+            ),
+            document_id=document["document_id"],
+            counterparty_id=counterparty_id,
+            source_hash=transaction_source_hash,
+        )
 
+    tax_code = _tax_code_for_row(row, kind)
+    operation_key = _aeat_operation_key_for_row(row, tax_code)
     db.add_detailed_tax_treatment(
         transaction_id=transaction["transaction_id"],
         treatment_type=kind,
-        tax_code=_tax_code_for_row(row, kind),
-        rate_basis_points=_vat_rate_basis_points(row.get("vat_rate_percent")),
+        tax_code=tax_code,
+        aeat_invoice_type=_aeat_invoice_type_for_row(row, kind),
+        aeat_operation_key=operation_key,
+        aeat_operation_qualification=_aeat_code_prefix(
+            row.get("operation_qualification"), {"S1", "S2", "N1", "N2"}
+        ),
+        aeat_exemption_code=_aeat_code_prefix(
+            row.get("exempt_operation"), {"E1", "E2", "E3", "E4", "E5", "E6"}
+        ),
+        aeat_reverse_charge=_aeat_reverse_charge_for_row(row, tax_code, kind),
+        aeat_expense_concept=_aeat_expense_concept_for_row(row, kind),
+        rate_basis_points=_reviewed_vat_rate_basis_points(
+            row,
+            tax_code=tax_code,
+            taxable_base_minor=taxable_base_minor,
+            vat_minor=vat_minor,
+        ),
         taxable_base_minor=taxable_base_minor,
         vat_minor=vat_minor,
         deductible_irpf_minor=deductible_irpf_minor,
@@ -734,14 +792,8 @@ def _import_quarterly_row(db: LedgerDB, *, row: dict[str, str], import_batch_id:
         include_modelo130=True,
         include_modelo303=_include_modelo303(row, kind),
         include_modelo347=False,
-        notes=_treatment_notes(row),
-        source_hash=_stable_payload_hash(
-            {
-                "kind": "tax_treatment",
-                "rule_version": HISTORY_MIGRATION_RULE_VERSION,
-                "row": row,
-            }
-        ),
+        notes=_treatment_notes(row, normalized_operation_key=operation_key),
+        source_hash=treatment_source_hash,
     )
 
 
@@ -1505,13 +1557,20 @@ def _transaction_description(row: dict[str, str]) -> str:
     return " ".join(part for part in parts if part).strip()
 
 
-def _treatment_notes(row: dict[str, str]) -> str:
+def _treatment_notes(
+    row: dict[str, str], *, normalized_operation_key: str | None = None
+) -> str:
     notes = [
         f"source_book_line_id={_row_line_key(row)}",
         f"reason_code={row.get('reason_code', '').strip() or 'unknown'}",
     ]
     if row.get("source_file_format"):
         notes.append(f"source_file_format={row['source_file_format'].strip()}")
+    source_operation_key = (row.get("operation_key") or "").strip()
+    if source_operation_key:
+        notes.append(f"source_operation_key={source_operation_key}")
+        if normalized_operation_key and normalized_operation_key != source_operation_key:
+            notes.append(f"normalized_operation_key={normalized_operation_key}")
     if row.get("notes"):
         notes.append(f"notes={row['notes'].strip()}")
     if _minor_from_text(row.get("gross_eur", "0")) == 0:
@@ -1592,6 +1651,83 @@ def _include_modelo303(row: dict[str, str], kind: str) -> bool:
         "eu_service_expense",
         "domestic_input",
     }
+
+
+def _aeat_invoice_type_for_row(row: dict[str, str], kind: str) -> str:
+    source = _aeat_code_prefix(
+        row.get("invoice_type"),
+        {
+            "F1", "F2", "F3", "F4", "F5", "F6",
+            "R1", "R2", "R3", "R4", "R5",
+            "SF", "DV", "AJ", "LC",
+        },
+    )
+    if source:
+        return source
+    if kind == "expense" and (row.get("reason_code") or "").strip().upper() == "G45":
+        return "F6"
+    return "F1"
+
+
+def _aeat_operation_key_for_row(row: dict[str, str], tax_code: str) -> str:
+    if tax_code in {"non_eu_service_expense", "domestic_reverse_charge_expense"}:
+        return "01"
+    if tax_code == "eu_service_expense":
+        return "09"
+    source = (row.get("operation_key") or "").strip()
+    return source if re.fullmatch(r"\d{2}", source) else "01"
+
+
+def _aeat_reverse_charge_for_row(
+    row: dict[str, str], tax_code: str, kind: str
+) -> bool | None:
+    if kind == "income":
+        return None
+    if tax_code in {"non_eu_service_expense", "domestic_reverse_charge_expense"}:
+        return True
+    if tax_code == "eu_service_expense":
+        return False
+    return _is_yes(row.get("reverse_charge"))
+
+
+def _aeat_expense_concept_for_row(row: dict[str, str], kind: str) -> str | None:
+    if kind != "expense":
+        return None
+    reason_code = (row.get("reason_code") or "").strip().upper()
+    return reason_code if re.fullmatch(r"G(?:Y)?\d{1,2}", reason_code) else None
+
+
+def _aeat_code_prefix(value: str | None, allowed: set[str]) -> str | None:
+    text = (value or "").strip().upper()
+    for code in sorted(allowed, key=len, reverse=True):
+        if text == code or text.startswith(f"{code} ") or text.startswith(f"{code}-"):
+            return code
+    return None
+
+
+def _reviewed_vat_rate_basis_points(
+    row: dict[str, str],
+    *,
+    tax_code: str,
+    taxable_base_minor: int,
+    vat_minor: int,
+) -> int | None:
+    parsed = _vat_rate_basis_points(row.get("vat_rate_percent"))
+    if tax_code not in {
+        "non_eu_service_expense",
+        "domestic_reverse_charge_expense",
+        "eu_service_expense",
+    }:
+        return parsed
+    if taxable_base_minor > 0 and vat_minor > 0:
+        expected = int(
+            (Decimal(taxable_base_minor) * Decimal("0.21")).quantize(
+                Decimal("1"), rounding=ROUND_HALF_UP
+            )
+        )
+        if abs(vat_minor - expected) <= 1:
+            return 2100
+    return parsed
 
 
 def _document_total_minor(row: dict[str, str], fallback: int) -> int:

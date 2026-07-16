@@ -29,7 +29,9 @@ AEAT_BOOK_CONTRACT = {
         "RECIBIDAS_GASTOS",
         "BIENES-INVERSIÓN",
     ),
-    "validation_url": "https://prewww2.aeat.es/wlpl/PACM-SERV/validarLLRs.html",
+    "validation_url": (
+        "https://www2.agenciatributaria.gob.es/wlpl/PACM-SERV/validarLLRs.html"
+    ),
     "filename_rule_status": "unverified_public_sources_conflict",
 }
 
@@ -226,7 +228,12 @@ def _transaction_rows(
                ci.aeat_id_type AS counterparty_aeat_id_type,
                ci.country_code AS counterparty_identity_country,
                ci.identifier AS counterparty_identity_identifier,
-               oi.external_series, oi.external_number
+               oi.external_series, oi.external_number,
+               CASE WHEN EXISTS (
+                   SELECT 1 FROM assets a
+                   WHERE a.acquisition_transaction_id = t.transaction_id
+                      OR (a.acquisition_transaction_id IS NULL AND a.document_id = d.document_id)
+               ) THEN 1 ELSE 0 END AS is_asset_acquisition
         FROM transactions t
         JOIN periods p ON p.period_id = t.period_id
         LEFT JOIN documents d ON d.document_id = t.document_id
@@ -297,6 +304,12 @@ def _income_row(
     taxable_base_minor = _required_minor(treatment, "taxable_base_minor")
     vat_minor = _optional_minor(treatment, "vat_minor")
     withholding_minor = _optional_minor(treatment, "withholding_minor")
+    invoice_type = _required_text(treatment, "aeat_invoice_type")
+    operation_key = _required_text(treatment, "aeat_operation_key")
+    operation_qualification = _required_text(
+        treatment, "aeat_operation_qualification"
+    )
+    exemption_code = str(treatment.get("aeat_exemption_code") or "").strip()
     series, number = _invoice_identity(transaction)
     id_type, country_code, counterparty_id = _counterparty_identity(transaction)
     row_year, row_quarter = _transaction_period(transaction)
@@ -304,7 +317,7 @@ def _income_row(
         "autoliquidacion_ejercicio": row_year,
         "autoliquidacion_periodo": f"{row_quarter}T",
         **_activity_columns(activity),
-        "tipo_factura": "F1",
+        "tipo_factura": invoice_type,
         "concepto_ingreso": "I01",
         "ingreso_computable_eur": _money(taxable_base_minor),
         "fecha_expedicion": _date_es(transaction["issued_on"]),
@@ -315,9 +328,9 @@ def _income_row(
         "destinatario_pais": country_code,
         "destinatario_identificacion": counterparty_id,
         "destinatario_nombre": transaction["counterparty_name"],
-        "clave_operacion": "01",
-        "calificacion_operacion": "N2",
-        "operacion_exenta": "",
+        "clave_operacion": operation_key,
+        "calificacion_operacion": operation_qualification,
+        "operacion_exenta": exemption_code,
         "total_factura_eur": _money(amount_minor),
         "base_imponible_eur": _money(taxable_base_minor),
         "tipo_iva_percent": "0.00",
@@ -338,7 +351,7 @@ def _expense_row(
     activity: Mapping[str, Any],
 ) -> dict[str, Any]:
     _require_document_and_counterparty(transaction)
-    concept = _expense_concept(treatment)
+    concept = _required_text(treatment, "aeat_expense_concept")
     amount_minor = _eur_amount_minor(transaction)
     taxable_base_minor = _optional_minor(treatment, "taxable_base_minor")
     vat_minor = _optional_minor(treatment, "vat_minor")
@@ -346,18 +359,25 @@ def _expense_row(
     deductible_irpf_minor = _required_minor(treatment, "deductible_irpf_minor")
     withholding_minor = _optional_minor(treatment, "withholding_minor")
     id_type, country_code, counterparty_id = _counterparty_identity(transaction)
-    reverse_charge = str(treatment["tax_code"]) in {
-        "non_eu_service_expense",
-        "intra_eu_service_expense",
-        "reverse_charge_service",
-    }
-    rate = treatment.get("rate_basis_points")
+    invoice_type = _required_text(treatment, "aeat_invoice_type")
+    operation_key = _required_text(treatment, "aeat_operation_key")
+    reverse_charge_raw = treatment.get("aeat_reverse_charge")
+    if reverse_charge_raw is None:
+        raise AeatBookProjectionError(
+            "Reviewed treatment is missing aeat_reverse_charge"
+        )
+    reverse_charge = bool(reverse_charge_raw)
+    rate = _validated_vat_rate(
+        treatment,
+        taxable_base_minor=taxable_base_minor,
+        vat_minor=vat_minor,
+    )
     row_year, row_quarter = _transaction_period(transaction)
     return {
         "autoliquidacion_ejercicio": row_year,
         "autoliquidacion_periodo": f"{row_quarter}T",
         **_activity_columns(activity),
-        "tipo_factura": "F1",
+        "tipo_factura": invoice_type,
         "concepto_gasto": concept,
         "gasto_deducible_eur": _money(deductible_irpf_minor),
         "fecha_expedicion": _date_es(transaction["issued_on"]),
@@ -368,9 +388,9 @@ def _expense_row(
         "expedidor_pais": country_code,
         "expedidor_identificacion": counterparty_id,
         "expedidor_nombre": transaction["counterparty_name"],
-        "clave_operacion": "01",
-        "bien_inversion": "",
-        "inversion_sujeto_pasivo": "S" if reverse_charge else "",
+        "clave_operacion": operation_key,
+        "bien_inversion": "S" if transaction.get("is_asset_acquisition") else "N",
+        "inversion_sujeto_pasivo": "S" if reverse_charge else "N",
         "total_factura_eur": _money(amount_minor),
         "base_imponible_eur": _money(taxable_base_minor),
         "tipo_iva_percent": _rate_percent(rate),
@@ -384,22 +404,6 @@ def _expense_row(
         "transaction_id": transaction["transaction_id"],
         "source_hash": transaction["source_hash"],
     }
-
-
-def _expense_concept(treatment: Mapping[str, Any]) -> str:
-    tax_code = str(treatment["tax_code"])
-    match = re.fullmatch(r"(?:historical_|aeat_)?(g(?:y)?\d{1,2})", tax_code, re.IGNORECASE)
-    if match:
-        return match.group(1).upper()
-    notes = str(treatment.get("notes") or "")
-    match = re.search(r"(?:^|;)\s*reason_code=(G(?:Y)?\d{1,2})(?:;|$)", notes, re.IGNORECASE)
-    if match:
-        return match.group(1).upper()
-    if tax_code == "social_security_owner":
-        return "G45"
-    raise AeatBookProjectionError(
-        f"Expense tax_code {tax_code!r} is missing an explicit AEAT expense concept"
-    )
 
 
 def _require_document_and_counterparty(transaction: Mapping[str, Any]) -> None:
@@ -491,9 +495,46 @@ def _required_minor(row: Mapping[str, Any], field: str) -> int:
     return int(value)
 
 
+def _required_text(row: Mapping[str, Any], field: str) -> str:
+    value = str(row.get(field) or "").strip()
+    if not value:
+        raise AeatBookProjectionError(f"Reviewed treatment is missing {field}")
+    return value
+
+
 def _optional_minor(row: Mapping[str, Any], field: str) -> int:
     value = row.get(field)
     return int(value) if value is not None else 0
+
+
+def _validated_vat_rate(
+    treatment: Mapping[str, Any],
+    *,
+    taxable_base_minor: int,
+    vat_minor: int,
+) -> int | None:
+    rate = treatment.get("rate_basis_points")
+    if vat_minor == 0:
+        return int(rate) if rate is not None else None
+    if taxable_base_minor <= 0:
+        raise AeatBookProjectionError(
+            "Non-zero IVA quota requires a positive reviewed IVA base"
+        )
+    if rate is None:
+        raise AeatBookProjectionError(
+            "Non-zero IVA quota requires a reviewed IVA rate"
+        )
+    normalized_rate = int(rate)
+    expected = int(
+        (Decimal(taxable_base_minor) * Decimal(normalized_rate) / Decimal(10000)).quantize(
+            Decimal("1"), rounding=ROUND_HALF_UP
+        )
+    )
+    if abs(vat_minor - expected) > 1:
+        raise AeatBookProjectionError(
+            "Reviewed IVA base, rate, and quota do not reconcile within 0.01 EUR"
+        )
+    return normalized_rate
 
 
 def _asset_book_rows(
@@ -616,6 +657,23 @@ def _asset_row(
     rate_basis_points = asset.get("annual_rate_basis_points")
     if rate_basis_points is None:
         raise AeatBookProjectionError("Asset annual amortization rate is missing")
+    acquisition_base = int(asset["acquisition_taxable_base_minor"])
+    acquisition_rate = int(asset["acquisition_vat_rate_basis_points"])
+    acquisition_deductible_vat = int(asset["acquisition_deductible_vat_minor"])
+    acquisition_vat = int(
+        (Decimal(acquisition_base) * Decimal(acquisition_rate) / Decimal(10000)).quantize(
+            Decimal("1"), rounding=ROUND_HALF_UP
+        )
+    )
+    if acquisition_deductible_vat < 0 or acquisition_deductible_vat > acquisition_vat:
+        raise AeatBookProjectionError(
+            "Asset acquisition deductible IVA is outside the reviewed IVA quota"
+        )
+    acquisition_prorata = (
+        ""
+        if acquisition_vat == 0
+        else f"{Decimal(acquisition_deductible_vat) * Decimal(100) / Decimal(acquisition_vat):.2f}"
+    )
     return {
         "autoliquidacion_ejercicio": year,
         "autoliquidacion_periodo": "0A",
@@ -633,20 +691,18 @@ def _asset_row(
         "amortizacion_acumulada_final_eur": _money(accumulated_end),
         "amortizacion_pendiente_eur": _money(pending),
         "fecha_expedicion": _date_es(asset.get("issued_on") or asset["placed_in_service_on"]),
-        "factura_expedidor_numero_final": asset["source_invoice_number"],
+        "factura_expedidor_serie_numero": asset["source_invoice_number"],
+        "factura_expedidor_numero_final": "",
         "expedidor_id_tipo": id_type,
         "expedidor_pais": country_code,
         "expedidor_identificacion": counterparty_id,
         "expedidor_nombre": asset["counterparty_name"],
-        "inicio_base_imponible_eur": _money(
-            int(asset["acquisition_taxable_base_minor"])
-        ),
+        "inicio_base_imponible_eur": _money(acquisition_base),
         "inicio_tipo_iva_percent": _rate_percent(
-            asset["acquisition_vat_rate_basis_points"]
+            acquisition_rate
         ),
-        "inicio_cuota_deducible_eur": _money(
-            int(asset["acquisition_deductible_vat_minor"])
-        ),
+        "inicio_prorrata_definitiva_percent": acquisition_prorata,
+        "inicio_cuota_deducible_eur": _money(acquisition_deductible_vat),
         "referencia_externa": asset["asset_code"],
         "asset_id": asset["asset_id"],
         "annual_evidence_source_book_line_id": annual["source_book_line_id"],

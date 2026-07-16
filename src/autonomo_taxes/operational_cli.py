@@ -87,6 +87,12 @@ TAX_TREATMENT_SHEET_FIELDS = [
     "treatment_type",
     "jurisdiction",
     "tax_code",
+    "aeat_invoice_type",
+    "aeat_operation_key",
+    "aeat_operation_qualification",
+    "aeat_exemption_code",
+    "aeat_reverse_charge",
+    "aeat_expense_concept",
     "rate_basis_points",
     "deductible_ratio",
     "taxable_base_eur",
@@ -506,6 +512,37 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     books_aeat.add_argument("--allow-authoritative-history", action="store_true")
     books_aeat.add_argument("--out", type=Path, required=True)
     books_aeat.set_defaults(_operational_handler=_cmd_books_aeat_preview)
+    books_template = books_sub.add_parser(
+        "aeat-template-check",
+        help="Verify the exact reviewed AEAT 2026 XLSX template contract",
+    )
+    books_template.add_argument("--template", type=Path, required=True)
+    books_template.add_argument("--out", type=Path, required=True)
+    books_template.set_defaults(_operational_handler=_cmd_books_aeat_template_check)
+    books_payload = books_sub.add_parser(
+        "aeat-payload",
+        help="Build the typed write plan for the official AEAT workbook",
+    )
+    _db_arg(books_payload)
+    books_payload.add_argument("--period", required=True)
+    books_payload.add_argument("--taxpayer-tax-id")
+    books_payload.add_argument("--allow-authoritative-history", action="store_true")
+    books_payload.add_argument("--template", type=Path, required=True)
+    books_payload.add_argument("--out", type=Path, required=True)
+    books_payload.set_defaults(_operational_handler=_cmd_books_aeat_payload)
+    books_validate = books_sub.add_parser(
+        "aeat-validate",
+        help="Upload an XLSX to the official AEAT validator and preserve its response",
+    )
+    books_validate.add_argument("--xlsx", type=Path, required=True)
+    books_validate.add_argument("--year", type=int, required=True)
+    books_validate.add_argument("--out-receipt", type=Path, required=True)
+    books_validate.add_argument(
+        "--confirm-upload-to-aeat",
+        action="store_true",
+        help="Required acknowledgement that the workbook will be sent to AEAT",
+    )
+    books_validate.set_defaults(_operational_handler=_cmd_books_aeat_validate)
 
     filing_package = subparsers.add_parser(
         "filing-package",
@@ -1511,6 +1548,14 @@ def _cmd_sheet_export(args: argparse.Namespace) -> int:
                           CASE WHEN t.amount_eur_minor IS NULL THEN ''
                                ELSE printf('%.2f', t.amount_eur_minor / 100.0) END AS amount_eur,
                           tt.treatment_type, tt.jurisdiction, tt.tax_code,
+                          COALESCE(tt.aeat_invoice_type, '') AS aeat_invoice_type,
+                          COALESCE(tt.aeat_operation_key, '') AS aeat_operation_key,
+                          COALESCE(tt.aeat_operation_qualification, '')
+                              AS aeat_operation_qualification,
+                          COALESCE(tt.aeat_exemption_code, '') AS aeat_exemption_code,
+                          CASE WHEN tt.aeat_reverse_charge IS NULL THEN ''
+                               ELSE tt.aeat_reverse_charge END AS aeat_reverse_charge,
+                          COALESCE(tt.aeat_expense_concept, '') AS aeat_expense_concept,
                           tt.rate_basis_points, tt.deductible_ratio,
                           CASE WHEN tt.taxable_base_minor IS NULL THEN ''
                                ELSE printf('%.2f', tt.taxable_base_minor / 100.0) END AS taxable_base_eur,
@@ -1735,6 +1780,87 @@ def _cmd_books_aeat_preview(args: argparse.Namespace) -> int:
         }
     )
     return 0 if projection["data_projection_ready"] else 2
+
+
+def _cmd_books_aeat_template_check(args: argparse.Namespace) -> int:
+    from .aeat_workbook import inspect_aeat_template
+
+    check = inspect_aeat_template(args.template)
+    _write_json(args.out, check)
+    _emit({"template_check": str(args.out.resolve()), "valid": check["valid"]})
+    return 0 if check["valid"] else 2
+
+
+def _cmd_books_aeat_payload(args: argparse.Namespace) -> int:
+    from .aeat_books import (
+        AeatBookProjectionError,
+        build_aeat_book_projection,
+        failed_aeat_book_projection,
+    )
+    from .aeat_workbook import (
+        build_aeat_workbook_payload,
+        inspect_aeat_template,
+        write_aeat_workbook_payload,
+    )
+
+    try:
+        with open_ledger_db(args.db, read_only=True) as db:
+            projection = build_aeat_book_projection(
+                db,
+                period_key=args.period,
+                taxpayer_tax_id=args.taxpayer_tax_id,
+                allow_authoritative_history=args.allow_authoritative_history,
+            )
+    except AeatBookProjectionError as exc:
+        projection = failed_aeat_book_projection(
+            period_key=args.period,
+            message=str(exc),
+            allow_authoritative_history=args.allow_authoritative_history,
+        )
+    template_check = inspect_aeat_template(args.template)
+    payload = build_aeat_workbook_payload(
+        projection,
+        template_check=template_check,
+    )
+    target = write_aeat_workbook_payload(args.out, payload)
+    _emit(
+        {
+            "payload": str(target.resolve()),
+            "period": args.period,
+            "payload_ready": payload["payload_ready"],
+            "xlsx_generation_supported": False,
+            "blocker_count": len(payload["blockers"]),
+        }
+    )
+    return 0 if payload["payload_ready"] else 2
+
+
+def _cmd_books_aeat_validate(args: argparse.Namespace) -> int:
+    from .aeat_workbook import (
+        AeatValidationConsentError,
+        validate_aeat_workbook,
+        write_aeat_validation_receipt,
+    )
+
+    try:
+        receipt = validate_aeat_workbook(
+            args.xlsx,
+            year=args.year,
+            confirm_upload_to_aeat=args.confirm_upload_to_aeat,
+        )
+    except (AeatValidationConsentError, ValueError) as exc:
+        _emit({"ok": False, "uploaded": False, "error": str(exc)})
+        return 2
+    target = write_aeat_validation_receipt(args.out_receipt, receipt)
+    _emit(
+        {
+            "ok": receipt["transport"]["ok"],
+            "uploaded": True,
+            "receipt": str(target.resolve()),
+            "http_status": receipt["transport"]["http_status"],
+        }
+    )
+    return 0 if receipt["transport"]["ok"] else 2
 
 
 def _cmd_filing_package_build(args: argparse.Namespace) -> int:
@@ -2106,6 +2232,14 @@ def _sheet_rows_from_db(db: LedgerDB, tab: str) -> list[SheetRow]:
                             CASE WHEN t.amount_eur_minor IS NULL THEN ''
                                  ELSE printf('%.2f', t.amount_eur_minor / 100.0) END AS amount_eur,
                             tt.treatment_type, tt.jurisdiction, tt.tax_code,
+                            COALESCE(tt.aeat_invoice_type, '') AS aeat_invoice_type,
+                            COALESCE(tt.aeat_operation_key, '') AS aeat_operation_key,
+                            COALESCE(tt.aeat_operation_qualification, '')
+                                AS aeat_operation_qualification,
+                            COALESCE(tt.aeat_exemption_code, '') AS aeat_exemption_code,
+                            CASE WHEN tt.aeat_reverse_charge IS NULL THEN ''
+                                 ELSE tt.aeat_reverse_charge END AS aeat_reverse_charge,
+                            COALESCE(tt.aeat_expense_concept, '') AS aeat_expense_concept,
                             tt.rate_basis_points, tt.deductible_ratio,
                             CASE WHEN tt.taxable_base_minor IS NULL THEN ''
                                  ELSE printf('%.2f', tt.taxable_base_minor / 100.0) END AS taxable_base_eur,
@@ -2191,6 +2325,12 @@ def _read_sheet_rows(
         "transactions": {"lifecycle_status"},
         "tax_treatments": {
             "tax_code",
+            "aeat_invoice_type",
+            "aeat_operation_key",
+            "aeat_operation_qualification",
+            "aeat_exemption_code",
+            "aeat_reverse_charge",
+            "aeat_expense_concept",
             "rate_basis_points",
             "deductible_ratio",
             "taxable_base_eur",
@@ -2279,6 +2419,12 @@ def _editable_sheet_values(tab: str, values: dict[str, Any]) -> dict[str, Any]:
         "transactions": {"lifecycle_status"},
         "tax_treatments": {
             "tax_code",
+            "aeat_invoice_type",
+            "aeat_operation_key",
+            "aeat_operation_qualification",
+            "aeat_exemption_code",
+            "aeat_reverse_charge",
+            "aeat_expense_concept",
             "rate_basis_points",
             "deductible_ratio",
             "taxable_base_eur",
@@ -2349,6 +2495,27 @@ def _apply_reviewed_sheet_row(
             transaction_id=existing["transaction_id"],
             treatment_type=existing["treatment_type"],
             tax_code=tax_code,
+            aeat_invoice_type=_optional_sheet_text(
+                remote.values.get("aeat_invoice_type", existing["aeat_invoice_type"])
+            ),
+            aeat_operation_key=_optional_sheet_text(
+                remote.values.get("aeat_operation_key", existing["aeat_operation_key"])
+            ),
+            aeat_operation_qualification=_optional_sheet_text(
+                remote.values.get(
+                    "aeat_operation_qualification",
+                    existing["aeat_operation_qualification"],
+                )
+            ),
+            aeat_exemption_code=_optional_sheet_text(
+                remote.values.get("aeat_exemption_code", existing["aeat_exemption_code"])
+            ),
+            aeat_reverse_charge=_optional_sheet_bool(
+                remote.values.get("aeat_reverse_charge", existing["aeat_reverse_charge"])
+            ),
+            aeat_expense_concept=_optional_sheet_text(
+                remote.values.get("aeat_expense_concept", existing["aeat_expense_concept"])
+            ),
             jurisdiction=existing["jurisdiction"],
             rate_basis_points=_optional_sheet_int(
                 remote.values.get("rate_basis_points")
@@ -2429,7 +2596,7 @@ def _sheet_eur_minor(value: Any) -> int | None:
 
 
 def _optional_sheet_bool(value: Any) -> bool | None:
-    normalized = str(value or "").strip().casefold()
+    normalized = "" if value is None else str(value).strip().casefold()
     if not normalized:
         return None
     if normalized in {"1", "true", "yes"}:
@@ -3214,6 +3381,15 @@ def _load_json_object(path: Path) -> dict[str, Any]:
 def _json_payload_hash(payload: dict[str, Any]) -> str:
     serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _write_json(path: Path, payload: Any) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(_jsonable(payload), indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return path
 
 
 def _write_or_emit(payload: Any, path: Path | None) -> None:
