@@ -40,11 +40,13 @@ def build_offboarding_manifest(
     paths: Iterable[Path],
     *,
     category_overrides: Mapping[str, str] | None = None,
+    excluded_paths: Iterable[Path] = (),
 ) -> list[dict[str, str]]:
     overrides = {
         str(Path(key).resolve()).casefold(): value
         for key, value in (category_overrides or {}).items()
     }
+    excluded = {str(Path(path).resolve()).casefold() for path in excluded_paths}
     rows: list[dict[str, str]] = []
     expanded: dict[str, Path] = {}
     for raw_path in paths:
@@ -56,6 +58,8 @@ def build_offboarding_manifest(
         else:
             raise FileNotFoundError(f"Offboarding artifact is missing: {path}")
         for candidate in candidates:
+            if str(candidate.resolve()).casefold() in excluded:
+                continue
             if _is_ignored_system_file(candidate):
                 continue
             expanded[str(candidate.resolve()).casefold()] = candidate

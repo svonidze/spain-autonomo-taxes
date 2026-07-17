@@ -2359,7 +2359,7 @@ def _cmd_calculate(args: argparse.Namespace) -> int:
 def _cmd_offboarding_build(args: argparse.Namespace) -> int:
     from .offboarding import build_offboarding_manifest
 
-    rows = build_offboarding_manifest(args.paths)
+    rows = build_offboarding_manifest(args.paths, excluded_paths=[args.out])
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(rows, indent=2, ensure_ascii=False), encoding="utf-8")
     _emit({"manifest": str(args.out.resolve()), "rows": len(rows)})
