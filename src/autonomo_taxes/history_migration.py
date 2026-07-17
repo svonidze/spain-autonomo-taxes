@@ -67,7 +67,7 @@ UNRESOLVED_RECONCILIATION_STATUSES = {
 }
 QUARTER_KEY_RE = re.compile(r"^20\d{2}-Q[1-4]$", re.IGNORECASE)
 DATE_IN_FILE_RE = re.compile(r"20\d{2}-Q[1-4]", re.IGNORECASE)
-HISTORY_MIGRATION_RULE_VERSION = "official-source-book-v5"
+HISTORY_MIGRATION_RULE_VERSION = "official-source-book-v6"
 
 
 def migrate_xolo_history(
@@ -664,6 +664,7 @@ def _import_quarterly_row(db: LedgerDB, *, row: dict[str, str], import_batch_id:
     complete_existing = db.connection.execute(
         """
         SELECT t.transaction_id, t.source_hash, t.lifecycle_status,
+               t.counterparty_id AS previous_counterparty_id,
                tt.source_hash AS treatment_source_hash,
                tt.aeat_invoice_type, tt.aeat_operation_key, tt.aeat_reverse_charge
         FROM transactions t
@@ -761,6 +762,13 @@ def _import_quarterly_row(db: LedgerDB, *, row: dict[str, str], import_batch_id:
             counterparty_id=counterparty_id,
             source_hash=transaction_source_hash,
         )
+        previous_counterparty_id = (
+            complete_existing["previous_counterparty_id"]
+            if complete_existing is not None
+            else None
+        )
+        if previous_counterparty_id != counterparty_id:
+            _prune_unreferenced_migration_counterparty(db, previous_counterparty_id)
 
     tax_code = _tax_code_for_row(row, kind)
     operation_key = _aeat_operation_key_for_row(row, tax_code)
@@ -1129,6 +1137,7 @@ def _prune_superseded_source_book_records(db: LedgerDB) -> Counter[str]:
         SELECT d.document_type, ds.source_book_line_id
         FROM document_sources ds
         JOIN documents d ON d.document_id = ds.document_id
+        WHERE ds.source_book_line_id <> ''
         GROUP BY d.document_type, ds.source_book_line_id
         HAVING COUNT(DISTINCT ds.document_id) > 1
         """
@@ -1193,9 +1202,17 @@ def _prune_superseded_source_book_records(db: LedgerDB) -> Counter[str]:
                     """
                     SELECT
                         EXISTS(SELECT 1 FROM documents WHERE counterparty_id = ?) OR
-                        EXISTS(SELECT 1 FROM transactions WHERE counterparty_id = ?) AS is_referenced
+                        EXISTS(SELECT 1 FROM transactions WHERE counterparty_id = ?) OR
+                        EXISTS(SELECT 1 FROM counterparty_identities WHERE counterparty_id = ?) OR
+                        EXISTS(SELECT 1 FROM invoice_templates WHERE counterparty_id = ?) OR
+                        EXISTS(SELECT 1 FROM outgoing_invoice_drafts WHERE counterparty_id = ?) OR
+                        EXISTS(
+                            SELECT 1 FROM validation_issues
+                            WHERE subject_table = 'counterparties' AND subject_id = ?
+                              AND issue_status = 'open'
+                        ) AS is_referenced
                     """,
-                    (row["counterparty_id"], row["counterparty_id"]),
+                    (row["counterparty_id"],) * 6,
                 ).fetchone()["is_referenced"]
                 if not counterparty_references:
                     db.connection.execute(
@@ -1406,17 +1423,26 @@ def _upsert_counterparty(db: LedgerDB, row: dict[str, str]) -> str:
         """,
         (external_key, tax_id, tax_id, vat_id, vat_id, external_key),
     ).fetchone()
-    if existing is None:
-        normalized_name = _normalized_counterparty_name(supplier)
-        name_matches = [
-            candidate
-            for candidate in db.connection.execute(
-                "SELECT * FROM counterparties ORDER BY created_at, counterparty_id"
-            ).fetchall()
-            if _normalized_counterparty_name(candidate["display_name"]) == normalized_name
+    normalized_name = _normalized_counterparty_name(supplier)
+    name_matches = [
+        candidate
+        for candidate in db.connection.execute(
+            "SELECT * FROM counterparties ORDER BY created_at, counterparty_id"
+        ).fetchall()
+        if _normalized_counterparty_name(candidate["display_name"]) == normalized_name
+    ]
+    if existing is None and len(name_matches) == 1:
+        existing = name_matches[0]
+    if tax_id is None and vat_id is None:
+        identity_matches = [
+            candidate for candidate in name_matches if _counterparty_has_usable_identity(candidate)
         ]
-        if len(name_matches) == 1:
-            existing = name_matches[0]
+        if len(identity_matches) == 1 and (
+            existing is None or not _counterparty_has_usable_identity(existing)
+        ):
+            # Some official Xolo rows contain a placeholder NIF while another
+            # row for the exact same supplier carries the reviewed identity.
+            existing = identity_matches[0]
     counterparty_id = existing["counterparty_id"] if existing is not None else desired_counterparty_id
     effective_external_key = external_key
     if (
@@ -1428,12 +1454,27 @@ def _upsert_counterparty(db: LedgerDB, row: dict[str, str]) -> str:
         and _counterparty_identity_key_is_usable(str(existing["external_key"]))
     ):
         effective_external_key = existing["external_key"]
+    reusing_reviewed_identity = (
+        existing is not None
+        and tax_id is None
+        and vat_id is None
+        and _counterparty_has_usable_identity(existing)
+    )
+    effective_display_name = supplier
+    effective_country_code = country_code
+    if existing is not None and (
+        reusing_reviewed_identity
+        or _source_matches_existing_identity(existing, tax_id=tax_id, vat_id=vat_id)
+    ):
+        effective_display_name = existing["display_name"]
+    if reusing_reviewed_identity:
+        effective_country_code = existing["country_code"]
     counterparty = db.upsert_counterparty(
         counterparty_id=counterparty_id,
         external_key=effective_external_key,
         tax_id=tax_id,
-        display_name=supplier,
-        country_code=country_code,
+        display_name=effective_display_name,
+        country_code=effective_country_code,
         source_hash=_stable_payload_hash({"kind": "counterparty", "supplier": supplier}),
     )
     if vat_id and counterparty.get("vat_id") != vat_id:
@@ -1471,6 +1512,69 @@ def _upsert_counterparty(db: LedgerDB, row: dict[str, str]) -> str:
             expected_row_version=counterparty["row_version"],
         )
     return counterparty["counterparty_id"]
+
+
+def _counterparty_has_usable_identity(counterparty: Any) -> bool:
+    def value(field: str) -> Any:
+        try:
+            return counterparty[field]
+        except (IndexError, KeyError, TypeError):
+            return None
+
+    return any(
+        _usable_tax_id(str(value(field) or ""))
+        for field in ("tax_id", "vat_id")
+    ) or _counterparty_identity_key_is_usable(str(value("external_key") or ""))
+
+
+def _source_matches_existing_identity(
+    counterparty: Any,
+    *,
+    tax_id: str | None,
+    vat_id: str | None,
+) -> bool:
+    existing_ids = {
+        str(counterparty[field] or "").strip().upper()
+        for field in ("tax_id", "vat_id")
+        if counterparty[field] and _usable_tax_id(str(counterparty[field]))
+    }
+    source_ids = {
+        value.strip().upper()
+        for value in (tax_id, vat_id)
+        if value and _usable_tax_id(value)
+    }
+    return bool(existing_ids & source_ids)
+
+
+def _prune_unreferenced_migration_counterparty(
+    db: LedgerDB,
+    counterparty_id: str | None,
+) -> None:
+    if not counterparty_id:
+        return
+    referenced = db.connection.execute(
+        """
+        SELECT
+            EXISTS(SELECT 1 FROM documents WHERE counterparty_id = ?) OR
+            EXISTS(SELECT 1 FROM transactions WHERE counterparty_id = ?) OR
+            EXISTS(SELECT 1 FROM counterparty_identities WHERE counterparty_id = ?) OR
+            EXISTS(SELECT 1 FROM invoice_templates WHERE counterparty_id = ?) OR
+            EXISTS(SELECT 1 FROM outgoing_invoice_drafts WHERE counterparty_id = ?) OR
+            EXISTS(
+                SELECT 1 FROM validation_issues
+                WHERE subject_table = 'counterparties' AND subject_id = ?
+                  AND issue_status = 'open'
+            ) AS is_referenced
+        """,
+        (counterparty_id,) * 6,
+    ).fetchone()["is_referenced"]
+    if referenced:
+        return
+    with db.connection:
+        db.connection.execute(
+            "DELETE FROM counterparties WHERE counterparty_id = ?",
+            (counterparty_id,),
+        )
 
 
 def _normalized_counterparty_name(value: str) -> str:
@@ -1526,8 +1630,22 @@ def _upsert_source_document(
     line_key = _row_line_key(row)
     issued_on = _normalize_date(row.get("date", ""))
     document_number = number_override or (row.get("document_number") or "").strip() or None
-    existing = None
-    if document_number:
+    source_book_line_id = _source_book_line_id(row)
+    existing_row = None
+    if source_book_line_id:
+        existing_row = db.connection.execute(
+            """
+            SELECT d.*
+            FROM documents d
+            JOIN document_sources ds ON ds.document_id = d.document_id
+            WHERE ds.source_book_line_id = ? AND d.document_type = ?
+            ORDER BY d.created_at, d.document_id
+            LIMIT 1
+            """,
+            (source_book_line_id, document_type),
+        ).fetchone()
+    existing = dict(existing_row) if existing_row is not None else None
+    if existing is None and document_number:
         existing_row = db.connection.execute(
             """
             SELECT * FROM documents
