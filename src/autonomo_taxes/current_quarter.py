@@ -70,6 +70,7 @@ def build_current_quarter_dashboard(
         "blocking_items": _blocking_items(
             period_validation,
             approved_current_rows,
+            obligations=obligations,
             unexpected_future=unexpected_future,
         ),
         "policy": {
@@ -214,6 +215,7 @@ def _blocking_items(
     validation: dict[str, Any],
     approved_current_rows: list[dict[str, Any]],
     *,
+    obligations: list[dict[str, Any]],
     unexpected_future: list[TaxRow],
 ) -> list[dict[str, Any]]:
     blockers: list[dict[str, Any]] = []
@@ -227,6 +229,29 @@ def _blocking_items(
                 "detail": obligation["determination"],
             }
         )
+    for obligation in obligations:
+        unresolved_due = obligation.get("determination") == "due" and obligation.get(
+            "filing_status"
+        ) not in {"filed", "waived"}
+        if unresolved_due and obligation.get("calendar_deadline_mismatch"):
+            blockers.append(
+                {
+                    "kind": "calendar_deadline_mismatch",
+                    "reference": obligation["obligation_code"],
+                    "detail": (
+                        f"obligation={obligation.get('obligation_due_on')} "
+                        f"calendar={obligation.get('calendar_statutory_due_on')}"
+                    ),
+                }
+            )
+        if unresolved_due and not obligation.get("due_on"):
+            blockers.append(
+                {
+                    "kind": "confirmed_deadline_missing",
+                    "reference": obligation["obligation_code"],
+                    "detail": obligation.get("deadline_status") or "calendar entry missing",
+                }
+            )
     for document in validation.get("review_documents", []):
         blockers.append(
             {
@@ -334,6 +359,24 @@ def _render_markdown(dashboard: dict[str, Any]) -> str:
         f"| difficult expenses | {_money(posted_130['difficult_expenses'])} | "
         f"{_money(projected_130['difficult_expenses'])} |"
     )
+    lines.append("")
+
+    lines.extend(
+        [
+            "## Obligations and deadlines",
+            "",
+            "| Form | Determination | Filing status | Internal target | Direct debit | Effective deadline | Calendar status |",
+            "| --- | --- | --- | --- | --- | --- | --- |",
+        ]
+    )
+    for obligation in dashboard["obligations"]:
+        lines.append(
+            f"| {obligation['obligation_code']} | {obligation.get('determination', '')} | "
+            f"{obligation.get('filing_status', '')} | {obligation.get('internal_due_on') or ''} | "
+            f"{obligation.get('direct_debit_cutoff_on') or ''} | "
+            f"{obligation.get('due_on') or ''} | "
+            f"{obligation.get('deadline_status') or 'legacy/manual'} |"
+        )
     lines.append("")
 
     comparison = dashboard.get("xolo_forecast")

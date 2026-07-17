@@ -42,6 +42,7 @@ from .tax_engine import (
     calculate_modelo390,
     calculate_retention_rows,
 )
+from .tax_calendar import entry_as_record, load_tax_calendar
 from .tax_row_loader import load_tax_rows
 from .tax_rules import ANNUAL_FORM_CODES, QUARTERLY_FORM_CODES, difficult_expense_rule_for_year
 from .zenmoney import ZenMoneyPayment, inspect_zenmoney_csv, load_zenmoney_payments_csv
@@ -104,6 +105,21 @@ TAX_TREATMENT_SHEET_FIELDS = [
     "include_modelo303",
     "include_modelo347",
     "rule_version_id",
+    "notes",
+]
+TAX_CALENDAR_SHEET_FIELDS = [
+    "uuid",
+    "row_version",
+    "status",
+    "calendar_year",
+    "period_key",
+    "form_code",
+    "filing_opens_on",
+    "internal_due_on",
+    "direct_debit_cutoff_on",
+    "statutory_due_on",
+    "source_url",
+    "source_checked_on",
     "notes",
 ]
 
@@ -370,6 +386,22 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     obligation_mark.add_argument("--filed-at")
     obligation_mark.add_argument("--expected-row-version", type=int)
     obligation_mark.set_defaults(_operational_handler=_cmd_obligation_mark)
+
+    tax_calendar = subparsers.add_parser(
+        "calendar",
+        help="Import and inspect source-backed filing deadlines",
+    )
+    tax_calendar_sub = tax_calendar.add_subparsers(dest="calendar_command", required=True)
+    calendar_import = tax_calendar_sub.add_parser("import")
+    _db_arg(calendar_import)
+    calendar_import.add_argument("--input", type=Path, required=True)
+    calendar_import.set_defaults(_operational_handler=_cmd_calendar_import)
+    calendar_list = tax_calendar_sub.add_parser("list")
+    _db_arg(calendar_list)
+    calendar_list.add_argument("--year", type=int)
+    calendar_list.add_argument("--period")
+    calendar_list.add_argument("--out", type=Path)
+    calendar_list.set_defaults(_operational_handler=_cmd_calendar_list)
 
     issues = subparsers.add_parser("issues", help="List or explicitly waive validation issues")
     issues_sub = issues.add_subparsers(dest="issues_command", required=True)
@@ -1150,6 +1182,33 @@ def _cmd_obligation_mark(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_calendar_import(args: argparse.Namespace) -> int:
+    loaded = load_tax_calendar(args.input)
+    records = [entry_as_record(entry) for entry in loaded.entries]
+    with open_ledger_db(args.db) as db:
+        imported = db.import_tax_calendar(records)
+    _emit(
+        {
+            "calendar_year": loaded.calendar_year,
+            "source_file": str(args.input.resolve()),
+            "source_file_hash": loaded.source_file_hash,
+            "entry_count": len(imported),
+            "entries": imported,
+        }
+    )
+    return 0
+
+
+def _cmd_calendar_list(args: argparse.Namespace) -> int:
+    with open_ledger_db(args.db) as db:
+        rows = db.list_tax_calendar_entries(
+            calendar_year=args.year,
+            period_key=args.period,
+        )
+    _write_or_emit(rows, args.out)
+    return 0
+
+
 def _cmd_issues_list(args: argparse.Namespace) -> int:
     with open_ledger_db(args.db) as db:
         _emit(db.list_issues(period_key=args.period))
@@ -1234,7 +1293,7 @@ def _cmd_period_dashboard(args: argparse.Namespace) -> int:
             previous_positive_casilla_07=_previous_filed_positive(db, year, quarter),
             previous_negative_carry=_previous_filed_negative_carry(db, year, quarter),
             approved_current_rows=_approved_forecast_rows(db, args.period),
-            obligations=db.list_obligations(period_key=args.period),
+            obligations=db.list_obligations_with_deadlines(period_key=args.period),
             period_validation=db.validate_period(args.period),
         )
 
@@ -1647,6 +1706,16 @@ def _cmd_sheet_export(args: argparse.Namespace) -> int:
                    FROM obligations o JOIN periods p ON p.period_id=o.period_id
                    ORDER BY p.starts_on, o.obligation_code"""
             ).fetchall(),
+            "tax_calendar": db.connection.execute(
+                """SELECT tc.tax_calendar_entry_id AS uuid, tc.row_version,
+                          tc.deadline_status AS status, tc.calendar_year, p.period_key,
+                          tc.form_code, tc.filing_opens_on, tc.internal_due_on,
+                          tc.direct_debit_cutoff_on, tc.statutory_due_on,
+                          tc.source_url, tc.source_checked_on, tc.notes
+                   FROM tax_calendar_entries tc
+                   JOIN periods p ON p.period_id=tc.period_id
+                   ORDER BY tc.statutory_due_on, p.period_key, tc.form_code"""
+            ).fetchall(),
             "rules_sources": db.connection.execute(
                 """SELECT rule_version_id AS uuid, row_version, 'historical' AS status,
                           rule_name, version, activated_at, source_hash
@@ -1663,6 +1732,8 @@ def _cmd_sheet_export(args: argparse.Namespace) -> int:
                         if name == "payments"
                         else TAX_TREATMENT_SHEET_FIELDS
                         if name == "tax_treatments"
+                        else TAX_CALENDAR_SHEET_FIELDS
+                        if name == "tax_calendar"
                         else None
                     ),
                 )
