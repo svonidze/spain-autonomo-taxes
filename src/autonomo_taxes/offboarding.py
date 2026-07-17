@@ -22,6 +22,8 @@ OPTIONAL_OFFBOARDING_CATEGORIES = (
 
 OFFBOARDING_CATEGORIES = REQUIRED_OFFBOARDING_CATEGORIES + OPTIONAL_OFFBOARDING_CATEGORIES
 
+_IGNORED_SYSTEM_FILENAMES = {".ds_store", "desktop.ini", "thumbs.db"}
+
 _CATEGORY_PATTERNS = {
     "exports": re.compile(r"(xolo[_ -]?export|data[_ -]?export|export[_ -]?bundle|standard[_ -]?export)", re.I),
     "books": re.compile(r"(libro|book|ledger|register|registro)", re.I),
@@ -54,6 +56,8 @@ def build_offboarding_manifest(
         else:
             raise FileNotFoundError(f"Offboarding artifact is missing: {path}")
         for candidate in candidates:
+            if _is_ignored_system_file(candidate):
+                continue
             expanded[str(candidate.resolve()).casefold()] = candidate
 
     for path in sorted(expanded.values(), key=lambda item: str(item).lower()):
@@ -72,7 +76,17 @@ def build_offboarding_manifest(
 
 
 def verify_offboarding_manifest(rows: Iterable[Mapping[str, str]]) -> dict[str, object]:
-    normalized_rows = [dict(row) for row in rows]
+    source_rows = [dict(row) for row in rows]
+    ignored_system_paths = sorted(
+        row.get("path", "")
+        for row in source_rows
+        if _is_ignored_system_file(Path(row.get("path", "")))
+    )
+    normalized_rows = [
+        row
+        for row in source_rows
+        if not _is_ignored_system_file(Path(row.get("path", "")))
+    ]
     present_categories = {row.get("category", "") for row in normalized_rows}
     missing_categories = [category for category in REQUIRED_OFFBOARDING_CATEGORIES if category not in present_categories]
     invalid_hashes = sorted(
@@ -118,6 +132,7 @@ def verify_offboarding_manifest(rows: Iterable[Mapping[str, str]]) -> dict[str, 
         "missing_paths": sorted(missing_paths),
         "hash_mismatch_paths": sorted(hash_mismatch_paths),
         "size_mismatch_paths": sorted(size_mismatch_paths),
+        "ignored_system_paths": ignored_system_paths,
         "category_counts": category_counts,
     }
 
@@ -141,6 +156,11 @@ def sha256_file(path: Path) -> str:
                 break
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _is_ignored_system_file(path: Path) -> bool:
+    name = path.name.casefold()
+    return name in _IGNORED_SYSTEM_FILENAMES or name.startswith("~$")
 
 
 def _parse_size(value: str) -> int:
