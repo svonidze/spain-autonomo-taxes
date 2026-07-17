@@ -101,16 +101,13 @@ def build_shadow_close_report(
         and accounting_ready
         and posting_ready
         and aeat_data_ready
-        and payment_ready
         and not unknown_obligations
     )
     cutover_ready = bool(
         accounting_ready
         and posting_ready
         and aeat_data_ready
-        and payment_ready
         and archive_ready
-        and invoice_channel_ready
     )
 
     obligations_status = "ready"
@@ -135,8 +132,10 @@ def build_shadow_close_report(
             "posting_ready": posting_ready,
             "aeat_data_projection_ready": aeat_data_ready,
             "payment_reconciliation_ready": payment_ready,
+            "payment_reconciliation_required": False,
             "offboarding_archive_ready": archive_ready,
             "invoice_channel_ready": invoice_channel_ready,
+            "invoice_channel_required_for_cutover": False,
             "filing_ready": filing_ready,
             "cutover_ready": cutover_ready,
         },
@@ -170,7 +169,7 @@ def build_shadow_close_report(
                     aeat_projection.get("xlsx_generation_supported")
                 ),
             },
-            "payments": dict(payment_state),
+            "payments": {**dict(payment_state), "required": False},
             "offboarding_archive": (
                 {"status": "not_checked", "ready": False}
                 if offboarding_verification is None
@@ -265,6 +264,8 @@ def summarize_payment_state(
         "payment_count": len(rows),
         "unmatched_payment_ids": unmatched,
         "source_counts": dict(Counter(row["source_system"] or "unknown" for row in rows)),
+        "required": False,
+        "note": "ZenMoney and bank matching are optional corroboration, not a tax-recognition source or filing gate.",
     }
 
 
@@ -393,11 +394,13 @@ def _next_actions(
     if workflow_items:
         actions.append("Post approved forecast rows only after their evidence and review are complete.")
     if not payment_ready:
-        actions.append("Import the full ZenMoney export for the period and resolve unmatched payments.")
+        actions.append("Optional: use ZenMoney or bank data to corroborate selected ledger payments.")
     if not archive_ready:
         actions.append("Build and verify the complete Xolo offboarding evidence manifest.")
     if not invoice_channel.get("ready"):
-        actions.append("Complete every replacement invoice-channel acceptance check.")
+        actions.append(
+            "Before 2027-07-01, migrate manual invoice issuance to a reviewed RRSIF-compliant SIF."
+        )
     if due_unfiled:
         forms = ", ".join(str(row["form"]) for row in due_unfiled)
         if period_ended:
@@ -431,7 +434,7 @@ def _render_markdown(report: Mapping[str, Any]) -> str:
         f"| Posting | {gates['posting']['status']} | {len(gates['posting']['items'])} |",
         f"| Obligations | {gates['obligations']['status']} | {len(gates['obligations']['due_unfiled']) + len(gates['obligations']['unknown'])} |",
         f"| AEAT books | {gates['aeat_books']['status']} | {gates['aeat_books']['counts'].get('blockers', 0)} |",
-        f"| Payments | {gates['payments']['status']} | {len(gates['payments']['unmatched_payment_ids'])} |",
+        f"| Payments (optional) | {gates['payments']['status']} | {len(gates['payments']['unmatched_payment_ids'])} |",
         f"| Xolo archive | {gates['offboarding_archive']['status']} | 0 |",
         f"| Invoice channel | {gates['invoice_channel']['status']} | {len(gates['invoice_channel']['missing_checks'])} |",
         "",

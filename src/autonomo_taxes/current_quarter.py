@@ -28,6 +28,7 @@ def build_current_quarter_dashboard(
     difficult_expenses_rate: Decimal,
     previous_positive_casilla_07: Decimal,
     previous_negative_carry: Decimal,
+    previous_vat_compensation: Decimal,
     approved_current_rows: list[dict[str, Any]],
     obligations: list[dict[str, Any]],
     period_validation: dict[str, Any],
@@ -78,6 +79,7 @@ def build_current_quarter_dashboard(
             "difficult_expenses_rate": difficult_expenses_rate,
             "previous_positive_casilla_07": previous_positive_casilla_07,
             "previous_negative_carry": previous_negative_carry,
+            "previous_vat_compensation": previous_vat_compensation,
         },
         "tax_arithmetic_preview": {
             "posted_actual": _tax_preview(
@@ -87,6 +89,7 @@ def build_current_quarter_dashboard(
                 difficult_expenses_rate=difficult_expenses_rate,
                 previous_positive_casilla_07=previous_positive_casilla_07,
                 previous_negative_carry=previous_negative_carry,
+                previous_vat_compensation=previous_vat_compensation,
             ),
             "projected_reviewed": _tax_preview(
                 projected,
@@ -95,6 +98,7 @@ def build_current_quarter_dashboard(
                 difficult_expenses_rate=difficult_expenses_rate,
                 previous_positive_casilla_07=previous_positive_casilla_07,
                 previous_negative_carry=previous_negative_carry,
+                previous_vat_compensation=previous_vat_compensation,
             ),
         },
         "warnings": [
@@ -168,6 +172,7 @@ def _tax_preview(
     difficult_expenses_rate: Decimal,
     previous_positive_casilla_07: Decimal,
     previous_negative_carry: Decimal,
+    previous_vat_compensation: Decimal,
 ) -> dict[str, Any]:
     _, modelo130 = calculate_modelo130_rows(
         rows,
@@ -180,14 +185,26 @@ def _tax_preview(
     )
     return {
         "modelo130": {"values": modelo130.values, "lineage": modelo130.lineage},
-        "modelo303": _optional_calculation(calculate_modelo303_rows, rows, year, quarter),
+        "modelo303": _optional_calculation(
+            calculate_modelo303_rows,
+            rows,
+            year,
+            quarter,
+            previous_compensation=previous_vat_compensation,
+        ),
         "modelo349": _optional_calculation(calculate_modelo349_rows, rows, year, quarter),
     }
 
 
-def _optional_calculation(calculator, rows: list[TaxRow], year: int, quarter: int) -> dict[str, Any]:
+def _optional_calculation(
+    calculator,
+    rows: list[TaxRow],
+    year: int,
+    quarter: int,
+    **kwargs: Any,
+) -> dict[str, Any]:
     try:
-        result = calculator(rows, year=year, quarter=quarter)
+        result = calculator(rows, year=year, quarter=quarter, **kwargs)
     except CalculationBlocked as exc:
         return {"blocked": True, "reason": str(exc)}
     return {

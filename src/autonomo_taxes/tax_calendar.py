@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import date
+from datetime import date, timedelta
 import hashlib
 import json
 from pathlib import Path
@@ -103,6 +103,100 @@ def entry_as_record(entry: TaxCalendarEntry) -> dict[str, Any]:
         if isinstance(value, date):
             record[key] = value.isoformat()
     return record
+
+
+def build_period_ics(
+    *,
+    period_key: str,
+    period_ends_on: date,
+    obligations: list[dict[str, Any]],
+) -> str:
+    actionable = [
+        row
+        for row in obligations
+        if row.get("determination") in {"due", "unknown"}
+        and row.get("filing_status") not in {"filed", "waived"}
+    ]
+    forms = sorted({str(row["obligation_code"]) for row in actionable})
+    if not forms:
+        return _serialize_ics([])
+
+    filing_dates = [
+        date.fromisoformat(str(row["filing_opens_on"]))
+        for row in actionable
+        if row.get("filing_opens_on")
+    ]
+    internal_dates = [
+        date.fromisoformat(str(row["internal_due_on"]))
+        for row in actionable
+        if row.get("internal_due_on")
+    ]
+    debit_dates = [
+        date.fromisoformat(str(row["direct_debit_cutoff_on"]))
+        for row in actionable
+        if row.get("direct_debit_cutoff_on")
+    ]
+    statutory_dates = [
+        date.fromisoformat(str(row.get("due_on") or row.get("calendar_statutory_due_on")))
+        for row in actionable
+        if row.get("due_on") or row.get("calendar_statutory_due_on")
+    ]
+    if not filing_dates or not internal_dates or not statutory_dates:
+        raise ValueError(f"{period_key} has actionable obligations without confirmed calendar dates")
+
+    filing_opens = min(filing_dates)
+    internal_due = min(internal_dates)
+    statutory_due = min(statutory_dates)
+    form_text = ", ".join(f"Modelo {form}" for form in forms)
+    events = [
+        ("intake-close", period_ends_on, "Close invoice and expense intake", form_text),
+        ("draft", min(filing_opens + timedelta(days=9), internal_due), "Prepare draft tax returns", form_text),
+        ("blockers", internal_due - timedelta(days=2), "Resolve tax preparation blockers", form_text),
+        ("internal", internal_due, "Complete internal tax review", form_text),
+        ("cash", statutory_due - timedelta(days=1), "Confirm tax payment cash", form_text),
+        ("statutory", statutory_due, "Submit and pay tax returns", form_text),
+        ("evidence", statutory_due + timedelta(days=2), "Archive AEAT filing evidence", form_text),
+    ]
+    if debit_dates:
+        events.append(
+            ("direct-debit", min(debit_dates), "Direct debit filing cutoff", form_text)
+        )
+    return _serialize_ics(events, period_key=period_key)
+
+
+def _serialize_ics(
+    events: list[tuple[str, date, str, str]],
+    *,
+    period_key: str = "empty",
+) -> str:
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//spain-autonomo-taxes//Tax Calendar//EN",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+    ]
+    year = period_key[:4] if period_key[:4].isdigit() else "2000"
+    for kind, event_date, summary, description in sorted(events, key=lambda row: (row[1], row[0])):
+        uid = f"{period_key}-{kind}@spain-autonomo-taxes"
+        lines.extend(
+            [
+                "BEGIN:VEVENT",
+                f"UID:{uid}",
+                f"DTSTAMP:{year}0101T000000Z",
+                f"DTSTART;VALUE=DATE:{event_date:%Y%m%d}",
+                f"DTEND;VALUE=DATE:{event_date + timedelta(days=1):%Y%m%d}",
+                f"SUMMARY:{_ics_escape(summary)}",
+                f"DESCRIPTION:{_ics_escape(description)}",
+                "END:VEVENT",
+            ]
+        )
+    lines.append("END:VCALENDAR")
+    return "\r\n".join(lines) + "\r\n"
+
+
+def _ics_escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
 
 
 def _validated_group(

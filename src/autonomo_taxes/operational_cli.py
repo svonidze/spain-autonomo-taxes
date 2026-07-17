@@ -443,6 +443,17 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     period_dashboard.add_argument("--out-dir", type=Path, required=True)
     period_dashboard.add_argument("--xolo-modelo130-calculations", type=Path)
     period_dashboard.set_defaults(_operational_handler=_cmd_period_dashboard)
+    period_prepare = period_sub.add_parser(
+        "prepare",
+        help="Build calculations, cash check, calendar, books, and a manual AEAT filing checklist",
+    )
+    _db_arg(period_prepare)
+    period_prepare.add_argument("period")
+    period_prepare.add_argument("--as-of", type=date.fromisoformat, default=date.today())
+    period_prepare.add_argument("--out-dir", type=Path, required=True)
+    period_prepare.add_argument("--available-eur", type=Decimal)
+    period_prepare.add_argument("--cash-buffer-eur", type=Decimal)
+    period_prepare.set_defaults(_operational_handler=_cmd_period_prepare)
     period_shadow_close = period_sub.add_parser(
         "shadow-close",
         help="Aggregate accounting, filing, archive, payment, and cutover readiness",
@@ -645,6 +656,10 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     calculate.add_argument("--decision-ref")
     calculate.add_argument("--previous-positive-07")
     calculate.add_argument("--previous-negative-carry")
+    calculate.add_argument(
+        "--previous-vat-compensation",
+        help="Modelo 303 compensation balance entering the quarter; defaults to the prior filed snapshot",
+    )
     calculate.add_argument("--withholding-and-payments")
     calculate.add_argument("--reduction")
     calculate.add_argument("--unsupported-annual-category", action="append", default=[])
@@ -1307,6 +1322,7 @@ def _cmd_period_dashboard(args: argparse.Namespace) -> int:
             difficult_expenses_rate=rule.rate,
             previous_positive_casilla_07=_previous_filed_positive(db, year, quarter),
             previous_negative_carry=_previous_filed_negative_carry(db, year, quarter),
+            previous_vat_compensation=_previous_filed_vat_compensation(db, year, quarter),
             approved_current_rows=_approved_forecast_rows(db, args.period),
             obligations=db.list_obligations_with_deadlines(period_key=args.period),
             period_validation=db.validate_period(
@@ -1335,6 +1351,97 @@ def _cmd_period_dashboard(args: argparse.Namespace) -> int:
         }
     )
     return 0
+
+
+def _cmd_period_prepare(args: argparse.Namespace) -> int:
+    from .current_quarter import (
+        build_current_quarter_dashboard,
+        write_current_quarter_dashboard,
+    )
+    from .filing_package import write_filing_package
+    from .period_prepare import build_period_preparation, write_period_preparation
+
+    year, quarter = _parse_quarter_period(args.period)
+    with open_ledger_db(args.db, read_only=True) as db:
+        period = next(
+            (row for row in db.list_periods() if row["period_key"] == args.period),
+            None,
+        )
+        if period is None:
+            raise ValueError(f"Unknown period: {args.period}")
+        actual_rows = _tax_rows_from_db(
+            db,
+            year,
+            mode="production",
+            allow_authoritative_history=True,
+        )
+        projected_rows = _tax_rows_from_db(
+            db,
+            year,
+            mode="production",
+            allow_authoritative_history=True,
+            include_approved_periods={args.period},
+        )
+        obligations = db.list_obligations_with_deadlines(period_key=args.period)
+        rule = difficult_expense_rule_for_year(year)
+        dashboard = build_current_quarter_dashboard(
+            actual_rows=actual_rows,
+            projected_rows=projected_rows,
+            period_key=args.period,
+            as_of=args.as_of,
+            difficult_expenses_rate=rule.rate,
+            previous_positive_casilla_07=_previous_filed_positive(db, year, quarter),
+            previous_negative_carry=_previous_filed_negative_carry(db, year, quarter),
+            previous_vat_compensation=_previous_filed_vat_compensation(db, year, quarter),
+            approved_current_rows=_approved_forecast_rows(db, args.period),
+            obligations=obligations,
+            period_validation=db.validate_period(
+                args.period,
+                allow_authoritative_history=True,
+            ),
+        )
+        calculations = _period_prepare_calculations(
+            dashboard=dashboard,
+            rows=projected_rows,
+            obligations=obligations,
+            year=year,
+            quarter=quarter,
+        )
+        report = build_period_preparation(
+            period=period,
+            as_of=args.as_of,
+            dashboard=dashboard,
+            calculations=calculations,
+            obligations=obligations,
+            available_eur=args.available_eur,
+            cash_buffer_eur=args.cash_buffer_eur,
+        )
+        filing_manifest = write_filing_package(
+            db,
+            args.out_dir / "books",
+            period_key=args.period,
+        )
+
+    dashboard_outputs = write_current_quarter_dashboard(
+        dashboard,
+        args.out_dir / "dashboard",
+    )
+    outputs = write_period_preparation(report, args.out_dir)
+    outputs["filing_manifest"] = filing_manifest
+    outputs.update(
+        {f"dashboard_{key}": value for key, value in dashboard_outputs.items()}
+    )
+    _emit(
+        {
+            "period": args.period,
+            "status": report["status"],
+            "preparation_ready": report["preparation_ready"],
+            "filing_ready": report["filing_ready"],
+            "required_tax_eur": report["cash_check"]["required_tax_eur"],
+            "outputs": {key: str(path.resolve()) for key, path in outputs.items()},
+        }
+    )
+    return 2 if report["status"] == "blocked" else 0
 
 
 def _cmd_period_shadow_close(args: argparse.Namespace) -> int:
@@ -1388,6 +1495,9 @@ def _cmd_period_shadow_close(args: argparse.Namespace) -> int:
                 db, year, quarter
             ),
             previous_negative_carry=_previous_filed_negative_carry(
+                db, year, quarter
+            ),
+            previous_vat_compensation=_previous_filed_vat_compensation(
                 db, year, quarter
             ),
             approved_current_rows=_approved_forecast_rows(db, args.period),
@@ -2220,6 +2330,10 @@ def _cmd_calculate(args: argparse.Namespace) -> int:
             args.previous_positive_07 = str(_previous_filed_positive(db, args.year, args.quarter))
         if args.form == "130" and args.previous_negative_carry is None:
             args.previous_negative_carry = str(_previous_filed_negative_carry(db, args.year, args.quarter))
+        if args.form == "303" and args.previous_vat_compensation is None:
+            args.previous_vat_compensation = str(
+                _previous_filed_vat_compensation(db, args.year, args.quarter)
+            )
         baseline_period = f"{args.year}-Q{args.quarter}" if args.quarter else str(args.year)
         baseline = _filed_baseline(db, baseline_period, args.form)
         if args.form == "130" and args.reduction is None:
@@ -2314,7 +2428,12 @@ def _calculate(
         }[args.difficult_expenses_policy]
         return CalculationResult(report.form, report.period, report.values, report.lineage, (warning,))
     if args.form == "303":
-        return calculate_modelo303_rows(rows, year=args.year, quarter=args.quarter)
+        return calculate_modelo303_rows(
+            rows,
+            year=args.year,
+            quarter=args.quarter,
+            previous_compensation=Decimal(args.previous_vat_compensation),
+        )
     if args.form == "349":
         return calculate_modelo349_rows(rows, year=args.year, quarter=args.quarter)
     if args.form == "390":
@@ -2356,6 +2475,58 @@ def _calculate(
         difficult_expenses_cap=rule.annual_cap_eur,
         unsupported_categories=args.unsupported_annual_category,
     )
+
+
+def _period_prepare_calculations(
+    *,
+    dashboard: dict[str, Any],
+    rows: list[TaxRow],
+    obligations: list[dict[str, Any]],
+    year: int,
+    quarter: int,
+) -> dict[str, dict[str, Any]]:
+    due_forms = {
+        str(row["obligation_code"])
+        for row in obligations
+        if row["determination"] == "due"
+        and row["filing_status"] not in {"filed", "waived"}
+    }
+    preview = dashboard["tax_arithmetic_preview"]["projected_reviewed"]
+    calculations: dict[str, dict[str, Any]] = {}
+    for form in sorted(due_forms):
+        preview_result = preview.get(f"modelo{form}")
+        if preview_result is not None:
+            calculations[form] = {"blocked": False, **dict(preview_result)}
+            continue
+        withholding_type = {
+            "111": "professional",
+            "115": "rent",
+            "216": "nonresident",
+        }.get(form)
+        if withholding_type is not None:
+            result = calculate_retention_rows(
+                rows,
+                year=year,
+                quarter=quarter,
+                withholding_type=withholding_type,
+            )
+            calculations[form] = {
+                "blocked": False,
+                **_calculation_payload(result),
+            }
+            continue
+        if form == "349":
+            result = calculate_modelo349_rows(rows, year=year, quarter=quarter)
+            calculations[form] = {
+                "blocked": False,
+                **_calculation_payload(result),
+            }
+            continue
+        calculations[form] = {
+            "blocked": True,
+            "reason": f"Quarter preparation does not yet map Modelo {form}",
+        }
+    return calculations
 
 
 def _modelo303_inventory_periods(db: LedgerDB, year: int) -> tuple[str, ...]:
@@ -3621,6 +3792,98 @@ def _previous_filed_negative_carry(db: LedgerDB, year: int, quarter: int) -> Dec
         available += max(-result, Decimal("0.00"))
         available = max(available - applied, Decimal("0.00"))
     return available.quantize(Decimal("0.01"))
+
+
+def _previous_filed_vat_compensation(db: LedgerDB, year: int, quarter: int) -> Decimal:
+    if quarter == 1:
+        previous_period = f"{year - 1}-Q4"
+    else:
+        previous_period = f"{year}-Q{quarter - 1}"
+
+    value_candidates = _filed_value_candidates(db, previous_period, "303")
+    if not value_candidates:
+        obligations = db.list_obligations_with_deadlines(period_key=previous_period)
+        prior_303 = next(
+            (row for row in obligations if str(row["obligation_code"]) == "303"),
+            None,
+        )
+        if prior_303 is not None and prior_303["determination"] == "due":
+            raise CalculationBlocked(
+                f"Modelo 303 {previous_period} is due but has no filed snapshot; "
+                "provide --previous-vat-compensation explicitly"
+            )
+        return Decimal("0.00")
+
+    for values in value_candidates:
+        if "compensation_carryforward" in values:
+            return _nonnegative_decimal(values["compensation_carryforward"])
+
+    for values in value_candidates:
+        if "87" in values or "72" in values:
+            pending_previous = _nonnegative_decimal(values.get("87", "0"))
+            current_period = _nonnegative_decimal(values.get("72", "0"))
+            return (pending_previous + current_period).quantize(Decimal("0.01"))
+
+    for values in value_candidates:
+        if "110" in values or "78" in values:
+            opening = _nonnegative_decimal(values.get("110", "0"))
+            applied = _nonnegative_decimal(values.get("78", "0"))
+            liquidation = Decimal(str(values.get("71", values.get("result", "0"))))
+            return (
+                max(opening - applied, Decimal("0.00"))
+                + max(-liquidation, Decimal("0.00"))
+            ).quantize(Decimal("0.01"))
+
+    for values in value_candidates:
+        for result_key in ("71", "result", "46"):
+            if result_key in values:
+                result = Decimal(str(values[result_key]))
+                return max(-result, Decimal("0.00")).quantize(Decimal("0.01"))
+
+    raise CalculationBlocked(
+        f"Modelo 303 {previous_period} snapshot has no compensation/result casillas; "
+        "provide --previous-vat-compensation explicitly"
+    )
+
+
+def _nonnegative_decimal(value: Any) -> Decimal:
+    return max(Decimal(str(value)), Decimal("0.00")).quantize(Decimal("0.01"))
+
+
+def _filed_value_candidates(
+    db: LedgerDB,
+    period_key: str,
+    form: str,
+) -> list[dict[str, Any]]:
+    rows = db.connection.execute(
+        """
+        SELECT fs.payload_json
+        FROM filing_snapshots fs
+        JOIN periods p ON p.period_id = fs.period_id
+        WHERE p.period_key = ?
+          AND fs.status IN ('baseline', 'filed', 'submitted', 'final')
+        ORDER BY
+            CASE fs.status
+                WHEN 'final' THEN 4
+                WHEN 'filed' THEN 3
+                WHEN 'submitted' THEN 2
+                ELSE 1
+            END DESC,
+            COALESCE(fs.filed_on, '') DESC,
+            fs.created_at DESC
+        """,
+        (period_key,),
+    ).fetchall()
+    candidates: list[dict[str, Any]] = []
+    for row in rows:
+        payload = json.loads(row["payload_json"])
+        payload_form = str(payload.get("form", "")).lower().replace("modelo", "")
+        if payload_form != str(form).lower().replace("modelo", ""):
+            continue
+        values = payload.get("filed_values") or payload.get("values") or {}
+        if isinstance(values, dict):
+            candidates.append(values)
+    return candidates
 
 
 def _calculation_diff(recomputed: dict[str, Any], filed: dict[str, Any]) -> dict[str, str]:

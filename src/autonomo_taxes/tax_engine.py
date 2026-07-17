@@ -144,7 +144,14 @@ def calculate_modelo130_rows(
     return result, CalculationResult("130", f"{year}-Q{quarter}", values, lineage)
 
 
-def calculate_modelo303_rows(rows: Iterable[TaxRow], *, year: int, quarter: int) -> CalculationResult:
+def calculate_modelo303_rows(
+    rows: Iterable[TaxRow],
+    *,
+    year: int,
+    quarter: int,
+    previous_compensation: Decimal = ZERO,
+) -> CalculationResult:
+    previous_compensation = cents(max(previous_compensation, ZERO))
     selected = [row for row in rows if _in_quarter(row.tax_date, year, quarter) and row.include_modelo303]
     unknown = [row.transaction_id for row in selected if row.tax_code == "unknown"]
     if unknown:
@@ -235,13 +242,26 @@ def calculate_modelo303_rows(rows: Iterable[TaxRow], *, year: int, quarter: int)
 
     # The core engine currently models the common-territory general regime. Settlement
     # adjustments remain explicit future inputs rather than inferred balancing values.
+    pre_compensation_result = cents(_decimal(values["46"]))
+    compensation_applied = min(previous_compensation, max(pre_compensation_result, ZERO))
+    pending_previous_compensation = cents(previous_compensation - compensation_applied)
+    liquidation_result = cents(pre_compensation_result - compensation_applied)
+    current_period_compensation = cents(max(-liquidation_result, ZERO))
+    compensation_carryforward = cents(
+        pending_previous_compensation + current_period_compensation
+    )
     values.update(
         {
             "64": values["46"],
             "65": Decimal("100.00"),
             "66": values["46"],
             "69": values["46"],
-            "71": values["46"],
+            "110": previous_compensation,
+            "78": compensation_applied,
+            "87": pending_previous_compensation,
+            "71": liquidation_result,
+            "72": current_period_compensation,
+            "compensation_carryforward": compensation_carryforward,
             "domestic_output_base": _sum(output, "taxable_base_eur"),
             "domestic_output_vat": _sum(output, "vat_eur"),
             "reverse_charge_base": _sum(intracommunity + other_reverse, "taxable_base_eur"),
@@ -253,7 +273,7 @@ def calculate_modelo303_rows(rows: Iterable[TaxRow], *, year: int, quarter: int)
                 "deductible_vat_eur",
             ),
             "outside_scope_base": _sum(information, "taxable_base_eur"),
-            "result": values["46"],
+            "result": liquidation_result,
             "rule_source": MODELO303_RULE_SOURCE,
         }
     )
@@ -273,7 +293,7 @@ def calculate_modelo303_rows(rows: Iterable[TaxRow], *, year: int, quarter: int)
     )
     warnings = (
         "Casillas follow the cited AEAT 2026 general-regime structure; year-specific rule review remains required.",
-        "Casilla 71 assumes no prior-period compensation, deferred import VAT, regional allocation, or rectification adjustment.",
+        "Casilla 71 includes the explicit prior-period compensation balance; deferred import VAT, regional allocation, and rectification adjustments remain unsupported.",
     )
     return CalculationResult("303", f"{year}-Q{quarter}", values, lineage, warnings)
 
