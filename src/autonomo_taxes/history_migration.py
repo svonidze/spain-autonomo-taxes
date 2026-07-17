@@ -1443,6 +1443,16 @@ def _upsert_counterparty(db: LedgerDB, row: dict[str, str]) -> str:
             # Some official Xolo rows contain a placeholder NIF while another
             # row for the exact same supplier carries the reviewed identity.
             existing = identity_matches[0]
+    primary_identity = None
+    if existing is not None:
+        primary_identity = db.connection.execute(
+            """
+            SELECT counterparty_identity_id
+            FROM counterparty_identities
+            WHERE counterparty_id = ? AND is_primary = 1
+            """,
+            (existing["counterparty_id"],),
+        ).fetchone()
     counterparty_id = existing["counterparty_id"] if existing is not None else desired_counterparty_id
     effective_external_key = external_key
     if (
@@ -1462,17 +1472,29 @@ def _upsert_counterparty(db: LedgerDB, row: dict[str, str]) -> str:
     )
     effective_display_name = supplier
     effective_country_code = country_code
+    effective_tax_id = tax_id
     if existing is not None and (
         reusing_reviewed_identity
+        or primary_identity is not None
         or _source_matches_existing_identity(existing, tax_id=tax_id, vat_id=vat_id)
     ):
         effective_display_name = existing["display_name"]
-    if reusing_reviewed_identity:
+    if reusing_reviewed_identity or primary_identity is not None:
         effective_country_code = existing["country_code"]
+    if (
+        existing is not None
+        and primary_identity is not None
+        and existing["tax_id"]
+        and tax_id != existing["tax_id"]
+    ):
+        # A source-backed primary identity is an explicit review decision.
+        # Historical source-book refreshes may update rows, but cannot replace
+        # the reviewed master identifier with an older imported value.
+        effective_tax_id = existing["tax_id"]
     counterparty = db.upsert_counterparty(
         counterparty_id=counterparty_id,
         external_key=effective_external_key,
-        tax_id=tax_id,
+        tax_id=effective_tax_id,
         display_name=effective_display_name,
         country_code=effective_country_code,
         source_hash=_stable_payload_hash({"kind": "counterparty", "supplier": supplier}),
