@@ -45,6 +45,25 @@ class ZenMoneyLoadResult:
     skipped: tuple[ZenMoneySkip, ...]
 
 
+@dataclass(frozen=True)
+class ZenMoneyAccountSummary:
+    account_name: str
+    outcome_or_single_account_rows: int
+    income_rows: int
+    currencies: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ZenMoneyInspection:
+    row_count: int
+    dated_row_count: int
+    invalid_date_row_count: int
+    deleted_row_count: int
+    starts_on: date | None
+    ends_on: date | None
+    accounts: tuple[ZenMoneyAccountSummary, ...]
+
+
 _DATE_KEYS = ("date", "дата")
 _CATEGORY_KEYS = ("category", "категория", "tag", "тег")
 _PAYEE_KEYS = ("payee", "payer", "merchant", "плательщик", "получатель")
@@ -83,6 +102,65 @@ _CURRENCY_KEYS = ("currency", "валюта")
 _EUR_AMOUNT_KEYS = ("amounteur", "amountineur", "суммавeur", "суммаевро")
 _ID_KEYS = ("id", "transactionid", "transaction_id", "идентификатор")
 _DELETED_KEYS = ("deleted", "isdeleted", "удалена", "удалено")
+
+
+def inspect_zenmoney_csv(path: Path) -> ZenMoneyInspection:
+    """Describe account names and coverage without exposing transaction details."""
+    rows = _read_rows(path)
+    account_facts: dict[str, dict[str, object]] = {}
+    dates: list[date] = []
+    invalid_date_rows = 0
+    deleted_rows = 0
+
+    for row in rows:
+        lowered = {_normalize_header(key): _text(value) for key, value in row.items() if key}
+        if _is_true(_pick(lowered, *_DELETED_KEYS)):
+            deleted_rows += 1
+            continue
+        try:
+            payment_date = parse_any_date(_pick(lowered, *_DATE_KEYS))
+        except ValueError:
+            payment_date = None
+        if payment_date is None:
+            invalid_date_rows += 1
+        else:
+            dates.append(payment_date)
+
+        outcome_account = _pick(lowered, *_OUTCOME_ACCOUNT_KEYS)
+        income_account = _pick(lowered, *_INCOME_ACCOUNT_KEYS)
+        if outcome_account:
+            _record_account(
+                account_facts,
+                outcome_account,
+                direction="outcome",
+                currency=_optional_currency(lowered, _OUTCOME_CURRENCY_KEYS),
+            )
+        if income_account:
+            _record_account(
+                account_facts,
+                income_account,
+                direction="income",
+                currency=_optional_currency(lowered, _INCOME_CURRENCY_KEYS),
+            )
+
+    accounts = tuple(
+        ZenMoneyAccountSummary(
+            account_name=facts["account_name"],
+            outcome_or_single_account_rows=facts["outcome_rows"],
+            income_rows=facts["income_rows"],
+            currencies=tuple(sorted(facts["currencies"])),
+        )
+        for facts in sorted(account_facts.values(), key=lambda item: item["account_name"].casefold())
+    )
+    return ZenMoneyInspection(
+        row_count=len(rows),
+        dated_row_count=len(dates),
+        invalid_date_row_count=invalid_date_rows,
+        deleted_row_count=deleted_rows,
+        starts_on=min(dates) if dates else None,
+        ends_on=max(dates) if dates else None,
+        accounts=accounts,
+    )
 
 
 def load_zenmoney_payments_csv(
@@ -237,6 +315,33 @@ def _currency(
     if not currency:
         raise ValueError("ZenMoney business row has no currency; pass --default-currency explicitly")
     return currency.upper()
+
+
+def _optional_currency(row: Mapping[str, str], directional_keys: tuple[str, ...]) -> str:
+    return _pick(row, *directional_keys, *_CURRENCY_KEYS).upper()
+
+
+def _record_account(
+    account_facts: dict[str, dict[str, object]],
+    account_name: str,
+    *,
+    direction: str,
+    currency: str,
+) -> None:
+    normalized = _normalize_value(account_name)
+    facts = account_facts.setdefault(
+        normalized,
+        {
+            "account_name": account_name.strip(),
+            "outcome_rows": 0,
+            "income_rows": 0,
+            "currencies": set(),
+        },
+    )
+    counter_key = "outcome_rows" if direction == "outcome" else "income_rows"
+    facts[counter_key] += 1
+    if currency:
+        facts["currencies"].add(currency)
 
 
 def _optional_amount(value: str) -> Decimal | None:

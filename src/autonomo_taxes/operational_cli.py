@@ -44,7 +44,7 @@ from .tax_engine import (
 )
 from .tax_row_loader import load_tax_rows
 from .tax_rules import ANNUAL_FORM_CODES, QUARTERLY_FORM_CODES, difficult_expense_rule_for_year
-from .zenmoney import ZenMoneyPayment, load_zenmoney_payments_csv
+from .zenmoney import ZenMoneyPayment, inspect_zenmoney_csv, load_zenmoney_payments_csv
 
 
 DEFAULT_DB = Path(".local") / "autonomo.sqlite"
@@ -446,6 +446,12 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     _db_arg(bank_import)
     bank_import.add_argument("--csv", type=Path, required=True)
     bank_import.set_defaults(_operational_handler=_cmd_bank_import_revolut)
+    zenmoney_inspect = bank_sub.add_parser(
+        "inspect-zenmoney",
+        help="List exact account names and export coverage without importing rows",
+    )
+    zenmoney_inspect.add_argument("--csv", type=Path, required=True)
+    zenmoney_inspect.set_defaults(_operational_handler=_cmd_bank_inspect_zenmoney)
     zenmoney_import = bank_sub.add_parser("import-zenmoney")
     _db_arg(zenmoney_import)
     zenmoney_import.add_argument("--csv", type=Path, required=True)
@@ -1494,6 +1500,13 @@ def _cmd_bank_import_zenmoney(args: argparse.Namespace) -> int:
             "missing_from_export": missing_from_export,
         }
     )
+    return 0
+
+
+def _cmd_bank_inspect_zenmoney(args: argparse.Namespace) -> int:
+    inspection = asdict(inspect_zenmoney_csv(args.csv))
+    inspection["source_sha256"] = _sha256(args.csv)
+    _emit(inspection)
     return 0
 
 
