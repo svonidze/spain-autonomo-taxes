@@ -50,6 +50,18 @@ def load_tax_rows(
         if bucket is None:
             grouped[raw["transaction_id"]] = dict(raw)
             continue
+        raw_asset_id = raw.get("asset_id") or ""
+        current_asset_id = bucket.get("asset_id") or ""
+        if raw_asset_id and current_asset_id and raw_asset_id != current_asset_id:
+            raise CalculationBlocked(
+                f"Transaction {raw['transaction_id']} has conflicting asset links"
+            )
+        if raw_asset_id:
+            bucket["asset_id"] = raw_asset_id
+        bucket["asset_count"] = max(
+            int(bucket.get("asset_count") or 0),
+            int(raw.get("asset_count") or 0),
+        )
         if raw.get("tax_code") and raw["tax_code"] != "unknown":
             current = bucket.get("tax_code")
             if current not in {None, "", "unknown", raw["tax_code"]}:

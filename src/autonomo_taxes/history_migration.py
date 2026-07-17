@@ -67,7 +67,7 @@ UNRESOLVED_RECONCILIATION_STATUSES = {
 }
 QUARTER_KEY_RE = re.compile(r"^20\d{2}-Q[1-4]$", re.IGNORECASE)
 DATE_IN_FILE_RE = re.compile(r"20\d{2}-Q[1-4]", re.IGNORECASE)
-HISTORY_MIGRATION_RULE_VERSION = "official-source-book-v3"
+HISTORY_MIGRATION_RULE_VERSION = "official-source-book-v5"
 
 
 def migrate_xolo_history(
@@ -1095,22 +1095,31 @@ def _find_acquisition_transaction(
     counterparty_id: str,
     issued_on: str,
 ) -> dict[str, Any] | None:
-    row = db.connection.execute(
+    rows = db.connection.execute(
         """
-        SELECT t.transaction_id, t.amount_minor, t.amount_eur_minor, tt.taxable_base_minor
+        SELECT t.transaction_id, t.amount_minor, t.amount_eur_minor,
+               MAX(tt.taxable_base_minor) AS taxable_base_minor,
+               MAX(CASE WHEN tt.tax_code <> 'historical_g03' THEN 1 ELSE 0 END)
+                   AS is_direct_acquisition
         FROM transactions t
         JOIN documents d ON d.document_id = t.document_id
         JOIN tax_treatments tt ON tt.transaction_id = t.transaction_id
         WHERE t.counterparty_id = ?
           AND d.issued_on = ?
-          AND tt.tax_code = 'historical_g03'
+          AND t.entry_type = 'expense'
+          AND t.lifecycle_status NOT IN ('duplicate', 'rejected', 'void')
           AND COALESCE(tt.taxable_base_minor, 0) > 0
+        GROUP BY t.transaction_id, t.amount_minor, t.amount_eur_minor
         ORDER BY t.transaction_date, t.transaction_id
-        LIMIT 1
         """,
         (counterparty_id, issued_on),
-    ).fetchone()
-    return dict(row) if row is not None else None
+    ).fetchall()
+    direct = [row for row in rows if row["is_direct_acquisition"]]
+    if len(direct) == 1:
+        return dict(direct[0])
+    if not direct and len(rows) == 1:
+        return dict(rows[0])
+    return None
 
 
 def _prune_superseded_source_book_records(db: LedgerDB) -> Counter[str]:
@@ -1383,7 +1392,8 @@ def _upsert_counterparty(db: LedgerDB, row: dict[str, str]) -> str:
     country_code = (row.get("counterparty_country_code") or "ZZ").strip().upper() or "ZZ"
     raw_tax_id = (row.get("counterparty_tax_id") or "").strip()
     tax_id = raw_tax_id if _usable_tax_id(raw_tax_id) else None
-    vat_id = (row.get("counterparty_vat_id") or "").strip().upper() or None
+    raw_vat_id = (row.get("counterparty_vat_id") or "").strip().upper()
+    vat_id = raw_vat_id if _usable_tax_id(raw_vat_id) else None
     external_key = _counterparty_external_key(row, supplier)
     existing = db.connection.execute(
         """
@@ -1408,9 +1418,19 @@ def _upsert_counterparty(db: LedgerDB, row: dict[str, str]) -> str:
         if len(name_matches) == 1:
             existing = name_matches[0]
     counterparty_id = existing["counterparty_id"] if existing is not None else desired_counterparty_id
+    effective_external_key = external_key
+    if (
+        existing is not None
+        and external_key.startswith("counterparty-name:")
+        and str(existing["external_key"] or "").startswith(
+            ("counterparty-vat:", "counterparty-tax:")
+        )
+        and _counterparty_identity_key_is_usable(str(existing["external_key"]))
+    ):
+        effective_external_key = existing["external_key"]
     counterparty = db.upsert_counterparty(
         counterparty_id=counterparty_id,
-        external_key=external_key,
+        external_key=effective_external_key,
         tax_id=tax_id,
         display_name=supplier,
         country_code=country_code,
@@ -1420,6 +1440,23 @@ def _upsert_counterparty(db: LedgerDB, row: dict[str, str]) -> str:
         counterparty = db.set_counterparty_tax_profile(
             counterparty["counterparty_id"],
             vat_id=vat_id,
+            roi_status=counterparty.get("roi_status") or "unknown",
+            professional_supplier=(
+                bool(counterparty["professional_supplier"])
+                if counterparty.get("professional_supplier") is not None
+                else None
+            ),
+            retention_expected=(
+                bool(counterparty["retention_expected"])
+                if counterparty.get("retention_expected") is not None
+                else None
+            ),
+            expected_row_version=counterparty["row_version"],
+        )
+    elif counterparty.get("vat_id") and not _usable_tax_id(str(counterparty["vat_id"])):
+        counterparty = db.set_counterparty_tax_profile(
+            counterparty["counterparty_id"],
+            vat_id=None,
             roi_status=counterparty.get("roi_status") or "unknown",
             professional_supplier=(
                 bool(counterparty["professional_supplier"])
@@ -1450,7 +1487,7 @@ def _counterparty_external_key(row: dict[str, str], supplier: str) -> str:
     vat_id = (row.get("counterparty_vat_id") or "").strip().upper()
     tax_id = (row.get("counterparty_tax_id") or "").strip().upper()
     country_code = (row.get("counterparty_country_code") or "").strip().upper()
-    if vat_id:
+    if _usable_tax_id(vat_id):
         return _external_key("counterparty-vat", vat_id)
     if _usable_tax_id(tax_id):
         return _external_key("counterparty-tax", country_code, tax_id)
@@ -1462,9 +1499,17 @@ def _usable_tax_id(value: str) -> bool:
     compact = re.sub(r"[^0-9A-Z]", "", (value or "").upper())
     if not compact or compact in {"NA", "NONE", "UNKNOWN", "NODISPONIBLE", "SINDATOS"}:
         return False
-    if re.fullmatch(r"0{7,9}[A-Z]?|9{7,9}[A-Z]?", compact):
+    local = compact[2:] if re.match(r"^[A-Z]{2}", compact) else compact
+    if re.fullmatch(r"0{7,9}[A-Z]?|9{7,9}[A-Z]?", local):
         return False
     return True
+
+
+def _counterparty_identity_key_is_usable(value: str) -> bool:
+    prefix, separator, identity = (value or "").partition(":")
+    if not separator or prefix not in {"counterparty-vat", "counterparty-tax"}:
+        return False
+    return _usable_tax_id(identity.rsplit(":", 1)[-1])
 
 
 def _upsert_source_document(
