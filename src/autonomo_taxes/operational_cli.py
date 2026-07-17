@@ -443,6 +443,21 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     period_dashboard.add_argument("--out-dir", type=Path, required=True)
     period_dashboard.add_argument("--xolo-modelo130-calculations", type=Path)
     period_dashboard.set_defaults(_operational_handler=_cmd_period_dashboard)
+    period_shadow_close = period_sub.add_parser(
+        "shadow-close",
+        help="Aggregate accounting, filing, archive, payment, and cutover readiness",
+    )
+    _db_arg(period_shadow_close)
+    period_shadow_close.add_argument("period")
+    period_shadow_close.add_argument(
+        "--as-of", type=date.fromisoformat, default=date.today()
+    )
+    period_shadow_close.add_argument("--out-dir", type=Path, required=True)
+    period_shadow_close.add_argument("--offboarding-manifest", type=Path)
+    period_shadow_close.add_argument("--invoice-channel-assessment", type=Path)
+    period_shadow_close.set_defaults(
+        _operational_handler=_cmd_period_shadow_close
+    )
     period_close = period_sub.add_parser("close")
     _db_arg(period_close)
     period_close.add_argument("period")
@@ -1294,7 +1309,10 @@ def _cmd_period_dashboard(args: argparse.Namespace) -> int:
             previous_negative_carry=_previous_filed_negative_carry(db, year, quarter),
             approved_current_rows=_approved_forecast_rows(db, args.period),
             obligations=db.list_obligations_with_deadlines(period_key=args.period),
-            period_validation=db.validate_period(args.period),
+            period_validation=db.validate_period(
+                args.period,
+                allow_authoritative_history=True,
+            ),
         )
 
     if args.xolo_modelo130_calculations:
@@ -1314,6 +1332,135 @@ def _cmd_period_dashboard(args: argparse.Namespace) -> int:
             "submission_ready": False,
             "outputs": {key: str(path.resolve()) for key, path in outputs.items()},
             "blocking_item_count": len(dashboard["blocking_items"]),
+        }
+    )
+    return 0
+
+
+def _cmd_period_shadow_close(args: argparse.Namespace) -> int:
+    from .aeat_books import (
+        AeatBookProjectionError,
+        build_aeat_book_projection,
+        failed_aeat_book_projection,
+        write_aeat_book_projection,
+    )
+    from .current_quarter import (
+        build_current_quarter_dashboard,
+        write_current_quarter_dashboard,
+    )
+    from .offboarding import verify_offboarding_manifest
+    from .shadow_close import (
+        build_shadow_close_report,
+        load_invoice_channel_assessment,
+        summarize_payment_state,
+        write_shadow_close_report,
+    )
+
+    year, quarter = _parse_quarter_period(args.period)
+    with open_ledger_db(args.db, read_only=True) as db:
+        period = next(
+            (row for row in db.list_periods() if row["period_key"] == args.period),
+            None,
+        )
+        if period is None:
+            raise ValueError(f"Unknown period: {args.period}")
+        actual_rows = _tax_rows_from_db(
+            db,
+            year,
+            mode="production",
+            allow_authoritative_history=True,
+        )
+        projected_rows = _tax_rows_from_db(
+            db,
+            year,
+            mode="production",
+            allow_authoritative_history=True,
+            include_approved_periods={args.period},
+        )
+        rule = difficult_expense_rule_for_year(year)
+        dashboard = build_current_quarter_dashboard(
+            actual_rows=actual_rows,
+            projected_rows=projected_rows,
+            period_key=args.period,
+            as_of=args.as_of,
+            difficult_expenses_rate=rule.rate,
+            previous_positive_casilla_07=_previous_filed_positive(
+                db, year, quarter
+            ),
+            previous_negative_carry=_previous_filed_negative_carry(
+                db, year, quarter
+            ),
+            approved_current_rows=_approved_forecast_rows(db, args.period),
+            obligations=db.list_obligations_with_deadlines(
+                period_key=args.period
+            ),
+            period_validation=db.validate_period(
+                args.period,
+                allow_authoritative_history=True,
+            ),
+        )
+        try:
+            aeat_projection = build_aeat_book_projection(
+                db,
+                period_key=args.period,
+                allow_authoritative_history=True,
+            )
+        except AeatBookProjectionError as exc:
+            aeat_projection = failed_aeat_book_projection(
+                period_key=args.period,
+                message=str(exc),
+                allow_authoritative_history=True,
+            )
+        payment_state = summarize_payment_state(
+            db,
+            period=period,
+            as_of=args.as_of,
+        )
+
+    offboarding_verification = None
+    if args.offboarding_manifest is not None:
+        rows = json.loads(
+            args.offboarding_manifest.read_text(encoding="utf-8")
+        )
+        offboarding_verification = verify_offboarding_manifest(rows)
+        offboarding_verification["manifest_path"] = str(
+            args.offboarding_manifest.resolve()
+        )
+    invoice_channel_assessment = load_invoice_channel_assessment(
+        args.invoice_channel_assessment
+    )
+    report = build_shadow_close_report(
+        period=period,
+        as_of=args.as_of,
+        dashboard=dashboard,
+        aeat_projection=aeat_projection,
+        payment_state=payment_state,
+        offboarding_verification=offboarding_verification,
+        invoice_channel_assessment=invoice_channel_assessment,
+    )
+
+    dashboard_outputs = write_current_quarter_dashboard(
+        dashboard, args.out_dir
+    )
+    aeat_path = write_aeat_book_projection(
+        args.out_dir / "aeat-preview.json", aeat_projection
+    )
+    report_outputs = write_shadow_close_report(report, args.out_dir)
+    _emit(
+        {
+            "period": args.period,
+            "summary": report["summary"],
+            "outputs": {
+                **{
+                    f"dashboard_{key}": str(path.resolve())
+                    for key, path in dashboard_outputs.items()
+                },
+                "aeat_preview": str(aeat_path.resolve()),
+                **{
+                    f"shadow_close_{key}": str(path.resolve())
+                    for key, path in report_outputs.items()
+                },
+            },
         }
     )
     return 0
@@ -1454,6 +1601,7 @@ def _cmd_bank_import_revolut(args: argparse.Namespace) -> int:
 
 def _cmd_bank_import_zenmoney(args: argparse.Namespace) -> int:
     source_digest = _sha256(args.csv)
+    source_inspection = inspect_zenmoney_csv(args.csv)
     with open_ledger_db(args.db) as db:
         period = db.ensure_period(args.period)
         load_result = load_zenmoney_payments_csv(
@@ -1503,7 +1651,25 @@ def _cmd_bank_import_zenmoney(args: argparse.Namespace) -> int:
                 source_name=str(archived_path),
                 source_hash=source_digest,
                 batch_key=f"zenmoney:{source_digest}",
-                notes=f"Period {args.period}; business accounts: {', '.join(sorted(args.account))}",
+                notes=json.dumps(
+                    {
+                        "schema_version": 1,
+                        "period_key": args.period,
+                        "source_starts_on": (
+                            source_inspection.starts_on.isoformat()
+                            if source_inspection.starts_on
+                            else None
+                        ),
+                        "source_ends_on": (
+                            source_inspection.ends_on.isoformat()
+                            if source_inspection.ends_on
+                            else None
+                        ),
+                        "business_accounts": sorted(args.account),
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
             )
             for payment in new_payments:
                 match = matches[payment.payment_id]
@@ -2236,6 +2402,18 @@ def _tax_rows_from_db(
         allow_authoritative_history=allow_authoritative_history,
         include_approved_periods=include_approved_periods,
     )
+
+
+def _parse_quarter_period(period_key: str) -> tuple[int, int]:
+    try:
+        year_text, quarter_text = period_key.split("-Q", 1)
+        year = int(year_text)
+        quarter = int(quarter_text)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("Period must use YYYY-QN format") from exc
+    if quarter not in {1, 2, 3, 4} or period_key != f"{year}-Q{quarter}":
+        raise ValueError("Period must use YYYY-QN format")
+    return year, quarter
 
 
 def _approved_forecast_rows(db: LedgerDB, period_key: str) -> list[dict[str, Any]]:
