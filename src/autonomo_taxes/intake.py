@@ -104,10 +104,15 @@ def archive_evidence(
     if not path.is_file():
         raise FileNotFoundError(path)
     source_digest = (digest or _sha256(path)).lower()
-    safe_name = re.sub(r"[^0-9A-Za-z._ -]+", "_", path.name).strip(" ._") or "evidence"
-    target_dir = archive_root / period_key / evidence_kind
+    target = evidence_archive_path(
+        path,
+        archive_root,
+        period_key=period_key,
+        evidence_kind=evidence_kind,
+        digest=source_digest,
+    )
+    target_dir = target.parent
     target_dir.mkdir(parents=True, exist_ok=True)
-    target = target_dir / f"{source_digest[:12]}-{safe_name}"
     if target.exists():
         if _sha256(target).lower() != source_digest:
             raise ValueError(f"Archive collision for {target}")
@@ -117,6 +122,24 @@ def archive_evidence(
         target.unlink(missing_ok=True)
         raise IOError(f"Archived evidence hash mismatch for {target}")
     return target.resolve()
+
+
+def evidence_archive_path(
+    path: Path,
+    archive_root: Path,
+    *,
+    period_key: str,
+    evidence_kind: str,
+    digest: str,
+) -> Path:
+    """Return the deterministic archive target without creating or copying it."""
+    source_digest = digest.strip().lower()
+    if len(source_digest) != 64 or any(
+        character not in "0123456789abcdef" for character in source_digest
+    ):
+        raise ValueError("Evidence digest must be a SHA-256 hexadecimal value")
+    safe_name = re.sub(r"[^0-9A-Za-z._ -]+", "_", path.name).strip(" ._") or "evidence"
+    return (archive_root / period_key / evidence_kind / f"{source_digest[:12]}-{safe_name}").resolve()
 
 
 def structural_errors(kind: str, text: str) -> tuple[str, ...]:

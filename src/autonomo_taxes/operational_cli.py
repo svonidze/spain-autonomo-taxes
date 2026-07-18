@@ -12,7 +12,7 @@ import sqlite3
 from typing import Any, Callable, Iterable
 
 from .fx_policy import ALLOWED_PRODUCTION_SOURCES
-from .intake import archive_evidence, inspect_document
+from .intake import archive_evidence, evidence_archive_path, inspect_document
 from .intake_bundle import (
     InvoiceAmounts,
     extract_invoice_amounts,
@@ -21,6 +21,13 @@ from .intake_bundle import (
 )
 from .ledger_db import LedgerDB, LedgerDbError, initialize, open as open_ledger_db
 from .money import cents
+from .non_invoice_expenses import (
+    IDENTITY_AEAT_TYPES,
+    PRESETS as NON_INVOICE_EXPENSE_PRESETS,
+    NonInvoiceExpenseInput,
+    quarter_key as non_invoice_quarter_key,
+    record_non_invoice_expense,
+)
 from .obligations import ActivityFact, CounterpartyFact, detect_obligations
 from .parsers import LedgerEntry, parse_any_date, parse_expense, parse_income_invoice
 from .revolut import (
@@ -224,6 +231,50 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
         help="Include absolute private filesystem paths in JSON output",
     )
     inbox_process.set_defaults(_operational_handler=_cmd_inbox_process)
+
+    expense = subparsers.add_parser(
+        "expense",
+        help="Record reviewed expenses supported by evidence other than a supplier invoice",
+    )
+    expense_sub = expense.add_subparsers(dest="expense_command", required=True)
+    expense_record = expense_sub.add_parser(
+        "record",
+        help="Archive and classify one TGSS contribution or bank fee without posting it",
+    )
+    _db_arg(expense_record)
+    expense_record.add_argument(
+        "--kind",
+        required=True,
+        choices=sorted(NON_INVOICE_EXPENSE_PRESETS),
+    )
+    expense_record.add_argument("--evidence", type=Path, required=True)
+    expense_record.add_argument("--date", type=date.fromisoformat, required=True)
+    expense_record.add_argument("--amount-eur", type=Decimal, required=True)
+    expense_record.add_argument("--deductible-eur", type=Decimal, required=True)
+    expense_record.add_argument("--reference", required=True)
+    expense_record.add_argument("--description")
+    expense_record.add_argument("--business-purpose")
+    expense_record.add_argument("--note")
+    expense_record.add_argument("--period")
+    expense_record.add_argument("--business-activity-id")
+    expense_record.add_argument("--counterparty-id")
+    expense_record.add_argument("--counterparty-name")
+    expense_record.add_argument("--counterparty-country")
+    expense_record.add_argument("--counterparty-tax-id")
+    expense_record.add_argument(
+        "--counterparty-identity-kind",
+        choices=sorted(IDENTITY_AEAT_TYPES),
+    )
+    expense_record.add_argument("--counterparty-identifier")
+    expense_record.add_argument("--archive-root", type=Path)
+    expense_record.add_argument("--tesseract-command", default="tesseract")
+    expense_record.add_argument("--dry-run", action="store_true")
+    expense_record.add_argument(
+        "--show-paths",
+        action="store_true",
+        help="Include absolute private filesystem paths in JSON output",
+    )
+    expense_record.set_defaults(_operational_handler=_cmd_expense_record)
 
     review = subparsers.add_parser(
         "review",
@@ -1170,6 +1221,94 @@ def _cmd_inbox_process(args: argparse.Namespace) -> int:
         }
     )
     return 2 if counts["needs_data"] or counts["failed"] else 0
+
+
+def _cmd_expense_record(args: argparse.Namespace) -> int:
+    if args.archive_root is None:
+        raise ValueError("--archive-root is required (or set archive_root in .local/config.yaml)")
+    preset = NON_INVOICE_EXPENSE_PRESETS[args.kind]
+    inspection = inspect_document(
+        args.evidence,
+        "other",
+        tesseract_command=args.tesseract_command,
+    )
+    if inspection.needs_review:
+        raise ValueError(
+            "Evidence could not be structurally validated: "
+            + "; ".join(inspection.structural_errors)
+        )
+    period_key = (args.period or non_invoice_quarter_key(args.date)).upper()
+    planned_archive = evidence_archive_path(
+        args.evidence,
+        args.archive_root,
+        period_key=period_key,
+        evidence_kind=preset.document_type,
+        digest=inspection.sha256,
+    )
+    business_purpose = args.business_purpose or preset.default_business_purpose
+    if not business_purpose:
+        raise ValueError("--business-purpose is required for this expense kind")
+    request = NonInvoiceExpenseInput(
+        kind=args.kind,
+        evidence_sha256=inspection.sha256,
+        evidence_mime_type=inspection.mime_type,
+        archived_path=planned_archive,
+        transaction_date=args.date,
+        gross_eur=args.amount_eur,
+        deductible_eur=args.deductible_eur,
+        reference=args.reference,
+        business_purpose=business_purpose,
+        description=args.description or preset.default_description,
+        note=args.note,
+        period_key=period_key,
+        counterparty_id=args.counterparty_id,
+        counterparty_name=args.counterparty_name,
+        counterparty_country=args.counterparty_country,
+        counterparty_tax_id=args.counterparty_tax_id,
+        counterparty_identity_kind=args.counterparty_identity_kind,
+        counterparty_identifier=args.counterparty_identifier,
+        business_activity_id=args.business_activity_id,
+    )
+
+    with open_ledger_db(args.db) as db:
+        result = record_non_invoice_expense(db, request, dry_run=True)
+    if not args.dry_run:
+        archived_path = archive_evidence(
+            args.evidence,
+            args.archive_root,
+            period_key=period_key,
+            evidence_kind=preset.document_type,
+            digest=inspection.sha256,
+        )
+        request = NonInvoiceExpenseInput(
+            **{
+                **asdict(request),
+                "archived_path": archived_path,
+            }
+        )
+        with open_ledger_db(args.db) as db:
+            result = record_non_invoice_expense(db, request)
+    else:
+        archived_path = planned_archive
+
+    next_command = None
+    if result["transaction_lifecycle_status"] == "approved":
+        next_command = (
+            "autonomo-tax review post "
+            f"{result['review_id']} --expected-row-version "
+            f"{result['transaction_row_version']}"
+        )
+    result.update(
+        {
+            "evidence_file": (
+                str(args.evidence.resolve()) if args.show_paths else args.evidence.name
+            ),
+            "archive_file": str(archived_path) if args.show_paths else archived_path.name,
+            "next_command": next_command,
+        }
+    )
+    _emit(result)
+    return 0
 
 
 def _cmd_review_list(args: argparse.Namespace) -> int:
