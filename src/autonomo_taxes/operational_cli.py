@@ -29,6 +29,7 @@ from .revolut import (
     load_revolut_payments_csv,
     match_revolut_payments,
 )
+from .review_packet import apply_review_packet, packet_json, prepare_review_packet
 from .sheet_sync import SheetRow, diff_sheet_rows
 from .tax_engine import (
     CalculationBlocked,
@@ -240,7 +241,28 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
         action="store_true",
         help="Include absolute private filesystem paths in JSON output",
     )
+    review_list.add_argument(
+        "--ready-to-post",
+        action="store_true",
+        help="Return only approved transactions that pass the current review gates",
+    )
     review_list.set_defaults(_operational_handler=_cmd_review_list)
+    review_prepare = review_sub.add_parser(
+        "prepare",
+        help="Write a deterministic private decision packet for one linked invoice",
+    )
+    _db_arg(review_prepare)
+    review_prepare.add_argument("review_id")
+    review_prepare.add_argument("--out", type=Path, required=True)
+    review_prepare.set_defaults(_operational_handler=_cmd_review_prepare)
+    review_apply = review_sub.add_parser(
+        "apply",
+        help="Atomically validate and apply a reviewed decision packet without posting",
+    )
+    _db_arg(review_apply)
+    review_apply.add_argument("--input", type=Path, required=True)
+    review_apply.add_argument("--dry-run", action="store_true")
+    review_apply.set_defaults(_operational_handler=_cmd_review_apply)
     review_confirm = review_sub.add_parser(
         "confirm",
         help="Approve one reviewed document or transaction without posting it",
@@ -1298,7 +1320,33 @@ def _cmd_review_list(args: argparse.Namespace) -> int:
                     ),
                 }
             )
+    if args.ready_to_post:
+        rows = [row for row in rows if row.get("ready_to_post") is True]
     _emit(rows)
+    return 0
+
+
+def _cmd_review_prepare(args: argparse.Namespace) -> int:
+    with open_ledger_db(args.db, read_only=True) as db:
+        packet = prepare_review_packet(db, args.review_id)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(packet_json(packet), encoding="utf-8")
+    _emit(
+        {
+            "review_id": packet["review_id"],
+            "snapshot_hash": packet["snapshot_hash"],
+            "written": args.out.name,
+            "privacy": packet["privacy"],
+        }
+    )
+    return 0
+
+
+def _cmd_review_apply(args: argparse.Namespace) -> int:
+    packet = _load_json_object(args.input)
+    with open_ledger_db(args.db) as db:
+        result = apply_review_packet(db, packet, dry_run=args.dry_run)
+    _emit(result)
     return 0
 
 
