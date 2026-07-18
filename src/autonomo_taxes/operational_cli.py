@@ -19,6 +19,7 @@ from .intake_bundle import (
     extract_invoice_number,
     review_requirements,
 )
+from .invoice_series import collect_invoice_number_observations, invoice_series_status
 from .ledger_db import LedgerDB, LedgerDbError, initialize, open as open_ledger_db
 from .money import cents
 from .non_invoice_expenses import (
@@ -470,6 +471,19 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     _db_arg(invoice_list)
     invoice_list.add_argument("--period")
     invoice_list.set_defaults(_operational_handler=_cmd_invoice_list)
+    invoice_series = invoice_sub.add_parser(
+        "series-status",
+        help="Report issued-number continuity and a non-reserved next-number suggestion",
+    )
+    _db_arg(invoice_series)
+    invoice_series.add_argument("--year", type=int, required=True)
+    invoice_series.add_argument("--series")
+    invoice_series.add_argument(
+        "--bare-belongs-to-series",
+        action="store_true",
+        help="Assert that bare historical numbers belong to the target series",
+    )
+    invoice_series.set_defaults(_operational_handler=_cmd_invoice_series_status)
 
     assets = subparsers.add_parser(
         "assets",
@@ -1877,6 +1891,22 @@ def _cmd_invoice_list(args: argparse.Namespace) -> int:
         rows = db.list_outgoing_invoice_drafts(period_key=args.period)
     _emit(rows)
     return 0
+
+
+def _cmd_invoice_series_status(args: argparse.Namespace) -> int:
+    with open_ledger_db(args.db, read_only=True) as db:
+        observations = collect_invoice_number_observations(
+            db.connection,
+            year=args.year,
+        )
+    report = invoice_series_status(
+        observations,
+        year=args.year,
+        requested_series=args.series,
+        bare_belongs_to_series=args.bare_belongs_to_series,
+    )
+    _emit(report)
+    return 0 if report["status"] == "ok" else 2
 
 
 def _cmd_assets_list(args: argparse.Namespace) -> int:
