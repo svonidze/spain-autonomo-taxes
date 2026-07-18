@@ -2025,6 +2025,7 @@ def _cmd_period_dashboard(args: argparse.Namespace) -> int:
             "submission_ready": False,
             "outputs": {key: str(path.resolve()) for key, path in outputs.items()},
             "blocking_item_count": len(dashboard["blocking_items"]),
+            "expected_item_count": len(dashboard["expected_items"]),
         }
     )
     return 0

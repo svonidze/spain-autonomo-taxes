@@ -17,6 +17,10 @@ from .tax_engine import (
 
 
 MODELO130_KEYS = ("01", "02", "03", "04", "05", "06", "07", "12", "13", "19")
+_EXPECTED_PENDING_KINDS = {
+    "approved_forecast_pending",
+    "obligation_filing_pending",
+}
 
 
 def build_current_quarter_dashboard(
@@ -60,15 +64,13 @@ def build_current_quarter_dashboard(
         unexpected_future=unexpected_future,
         as_of=as_of,
     )
-    expected_items = [
-        row for row in readiness_items if row["kind"] == "approved_forecast_pending"
-    ]
+    expected_items = [row for row in readiness_items if row["kind"] in _EXPECTED_PENDING_KINDS]
     blocking_items = [
-        row for row in readiness_items if row["kind"] != "approved_forecast_pending"
+        row for row in readiness_items if row["kind"] not in _EXPECTED_PENDING_KINDS
     ]
 
     dashboard = {
-        "schema_version": 1,
+        "schema_version": 2,
         "report_type": "operational_quarter_forecast",
         "period": period_key,
         "as_of": as_of.isoformat(),
@@ -246,16 +248,34 @@ def _blocking_items(
     as_of: date,
 ) -> list[dict[str, Any]]:
     blockers: list[dict[str, Any]] = []
+    obligations_by_code = {
+        str(row.get("obligation_code") or ""): row for row in obligations
+    }
     for issue in validation["blocking_issues"]:
         blockers.append({"kind": "validation_issue", "reference": issue["validation_issue_id"]})
     for obligation in validation["unresolved_obligations"]:
-        blockers.append(
-            {
-                "kind": "obligation",
-                "reference": obligation["obligation_code"],
-                "detail": obligation["determination"],
-            }
+        obligation_code = str(obligation["obligation_code"])
+        scheduled = obligations_by_code.get(obligation_code, {})
+        raw_due_on = (
+            obligation.get("due_on")
+            or obligation.get("obligation_due_on")
+            or scheduled.get("due_on")
+            or scheduled.get("obligation_due_on")
         )
+        due_on = date.fromisoformat(str(raw_due_on)) if raw_due_on else None
+        is_expected_filing = (
+            obligation.get("determination") == "due"
+            and due_on is not None
+            and as_of <= due_on
+        )
+        item = {
+            "kind": "obligation_filing_pending" if is_expected_filing else "obligation",
+            "reference": obligation_code,
+            "detail": obligation["determination"],
+        }
+        if due_on is not None:
+            item["due_on"] = due_on.isoformat()
+        blockers.append(item)
     for obligation in obligations:
         unresolved_due = obligation.get("determination") == "due" and obligation.get(
             "filing_status"
@@ -477,8 +497,10 @@ def _render_markdown(dashboard: dict[str, Any]) -> str:
     if dashboard.get("expected_items"):
         for item in dashboard["expected_items"]:
             tax_date = f" on {item['tax_date']}" if item.get("tax_date") else ""
+            due_on = f" by {item['due_on']}" if item.get("due_on") else ""
             lines.append(
-                f"- `{item['kind']}` `{item['reference']}`{tax_date}: {item.get('detail', '')}".rstrip()
+                f"- `{item['kind']}` `{item['reference']}`{tax_date}{due_on}: "
+                f"{item.get('detail', '')}".rstrip()
             )
     else:
         lines.append("None.")
