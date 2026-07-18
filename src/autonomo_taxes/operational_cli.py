@@ -653,6 +653,25 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     _db_arg(bank_import)
     bank_import.add_argument("--csv", type=Path, required=True)
     bank_import.set_defaults(_operational_handler=_cmd_bank_import_revolut)
+    bank_record = bank_sub.add_parser(
+        "record-payment",
+        help="Attach one reviewed payment evidence file to an existing transaction",
+    )
+    _db_arg(bank_record)
+    bank_record.add_argument("--transaction-id", required=True)
+    bank_record.add_argument("--evidence", type=Path, required=True)
+    bank_record.add_argument("--paid-on", type=date.fromisoformat, required=True)
+    bank_record.add_argument("--amount", type=Decimal, required=True)
+    bank_record.add_argument("--currency", default="EUR")
+    bank_record.add_argument("--amount-eur", type=Decimal)
+    bank_record.add_argument("--source-system", required=True)
+    bank_record.add_argument("--external-id", required=True)
+    bank_record.add_argument("--reference")
+    bank_record.add_argument("--account-name")
+    bank_record.add_argument("--counterparty-name")
+    bank_record.add_argument("--comment")
+    bank_record.add_argument("--archive-root", type=Path)
+    bank_record.set_defaults(_operational_handler=_cmd_bank_record_payment)
     zenmoney_inspect = bank_sub.add_parser(
         "inspect-zenmoney",
         help="List exact account names and export coverage without importing rows",
@@ -2409,6 +2428,133 @@ def _cmd_bank_import_revolut(args: argparse.Namespace) -> int:
             "payments": imported,
             "already_imported": len(payments) - len(new_payments),
             "claimed_legacy": claimed_legacy,
+        }
+    )
+    return 0
+
+
+def _cmd_bank_record_payment(args: argparse.Namespace) -> int:
+    if not args.evidence.is_file():
+        raise FileNotFoundError(args.evidence)
+    if args.archive_root is None:
+        raise ValueError("--archive-root is required (or set archive_root in .local/config.yaml)")
+    amount_minor = _positive_minor(args.amount, field="amount")
+    currency = str(args.currency).strip().upper()
+    if len(currency) != 3 or not currency.isalpha():
+        raise ValueError("currency must be a three-letter ISO code")
+    amount_eur_minor = (
+        _positive_minor(args.amount_eur, field="amount-eur")
+        if args.amount_eur is not None
+        else amount_minor if currency == "EUR" else None
+    )
+    source_system = str(args.source_system).strip()
+    external_id = str(args.external_id).strip()
+    if not source_system:
+        raise ValueError("source-system must not be blank")
+    if not external_id:
+        raise ValueError("external-id must not be blank")
+
+    evidence_digest = _sha256(args.evidence)
+    payment_source_hash = hashlib.sha256(
+        f"{source_system}:{external_id}".encode("utf-8")
+    ).hexdigest()
+    with open_ledger_db(args.db) as db:
+        transaction = db.connection.execute(
+            """
+            SELECT t.transaction_id, p.period_key
+            FROM transactions t
+            JOIN periods p ON p.period_id = t.period_id
+            WHERE t.transaction_id = ?
+            """,
+            (args.transaction_id,),
+        ).fetchone()
+        if transaction is None:
+            raise LedgerDbError(f"Unknown transaction_id: {args.transaction_id}")
+
+        archived_path = evidence_archive_path(
+            args.evidence,
+            args.archive_root,
+            period_key=transaction["period_key"],
+            evidence_kind="payment_evidence",
+            digest=evidence_digest,
+        )
+        evidence_locator = archived_path.relative_to(args.archive_root.resolve()).as_posix()
+        source_payload = {
+            "schema_version": 1,
+            "evidence_sha256": evidence_digest,
+            "evidence_locator": evidence_locator,
+            "source_system": source_system,
+            "external_id": external_id,
+        }
+        source_row_json = json.dumps(
+            source_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        desired = {
+            "transaction_id": args.transaction_id,
+            "obligation_id": None,
+            "paid_on": args.paid_on.isoformat(),
+            "amount_minor": amount_minor,
+            "currency": currency,
+            "original_reference": args.reference,
+            "fee_minor": None,
+            "fee_currency": None,
+            "match_status": "manual",
+            "source_system": source_system,
+            "external_id": external_id,
+            "account_name": args.account_name,
+            "counterparty_name": args.counterparty_name,
+            "category": None,
+            "comment": args.comment,
+            "amount_eur_minor": amount_eur_minor,
+            "source_row_json": source_row_json,
+        }
+        existing = db.connection.execute(
+            "SELECT * FROM payments WHERE source_system = ? AND external_id = ?",
+            (source_system, external_id),
+        ).fetchone()
+        if existing is not None:
+            changed = [key for key, value in desired.items() if existing[key] != value]
+            if existing["source_hash"] != payment_source_hash:
+                changed.append("source_hash")
+            if changed:
+                raise LedgerDbError(
+                    "Payment source identity already exists with different fields: "
+                    + ", ".join(sorted(set(changed)))
+                )
+            archive_evidence(
+                args.evidence,
+                args.archive_root,
+                period_key=transaction["period_key"],
+                evidence_kind="payment_evidence",
+                digest=evidence_digest,
+            )
+            row = existing
+            already_imported = True
+        else:
+            archive_evidence(
+                args.evidence,
+                args.archive_root,
+                period_key=transaction["period_key"],
+                evidence_kind="payment_evidence",
+                digest=evidence_digest,
+            )
+            row = db.add_payment(source_hash=payment_source_hash, **desired)
+            already_imported = False
+
+    _emit(
+        {
+            "payment_id": row["payment_id"],
+            "transaction_id": row["transaction_id"],
+            "period": transaction["period_key"],
+            "paid_on": row["paid_on"],
+            "amount_minor": row["amount_minor"],
+            "currency": row["currency"],
+            "evidence_sha256": evidence_digest,
+            "evidence_locator": evidence_locator,
+            "already_imported": already_imported,
         }
     )
     return 0
@@ -4876,6 +5022,13 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _positive_minor(value: Decimal, *, field: str) -> int:
+    normalized = cents(value)
+    if normalized <= 0:
+        raise ValueError(f"{field} must be greater than zero")
+    return int(normalized * 100)
 
 
 def _sheet_value(value: Any) -> str:
