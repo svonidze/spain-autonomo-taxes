@@ -11,6 +11,7 @@ from pypdf import PdfReader
 
 from .modelo130 import extract_modelo130_values
 from .modelo303 import extract_modelo303_values
+from .modelo390 import extract_modelo390_values
 from .tax_rules import recognize_tax_form_filename
 
 
@@ -88,6 +89,20 @@ def extract_filing_evidence(path: Path) -> FilingEvidence:
             payload["extraction_status"] = values.extraction_status
             payload["settlement_extraction_status"] = values.settlement_extraction_status
             payload["value_extraction_schema"] = "modelo303_v3"
+    elif pdf_error is None and form_code == "390" and quarter is None:
+        try:
+            values = extract_modelo390_values(path)
+        except ValueError as exc:
+            payload["extraction_status"] = "values_unavailable"
+            payload["extraction_error"] = str(exc)
+        else:
+            payload["filed_values"] = {
+                key: f"{value:.2f}" for key, value in values.casillas
+            }
+            payload["blank_casillas"] = list(values.blank_casillas)
+            payload["value_sources"] = dict(values.value_sources)
+            payload["extraction_status"] = "casillas_extracted"
+            payload["value_extraction_schema"] = "modelo390_v2"
 
     return FilingEvidence(
         form_code=form_code,

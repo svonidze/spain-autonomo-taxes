@@ -3625,7 +3625,14 @@ def _cmd_calculate(args: argparse.Namespace) -> int:
         baseline = _filed_baseline(db, result.period, args.form)
         if baseline is not None:
             payload["filed_baseline"] = baseline
-            payload["diff_from_filed"] = _calculation_diff(payload["values"], baseline["filed_values"])
+            if baseline["filed_values"]:
+                payload["diff_from_filed"] = _calculation_diff(
+                    payload["values"],
+                    baseline["filed_values"],
+                )
+                payload["filed_comparison_status"] = "casillas_compared"
+            else:
+                payload["filed_comparison_status"] = "filed_values_unavailable"
         if annual_readiness is not None:
             payload["annual_readiness"] = annual_readiness
             payload["annual_calculation_ready"] = True
@@ -5088,20 +5095,26 @@ def _filed_baseline(db: LedgerDB, period_key: str, form: str) -> dict[str, Any] 
         """,
         (period_key,),
     ).fetchall()
+    fallback: dict[str, Any] | None = None
     for row in rows:
         payload = json.loads(row["payload_json"])
         payload_form = str(payload.get("form", "")).lower().replace("modelo", "")
         if payload_form == str(form).lower().replace("modelo", ""):
             filed_values = payload.get("filed_values") or payload.get("values") or {}
-            return {
+            candidate = {
                 "filed_on": row["filed_on"],
                 "snapshot_hash": row["snapshot_hash"],
                 "source": payload.get("baseline_kind", "historical"),
                 "status": row["status"],
                 "filed_values": filed_values,
                 "filename": payload.get("filename", ""),
+                "value_extraction_schema": payload.get("value_extraction_schema", ""),
             }
-    return None
+            if filed_values:
+                return candidate
+            if fallback is None:
+                fallback = candidate
+    return fallback
 
 
 def _previous_filed_positive(db: LedgerDB, year: int, quarter: int) -> Decimal:
