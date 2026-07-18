@@ -32,6 +32,7 @@ _ACCOUNTING_BLOCKER_KINDS = {
     "calendar_deadline_mismatch",
     "confirmed_deadline_missing",
 }
+_NON_INVOICE_PROOF_TYPES = {"social_security_evidence", "bank_fee_evidence"}
 
 
 def build_shadow_close_report(
@@ -43,6 +44,7 @@ def build_shadow_close_report(
     payment_state: Mapping[str, Any],
     offboarding_verification: Mapping[str, Any] | None,
     invoice_channel_assessment: Mapping[str, Any] | None,
+    operational_acceptance: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     period_ended = as_of > date.fromisoformat(str(period["ends_on"]))
     dashboard_blockers = [dict(row) for row in dashboard.get("blocking_items", [])]
@@ -113,6 +115,8 @@ def build_shadow_close_report(
         invoice_channel_assessment
     )
     invoice_channel_ready = bool(invoice_channel["ready"])
+    operational_proof = _normalize_operational_acceptance(operational_acceptance)
+    operational_proof_ready = bool(operational_proof["ready"])
     filing_ready = bool(
         period_ended
         and accounting_ready
@@ -125,6 +129,7 @@ def build_shadow_close_report(
         and posting_ready
         and aeat_data_ready
         and archive_ready
+        and operational_proof_ready
     )
 
     obligations_status = "ready"
@@ -134,7 +139,7 @@ def build_shadow_close_report(
         obligations_status = "action_required" if period_ended else "expected_pending"
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "report_type": "quarter_shadow_close_readiness",
         "period": str(period["period_key"]),
         "as_of": as_of.isoformat(),
@@ -151,6 +156,8 @@ def build_shadow_close_report(
             "payment_reconciliation_ready": payment_ready,
             "payment_reconciliation_required": False,
             "offboarding_archive_ready": archive_ready,
+            "operational_acceptance_ready": operational_proof_ready,
+            "operational_acceptance_required_for_cutover": True,
             "invoice_channel_ready": invoice_channel_ready,
             "invoice_channel_required_for_cutover": False,
             "filing_ready": filing_ready,
@@ -201,6 +208,7 @@ def build_shadow_close_report(
                     "ready": archive_ready,
                 }
             ),
+            "operational_acceptance": operational_proof,
             "invoice_channel": invoice_channel,
         },
         "quarter_totals": {
@@ -215,10 +223,67 @@ def build_shadow_close_report(
             workflow_items=workflow_items,
             payment_ready=payment_ready,
             archive_ready=archive_ready,
+            operational_acceptance=operational_proof,
             invoice_channel=invoice_channel,
             due_unfiled=due_unfiled,
             period_ended=period_ended,
         ),
+    }
+
+
+def summarize_operational_acceptance(
+    database: LedgerDB,
+    *,
+    proof_since: date,
+    as_of: date,
+) -> dict[str, Any]:
+    if proof_since > as_of:
+        raise ValueError("Operational proof start date cannot be after as-of date")
+    rows = database.connection.execute(
+        """
+        SELECT t.transaction_id, t.transaction_date, t.lifecycle_status,
+               d.document_type, d.document_number, d.source_path,
+               COALESCE(ib.source_name, '') AS import_source,
+               COALESCE(ib.batch_key, '') AS import_batch_key,
+               COALESCE(GROUP_CONCAT(tt.notes, ' | '), '') AS treatment_notes
+        FROM transactions t
+        JOIN documents d ON d.document_id = t.document_id
+        LEFT JOIN import_batches ib ON ib.import_batch_id = d.import_batch_id
+        LEFT JOIN tax_treatments tt ON tt.transaction_id = t.transaction_id
+        WHERE t.entry_type = 'expense'
+          AND t.lifecycle_status IN ('posted', 'included_in_snapshot')
+          AND t.transaction_date BETWEEN ? AND ?
+        GROUP BY t.transaction_id, t.transaction_date, t.lifecycle_status,
+                 d.document_type, d.document_number, d.source_path,
+                 ib.source_name, ib.batch_key
+        ORDER BY t.transaction_date, t.transaction_id
+        """,
+        (proof_since.isoformat(), as_of.isoformat()),
+    ).fetchall()
+    records = [dict(row) for row in rows]
+    independent = [row for row in records if not _is_xolo_derived(row)]
+    supplier_rows = [
+        row for row in independent if row["document_type"] == "expense_invoice"
+    ]
+    non_invoice_rows = [
+        row for row in independent if row["document_type"] in _NON_INVOICE_PROOF_TYPES
+    ]
+    missing: list[str] = []
+    if not supplier_rows:
+        missing.append("posted_supplier_expense")
+    if not non_invoice_rows:
+        missing.append("posted_social_security_or_bank_fee")
+    ready = not missing
+    return {
+        "status": "ready" if ready else "in_progress",
+        "ready": ready,
+        "required": True,
+        "proof_since": proof_since.isoformat(),
+        "checked_through": as_of.isoformat(),
+        "supplier_expenses": [_proof_row(row) for row in supplier_rows],
+        "non_invoice_expenses": [_proof_row(row) for row in non_invoice_rows],
+        "excluded_xolo_derived_count": len(records) - len(independent),
+        "missing_proofs": missing,
     }
 
 
@@ -381,6 +446,67 @@ def _normalize_invoice_channel_assessment(
     }
 
 
+def _normalize_operational_acceptance(
+    acceptance: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if acceptance is None:
+        return {
+            "status": "not_checked",
+            "ready": False,
+            "required": True,
+            "supplier_expenses": [],
+            "non_invoice_expenses": [],
+            "excluded_xolo_derived_count": 0,
+            "missing_proofs": [
+                "posted_supplier_expense",
+                "posted_social_security_or_bank_fee",
+            ],
+        }
+    normalized = dict(acceptance)
+    normalized["ready"] = bool(acceptance.get("ready"))
+    normalized["required"] = True
+    normalized["status"] = "ready" if normalized["ready"] else str(
+        acceptance.get("status") or "in_progress"
+    )
+    normalized.setdefault("supplier_expenses", [])
+    normalized.setdefault("non_invoice_expenses", [])
+    normalized.setdefault("excluded_xolo_derived_count", 0)
+    normalized.setdefault("missing_proofs", [])
+    return normalized
+
+
+def _is_xolo_derived(row: Mapping[str, Any]) -> bool:
+    lineage = " | ".join(
+        str(row.get(key) or "")
+        for key in (
+            "source_path",
+            "import_source",
+            "import_batch_key",
+            "treatment_notes",
+        )
+    ).lower()
+    return any(
+        marker in lineage
+        for marker in (
+            "xolo evidence archive",
+            "xolo export",
+            "xolo-source-books",
+            "xolo_source_book",
+            "source_book_line_id=",
+        )
+    )
+
+
+def _proof_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "transaction_id": row["transaction_id"],
+        "transaction_date": row["transaction_date"],
+        "document_type": row["document_type"],
+        "document_number": row["document_number"],
+        "lifecycle_status": row["lifecycle_status"],
+    }
+
+
 def _obligation_summary(row: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "form": row.get("obligation_code"),
@@ -406,6 +532,7 @@ def _next_actions(
     workflow_items: list[dict[str, Any]],
     payment_ready: bool,
     archive_ready: bool,
+    operational_acceptance: Mapping[str, Any],
     invoice_channel: Mapping[str, Any],
     due_unfiled: list[dict[str, Any]],
     period_ended: bool,
@@ -419,6 +546,16 @@ def _next_actions(
         actions.append("Optional: use ZenMoney or bank data to corroborate selected ledger payments.")
     if not archive_ready:
         actions.append("Build and verify the complete Xolo offboarding evidence manifest.")
+    if not operational_acceptance.get("ready"):
+        missing = set(operational_acceptance.get("missing_proofs") or [])
+        if "posted_supplier_expense" in missing:
+            actions.append(
+                "Post one independently reviewed supplier expense whose lineage does not come from Xolo."
+            )
+        if "posted_social_security_or_bank_fee" in missing:
+            actions.append(
+                "Post one independently reviewed TGSS contribution or business bank fee."
+            )
     if not invoice_channel.get("ready"):
         actions.append(
             "Before 2027-07-01, migrate manual invoice issuance to a reviewed RRSIF-compliant SIF."
@@ -445,6 +582,7 @@ def _render_markdown(report: Mapping[str, Any]) -> str:
         f"| Accounting data | {_yes_no(summary['accounting_data_ready'])} |",
         f"| Filing | {_yes_no(summary['filing_ready'])} |",
         f"| Xolo archive | {_yes_no(summary['offboarding_archive_ready'])} |",
+        f"| Live operating proof | {_yes_no(summary['operational_acceptance_ready'])} |",
         f"| Replacement invoice channel | {_yes_no(summary['invoice_channel_ready'])} |",
         f"| Cutover from Xolo | {_yes_no(summary['cutover_ready'])} |",
         "",
@@ -458,6 +596,7 @@ def _render_markdown(report: Mapping[str, Any]) -> str:
         f"| AEAT books | {gates['aeat_books']['status']} | {gates['aeat_books']['counts'].get('blockers', 0)} |",
         f"| Payments (optional) | {gates['payments']['status']} | {len(gates['payments']['unmatched_payment_ids'])} |",
         f"| Xolo archive | {gates['offboarding_archive']['status']} | 0 |",
+        f"| Live operating proof | {gates['operational_acceptance']['status']} | {len(gates['operational_acceptance']['missing_proofs'])} |",
         f"| Invoice channel | {gates['invoice_channel']['status']} | {len(gates['invoice_channel']['missing_checks'])} |",
         "",
         "## Accounting blockers",

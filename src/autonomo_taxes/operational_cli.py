@@ -594,6 +594,11 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     period_shadow_close.add_argument("--out-dir", type=Path, required=True)
     period_shadow_close.add_argument("--offboarding-manifest", type=Path)
     period_shadow_close.add_argument("--invoice-channel-assessment", type=Path)
+    period_shadow_close.add_argument(
+        "--operational-proof-since",
+        type=date.fromisoformat,
+        help="Require independently posted supplier and non-invoice expense proof since this date",
+    )
     period_shadow_close.set_defaults(
         _operational_handler=_cmd_period_shadow_close
     )
@@ -2131,6 +2136,7 @@ def _cmd_period_shadow_close(args: argparse.Namespace) -> int:
     from .shadow_close import (
         build_shadow_close_report,
         load_invoice_channel_assessment,
+        summarize_operational_acceptance,
         summarize_payment_state,
         write_shadow_close_report,
     )
@@ -2198,6 +2204,15 @@ def _cmd_period_shadow_close(args: argparse.Namespace) -> int:
             period=period,
             as_of=args.as_of,
         )
+        operational_acceptance = (
+            summarize_operational_acceptance(
+                db,
+                proof_since=args.operational_proof_since,
+                as_of=args.as_of,
+            )
+            if args.operational_proof_since is not None
+            else None
+        )
 
     offboarding_verification = None
     if args.offboarding_manifest is not None:
@@ -2219,6 +2234,7 @@ def _cmd_period_shadow_close(args: argparse.Namespace) -> int:
         payment_state=payment_state,
         offboarding_verification=offboarding_verification,
         invoice_channel_assessment=invoice_channel_assessment,
+        operational_acceptance=operational_acceptance,
     )
 
     dashboard_outputs = write_current_quarter_dashboard(
