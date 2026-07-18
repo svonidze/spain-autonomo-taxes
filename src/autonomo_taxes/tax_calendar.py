@@ -6,7 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
-from typing import Any
+from typing import Any, Mapping
 
 from .tax_rules import ALL_FORM_CODES
 
@@ -110,6 +110,7 @@ def build_period_ics(
     period_key: str,
     period_ends_on: date,
     obligations: list[dict[str, Any]],
+    cash_check: Mapping[str, Any] | None = None,
 ) -> str:
     actionable = [
         row
@@ -147,13 +148,21 @@ def build_period_ics(
     filing_opens = min(filing_dates)
     internal_due = min(internal_dates)
     statutory_due = min(statutory_dates)
+    cash_due = internal_due
+    if debit_dates:
+        cash_due = min(cash_due, min(debit_dates) - timedelta(days=1))
     form_text = ", ".join(f"Modelo {form}" for form in forms)
     events = [
         ("intake-close", period_ends_on, "Close invoice and expense intake", form_text),
         ("draft", min(filing_opens + timedelta(days=9), internal_due), "Prepare draft tax returns", form_text),
         ("blockers", internal_due - timedelta(days=2), "Resolve tax preparation blockers", form_text),
         ("internal", internal_due, "Complete internal tax review", form_text),
-        ("cash", statutory_due - timedelta(days=1), "Confirm tax payment cash", form_text),
+        (
+            "cash",
+            cash_due,
+            "Confirm tax payment cash",
+            _cash_event_description(form_text, cash_check),
+        ),
         ("statutory", statutory_due, "Submit and pay tax returns", form_text),
         ("evidence", statutory_due + timedelta(days=2), "Archive AEAT filing evidence", form_text),
     ]
@@ -162,6 +171,22 @@ def build_period_ics(
             ("direct-debit", min(debit_dates), "Direct debit filing cutoff", form_text)
         )
     return _serialize_ics(events, period_key=period_key)
+
+
+def _cash_event_description(
+    form_text: str,
+    cash_check: Mapping[str, Any] | None,
+) -> str:
+    if cash_check is None:
+        return form_text
+    available = cash_check.get("available_eur")
+    available_text = "not checked" if available is None else f"{available} EUR"
+    return (
+        f"{form_text}\n"
+        f"Current forecast. Required tax: {cash_check.get('required_tax_eur')} EUR; "
+        f"recommended reserve: {cash_check.get('recommended_reserve_eur')} EUR; "
+        f"available: {available_text}; status: {cash_check.get('status')}."
+    )
 
 
 def _serialize_ics(

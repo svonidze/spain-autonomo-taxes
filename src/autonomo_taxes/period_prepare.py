@@ -233,6 +233,7 @@ def write_period_preparation(
             period_key=str(report["period"]),
             period_ends_on=period_end,
             obligations=list(report["obligations"]),
+            cash_check=report["cash_check"],
         ),
         encoding="utf-8",
         newline="",
