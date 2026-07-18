@@ -52,7 +52,12 @@ from .tax_engine import (
 )
 from .tax_calendar import entry_as_record, load_tax_calendar
 from .tax_row_loader import load_tax_rows
-from .tax_rules import ANNUAL_FORM_CODES, QUARTERLY_FORM_CODES, difficult_expense_rule_for_year
+from .tax_rules import (
+    ALL_FORM_CODES,
+    ANNUAL_FORM_CODES,
+    QUARTERLY_FORM_CODES,
+    difficult_expense_rule_for_year,
+)
 from .zenmoney import ZenMoneyPayment, inspect_zenmoney_csv, load_zenmoney_payments_csv
 
 
@@ -832,6 +837,36 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
         help="Include absolute private filesystem paths in JSON output",
     )
     filings_receipt.set_defaults(_operational_handler=_cmd_filing_receipt)
+    filings_procedure_receipt = filings_sub.add_parser(
+        "record-procedure-receipt",
+        help="Archive a tax-procedure receipt without replacing the original filed return",
+    )
+    _db_arg(filings_procedure_receipt)
+    filings_procedure_receipt.add_argument("--period", required=True)
+    filings_procedure_receipt.add_argument(
+        "--form", choices=sorted(ALL_FORM_CODES), required=True
+    )
+    filings_procedure_receipt.add_argument(
+        "--procedure", choices=["rectification"], required=True
+    )
+    filings_procedure_receipt.add_argument(
+        "--stage", choices=["submitted", "resolved", "rejected"], required=True
+    )
+    filings_procedure_receipt.add_argument("--evidence", type=Path, required=True)
+    filings_procedure_receipt.add_argument("--occurred-on", required=True)
+    filings_procedure_receipt.add_argument("--reference", required=True)
+    filings_procedure_receipt.add_argument("--amount-eur", type=Decimal)
+    filings_procedure_receipt.add_argument("--notes")
+    filings_procedure_receipt.add_argument("--archive-root", type=Path)
+    filings_procedure_receipt.add_argument("--dry-run", action="store_true")
+    filings_procedure_receipt.add_argument(
+        "--show-paths",
+        action="store_true",
+        help="Include absolute private filesystem paths in JSON output",
+    )
+    filings_procedure_receipt.set_defaults(
+        _operational_handler=_cmd_tax_procedure_receipt
+    )
     filings_refresh = filings_sub.add_parser(
         "refresh-evidence",
         help="Append newly extractable filed-return evidence without replaying accounting rows",
@@ -3246,7 +3281,7 @@ def _cmd_filing_receipt(args: argparse.Namespace) -> int:
 
     payload = build_filing_receipt_payload(evidence, calculation, verification)
     with open_ledger_db(args.db) as db:
-        existing = _existing_filing_receipt(db, evidence.source_sha256)
+        existing = _existing_snapshot_for_source(db, evidence.source_sha256)
         if existing is not None:
             existing_payload = json.loads(existing["payload_json"])
             receipt_verification = existing_payload.get("receipt_verification") or {}
@@ -3329,7 +3364,115 @@ def _cmd_filing_receipt(args: argparse.Namespace) -> int:
     return 0
 
 
-def _existing_filing_receipt(db: LedgerDB, source_sha256: str) -> dict[str, Any] | None:
+def _cmd_tax_procedure_receipt(args: argparse.Namespace) -> int:
+    from .filing_procedures import (
+        build_tax_procedure_payload,
+        tax_procedure_identity,
+    )
+    from .filing_receipts import sha256_file
+
+    if not args.evidence.is_file():
+        raise FileNotFoundError(args.evidence)
+    if args.archive_root is None and not args.dry_run:
+        raise ValueError(
+            "--archive-root is required (or set archive_root in .local/config.yaml)"
+        )
+
+    source_sha256 = sha256_file(args.evidence)
+    with open_ledger_db(args.db) as db:
+        payload, snapshot_status = build_tax_procedure_payload(
+            db,
+            period_key=args.period,
+            form_code=args.form,
+            procedure=args.procedure,
+            stage=args.stage,
+            occurred_on=args.occurred_on,
+            procedure_reference=args.reference,
+            amount_eur=args.amount_eur,
+            notes=args.notes,
+        )
+        if args.dry_run:
+            _emit(
+                {
+                    "ok": True,
+                    "recorded": False,
+                    "dry_run": True,
+                    "period": args.period,
+                    "form": args.form,
+                    "snapshot_status": snapshot_status,
+                    "source_sha256": source_sha256,
+                    "payload": payload,
+                }
+            )
+            return 0
+
+        existing = _existing_snapshot_for_source(db, source_sha256)
+        if existing is not None:
+            existing_payload = json.loads(existing["payload_json"])
+            procedure_reference = str(payload["procedure_reference"])
+            if (
+                existing["period_key"] == args.period
+                and str(existing["form_code"] or existing_payload.get("form") or "")
+                == args.form
+                and existing["status"] == snapshot_status
+                and existing["submission_reference"] == procedure_reference
+                and tax_procedure_identity(existing_payload)
+                == tax_procedure_identity(payload)
+            ):
+                _emit(
+                    {
+                        "ok": True,
+                        "recorded": True,
+                        "idempotent": True,
+                        "filing_snapshot_id": existing["filing_snapshot_id"],
+                        "period": args.period,
+                        "form": args.form,
+                        "snapshot_status": snapshot_status,
+                        "source_sha256": source_sha256,
+                    }
+                )
+                return 0
+            raise ValueError(
+                "This tax-procedure evidence already exists with different metadata"
+            )
+
+        archived_path = archive_evidence(
+            args.evidence,
+            args.archive_root,
+            period_key=args.period,
+            evidence_kind="tax_procedure_receipt",
+            digest=source_sha256,
+        )
+        row = db.create_filing_snapshot(
+            args.period,
+            status=snapshot_status,
+            filed_on=args.occurred_on,
+            payload=payload,
+            source_hash=source_sha256,
+            form_code=args.form,
+            submission_reference=str(payload["procedure_reference"]),
+            source_reference=str(archived_path),
+        )
+
+    _emit(
+        {
+            "ok": True,
+            "recorded": True,
+            "idempotent": False,
+            "filing_snapshot_id": row["filing_snapshot_id"],
+            "period": args.period,
+            "form": args.form,
+            "snapshot_status": snapshot_status,
+            "source_sha256": source_sha256,
+            "archived_file": (
+                str(archived_path) if args.show_paths else archived_path.name
+            ),
+        }
+    )
+    return 0
+
+
+def _existing_snapshot_for_source(db: LedgerDB, source_sha256: str) -> dict[str, Any] | None:
     row = db.connection.execute(
         """
         SELECT fs.*, p.period_key
