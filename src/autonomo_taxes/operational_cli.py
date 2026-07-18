@@ -655,10 +655,17 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     bank_import.set_defaults(_operational_handler=_cmd_bank_import_revolut)
     bank_record = bank_sub.add_parser(
         "record-payment",
-        help="Attach one reviewed payment evidence file to an existing transaction",
+        help="Attach reviewed payment evidence to a transaction or filed tax obligation",
     )
     _db_arg(bank_record)
-    bank_record.add_argument("--transaction-id", required=True)
+    payment_target = bank_record.add_mutually_exclusive_group(required=True)
+    payment_target.add_argument("--transaction-id")
+    payment_target.add_argument("--obligation-id")
+    payment_target.add_argument(
+        "--tax-obligation",
+        metavar="PERIOD:FORM",
+        help="Select a filed tax obligation by period and form, for example 2026-Q2:130",
+    )
     bank_record.add_argument("--evidence", type=Path, required=True)
     bank_record.add_argument("--paid-on", type=date.fromisoformat, required=True)
     bank_record.add_argument("--amount", type=Decimal, required=True)
@@ -2459,23 +2466,71 @@ def _cmd_bank_record_payment(args: argparse.Namespace) -> int:
         f"{source_system}:{external_id}".encode("utf-8")
     ).hexdigest()
     with open_ledger_db(args.db) as db:
-        transaction = db.connection.execute(
-            """
-            SELECT t.transaction_id, p.period_key
-            FROM transactions t
-            JOIN periods p ON p.period_id = t.period_id
-            WHERE t.transaction_id = ?
-            """,
-            (args.transaction_id,),
-        ).fetchone()
-        if transaction is None:
-            raise LedgerDbError(f"Unknown transaction_id: {args.transaction_id}")
+        transaction_id = args.transaction_id
+        obligation_id = args.obligation_id
+        obligation_code = None
+        if transaction_id is not None:
+            target = db.connection.execute(
+                """
+                SELECT t.transaction_id, p.period_key
+                FROM transactions t
+                JOIN periods p ON p.period_id = t.period_id
+                WHERE t.transaction_id = ?
+                """,
+                (transaction_id,),
+            ).fetchone()
+            if target is None:
+                raise LedgerDbError(f"Unknown transaction_id: {transaction_id}")
+            evidence_kind = "payment_evidence"
+        else:
+            selector_period = None
+            selector_form = None
+            if args.tax_obligation is not None:
+                selector_period, selector_form = _parse_tax_obligation_selector(
+                    args.tax_obligation
+                )
+                target = db.connection.execute(
+                    """
+                    SELECT o.obligation_id, o.obligation_code, o.determination,
+                           o.filing_status, p.period_key
+                    FROM obligations o
+                    JOIN periods p ON p.period_id = o.period_id
+                    WHERE p.period_key = ? AND o.obligation_code = ?
+                    """,
+                    (selector_period, selector_form),
+                ).fetchone()
+                target_reference = args.tax_obligation
+            else:
+                target = db.connection.execute(
+                    """
+                    SELECT o.obligation_id, o.obligation_code, o.determination,
+                           o.filing_status, p.period_key
+                    FROM obligations o
+                    JOIN periods p ON p.period_id = o.period_id
+                    WHERE o.obligation_id = ?
+                    """,
+                    (obligation_id,),
+                ).fetchone()
+                target_reference = obligation_id
+            if target is None:
+                raise LedgerDbError(f"Unknown tax obligation: {target_reference}")
+            if target["determination"] != "due":
+                raise LedgerDbError(
+                    f"Tax obligation {target['period_key']}:{target['obligation_code']} is not due"
+                )
+            if target["filing_status"] != "filed":
+                raise LedgerDbError(
+                    f"Tax obligation {target['period_key']}:{target['obligation_code']} is not filed"
+                )
+            obligation_id = target["obligation_id"]
+            obligation_code = target["obligation_code"]
+            evidence_kind = "tax_payment_evidence"
 
         archived_path = evidence_archive_path(
             args.evidence,
             args.archive_root,
-            period_key=transaction["period_key"],
-            evidence_kind="payment_evidence",
+            period_key=target["period_key"],
+            evidence_kind=evidence_kind,
             digest=evidence_digest,
         )
         evidence_locator = archived_path.relative_to(args.archive_root.resolve()).as_posix()
@@ -2493,8 +2548,8 @@ def _cmd_bank_record_payment(args: argparse.Namespace) -> int:
             separators=(",", ":"),
         )
         desired = {
-            "transaction_id": args.transaction_id,
-            "obligation_id": None,
+            "transaction_id": transaction_id,
+            "obligation_id": obligation_id,
             "paid_on": args.paid_on.isoformat(),
             "amount_minor": amount_minor,
             "currency": currency,
@@ -2527,8 +2582,8 @@ def _cmd_bank_record_payment(args: argparse.Namespace) -> int:
             archive_evidence(
                 args.evidence,
                 args.archive_root,
-                period_key=transaction["period_key"],
-                evidence_kind="payment_evidence",
+                period_key=target["period_key"],
+                evidence_kind=evidence_kind,
                 digest=evidence_digest,
             )
             row = existing
@@ -2537,8 +2592,8 @@ def _cmd_bank_record_payment(args: argparse.Namespace) -> int:
             archive_evidence(
                 args.evidence,
                 args.archive_root,
-                period_key=transaction["period_key"],
-                evidence_kind="payment_evidence",
+                period_key=target["period_key"],
+                evidence_kind=evidence_kind,
                 digest=evidence_digest,
             )
             row = db.add_payment(source_hash=payment_source_hash, **desired)
@@ -2548,7 +2603,9 @@ def _cmd_bank_record_payment(args: argparse.Namespace) -> int:
         {
             "payment_id": row["payment_id"],
             "transaction_id": row["transaction_id"],
-            "period": transaction["period_key"],
+            "obligation_id": row["obligation_id"],
+            "obligation_code": obligation_code,
+            "period": target["period_key"],
             "paid_on": row["paid_on"],
             "amount_minor": row["amount_minor"],
             "currency": row["currency"],
@@ -5029,6 +5086,21 @@ def _positive_minor(value: Decimal, *, field: str) -> int:
     if normalized <= 0:
         raise ValueError(f"{field} must be greater than zero")
     return int(normalized * 100)
+
+
+def _parse_tax_obligation_selector(value: str) -> tuple[str, str]:
+    period, separator, form = value.strip().partition(":")
+    if not separator or not period or not form or ":" in form:
+        raise ValueError("tax-obligation must use PERIOD:FORM, for example 2026-Q2:130")
+    if form not in QUARTERLY_FORM_CODES + ANNUAL_FORM_CODES:
+        raise ValueError(f"Unsupported tax obligation form: {form}")
+    if form in QUARTERLY_FORM_CODES:
+        year, marker, quarter = period.partition("-Q")
+        if not marker or not year.isdigit() or len(year) != 4 or quarter not in {"1", "2", "3", "4"}:
+            raise ValueError(f"Quarterly form {form} requires a YYYY-QN period")
+    elif len(period) != 4 or not period.isdigit():
+        raise ValueError(f"Annual form {form} requires a YYYY period")
+    return period, form
 
 
 def _sheet_value(value: Any) -> str:
