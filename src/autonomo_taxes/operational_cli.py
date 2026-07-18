@@ -602,6 +602,22 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     period_shadow_close.set_defaults(
         _operational_handler=_cmd_period_shadow_close
     )
+    period_annual_status = period_sub.add_parser(
+        "annual-status",
+        help="Explain whether a tax year is complete enough for annual calculations",
+    )
+    _db_arg(period_annual_status)
+    period_annual_status.add_argument("--year", type=int, required=True)
+    period_annual_status.add_argument("--form", choices=ANNUAL_FORM_CODES)
+    period_annual_status.add_argument(
+        "--allow-authoritative-history",
+        action="store_true",
+        help="Accept reviewed Xolo history only where immutable filed evidence exists",
+    )
+    period_annual_status.add_argument("--out", type=Path)
+    period_annual_status.set_defaults(
+        _operational_handler=_cmd_period_annual_status
+    )
     period_close = period_sub.add_parser("close")
     _db_arg(period_close)
     period_close.add_argument("period")
@@ -3118,6 +3134,25 @@ def _cmd_calculate(args: argparse.Namespace) -> int:
     if args.difficult_expenses_policy == "exclude_by_documented_decision" and not args.decision_ref:
         raise CalculationBlocked("A documented decision reference is required to exclude difficult expenses")
     with open_ledger_db(args.db, read_only=True) as db:
+        annual_readiness = None
+        if args.mode == "production" and args.form in ANNUAL_FORM_CODES:
+            from .annual_readiness import (
+                annual_readiness_error,
+                assess_annual_readiness,
+            )
+
+            annual_readiness = assess_annual_readiness(
+                db,
+                year=args.year,
+                form_code=args.form,
+                allow_authoritative_history=args.allow_authoritative_history,
+            )
+            if not annual_readiness["ready"]:
+                raise CalculationBlocked(
+                    f"Modelo {args.form} annual production calculation is not ready: "
+                    f"{annual_readiness_error(annual_readiness)}. "
+                    "Run period annual-status for the complete report."
+                )
         modelo303_periods: tuple[str, ...] = ()
         periods = [f"{args.year}-Q{args.quarter}"] if args.quarter else []
         if args.form == "390":
@@ -3194,6 +3229,9 @@ def _cmd_calculate(args: argparse.Namespace) -> int:
         if baseline is not None:
             payload["filed_baseline"] = baseline
             payload["diff_from_filed"] = _calculation_diff(payload["values"], baseline["filed_values"])
+        if annual_readiness is not None:
+            payload["annual_readiness"] = annual_readiness
+            payload["annual_calculation_ready"] = True
     payload["calculation_mode"] = args.mode
     payload["authoritative_history_mode"] = bool(args.allow_authoritative_history)
     payload["difficult_expenses_policy"] = args.difficult_expenses_policy
@@ -3201,6 +3239,20 @@ def _cmd_calculate(args: argparse.Namespace) -> int:
         payload["decision_ref"] = args.decision_ref
     _write_or_emit(payload, args.out)
     return 0
+
+
+def _cmd_period_annual_status(args: argparse.Namespace) -> int:
+    from .annual_readiness import assess_annual_readiness
+
+    with open_ledger_db(args.db, read_only=True) as db:
+        report = assess_annual_readiness(
+            db,
+            year=args.year,
+            form_code=args.form,
+            allow_authoritative_history=args.allow_authoritative_history,
+        )
+    _write_or_emit(report, args.out)
+    return 0 if report["ready"] else 2
 
 
 def _cmd_offboarding_build(args: argparse.Namespace) -> int:
