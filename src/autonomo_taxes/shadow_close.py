@@ -5,9 +5,10 @@ from datetime import date
 import json
 from pathlib import Path
 import re
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 from .ledger_db import LedgerDB
+from .money import parse_amount
 
 
 REQUIRED_INVOICE_CHANNEL_CHECKS = (
@@ -45,6 +46,7 @@ def build_shadow_close_report(
     offboarding_verification: Mapping[str, Any] | None,
     invoice_channel_assessment: Mapping[str, Any] | None,
     operational_acceptance: Mapping[str, Any] | None = None,
+    required_tax_settlements: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     period_ended = as_of > date.fromisoformat(str(period["ends_on"]))
     dashboard_blockers = [dict(row) for row in dashboard.get("blocking_items", [])]
@@ -117,6 +119,8 @@ def build_shadow_close_report(
     invoice_channel_ready = bool(invoice_channel["ready"])
     operational_proof = _normalize_operational_acceptance(operational_acceptance)
     operational_proof_ready = bool(operational_proof["ready"])
+    tax_settlements = _normalize_required_tax_settlements(required_tax_settlements)
+    tax_settlements_ready = bool(tax_settlements["ready"])
     filing_ready = bool(
         period_ended
         and accounting_ready
@@ -130,6 +134,7 @@ def build_shadow_close_report(
         and aeat_data_ready
         and archive_ready
         and operational_proof_ready
+        and tax_settlements_ready
     )
 
     obligations_status = "ready"
@@ -139,7 +144,7 @@ def build_shadow_close_report(
         obligations_status = "action_required" if period_ended else "expected_pending"
 
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "report_type": "quarter_shadow_close_readiness",
         "period": str(period["period_key"]),
         "as_of": as_of.isoformat(),
@@ -158,6 +163,10 @@ def build_shadow_close_report(
             "offboarding_archive_ready": archive_ready,
             "operational_acceptance_ready": operational_proof_ready,
             "operational_acceptance_required_for_cutover": True,
+            "required_tax_settlements_ready": tax_settlements_ready,
+            "required_tax_settlements_required_for_cutover": bool(
+                tax_settlements["required"]
+            ),
             "invoice_channel_ready": invoice_channel_ready,
             "invoice_channel_required_for_cutover": False,
             "filing_ready": filing_ready,
@@ -209,6 +218,7 @@ def build_shadow_close_report(
                 }
             ),
             "operational_acceptance": operational_proof,
+            "required_tax_settlements": tax_settlements,
             "invoice_channel": invoice_channel,
         },
         "quarter_totals": {
@@ -224,11 +234,200 @@ def build_shadow_close_report(
             payment_ready=payment_ready,
             archive_ready=archive_ready,
             operational_acceptance=operational_proof,
+            required_tax_settlements=tax_settlements,
             invoice_channel=invoice_channel,
             due_unfiled=due_unfiled,
             period_ended=period_ended,
         ),
     }
+
+
+def summarize_required_tax_settlements(
+    database: LedgerDB,
+    *,
+    selectors: Iterable[tuple[str, str]],
+) -> dict[str, Any]:
+    unique_selectors: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for period_key, form in selectors:
+        key = (str(period_key), str(form))
+        if key not in seen:
+            seen.add(key)
+            unique_selectors.append(key)
+
+    if not unique_selectors:
+        return {
+            "status": "not_required",
+            "ready": True,
+            "required": False,
+            "requirements": [],
+            "missing_settlements": [],
+        }
+
+    requirements: list[dict[str, Any]] = []
+    for period_key, form in unique_selectors:
+        selector = f"{period_key}:{form}"
+        obligation = database.connection.execute(
+            """
+            SELECT o.obligation_id, o.obligation_code, o.determination,
+                   o.filing_status, o.filed_at, p.period_key
+            FROM obligations o
+            JOIN periods p ON p.period_id = o.period_id
+            WHERE p.period_key = ? AND o.obligation_code = ?
+            """,
+            (period_key, form),
+        ).fetchone()
+        if obligation is None:
+            requirements.append(
+                {
+                    "selector": selector,
+                    "status": "obligation_not_found",
+                    "ready": False,
+                    "obligation_id": None,
+                    "payments": [],
+                }
+            )
+            continue
+
+        base = {
+            "selector": selector,
+            "obligation_id": obligation["obligation_id"],
+            "determination": obligation["determination"],
+            "filing_status": obligation["filing_status"],
+            "filed_at": obligation["filed_at"],
+        }
+        if obligation["determination"] != "due":
+            requirements.append(
+                {**base, "status": "obligation_not_due", "ready": False, "payments": []}
+            )
+            continue
+        if obligation["filing_status"] != "filed":
+            requirements.append(
+                {**base, "status": "obligation_not_filed", "ready": False, "payments": []}
+            )
+            continue
+
+        rows = database.connection.execute(
+            """
+            SELECT payment_id, paid_on, amount_minor, currency, match_status,
+                   source_system, external_id, source_row_json
+            FROM payments
+            WHERE obligation_id = ?
+            ORDER BY paid_on, payment_id
+            """,
+            (obligation["obligation_id"],),
+        ).fetchall()
+        payments = [_tax_settlement_payment_summary(row) for row in rows]
+        evidenced_amount_minor = sum(
+            int(row["amount_minor"]) for row in payments if row["evidence_ready"]
+        )
+        expected_amount_minor, amount_source_status = _filed_payment_amount_minor(
+            database,
+            period_key=period_key,
+            form=form,
+        )
+        has_evidence = any(row["evidence_ready"] for row in payments)
+        amount_matches = (
+            expected_amount_minor is None
+            or evidenced_amount_minor == expected_amount_minor
+        )
+        ready = (
+            has_evidence
+            and amount_source_status not in {"conflict", "missing"}
+            and amount_matches
+        )
+        status = (
+            "ready"
+            if ready
+            else "payment_missing"
+            if not payments
+            else "payment_evidence_missing"
+            if not has_evidence
+            else "filed_amount_conflict"
+            if amount_source_status == "conflict"
+            else "filed_amount_missing"
+            if amount_source_status == "missing"
+            else "payment_amount_mismatch"
+        )
+        requirements.append(
+            {
+                **base,
+                "status": status,
+                "ready": ready,
+                "expected_amount_minor": expected_amount_minor,
+                "evidenced_amount_minor": evidenced_amount_minor,
+                "amount_check_status": (
+                    "pending_payment"
+                    if not has_evidence
+                    else "conflict"
+                    if amount_source_status == "conflict"
+                    else "matched"
+                    if expected_amount_minor is not None and amount_matches
+                    else "mismatch"
+                    if expected_amount_minor is not None
+                    else amount_source_status
+                ),
+                "payments": payments,
+            }
+        )
+
+    missing = [
+        {"selector": row["selector"], "reason": row["status"]}
+        for row in requirements
+        if not row["ready"]
+    ]
+    return {
+        "status": "ready" if not missing else "blocked",
+        "ready": not missing,
+        "required": True,
+        "requirements": requirements,
+        "missing_settlements": missing,
+    }
+
+
+def _filed_payment_amount_minor(
+    database: LedgerDB,
+    *,
+    period_key: str,
+    form: str,
+) -> tuple[int | None, str]:
+    payable_key = {"130": "19"}.get(form)
+    if payable_key is None:
+        return None, "not_available"
+    rows = database.connection.execute(
+        """
+        SELECT fs.form_code, fs.payload_json
+        FROM filing_snapshots fs
+        JOIN periods p ON p.period_id = fs.period_id
+        WHERE p.period_key = ?
+          AND fs.status IN ('baseline', 'filed', 'submitted', 'final')
+        """,
+        (period_key,),
+    ).fetchall()
+    amounts: set[int] = set()
+    for row in rows:
+        try:
+            payload = json.loads(str(row["payload_json"] or ""))
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, Mapping):
+            continue
+        payload_form = str(row["form_code"] or payload.get("form") or "").strip()
+        if payload_form != form:
+            continue
+        filed_values = payload.get("filed_values")
+        if not isinstance(filed_values, Mapping) or payable_key not in filed_values:
+            continue
+        try:
+            amount_minor = int(parse_amount(str(filed_values[payable_key])) * 100)
+        except ValueError:
+            continue
+        amounts.add(amount_minor)
+    if len(amounts) > 1:
+        return None, "conflict"
+    if not amounts:
+        return None, "missing"
+    return next(iter(amounts)), "available"
 
 
 def summarize_operational_acceptance(
@@ -475,6 +674,75 @@ def _normalize_operational_acceptance(
     return normalized
 
 
+def _normalize_required_tax_settlements(
+    settlements: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if settlements is None:
+        return {
+            "status": "not_required",
+            "ready": True,
+            "required": False,
+            "requirements": [],
+            "missing_settlements": [],
+        }
+    normalized = dict(settlements)
+    normalized["required"] = bool(settlements.get("required"))
+    normalized["ready"] = (
+        bool(settlements.get("ready")) if normalized["required"] else True
+    )
+    normalized["status"] = (
+        "not_required"
+        if not normalized["required"]
+        else "ready"
+        if normalized["ready"]
+        else str(settlements.get("status") or "blocked")
+    )
+    normalized.setdefault("requirements", [])
+    normalized.setdefault("missing_settlements", [])
+    return normalized
+
+
+def _tax_settlement_payment_summary(row: Mapping[str, Any]) -> dict[str, Any]:
+    issues: list[str] = []
+    try:
+        payload = json.loads(str(row["source_row_json"] or ""))
+    except json.JSONDecodeError:
+        payload = None
+    if not isinstance(payload, Mapping):
+        payload = {}
+        issues.append("source_payload_missing")
+
+    evidence_sha256 = str(payload.get("evidence_sha256") or "").strip()
+    evidence_locator = str(payload.get("evidence_locator") or "").strip()
+    source_system = str(row["source_system"] or payload.get("source_system") or "").strip()
+    external_id = str(row["external_id"] or payload.get("external_id") or "").strip()
+    if re.fullmatch(r"[0-9a-fA-F]{64}", evidence_sha256) is None:
+        issues.append("evidence_sha256_missing_or_invalid")
+    if not evidence_locator:
+        issues.append("evidence_locator_missing")
+    if not source_system or not external_id:
+        issues.append("source_identity_missing")
+    if int(row["amount_minor"]) <= 0:
+        issues.append("payment_amount_not_positive")
+    if str(row["currency"]).upper() != "EUR":
+        issues.append("payment_currency_not_eur")
+    if row["match_status"] not in {"exact", "manual"}:
+        issues.append("payment_match_not_confirmed")
+
+    return {
+        "payment_id": row["payment_id"],
+        "paid_on": row["paid_on"],
+        "amount_minor": row["amount_minor"],
+        "currency": row["currency"],
+        "source_system": source_system,
+        "external_id": external_id,
+        "evidence_sha256": evidence_sha256 or None,
+        "evidence_locator": evidence_locator or None,
+        "evidence_ready": not issues,
+        "issues": issues,
+    }
+
+
 def _is_xolo_derived(row: Mapping[str, Any]) -> bool:
     lineage = " | ".join(
         str(row.get(key) or "")
@@ -533,6 +801,7 @@ def _next_actions(
     payment_ready: bool,
     archive_ready: bool,
     operational_acceptance: Mapping[str, Any],
+    required_tax_settlements: Mapping[str, Any],
     invoice_channel: Mapping[str, Any],
     due_unfiled: list[dict[str, Any]],
     period_ended: bool,
@@ -556,6 +825,12 @@ def _next_actions(
             actions.append(
                 "Post one independently reviewed TGSS contribution or business bank fee."
             )
+    for missing in required_tax_settlements.get("missing_settlements") or []:
+        selector = missing.get("selector", "unknown")
+        reason = missing.get("reason", "unresolved")
+        actions.append(
+            f"Resolve required tax settlement {selector}: {_settlement_reason(reason)}."
+        )
     if not invoice_channel.get("ready"):
         actions.append(
             "Before 2027-07-01, migrate manual invoice issuance to a reviewed RRSIF-compliant SIF."
@@ -567,6 +842,19 @@ def _next_actions(
         else:
             actions.append(f"Keep forecast calculations current for expected forms: {forms}.")
     return actions
+
+
+def _settlement_reason(reason: Any) -> str:
+    return {
+        "obligation_not_found": "the obligation is missing from the ledger",
+        "obligation_not_due": "the obligation is not classified as due",
+        "obligation_not_filed": "the obligation is not recorded as filed",
+        "payment_missing": "no linked payment has been recorded",
+        "payment_evidence_missing": "the linked payment lacks verified hash-archived evidence",
+        "filed_amount_conflict": "filed snapshots disagree on the payable amount",
+        "filed_amount_missing": "the filed snapshot does not contain a usable payable amount",
+        "payment_amount_mismatch": "the evidenced payment total does not match the filed payable amount",
+    }.get(str(reason), str(reason))
 
 
 def _render_markdown(report: Mapping[str, Any]) -> str:
@@ -583,6 +871,7 @@ def _render_markdown(report: Mapping[str, Any]) -> str:
         f"| Filing | {_yes_no(summary['filing_ready'])} |",
         f"| Xolo archive | {_yes_no(summary['offboarding_archive_ready'])} |",
         f"| Live operating proof | {_yes_no(summary['operational_acceptance_ready'])} |",
+        f"| Required tax settlements | {_required_gate_label(gates['required_tax_settlements'])} |",
         f"| Replacement invoice channel | {_yes_no(summary['invoice_channel_ready'])} |",
         f"| Cutover from Xolo | {_yes_no(summary['cutover_ready'])} |",
         "",
@@ -597,6 +886,7 @@ def _render_markdown(report: Mapping[str, Any]) -> str:
         f"| Payments (optional) | {gates['payments']['status']} | {len(gates['payments']['unmatched_payment_ids'])} |",
         f"| Xolo archive | {gates['offboarding_archive']['status']} | 0 |",
         f"| Live operating proof | {gates['operational_acceptance']['status']} | {len(gates['operational_acceptance']['missing_proofs'])} |",
+        f"| Required tax settlements | {gates['required_tax_settlements']['status']} | {len(gates['required_tax_settlements']['missing_settlements'])} |",
         f"| Invoice channel | {gates['invoice_channel']['status']} | {len(gates['invoice_channel']['missing_checks'])} |",
         "",
         "## Accounting blockers",
@@ -627,3 +917,7 @@ def _render_markdown(report: Mapping[str, Any]) -> str:
 
 def _yes_no(value: Any) -> str:
     return "yes" if value else "no"
+
+
+def _required_gate_label(gate: Mapping[str, Any]) -> str:
+    return "not required" if not gate.get("required") else _yes_no(gate.get("ready"))

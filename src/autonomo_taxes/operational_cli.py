@@ -599,6 +599,13 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
         type=date.fromisoformat,
         help="Require independently posted supplier and non-invoice expense proof since this date",
     )
+    period_shadow_close.add_argument(
+        "--required-settled-obligation",
+        action="append",
+        default=[],
+        metavar="PERIOD:FORM",
+        help="Require hash-archived settlement evidence for a filed due tax obligation; repeat as needed",
+    )
     period_shadow_close.set_defaults(
         _operational_handler=_cmd_period_shadow_close
     )
@@ -2181,10 +2188,15 @@ def _cmd_period_shadow_close(args: argparse.Namespace) -> int:
         load_invoice_channel_assessment,
         summarize_operational_acceptance,
         summarize_payment_state,
+        summarize_required_tax_settlements,
         write_shadow_close_report,
     )
 
     year, quarter = _parse_quarter_period(args.period)
+    required_settlement_selectors = [
+        _parse_tax_obligation_selector(value)
+        for value in args.required_settled_obligation
+    ]
     with open_ledger_db(args.db, read_only=True) as db:
         period = next(
             (row for row in db.list_periods() if row["period_key"] == args.period),
@@ -2256,6 +2268,10 @@ def _cmd_period_shadow_close(args: argparse.Namespace) -> int:
             if args.operational_proof_since is not None
             else None
         )
+        required_tax_settlements = summarize_required_tax_settlements(
+            db,
+            selectors=required_settlement_selectors,
+        )
 
     offboarding_verification = None
     if args.offboarding_manifest is not None:
@@ -2278,6 +2294,7 @@ def _cmd_period_shadow_close(args: argparse.Namespace) -> int:
         offboarding_verification=offboarding_verification,
         invoice_channel_assessment=invoice_channel_assessment,
         operational_acceptance=operational_acceptance,
+        required_tax_settlements=required_tax_settlements,
     )
 
     dashboard_outputs = write_current_quarter_dashboard(
