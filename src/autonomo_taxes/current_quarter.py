@@ -53,6 +53,19 @@ def build_current_quarter_dashboard(
     ]
     actual_current = [row for row in actual if _in_quarter(row.tax_date, year, quarter)]
     projected_current = [row for row in projected if _in_quarter(row.tax_date, year, quarter)]
+    readiness_items = _blocking_items(
+        period_validation,
+        approved_current_rows,
+        obligations=obligations,
+        unexpected_future=unexpected_future,
+        as_of=as_of,
+    )
+    expected_items = [
+        row for row in readiness_items if row["kind"] == "approved_forecast_pending"
+    ]
+    blocking_items = [
+        row for row in readiness_items if row["kind"] != "approved_forecast_pending"
+    ]
 
     dashboard = {
         "schema_version": 1,
@@ -68,12 +81,8 @@ def build_current_quarter_dashboard(
         "forecast_rows": approved_current_rows,
         "obligations": obligations,
         "period_close_validation": period_validation,
-        "blocking_items": _blocking_items(
-            period_validation,
-            approved_current_rows,
-            obligations=obligations,
-            unexpected_future=unexpected_future,
-        ),
+        "blocking_items": blocking_items,
+        "expected_items": expected_items,
         "policy": {
             "difficult_expenses": "year_specific_aeat_rule",
             "difficult_expenses_rate": difficult_expenses_rate,
@@ -234,6 +243,7 @@ def _blocking_items(
     *,
     obligations: list[dict[str, Any]],
     unexpected_future: list[TaxRow],
+    as_of: date,
 ) -> list[dict[str, Any]]:
     blockers: list[dict[str, Any]] = []
     for issue in validation["blocking_issues"]:
@@ -295,6 +305,13 @@ def _blocking_items(
                 "reference": row["transaction_id"],
             }
         )
+    for row in validation.get("xolo_recorded_fx_after_cutover", []):
+        blockers.append(
+            {
+                "kind": "xolo_recorded_fx_after_cutover",
+                "reference": row["transaction_id"],
+            }
+        )
     for row in validation.get("invalid_amount_transactions", []):
         blockers.append(
             {
@@ -318,12 +335,24 @@ def _blocking_items(
             }
         )
     for row in approved_current_rows:
+        raw_tax_date = row.get("transaction_date")
+        try:
+            tax_date = date.fromisoformat(str(raw_tax_date)) if raw_tax_date else None
+        except ValueError:
+            tax_date = None
+        item = {
+            "kind": (
+                "approved_forecast_pending"
+                if tax_date is not None and tax_date > as_of
+                else "approved_not_posted"
+            ),
+            "reference": row["transaction_id"],
+            "detail": row["description"],
+        }
+        if tax_date is not None:
+            item["tax_date"] = tax_date.isoformat()
         blockers.append(
-            {
-                "kind": "approved_not_posted",
-                "reference": row["transaction_id"],
-                "detail": row["description"],
-            }
+            item
         )
         if row.get("tax_code") == "historical_g03" and not row.get("asset_id"):
             blockers.append(
@@ -442,6 +471,17 @@ def _render_markdown(dashboard: dict[str, Any]) -> str:
             lines.append(f"- `{blocker['kind']}` `{blocker['reference']}`{detail}")
     else:
         lines.append("- Quarter-end completeness review is still required.")
+    lines.append("")
+
+    lines.extend(["## Expected pending items", ""])
+    if dashboard.get("expected_items"):
+        for item in dashboard["expected_items"]:
+            tax_date = f" on {item['tax_date']}" if item.get("tax_date") else ""
+            lines.append(
+                f"- `{item['kind']}` `{item['reference']}`{tax_date}: {item.get('detail', '')}".rstrip()
+            )
+    else:
+        lines.append("None.")
     lines.append("")
 
     lines.extend(["## Warnings", ""])

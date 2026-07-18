@@ -22,7 +22,7 @@ from .intake_bundle import (
 from .ledger_db import LedgerDB, LedgerDbError, initialize, open as open_ledger_db
 from .money import cents
 from .obligations import ActivityFact, CounterpartyFact, detect_obligations
-from .parsers import LedgerEntry, parse_expense, parse_income_invoice
+from .parsers import LedgerEntry, parse_any_date, parse_expense, parse_income_invoice
 from .revolut import (
     RevolutMatchCandidate,
     RevolutPayment,
@@ -202,6 +202,61 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
         help="Archive and review the document without creating an invoice transaction draft",
     )
     ingest.set_defaults(_operational_handler=_cmd_ingest)
+
+    inbox = subparsers.add_parser(
+        "inbox",
+        help="Process a quarter inbox without moving or deleting source documents",
+    )
+    inbox_sub = inbox.add_subparsers(dest="inbox_command", required=True)
+    inbox_process = inbox_sub.add_parser(
+        "process",
+        help="Ingest supported files and report per-file review or data errors",
+    )
+    _db_arg(inbox_process)
+    inbox_process.add_argument("--period", required=True)
+    inbox_process.add_argument("--inbox-root", type=Path)
+    inbox_process.add_argument("--archive-root", type=Path)
+    inbox_process.add_argument("--tesseract-command", default="tesseract")
+    inbox_process.add_argument(
+        "--show-paths",
+        action="store_true",
+        help="Include absolute private filesystem paths in JSON output",
+    )
+    inbox_process.set_defaults(_operational_handler=_cmd_inbox_process)
+
+    review = subparsers.add_parser(
+        "review",
+        help="Inspect and advance typed review items through existing lifecycle gates",
+    )
+    review_sub = review.add_subparsers(dest="review_command", required=True)
+    review_list = review_sub.add_parser(
+        "list",
+        help="List pending reviews and approved transactions waiting to be posted",
+    )
+    _db_arg(review_list)
+    review_list.add_argument("--period", required=True)
+    review_list.add_argument(
+        "--show-paths",
+        action="store_true",
+        help="Include absolute private filesystem paths in JSON output",
+    )
+    review_list.set_defaults(_operational_handler=_cmd_review_list)
+    review_confirm = review_sub.add_parser(
+        "confirm",
+        help="Approve one reviewed document or transaction without posting it",
+    )
+    _db_arg(review_confirm)
+    review_confirm.add_argument("review_id")
+    review_confirm.add_argument("--expected-row-version", type=int, required=True)
+    review_confirm.set_defaults(_operational_handler=_cmd_review_confirm)
+    review_post = review_sub.add_parser(
+        "post",
+        help="Post one approved transaction through the canonical posting gate",
+    )
+    _db_arg(review_post)
+    review_post.add_argument("review_id")
+    review_post.add_argument("--expected-row-version", type=int, required=True)
+    review_post.set_defaults(_operational_handler=_cmd_review_post)
 
     documents = subparsers.add_parser("documents", help="Review document lifecycle decisions")
     document_sub = documents.add_subparsers(dest="document_command", required=True)
@@ -693,7 +748,7 @@ def run_operational_handler(args: argparse.Namespace) -> int | None:
 
 
 def _db_arg(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--db", type=Path, default=DEFAULT_DB)
+    parser.add_argument("--db", type=Path)
 
 
 def _cmd_db_init(args: argparse.Namespace) -> int:
@@ -770,6 +825,11 @@ def _cmd_counterparty_identity_list(args: argparse.Namespace) -> int:
 
 
 def _cmd_ingest(args: argparse.Namespace) -> int:
+    _emit(_ingest_document(args))
+    return 0
+
+
+def _ingest_document(args: argparse.Namespace) -> dict[str, Any]:
     if args.document_only and any(
         value is not None for value in (args.gross, args.taxable_base, args.vat, args.currency)
     ):
@@ -785,12 +845,17 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
         currency_override=args.currency,
     )
     requirements = review_requirements(args.kind, suggestion, amounts)
-    issued_on = args.issued_on or (
-        suggestion.date.isoformat() if suggestion is not None and suggestion.date is not None else None
+    parsed_date = (
+        suggestion.date
+        if suggestion is not None and suggestion.date is not None
+        else parse_any_date(result.extracted_text)
     )
+    issued_on = args.issued_on or (parsed_date.isoformat() if parsed_date is not None else None)
     if issued_on is None:
         raise ValueError("--issued-on is required when the document parser cannot identify a date")
-    period_key = args.period or _quarter_key(date.fromisoformat(issued_on))
+    period_key = _quarter_key(date.fromisoformat(issued_on))
+    if args.period is not None and args.period != period_key:
+        raise ValueError(f"Document belongs to {period_key}, not requested {args.period}")
     archived_path = (
         archive_evidence(
             args.path,
@@ -916,21 +981,423 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
             document_only=args.document_only,
             create_missing_issue=is_new_document,
         )
+    return {
+        **asdict(result),
+        "archived_path": str(archived_path),
+        "period": period_key,
+        "issued_on": issued_on,
+        "suggested_entry": suggestion.as_row() if suggestion is not None else None,
+        "invoice_amounts": amounts.as_dict(),
+        "review_requirements": list(requirements),
+        "document_id": document["document_id"],
+        "document_created": is_new_document,
+        "document_lifecycle_status": document["lifecycle_status"],
+        "row_version": document["row_version"],
+        "transaction": transaction,
+    }
+
+
+def _cmd_inbox_process(args: argparse.Namespace) -> int:
+    if args.inbox_root is None:
+        raise ValueError("--inbox-root is required (or set inbox_root in .local/config.yaml)")
+    if args.archive_root is None:
+        raise ValueError("--archive-root is required (or set archive_root in .local/config.yaml)")
+    period_root = args.inbox_root / args.period
+    if not period_root.is_dir():
+        raise ValueError(f"Quarter inbox not found: {period_root}")
+
+    kind_by_folder = {
+        "expense_invoice": "expense_invoice",
+        "income_invoice": "income_invoice",
+        "other": "other",
+    }
+    supported_suffixes = {
+        ".bmp",
+        ".csv",
+        ".jpeg",
+        ".jpg",
+        ".pdf",
+        ".png",
+        ".tif",
+        ".tiff",
+        ".tsv",
+        ".txt",
+        ".webp",
+    }
+    ignored_metadata_names = {".ds_store", "desktop.ini", "thumbs.db"}
+    counts = {
+        "imported": 0,
+        "already_imported": 0,
+        "needs_review": 0,
+        "needs_data": 0,
+        "failed": 0,
+    }
+    items: list[dict[str, Any]] = []
+    for source_path in sorted(path for path in period_root.rglob("*") if path.is_file()):
+        if source_path.name.casefold() in ignored_metadata_names:
+            continue
+        relative = source_path.relative_to(period_root)
+        output_path = str(source_path) if args.show_paths else str(relative)
+        if source_path.suffix.casefold() not in supported_suffixes:
+            counts["failed"] += 1
+            items.append(
+                {
+                    "path": output_path,
+                    "status": "failed",
+                    "message": f"Unsupported Inbox file type: {source_path.suffix or '<none>'}",
+                }
+            )
+            continue
+        kind = kind_by_folder.get(relative.parts[0]) if relative.parts else None
+        if kind is None:
+            counts["failed"] += 1
+            items.append(
+                {
+                    "path": output_path,
+                    "status": "failed",
+                    "message": (
+                        "Supported documents must be under expense_invoice, "
+                        "income_invoice, or other"
+                    ),
+                }
+            )
+            continue
+        ingest_args = argparse.Namespace(
+            db=args.db,
+            path=source_path,
+            kind=kind,
+            period=args.period,
+            issued_on=None,
+            document_number=None,
+            counterparty_id=None,
+            drive_file_id=None,
+            archive_root=args.archive_root,
+            tesseract_command=args.tesseract_command,
+            gross=None,
+            taxable_base=None,
+            vat=None,
+            currency=None,
+            document_only=(kind == "other"),
+        )
+        try:
+            result = _ingest_document(ingest_args)
+        except ValueError as exc:
+            message = str(exc)
+            status = (
+                "needs_data"
+                if "--issued-on is required" in message
+                else "failed"
+            )
+            counts[status] += 1
+            items.append(
+                {"path": output_path, "kind": kind, "status": status, "message": message}
+            )
+            continue
+        except (LedgerDbError, OSError) as exc:
+            counts["failed"] += 1
+            items.append(
+                {
+                    "path": output_path,
+                    "kind": kind,
+                    "status": "failed",
+                    "message": str(exc),
+                }
+            )
+            continue
+        except Exception as exc:  # Keep one malformed document from aborting the batch.
+            counts["failed"] += 1
+            items.append(
+                {
+                    "path": output_path,
+                    "kind": kind,
+                    "status": "failed",
+                    "message": f"{type(exc).__name__}: {exc}",
+                }
+            )
+            continue
+
+        status = "imported" if result["document_created"] else "already_imported"
+        counts[status] += 1
+        transaction = result.get("transaction") or {}
+        needs_review = bool(
+            result.get("document_lifecycle_status") in {"received", "extracted", "needs_review"}
+            or transaction.get("lifecycle_status") in {"received", "extracted", "needs_review"}
+            or transaction.get("reason") == "invoice_amounts_incomplete"
+        )
+        if needs_review:
+            counts["needs_review"] += 1
+        items.append(
+            {
+                "path": output_path,
+                "kind": kind,
+                "status": status,
+                "needs_review": needs_review,
+                "document_id": result["document_id"],
+                "transaction_id": transaction.get("transaction_id"),
+            }
+        )
+
     _emit(
         {
-            **asdict(result),
-            "archived_path": str(archived_path),
-            "period": period_key,
-            "issued_on": issued_on,
-            "suggested_entry": suggestion.as_row() if suggestion is not None else None,
-            "invoice_amounts": amounts.as_dict(),
-            "review_requirements": list(requirements),
-            "document_id": document["document_id"],
-            "row_version": document["row_version"],
-            "transaction": transaction,
+            "period": args.period,
+            "inbox_root": str(args.inbox_root) if args.show_paths else args.inbox_root.name,
+            "period_root": str(period_root) if args.show_paths else args.period,
+            "archive_root": str(args.archive_root) if args.show_paths else args.archive_root.name,
+            "counts": counts,
+            "items": items,
         }
     )
+    return 2 if counts["needs_data"] or counts["failed"] else 0
+
+
+def _cmd_review_list(args: argparse.Namespace) -> int:
+    pending_statuses = ("received", "extracted", "needs_review")
+    transaction_statuses = (*pending_statuses, "approved")
+    with open_ledger_db(args.db, read_only=True) as db:
+        issues = db.list_issues(period_key=args.period)
+        issues_by_subject: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        for issue in issues:
+            subject_table = issue.get("subject_table")
+            subject_id = issue.get("subject_id")
+            if subject_table and subject_id:
+                issues_by_subject.setdefault((subject_table, subject_id), []).append(issue)
+
+        rows: list[dict[str, Any]] = []
+        documents = db.connection.execute(
+            """
+            SELECT d.*, p.period_key
+            FROM documents d
+            JOIN periods p ON p.period_id = d.period_id
+            WHERE p.period_key = ? AND d.lifecycle_status IN (?, ?, ?)
+            ORDER BY d.issued_on, d.document_id
+            """,
+            (args.period, *pending_statuses),
+        ).fetchall()
+        for raw in documents:
+            document = dict(raw)
+            open_issues = issues_by_subject.get(("documents", document["document_id"]), [])
+            blocking_issues = [
+                {
+                    "issue_id": issue["validation_issue_id"],
+                    "row_version": issue["row_version"],
+                    "code": issue["issue_code"],
+                    "message": issue["message"],
+                }
+                for issue in open_issues
+                if issue["blocking"]
+            ]
+            rows.append(
+                {
+                    "review_id": f"document:{document['document_id']}",
+                    "kind": "document",
+                    "period": document["period_key"],
+                    "lifecycle_status": document["lifecycle_status"],
+                    "row_version": document["row_version"],
+                    "issued_on": document["issued_on"],
+                    "document_number": document["document_number"],
+                    "amount_minor": document["total_minor"],
+                    "currency": document["currency"],
+                    "source_path": _review_source_path(
+                        document.get("source_path"),
+                        show_paths=args.show_paths,
+                    ),
+                    "blocking_issues": blocking_issues,
+                    "ready_to_approve": (
+                        document["lifecycle_status"] in {"extracted", "needs_review"}
+                        and not blocking_issues
+                    ),
+                }
+            )
+
+        for transaction in db.list_transactions(period_key=args.period):
+            if transaction["lifecycle_status"] not in transaction_statuses:
+                continue
+            treatments = [
+                dict(row)
+                for row in db.connection.execute(
+                    "SELECT * FROM tax_treatments WHERE transaction_id = ? ORDER BY treatment_id",
+                    (transaction["transaction_id"],),
+                ).fetchall()
+            ]
+            linked_document = (
+                db.connection.execute(
+                    "SELECT lifecycle_status FROM documents WHERE document_id = ?",
+                    (transaction["document_id"],),
+                ).fetchone()
+                if transaction["document_id"] is not None
+                else None
+            )
+            related_issue_rows: dict[str, dict[str, Any]] = {}
+            for subject_table, subject_id in (
+                ("transactions", transaction["transaction_id"]),
+                ("documents", transaction["document_id"]),
+                ("counterparties", transaction["counterparty_id"]),
+            ):
+                if subject_id is None:
+                    continue
+                for issue in issues_by_subject.get((subject_table, subject_id), []):
+                    if issue["blocking"]:
+                        related_issue_rows[issue["validation_issue_id"]] = {
+                            "issue_id": issue["validation_issue_id"],
+                            "row_version": issue["row_version"],
+                            "subject_table": subject_table,
+                            "code": issue["issue_code"],
+                            "message": issue["message"],
+                        }
+            blocking_issues = list(related_issue_rows.values())
+            tax_reviewed = bool(treatments) and all(
+                (row.get("tax_code") or "unknown") != "unknown" for row in treatments
+            )
+            linked_document_approved = linked_document is None or linked_document[
+                "lifecycle_status"
+            ] in {"approved", "posted", "included_in_snapshot"}
+            posting_date_reached = (
+                date.fromisoformat(transaction["transaction_date"]) <= date.today()
+            )
+            rows.append(
+                {
+                    "review_id": f"transaction:{transaction['transaction_id']}",
+                    "kind": "transaction",
+                    "period": transaction["period_key"],
+                    "lifecycle_status": transaction["lifecycle_status"],
+                    "row_version": transaction["row_version"],
+                    "transaction_date": transaction["transaction_date"],
+                    "entry_type": transaction["entry_type"],
+                    "description": transaction["description"],
+                    "amount_minor": transaction["amount_minor"],
+                    "currency": transaction["currency"],
+                    "document_id": transaction["document_id"],
+                    "tax_treatments": [
+                        {
+                            "treatment_id": row["treatment_id"],
+                            "row_version": row["row_version"],
+                            "tax_code": row.get("tax_code") or "unknown",
+                        }
+                        for row in treatments
+                    ],
+                    "blocking_issues": blocking_issues,
+                    "linked_document_approved": linked_document_approved,
+                    "ready_to_approve": (
+                        transaction["lifecycle_status"] in {"extracted", "needs_review"}
+                        and tax_reviewed
+                        and linked_document_approved
+                        and not blocking_issues
+                    ),
+                    "ready_to_post": (
+                        transaction["lifecycle_status"] == "approved"
+                        and posting_date_reached
+                        and tax_reviewed
+                        and linked_document_approved
+                        and not blocking_issues
+                    ),
+                    "posting_deferred_until": (
+                        transaction["transaction_date"]
+                        if transaction["lifecycle_status"] == "approved"
+                        and not posting_date_reached
+                        else None
+                    ),
+                }
+            )
+    _emit(rows)
     return 0
+
+
+def _cmd_review_confirm(args: argparse.Namespace) -> int:
+    review_kind, subject_id = _parse_review_id(args.review_id)
+    with open_ledger_db(args.db) as db:
+        if review_kind == "document":
+            _assert_no_open_subject_issues(db, "documents", subject_id)
+            row = db.transition_document(
+                subject_id,
+                lifecycle_status="approved",
+                expected_row_version=args.expected_row_version,
+            )
+        else:
+            _assert_transaction_reviewed(db, subject_id)
+            row = db.transition_transaction(
+                subject_id,
+                lifecycle_status="approved",
+                expected_row_version=args.expected_row_version,
+            )
+    _emit(row)
+    return 0
+
+
+def _cmd_review_post(args: argparse.Namespace) -> int:
+    review_kind, subject_id = _parse_review_id(args.review_id)
+    if review_kind != "transaction":
+        raise ValueError("Only transaction:<uuid> review items can be posted")
+    with open_ledger_db(args.db) as db:
+        row = db.transition_transaction(
+            subject_id,
+            lifecycle_status="posted",
+            expected_row_version=args.expected_row_version,
+        )
+    _emit(row)
+    return 0
+
+
+def _parse_review_id(value: str) -> tuple[str, str]:
+    if ":" not in value:
+        raise ValueError("Review IDs must be typed as document:<uuid> or transaction:<uuid>")
+    review_kind, subject_id = value.split(":", 1)
+    if review_kind not in {"document", "transaction"} or not subject_id:
+        raise ValueError("Review IDs must be typed as document:<uuid> or transaction:<uuid>")
+    return review_kind, subject_id
+
+
+def _review_source_path(value: str | None, *, show_paths: bool) -> str | None:
+    if value is None:
+        return None
+    return value if show_paths else Path(value).name
+
+
+def _assert_no_open_subject_issues(db: LedgerDB, subject_table: str, subject_id: str) -> None:
+    issue_codes = [
+        row["issue_code"]
+        for row in db.connection.execute(
+            """
+            SELECT issue_code
+            FROM validation_issues
+            WHERE subject_table = ? AND subject_id = ?
+              AND blocking = 1 AND issue_status = 'open'
+            ORDER BY issue_code
+            """,
+            (subject_table, subject_id),
+        ).fetchall()
+    ]
+    if issue_codes:
+        raise ValueError("Resolve blocking review issues first: " + ", ".join(issue_codes))
+
+
+def _assert_transaction_reviewed(db: LedgerDB, transaction_id: str) -> None:
+    transaction = db.connection.execute(
+        "SELECT * FROM transactions WHERE transaction_id = ?",
+        (transaction_id,),
+    ).fetchone()
+    if transaction is None:
+        raise KeyError(f"Unknown transaction: {transaction_id}")
+    treatments = db.connection.execute(
+        "SELECT tax_code FROM tax_treatments WHERE transaction_id = ?",
+        (transaction_id,),
+    ).fetchall()
+    if not treatments or any((row["tax_code"] or "unknown") == "unknown" for row in treatments):
+        raise ValueError("Set a reviewed non-unknown tax treatment before approval")
+    if transaction["document_id"] is not None:
+        document = db.connection.execute(
+            "SELECT lifecycle_status FROM documents WHERE document_id = ?",
+            (transaction["document_id"],),
+        ).fetchone()
+        if document is None or document["lifecycle_status"] not in {
+            "approved",
+            "posted",
+            "included_in_snapshot",
+        }:
+            raise ValueError("Approve the linked document before approving the transaction")
+        _assert_no_open_subject_issues(db, "documents", transaction["document_id"])
+    _assert_no_open_subject_issues(db, "transactions", transaction_id)
+    if transaction["counterparty_id"] is not None:
+        _assert_no_open_subject_issues(db, "counterparties", transaction["counterparty_id"])
 
 
 def _cmd_transaction_add(args: argparse.Namespace) -> int:
@@ -3079,7 +3546,24 @@ def _document_suggestion(path: Path, kind: str, text: str) -> LedgerEntry | None
         return parse_income_invoice(path, text)
     if kind == "expense_invoice":
         extraction_error = None if text.strip() else "No readable text extracted"
-        return parse_expense(path, text, extraction_error=extraction_error)
+        suggestion = parse_expense(path, text, extraction_error=extraction_error)
+        if suggestion.date is None and path.suffix.casefold() in {".csv", ".txt", ".tsv"}:
+            return LedgerEntry(
+                kind="expense",
+                date=parse_any_date(text),
+                document=str(path),
+                counterparty="Unknown",
+                description=path.name,
+                amount_original=None,
+                currency="",
+                amount_eur=None,
+                deductible_eur=None,
+                category="unknown",
+                confidence="low",
+                review_required=True,
+                notes="Plain-text expense candidate; no supported supplier parser matched",
+            )
+        return suggestion
     return None
 
 

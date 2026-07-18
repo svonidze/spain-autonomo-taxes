@@ -15,6 +15,7 @@ DATA_BLOCKER_KINDS = {
     "document_review",
     "transaction_review",
     "target_derived_fx",
+    "xolo_recorded_fx_after_cutover",
     "invalid_amount",
     "out_of_period",
     "supplier_invoice_missing",
@@ -53,6 +54,11 @@ def build_period_preparation(
         row
         for row in dashboard_blockers
         if row.get("kind") in {"approved_not_posted", "future_posted_after_as_of"}
+    ]
+    expected_items = [
+        dict(row)
+        for row in dashboard.get("expected_items", [])
+        if row.get("kind") == "approved_forecast_pending"
     ]
     calculation_blockers = [
         {"form": form, "reason": calculation.get("reason", "calculation blocked")}
@@ -115,6 +121,7 @@ def build_period_preparation(
         "cash_check": cash,
         "data_blockers": data_blockers,
         "workflow_items": workflow_items,
+        "expected_items": expected_items,
         "calculation_blockers": calculation_blockers,
         "filing_blockers": filing_blockers,
         "manual_submission_steps": [

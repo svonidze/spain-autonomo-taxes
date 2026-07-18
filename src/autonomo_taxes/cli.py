@@ -294,7 +294,7 @@ from .xolo_dataexport_inventory import (
     write_xolo_dataexport_inventory_markdown,
 )
 from .xolo_questions import build_xolo_questions, write_questions_csv, write_questions_markdown
-from .operational_cli import register_operational_commands, run_operational_handler
+from .operational_cli import DEFAULT_DB, register_operational_commands, run_operational_handler
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1789,7 +1789,11 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _load_config(path: Path | None) -> dict:
-    if path is None:
+    explicit = path is not None
+    path = path or Path(".local") / "config.yaml"
+    if not path.is_file():
+        if explicit:
+            raise SystemExit(f"Config file not found: {path}")
         return {}
     if yaml is None:
         raise SystemExit("PyYAML is required to use --config")
@@ -1798,6 +1802,22 @@ def _load_config(path: Path | None) -> dict:
 
 
 def _merge_config(args: argparse.Namespace, config: dict) -> None:
+    if hasattr(args, "db") and getattr(args, "db", None) is None:
+        args.db = Path(config.get("ledger_db") or DEFAULT_DB)
+    path_defaults = {
+        "inbox_root": ("inbox_root",),
+        "archive_root": ("archive_root", "drive_evidence_dir"),
+        "review_export_dir": ("review_export_dir",),
+    }
+    for argument, config_keys in path_defaults.items():
+        if not hasattr(args, argument) or getattr(args, argument, None) is not None:
+            continue
+        configured = next(
+            (config[key] for key in config_keys if config.get(key) not in (None, "")),
+            None,
+        )
+        if configured is not None:
+            setattr(args, argument, Path(configured))
     review = config.get("review") or {}
     if hasattr(args, "asset_review_threshold_eur") and getattr(args, "asset_review_threshold_eur", None) in (None, ""):
         threshold = review.get("asset_review_threshold_eur")

@@ -8,6 +8,7 @@ from .money import cents
 
 
 ALLOWED_PRODUCTION_SOURCES = {"ecb", "banco_de_espana", "actual_settlement", "xolo_recorded"}
+XOLO_RECORDED_PRODUCTION_THROUGH = date(2026, 6, 30)
 
 
 @dataclass(frozen=True)
@@ -39,4 +40,13 @@ def convert_to_eur(
         raise ValueError("Target-derived FX is restricted to verify_history")
     if mode == "production" and rate.source not in ALLOWED_PRODUCTION_SOURCES:
         raise ValueError(f"FX source {rate.source!r} is not allowed in production")
+    if (
+        mode == "production"
+        and rate.source == "xolo_recorded"
+        and rate.rate_date > XOLO_RECORDED_PRODUCTION_THROUGH
+    ):
+        raise ValueError(
+            "FX source 'xolo_recorded' is not allowed after "
+            f"{XOLO_RECORDED_PRODUCTION_THROUGH.isoformat()}"
+        )
     return cents(amount * rate.eur_per_unit)

@@ -24,6 +24,7 @@ _ACCOUNTING_BLOCKER_KINDS = {
     "document_review",
     "transaction_review",
     "target_derived_fx",
+    "xolo_recorded_fx_after_cutover",
     "invalid_amount",
     "out_of_period",
     "supplier_invoice_missing",
@@ -53,6 +54,12 @@ def build_shadow_close_report(
         for row in dashboard_blockers
         if row.get("kind") in {"approved_not_posted", "future_posted_after_as_of"}
     ]
+    expected_items = [
+        dict(row)
+        for row in dashboard.get("expected_items", [])
+        if row.get("kind") == "approved_forecast_pending"
+    ]
+    pending_references = {str(row.get("reference", "")) for row in expected_items}
     accounting_items.extend(
         row
         for row in dashboard_blockers
@@ -60,6 +67,14 @@ def build_shadow_close_report(
     )
 
     aeat_blockers = [dict(row) for row in aeat_projection.get("blockers", [])]
+    effective_aeat_blockers = [
+        row
+        for row in aeat_blockers
+        if not (
+            row.get("code") == "approved_not_posted"
+            and str(row.get("reference", "")) in pending_references
+        )
+    ]
     for row in aeat_blockers:
         if row.get("code") == "approved_not_posted":
             continue
@@ -87,7 +102,9 @@ def build_shadow_close_report(
 
     accounting_ready = not accounting_items
     posting_ready = not workflow_items
-    aeat_data_ready = bool(aeat_projection.get("data_projection_ready"))
+    aeat_data_ready = bool(aeat_projection.get("data_projection_ready")) or bool(
+        aeat_blockers and not effective_aeat_blockers
+    )
     payment_ready = bool(payment_state.get("ready"))
     archive_ready = bool(
         offboarding_verification and offboarding_verification.get("ok")
@@ -147,6 +164,7 @@ def build_shadow_close_report(
             "posting": {
                 "status": "ready" if posting_ready else "in_progress",
                 "items": workflow_items,
+                "expected_pending": expected_items,
             },
             "obligations": {
                 "status": obligations_status,
@@ -165,6 +183,10 @@ def build_shadow_close_report(
                     Counter(str(row.get("code", "unknown")) for row in aeat_blockers)
                 ),
                 "blockers": aeat_blockers,
+                "effective_blockers": effective_aeat_blockers,
+                "expected_pending": [
+                    row for row in aeat_blockers if row not in effective_aeat_blockers
+                ],
                 "xlsx_generation_supported": bool(
                     aeat_projection.get("xlsx_generation_supported")
                 ),
