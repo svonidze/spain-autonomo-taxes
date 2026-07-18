@@ -79,16 +79,19 @@ def extract_filing_evidence(path: Path) -> FilingEvidence:
                 "result": f"{values.result:.2f}",
             }
             filed_values.update(
-                {key: f"{value:.2f}" for key, value in values.settlement_casillas}
+                {key: f"{value:.2f}" for key, value in values.casilla_values.items()}
             )
             if values.compensation_carryforward is not None:
                 filed_values["compensation_carryforward"] = (
                     f"{values.compensation_carryforward:.2f}"
                 )
             payload["filed_values"] = filed_values
+            payload["blank_casillas"] = list(values.blank_casillas)
+            payload["value_sources"] = dict(values.value_sources)
             payload["extraction_status"] = values.extraction_status
+            payload["structural_extraction_status"] = values.structural_extraction_status
             payload["settlement_extraction_status"] = values.settlement_extraction_status
-            payload["value_extraction_schema"] = "modelo303_v3"
+            payload["value_extraction_schema"] = "modelo303_v4"
     elif pdf_error is None and form_code == "390" and quarter is None:
         try:
             values = extract_modelo390_values(path)

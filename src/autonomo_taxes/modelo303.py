@@ -27,6 +27,18 @@ PERCENTAGE_VALUES = {
     Decimal("21.00"),
 }
 
+_NUMBER_PATTERN = r"(?:\d{1,3}(?:\.\d{3})*|\d+),\d{2}"
+_AMOUNT_PATTERN = rf"-?{_NUMBER_PATTERN}"
+STRUCTURAL_BOXES = ("12", "13", "27", "28", "29", "30", "31", "45", "46")
+STRUCTURAL_PAIRS = (("12", "13"), ("28", "29"), ("30", "31"))
+STRUCTURAL_SINGLE_CONTEXT = {
+    "27": "total cuota devengada",
+    "45": "total a deducir",
+    "46": "resultado régimen general",
+}
+
+PositionedFragment = tuple[str, Decimal, Decimal, Decimal]
+
 
 @dataclass(frozen=True)
 class Modelo303Report:
@@ -44,8 +56,12 @@ class Modelo303Values:
     result: Decimal
     extraction_status: str
     monetary_sequence: tuple[Decimal, ...]
+    structural_casillas: tuple[tuple[str, Decimal], ...] = ()
+    structural_extraction_status: str = "not_extracted"
     settlement_casillas: tuple[tuple[str, Decimal], ...] = ()
     settlement_extraction_status: str = "not_extracted"
+    blank_casillas: tuple[str, ...] = ()
+    value_sources: tuple[tuple[str, str], ...] = ()
 
     @property
     def net_local_input_base(self) -> Decimal:
@@ -60,11 +76,23 @@ class Modelo303Values:
         return dict(self.settlement_casillas)
 
     @property
+    def casilla_values(self) -> dict[str, Decimal]:
+        return dict(self.structural_casillas + self.settlement_casillas)
+
+    @property
     def compensation_carryforward(self) -> Decimal | None:
         if self.settlement_extraction_status != "casillas_extracted":
             return None
         values = self.settlement_values
         return cents(max(values["87"], Decimal("0.00")) + max(values["72"], Decimal("0.00")))
+
+
+@dataclass(frozen=True)
+class Modelo303CasillaEvidence:
+    casillas: tuple[tuple[str, Decimal], ...]
+    blank_casillas: tuple[str, ...]
+    value_sources: tuple[tuple[str, str], ...]
+    status: str
 
 
 def build_modelo303_vat_crosscheck(
@@ -119,11 +147,17 @@ def extract_modelo303_values(path: Path) -> Modelo303Values:
     if len(reader.pages) < 2:
         raise ValueError(f"Modelo 303 report has no form page: {path}")
     values = values_from_monetary_sequence(_extract_page2_monetary_sequence(reader.pages[1]))
-    settlement_casillas, settlement_status = _extract_settlement_casillas(reader.pages)
+    layout_pages, positioned_pages = _extract_page_evidence(reader.pages)
+    structural = _structural_casilla_evidence_from_pages(layout_pages, positioned_pages)
+    settlement = _settlement_casilla_evidence_from_fragments(positioned_pages)
     return replace(
         values,
-        settlement_casillas=settlement_casillas,
-        settlement_extraction_status=settlement_status,
+        structural_casillas=structural.casillas,
+        structural_extraction_status=structural.status,
+        settlement_casillas=settlement.casillas,
+        settlement_extraction_status=settlement.status,
+        blank_casillas=structural.blank_casillas + settlement.blank_casillas,
+        value_sources=structural.value_sources + settlement.value_sources,
     )
 
 
@@ -241,12 +275,21 @@ SETTLEMENT_BOXES = ("64", "110", "78", "87", "69", "71", "72", "73")
 
 
 def _extract_settlement_casillas(pages) -> tuple[tuple[tuple[str, Decimal], ...], str]:
-    positioned_pages: list[list[tuple[str, Decimal, Decimal, Decimal]]] = []
+    _layouts, positioned_pages = _extract_page_evidence(pages)
+    evidence = _settlement_casilla_evidence_from_fragments(positioned_pages)
+    return evidence.casillas, evidence.status
+
+
+def _extract_page_evidence(
+    pages,
+) -> tuple[list[str], list[list[PositionedFragment]]]:
+    layouts: list[str] = []
+    positioned_pages: list[list[PositionedFragment]] = []
     for page in pages:
-        fragments: list[tuple[str, Decimal, Decimal, Decimal]] = []
+        fragments: list[PositionedFragment] = []
 
         def visitor(fragment: str, _cm, tm, _font_dict, font_size: float) -> None:
-            value = fragment.strip()
+            value = " ".join(fragment.split())
             if not value:
                 return
             fragments.append(
@@ -259,14 +302,93 @@ def _extract_settlement_casillas(pages) -> tuple[tuple[tuple[str, Decimal], ...]
             )
 
         page.extract_text(visitor_text=visitor)
+        layouts.append(page.extract_text(extraction_mode="layout") or "")
         positioned_pages.append(fragments)
-    return _settlement_casillas_from_fragments(positioned_pages)
+    return layouts, positioned_pages
+
+
+def _structural_casilla_evidence_from_pages(
+    layout_pages: list[str] | tuple[str, ...],
+    positioned_pages: list[list[PositionedFragment]]
+    | tuple[tuple[PositionedFragment, ...], ...],
+) -> Modelo303CasillaEvidence:
+    recognized: set[str] = set()
+    candidates: dict[str, set[Decimal]] = {box: set() for box in STRUCTURAL_BOXES}
+    sources: dict[str, set[str]] = {box: set() for box in STRUCTURAL_BOXES}
+
+    for page in layout_pages:
+        for line in page.splitlines():
+            for left, right in STRUCTURAL_PAIRS:
+                match = re.search(
+                    rf"(?<!\d){left}(?!\d)[ \t]*(?P<left>{_AMOUNT_PATTERN})?"
+                    rf"[ \t]*{right}(?!\d)[ \t]*(?P<right>{_AMOUNT_PATTERN})?",
+                    line,
+                )
+                if match is None:
+                    continue
+                recognized.update((left, right))
+                for box, group in ((left, "left"), (right, "right")):
+                    raw = match.group(group)
+                    if raw is not None:
+                        candidates[box].add(cents(parse_amount(raw)))
+                        sources[box].add("layout_line")
+            normalized_line = " ".join(line.casefold().split())
+            for box, context in STRUCTURAL_SINGLE_CONTEXT.items():
+                if context not in normalized_line:
+                    continue
+                matches = list(
+                    re.finditer(
+                        rf"(?<!\d){box}[ \t]*(?P<value>{_AMOUNT_PATTERN})?[ \t]*$",
+                        line,
+                    )
+                )
+                if not matches:
+                    continue
+                match = matches[-1]
+                recognized.add(box)
+                raw = match.group("value")
+                if raw is not None:
+                    candidates[box].add(cents(parse_amount(raw)))
+                    sources[box].add("layout_line")
+
+    for fragments in positioned_pages:
+        for label, label_x, label_y, font_size in fragments:
+            if label not in STRUCTURAL_BOXES or font_size > Decimal("4"):
+                continue
+            recognized.add(label)
+            if label_x == 0 and label_y == 0:
+                continue
+            for raw, x, y, value_font_size in fragments:
+                if x <= label_x + Decimal("5") or abs(y - label_y) > Decimal("5"):
+                    continue
+                if value_font_size < Decimal("5") or re.fullmatch(_AMOUNT_PATTERN, raw) is None:
+                    continue
+                candidates[label].add(cents(parse_amount(raw)))
+                sources[label].add("positioned_row")
+
+    return _build_casilla_evidence(
+        boxes=STRUCTURAL_BOXES,
+        recognized=recognized,
+        candidates=candidates,
+        sources=sources,
+        missing_status="structural_layout_not_found",
+        incomplete_status="incomplete_structural_layout",
+    )
 
 
 def _settlement_casillas_from_fragments(
     positioned_pages: list[list[tuple[str, Decimal, Decimal, Decimal]]],
 ) -> tuple[tuple[tuple[str, Decimal], ...], str]:
-    found: dict[str, Decimal] = {}
+    evidence = _settlement_casilla_evidence_from_fragments(positioned_pages)
+    return evidence.casillas, evidence.status
+
+
+def _settlement_casilla_evidence_from_fragments(
+    positioned_pages: list[list[PositionedFragment]]
+    | tuple[tuple[PositionedFragment, ...], ...],
+) -> Modelo303CasillaEvidence:
+    candidates_by_box: dict[str, set[Decimal]] = {box: set() for box in SETTLEMENT_BOXES}
+    sources: dict[str, set[str]] = {box: set() for box in SETTLEMENT_BOXES}
     recognized: set[str] = set()
     for fragments in positioned_pages:
         for label, label_x, label_y, font_size in fragments:
@@ -287,14 +409,59 @@ def _settlement_casillas_from_fragments(
                     continue
                 candidates.append((abs(y - label_y), x, parse_amount(value)))
             if candidates:
-                found[label] = cents(min(candidates, key=lambda item: (item[0], item[1]))[2])
+                candidates_by_box[label].add(
+                    cents(min(candidates, key=lambda item: (item[0], item[1]))[2])
+                )
+                sources[label].add("positioned_row")
 
+    return _build_casilla_evidence(
+        boxes=SETTLEMENT_BOXES,
+        recognized=recognized,
+        candidates=candidates_by_box,
+        sources=sources,
+        missing_status="settlement_layout_not_found",
+        incomplete_status="incomplete_settlement_layout",
+    )
+
+
+def _build_casilla_evidence(
+    *,
+    boxes: tuple[str, ...],
+    recognized: set[str],
+    candidates: dict[str, set[Decimal]],
+    sources: dict[str, set[str]],
+    missing_status: str,
+    incomplete_status: str,
+) -> Modelo303CasillaEvidence:
     if not recognized:
-        return (), "settlement_layout_not_found"
-    values = tuple((box, found.get(box, Decimal("0.00"))) for box in SETTLEMENT_BOXES if box in recognized)
-    if recognized == set(SETTLEMENT_BOXES):
-        return values, "casillas_extracted"
-    return values, "incomplete_settlement_layout"
+        return Modelo303CasillaEvidence((), (), (), missing_status)
+
+    values: list[tuple[str, Decimal]] = []
+    blank: list[str] = []
+    value_sources: list[tuple[str, str]] = []
+    for box in boxes:
+        if box not in recognized:
+            continue
+        box_candidates = candidates[box]
+        if len(box_candidates) > 1:
+            rendered = ", ".join(f"{value:.2f}" for value in sorted(box_candidates))
+            raise ValueError(f"Modelo 303 casilla {box} has ambiguous values: {rendered}")
+        if box_candidates:
+            value = next(iter(box_candidates))
+            values.append((box, value))
+            value_sources.append((box, "+".join(sorted(sources[box]))))
+        else:
+            values.append((box, Decimal("0.00")))
+            blank.append(box)
+            value_sources.append((box, "box_present_no_value_captured"))
+
+    status = "casillas_extracted" if recognized == set(boxes) else incomplete_status
+    return Modelo303CasillaEvidence(
+        casillas=tuple(values),
+        blank_casillas=tuple(blank),
+        value_sources=tuple(value_sources),
+        status=status,
+    )
 
 
 def _raw_vat_bearing_totals_by_period(rows: list[RawXoloExpense]) -> dict[str, dict[str, Decimal]]:
