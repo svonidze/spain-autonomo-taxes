@@ -490,7 +490,7 @@ def _render_markdown(dashboard: dict[str, Any]) -> str:
             detail = f": {blocker['detail']}" if blocker.get("detail") else ""
             lines.append(f"- `{blocker['kind']}` `{blocker['reference']}`{detail}")
     else:
-        lines.append("- Quarter-end completeness review is still required.")
+        lines.append("None.")
     lines.append("")
 
     lines.extend(["## Expected pending items", ""])
