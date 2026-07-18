@@ -760,6 +760,24 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     filings_snapshot.add_argument("--payload", type=Path, required=True)
     filings_snapshot.add_argument("--filed-on")
     filings_snapshot.set_defaults(_operational_handler=_cmd_filing_snapshot)
+    filings_receipt = filings_sub.add_parser(
+        "record-receipt",
+        help="Verify an AEAT filed PDF against a prepared calculation and store it",
+    )
+    _db_arg(filings_receipt)
+    filings_receipt.add_argument("--period", required=True)
+    filings_receipt.add_argument("--form", choices=["130", "303"], required=True)
+    filings_receipt.add_argument("--filed-pdf", type=Path, required=True)
+    filings_receipt.add_argument("--calculation", type=Path, required=True)
+    filings_receipt.add_argument("--archive-root", type=Path)
+    filings_receipt.add_argument("--tolerance-eur", type=Decimal, default=Decimal("0.01"))
+    filings_receipt.add_argument("--dry-run", action="store_true")
+    filings_receipt.add_argument(
+        "--show-paths",
+        action="store_true",
+        help="Include absolute private filesystem paths in JSON output",
+    )
+    filings_receipt.set_defaults(_operational_handler=_cmd_filing_receipt)
 
     calculate = subparsers.add_parser("calculate", help="Calculate a form from reviewed SQLite rows")
     _db_arg(calculate)
@@ -2917,6 +2935,164 @@ def _cmd_filing_snapshot(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_filing_receipt(args: argparse.Namespace) -> int:
+    from .filing_evidence import extract_filing_evidence
+    from .filing_receipts import (
+        build_filing_receipt_payload,
+        load_calculation_file,
+        verify_filing_receipt,
+    )
+
+    if not args.filed_pdf.is_file():
+        raise FileNotFoundError(args.filed_pdf)
+    if not args.calculation.is_file():
+        raise FileNotFoundError(args.calculation)
+    if args.archive_root is None and not args.dry_run:
+        raise ValueError(
+            "--archive-root is required (or set archive_root in .local/config.yaml)"
+        )
+
+    calculation, calculation_sha256 = load_calculation_file(args.calculation)
+    evidence = extract_filing_evidence(args.filed_pdf)
+    verification = verify_filing_receipt(
+        evidence,
+        calculation,
+        expected_form=args.form,
+        expected_period=args.period,
+        calculation_sha256=calculation_sha256,
+        tolerance_eur=args.tolerance_eur,
+    )
+    if verification["status"] != "matched":
+        _emit({"ok": False, "recorded": False, "verification": verification})
+        return 2
+    if args.dry_run:
+        _emit({"ok": True, "recorded": False, "dry_run": True, "verification": verification})
+        return 0
+
+    payload = build_filing_receipt_payload(evidence, calculation, verification)
+    with open_ledger_db(args.db) as db:
+        existing = _existing_filing_receipt(db, evidence.source_sha256)
+        if existing is not None:
+            existing_payload = json.loads(existing["payload_json"])
+            receipt_verification = existing_payload.get("receipt_verification") or {}
+            if (
+                existing["period_key"] == args.period
+                and str(existing["form_code"] or existing_payload.get("form") or "") == args.form
+                and receipt_verification.get("status") == "matched"
+                and receipt_verification.get("calculation_sha256")
+                == verification["calculation_sha256"]
+            ):
+                _emit(
+                    {
+                        "ok": True,
+                        "recorded": True,
+                        "idempotent": True,
+                        "filing_snapshot_id": existing["filing_snapshot_id"],
+                        "form": args.form,
+                        "period": args.period,
+                        "verification": verification,
+                    }
+                )
+                return 0
+            raise ValueError(
+                "This filed PDF already exists in the ledger with different filing metadata "
+                "or calculation lineage"
+            )
+
+        period = next(
+            (row for row in db.list_periods() if row["period_key"] == args.period),
+            None,
+        )
+        if period is None:
+            raise ValueError(f"Unknown period: {args.period}")
+        if period["status"] not in {"closed", "amended"}:
+            raise ValueError(
+                f"Filed receipts require a closed or amended period: {args.period}"
+            )
+        conflicting = _final_filing_for_form(db, args.period, args.form)
+        if conflicting is not None:
+            raise ValueError(
+                f"Modelo {args.form} {args.period} already has a final filing snapshot "
+                f"{conflicting['filing_snapshot_id']}"
+            )
+
+        archived_path = archive_evidence(
+            args.filed_pdf,
+            args.archive_root,
+            period_key=args.period,
+            evidence_kind="filed_return_pdf",
+            digest=evidence.source_sha256,
+        )
+        row = db.create_filing_snapshot(
+            args.period,
+            status="filed",
+            filed_on=evidence.filed_on,
+            payload=payload,
+            source_hash=evidence.source_sha256,
+            form_code=args.form,
+            submission_reference=evidence.submission_reference,
+            justificante_number=evidence.justificante_number,
+            verification_code=evidence.verification_code,
+            source_reference=str(archived_path),
+        )
+
+    _emit(
+        {
+            "ok": True,
+            "recorded": True,
+            "idempotent": False,
+            "filing_snapshot_id": row["filing_snapshot_id"],
+            "form": args.form,
+            "period": args.period,
+            "source_sha256": evidence.source_sha256,
+            "archived_file": (
+                str(archived_path) if args.show_paths else archived_path.name
+            ),
+            "verification": verification,
+        }
+    )
+    return 0
+
+
+def _existing_filing_receipt(db: LedgerDB, source_sha256: str) -> dict[str, Any] | None:
+    row = db.connection.execute(
+        """
+        SELECT fs.*, p.period_key
+        FROM filing_snapshots fs
+        JOIN periods p ON p.period_id = fs.period_id
+        WHERE UPPER(fs.source_hash) = ?
+        ORDER BY fs.created_at DESC
+        LIMIT 1
+        """,
+        (source_sha256.upper(),),
+    ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def _final_filing_for_form(
+    db: LedgerDB,
+    period_key: str,
+    form: str,
+) -> dict[str, Any] | None:
+    rows = db.connection.execute(
+        """
+        SELECT fs.*
+        FROM filing_snapshots fs
+        JOIN periods p ON p.period_id = fs.period_id
+        WHERE p.period_key = ?
+          AND fs.status IN ('filed', 'submitted', 'final')
+        ORDER BY fs.created_at DESC
+        """,
+        (period_key,),
+    ).fetchall()
+    for row in rows:
+        payload = json.loads(row["payload_json"])
+        row_form = str(row["form_code"] or payload.get("form") or "")
+        if row_form.lower().replace("modelo", "").strip() == form:
+            return dict(row)
+    return None
+
+
 def _cmd_calculate(args: argparse.Namespace) -> int:
     if args.form in QUARTERLY_FORM_CODES and args.quarter is None:
         raise ValueError(f"Modelo {args.form} requires --quarter")
@@ -3150,7 +3326,12 @@ def _period_prepare_calculations(
     for form in sorted(due_forms):
         preview_result = preview.get(f"modelo{form}")
         if preview_result is not None:
-            calculations[form] = {"blocked": False, **dict(preview_result)}
+            calculations[form] = {
+                "blocked": False,
+                "form": form,
+                "period": f"{year}-Q{quarter}",
+                **dict(preview_result),
+            }
             continue
         withholding_type = {
             "111": "professional",
@@ -3178,6 +3359,8 @@ def _period_prepare_calculations(
             continue
         calculations[form] = {
             "blocked": True,
+            "form": form,
+            "period": f"{year}-Q{quarter}",
             "reason": f"Quarter preparation does not yet map Modelo {form}",
         }
     return calculations

@@ -103,8 +103,14 @@ def build_period_preparation(
     else:
         status = "in_progress"
 
+    manual_filing = _manual_filing_checklist(
+        calculations,
+        period_key=period_key,
+        due_forms=due_forms,
+        cash_check=cash,
+    )
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "report_type": "quarter_tax_preparation",
         "period": period_key,
         "as_of": as_of.isoformat(),
@@ -124,14 +130,76 @@ def build_period_preparation(
         "expected_items": expected_items,
         "calculation_blockers": calculation_blockers,
         "filing_blockers": filing_blockers,
+        "manual_filing": manual_filing,
         "manual_submission_steps": [
-            "Compare each AEAT casilla with the generated form report.",
-            "Enter or import the reviewed values in the AEAT form.",
+            "Enter the value-bound casillas below in the corresponding AEAT form.",
             "Choose payment or compensation using the cash-check result.",
             "Submit with the taxpayer certificate and download the filed PDF/justificante.",
-            "Record the immutable filed snapshot and archive its evidence.",
+            "Mark the submitted obligation as filed, close the period after every due form is filed, and record each receipt.",
+            "Run filings record-receipt with the filed PDF and this package's calculation JSON.",
         ],
     }
+
+
+def _manual_filing_checklist(
+    calculations: Mapping[str, Mapping[str, Any]],
+    *,
+    period_key: str,
+    due_forms: set[str],
+    cash_check: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    cash_by_form = {
+        str(row["form"]): row for row in cash_check.get("forms", [])
+    }
+    checklist: list[dict[str, Any]] = []
+    for form in sorted(due_forms):
+        calculation = calculations.get(form) or {}
+        item: dict[str, Any] = {
+            "form": form,
+            "calculation_file": f"calculations/modelo{form}.json",
+            "blocked": bool(calculation.get("blocked")),
+            "casillas": [],
+            "declared_entries": [],
+            "cash_action": dict(cash_by_form.get(form) or {}),
+            "receipt_command": None,
+        }
+        if form in {"130", "303"}:
+            item["receipt_command"] = (
+                "autonomo-tax filings record-receipt "
+                f"--period {period_key} --form {form} --filed-pdf <FILED_PDF> "
+                f"--calculation calculations/modelo{form}.json"
+            )
+        if item["blocked"]:
+            item["reason"] = calculation.get("reason", "calculation blocked")
+            checklist.append(item)
+            continue
+        values = calculation.get("values") or {}
+        item["casillas"] = [
+            {"casilla": str(key), "value": str(value)}
+            for key, value in sorted(
+                (
+                    (key, value)
+                    for key, value in values.items()
+                    if str(key).isdigit() and _is_nonzero(value)
+                ),
+                key=lambda entry: int(str(entry[0])),
+            )
+        ]
+        if form == "349":
+            item["declared_entries"] = [
+                {"key": str(key), "value": str(value)}
+                for key, value in sorted(values.items(), key=lambda entry: str(entry[0]))
+                if not str(key).isdigit() and _is_nonzero(value)
+            ]
+        checklist.append(item)
+    return checklist
+
+
+def _is_nonzero(value: Any) -> bool:
+    try:
+        return Decimal(str(value)) != Decimal("0")
+    except Exception:
+        return bool(value)
 
 
 def write_period_preparation(
@@ -276,6 +344,36 @@ def _markdown(report: Mapping[str, Any]) -> str:
     else:
         lines.append("None.")
     lines.extend(["", "## Manual filing", ""])
+    for item in report.get("manual_filing", []):
+        form = item["form"]
+        lines.extend([f"### Modelo {form}", ""])
+        if item.get("blocked"):
+            lines.extend([f"- Blocked: {item.get('reason', 'calculation blocked')}.", ""])
+            continue
+        casillas = item.get("casillas") or []
+        if casillas:
+            lines.extend(
+                f"- Casilla {row['casilla']}: {row['value']}." for row in casillas
+            )
+        entries = item.get("declared_entries") or []
+        if entries:
+            lines.extend(
+                f"- Declared entry {row['key']}: {row['value']}." for row in entries
+            )
+        cash_action = item.get("cash_action") or {}
+        if cash_action:
+            payable = cash_action.get("payable_eur")
+            lines.append(
+                f"- Cash action: {cash_action.get('status', 'review_required')}; "
+                f"payable {payable if payable is not None else 'review required'} EUR."
+            )
+        lines.append(f"- Calculation: `{item['calculation_file']}`.")
+        if item.get("receipt_command"):
+            lines.append(f"- Receipt: `{item['receipt_command']}`.")
+        else:
+            lines.append("- Receipt: preserve the filed evidence and use a reviewed typed snapshot.")
+        lines.append("")
+    lines.extend(["### Submission sequence", ""])
     lines.extend(
         f"{index}. {step}"
         for index, step in enumerate(report["manual_submission_steps"], start=1)
