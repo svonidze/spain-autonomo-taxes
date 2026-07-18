@@ -832,6 +832,13 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
         help="Include absolute private filesystem paths in JSON output",
     )
     filings_receipt.set_defaults(_operational_handler=_cmd_filing_receipt)
+    filings_refresh = filings_sub.add_parser(
+        "refresh-evidence",
+        help="Append newly extractable filed-return evidence without replaying accounting rows",
+    )
+    _db_arg(filings_refresh)
+    filings_refresh.add_argument("--document-inventory", type=Path, required=True)
+    filings_refresh.set_defaults(_operational_handler=_cmd_filings_refresh_evidence)
 
     calculate = subparsers.add_parser("calculate", help="Calculate a form from reviewed SQLite rows")
     _db_arg(calculate)
@@ -859,6 +866,12 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     calculate.add_argument(
         "--previous-vat-compensation",
         help="Modelo 303 compensation balance entering the quarter; defaults to the prior filed snapshot",
+    )
+    calculate.add_argument(
+        "--final-vat-settlement",
+        choices=["compensate", "refund"],
+        default="compensate",
+        help="For Q4 Modelo 303/390, carry a negative result forward or request its refund",
     )
     calculate.add_argument("--withholding-and-payments")
     calculate.add_argument("--reduction")
@@ -3188,6 +3201,15 @@ def _cmd_filing_snapshot(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_filings_refresh_evidence(args: argparse.Namespace) -> int:
+    from .history_migration import refresh_filing_inventory
+
+    with open_ledger_db(args.db) as db:
+        result = refresh_filing_inventory(db, args.document_inventory)
+    _emit(result)
+    return 0
+
+
 def _cmd_filing_receipt(args: argparse.Namespace) -> int:
     from .filing_evidence import extract_filing_evidence
     from .filing_receipts import (
@@ -3374,10 +3396,17 @@ def _cmd_calculate(args: argparse.Namespace) -> int:
                     "Run period annual-status for the complete report."
                 )
         modelo303_periods: tuple[str, ...] = ()
+        modelo303_opening_compensation = Decimal("0.00")
         periods = [f"{args.year}-Q{args.quarter}"] if args.quarter else []
         if args.form == "390":
             modelo303_periods = _modelo303_inventory_periods(db, args.year)
             periods = list(modelo303_periods)
+            first_quarter = int(modelo303_periods[0][-1])
+            modelo303_opening_compensation = _previous_filed_vat_compensation(
+                db,
+                args.year,
+                first_quarter,
+            )
         if args.mode == "production":
             period_rows = {row["period_key"]: row for row in db.list_periods()}
             current_period = f"{args.year}-Q{args.quarter}" if args.quarter else None
@@ -3443,7 +3472,12 @@ def _cmd_calculate(args: argparse.Namespace) -> int:
                 args.reduction = str(baseline["filed_values"].get("13", "0"))
             else:
                 args.reduction = "0"
-        result = _calculate(args, rows, modelo303_periods=modelo303_periods)
+        result = _calculate(
+            args,
+            rows,
+            modelo303_periods=modelo303_periods,
+            modelo303_opening_compensation=modelo303_opening_compensation,
+        )
         payload = _calculation_payload(result)
         baseline = _filed_baseline(db, result.period, args.form)
         if baseline is not None:
@@ -3522,6 +3556,7 @@ def _calculate(
     rows: list[TaxRow],
     *,
     modelo303_periods: tuple[str, ...] = (),
+    modelo303_opening_compensation: Decimal = Decimal("0.00"),
 ) -> CalculationResult:
     rule = difficult_expense_rule_for_year(args.year)
     if args.form == "130":
@@ -3552,15 +3587,29 @@ def _calculate(
             year=args.year,
             quarter=args.quarter,
             previous_compensation=Decimal(args.previous_vat_compensation),
+            final_settlement=args.final_vat_settlement,
         )
     if args.form == "349":
         return calculate_modelo349_rows(rows, year=args.year, quarter=args.quarter)
     if args.form == "390":
+        quarterly_reports: list[CalculationResult] = []
+        compensation = modelo303_opening_compensation
+        for period in modelo303_periods:
+            report = calculate_modelo303_rows(
+                rows,
+                year=args.year,
+                quarter=int(period[-1]),
+                previous_compensation=compensation,
+                final_settlement=(
+                    args.final_vat_settlement
+                    if int(period[-1]) == 4
+                    else "compensate"
+                ),
+            )
+            quarterly_reports.append(report)
+            compensation = Decimal(str(report.values["compensation_carryforward"]))
         return calculate_modelo390(
-            [
-                calculate_modelo303_rows(rows, year=args.year, quarter=int(period[-1]))
-                for period in modelo303_periods
-            ],
+            quarterly_reports,
             year=args.year,
             expected_periods=modelo303_periods,
         )

@@ -33,11 +33,15 @@ MODELO303_RATE_BOXES = {
     Decimal("10.00"): ("04", "05", "06"),
     Decimal("21.00"): ("07", "08", "09"),
 }
-MODELO303_NON_ADDITIVE_BOXES = {"02", "05", "08", "151", "65"}
 MODELO303_RULE_SOURCE = (
     "AEAT Modelo 303 instructions 2026, pages 1-3: "
     "https://sede.agenciatributaria.gob.es/Sede/todas-gestiones/impuestos-tasas/iva/"
     "modelo-303-iva-autoliquidacion_/instrucciones-2026/instrucciones-02-12-2t-4t-2026.html"
+)
+MODELO390_RULE_SOURCE = (
+    "AEAT Modelo 390 instructions 2025, sections 5, 7, 9 and 10: "
+    "https://sede.agenciatributaria.gob.es/static_files/Sede/Procedimiento_ayuda/"
+    "G412/Instrucciones_modelo_390-2025.pdf"
 )
 MODELO347_RULE_SOURCE = (
     "AEAT Modelo 347 instructions: operation key A/B, annual threshold EUR 3,005.06, "
@@ -150,7 +154,12 @@ def calculate_modelo303_rows(
     year: int,
     quarter: int,
     previous_compensation: Decimal = ZERO,
+    final_settlement: str = "compensate",
 ) -> CalculationResult:
+    if final_settlement not in {"compensate", "refund"}:
+        raise ValueError("final_settlement must be 'compensate' or 'refund'")
+    if final_settlement == "refund" and quarter != 4:
+        raise CalculationBlocked("Modelo 303 refund is available only for the final period of the year")
     previous_compensation = cents(max(previous_compensation, ZERO))
     selected = [row for row in rows if _in_quarter(row.tax_date, year, quarter) and row.include_modelo303]
     unknown = [row.transaction_id for row in selected if row.tax_code == "unknown"]
@@ -209,6 +218,12 @@ def calculate_modelo303_rows(
     current_domestic, asset_domestic = _split_current_and_assets(domestic_deductible + other_reverse_input)
     current_imports, asset_imports = _split_current_and_assets(import_deductible)
     current_intracommunity, asset_intracommunity = _split_current_and_assets(intracommunity_input)
+    current_eu_goods, asset_eu_goods = _split_current_and_assets(
+        row for row in intracommunity_input if row.tax_code == "eu_goods_expense"
+    )
+    eu_service_input = [
+        row for row in intracommunity_input if row.tax_code == "eu_service_expense"
+    ]
 
     box_rows: dict[tuple[str, str], list[TaxRow]] = {
         ("10", "11"): intracommunity,
@@ -243,10 +258,18 @@ def calculate_modelo303_rows(
     # The core engine currently models the common-territory general regime. Settlement
     # adjustments remain explicit future inputs rather than inferred balancing values.
     pre_compensation_result = cents(_decimal(values["46"]))
-    compensation_applied = min(previous_compensation, max(pre_compensation_result, ZERO))
+    compensation_applied = (
+        previous_compensation
+        if final_settlement == "refund"
+        else min(previous_compensation, max(pre_compensation_result, ZERO))
+    )
     pending_previous_compensation = cents(previous_compensation - compensation_applied)
     liquidation_result = cents(pre_compensation_result - compensation_applied)
-    current_period_compensation = cents(max(-liquidation_result, ZERO))
+    refundable = cents(max(-liquidation_result, ZERO))
+    if final_settlement == "refund" and refundable == ZERO:
+        raise CalculationBlocked("Modelo 303 refund requires a negative final-period result")
+    current_period_compensation = refundable if final_settlement == "compensate" else ZERO
+    refund_requested = refundable if final_settlement == "refund" else ZERO
     compensation_carryforward = cents(
         pending_previous_compensation + current_period_compensation
     )
@@ -255,12 +278,13 @@ def calculate_modelo303_rows(
             "64": values["46"],
             "65": Decimal("100.00"),
             "66": values["46"],
-            "69": values["46"],
+            "69": liquidation_result,
             "110": previous_compensation,
             "78": compensation_applied,
             "87": pending_previous_compensation,
             "71": liquidation_result,
             "72": current_period_compensation,
+            "73": refund_requested,
             "compensation_carryforward": compensation_carryforward,
             "domestic_output_base": _sum(output, "taxable_base_eur"),
             "domestic_output_vat": _sum(output, "vat_eur"),
@@ -268,6 +292,46 @@ def calculate_modelo303_rows(
             "reverse_charge_output_vat": _sum(intracommunity + other_reverse, "vat_eur"),
             "domestic_input_base": _sum(current_domestic + asset_domestic, "taxable_base_eur"),
             "domestic_input_vat": _sum(current_domestic + asset_domestic, "deductible_vat_eur"),
+            "domestic_current_input_base": _sum(current_domestic, "taxable_base_eur"),
+            "domestic_current_input_vat": _sum(current_domestic, "deductible_vat_eur"),
+            "domestic_asset_input_base": _sum(asset_domestic, "taxable_base_eur"),
+            "domestic_asset_input_vat": _sum(asset_domestic, "deductible_vat_eur"),
+            "import_current_input_base": _sum(current_imports, "taxable_base_eur"),
+            "import_current_input_vat": _sum(current_imports, "deductible_vat_eur"),
+            "import_asset_input_base": _sum(asset_imports, "taxable_base_eur"),
+            "import_asset_input_vat": _sum(asset_imports, "deductible_vat_eur"),
+            "intracommunity_goods_current_input_base": _sum(
+                current_eu_goods,
+                "taxable_base_eur",
+            ),
+            "intracommunity_goods_current_input_vat": _sum(
+                current_eu_goods,
+                "deductible_vat_eur",
+            ),
+            "intracommunity_goods_asset_input_base": _sum(
+                asset_eu_goods,
+                "taxable_base_eur",
+            ),
+            "intracommunity_goods_asset_input_vat": _sum(
+                asset_eu_goods,
+                "deductible_vat_eur",
+            ),
+            "intracommunity_service_input_base": _sum(
+                eu_service_input,
+                "taxable_base_eur",
+            ),
+            "intracommunity_service_input_vat": _sum(
+                eu_service_input,
+                "deductible_vat_eur",
+            ),
+            "reverse_charge_service_base": _sum(
+                [
+                    row
+                    for row in intracommunity + other_reverse
+                    if row.tax_code in {"eu_service_expense", "non_eu_service_expense"}
+                ],
+                "taxable_base_eur",
+            ),
             "reverse_charge_input_vat": _sum(
                 intracommunity_input + other_reverse_input,
                 "deductible_vat_eur",
@@ -349,29 +413,120 @@ def calculate_modelo390(
         raise CalculationBlocked(
             f"Modelo 390 period inventory mismatch; missing: {missing}; unexpected: {unexpected}"
         )
-    keys = sorted(
-        {
-            key
-            for report in reports
-            for key, value in report.values.items()
-            if isinstance(value, Decimal) and key not in MODELO303_NON_ADDITIVE_BOXES
-        }
+    reports.sort(key=lambda report: report.period)
+    prior_year_balance = _decimal(reports[0].values.get("110", ZERO))
+    current_year_balance = ZERO
+    prior_year_applied = ZERO
+    total_payable = ZERO
+    final_period_compensation = ZERO
+    final_period_refund = ZERO
+    previous_carry: Decimal | None = None
+    last_index = len(reports) - 1
+    for index, report in enumerate(reports):
+        opening = _decimal(report.values.get("110", ZERO))
+        applied = _decimal(report.values.get("78", ZERO))
+        pending_previous = _decimal(report.values.get("87", ZERO))
+        current_generated = _decimal(report.values.get("72", ZERO))
+        current_refund = _decimal(report.values.get("73", ZERO))
+        liquidation = _decimal(report.values.get("71", report.values.get("result", ZERO)))
+        if any(value < ZERO for value in (opening, applied, pending_previous, current_generated, current_refund)):
+            raise CalculationBlocked(f"Modelo 390 received a negative compensation casilla in {report.period}")
+        if current_generated and current_refund:
+            raise CalculationBlocked(
+                f"Modelo 390 cannot treat {report.period} as both compensation and refund"
+            )
+        if current_refund and index != last_index:
+            raise CalculationBlocked(
+                f"Modelo 390 received a refund outside the final period in {report.period}"
+            )
+        if previous_carry is not None and abs(opening - previous_carry) > Decimal("0.02"):
+            raise CalculationBlocked(
+                f"Modelo 390 compensation chain breaks at {report.period}: "
+                f"opening {opening:.2f}, expected {previous_carry:.2f}"
+            )
+        if applied - opening > Decimal("0.02"):
+            raise CalculationBlocked(f"Modelo 390 applies more compensation than available in {report.period}")
+
+        applied_to_prior_year = min(prior_year_balance, applied)
+        prior_year_balance = cents(prior_year_balance - applied_to_prior_year)
+        prior_year_applied = cents(prior_year_applied + applied_to_prior_year)
+        applied_to_current_year = cents(applied - applied_to_prior_year)
+        if applied_to_current_year - current_year_balance > Decimal("0.02"):
+            raise CalculationBlocked(
+                f"Modelo 390 cannot attribute applied compensation in {report.period}"
+            )
+        current_year_balance = cents(current_year_balance - applied_to_current_year)
+        expected_pending = cents(prior_year_balance + current_year_balance)
+        if abs(pending_previous - expected_pending) > Decimal("0.02"):
+            raise CalculationBlocked(
+                f"Modelo 390 pending compensation does not reconcile in {report.period}: "
+                f"casilla 87 is {pending_previous:.2f}, expected {expected_pending:.2f}"
+            )
+
+        if index == last_index:
+            final_period_compensation = current_generated
+            final_period_refund = current_refund
+        else:
+            current_year_balance = cents(current_year_balance + current_generated)
+        previous_carry = cents(pending_previous + current_generated)
+        total_payable = cents(total_payable + max(liquidation, ZERO))
+
+    total_output_vat = _sum_report_values(reports, "27")
+    total_deductible_vat = _sum_report_values(reports, "45")
+    annual_general_result = cents(total_output_vat - total_deductible_vat)
+    liquidation_result = cents(annual_general_result - prior_year_applied)
+    closing_compensation = cents(
+        prior_year_balance + current_year_balance + final_period_compensation
     )
-    values = {
-        key: cents(sum((_decimal(report.values.get(key, ZERO)) for report in reports), ZERO))
-        for key in keys
+    if previous_carry is not None and abs(closing_compensation - previous_carry) > Decimal("0.02"):
+        raise CalculationBlocked("Modelo 390 closing compensation does not match the final Modelo 303")
+
+    domestic_operations = _sum_report_values(reports, "domestic_output_base")
+    eu_supplies = _sum_report_values(reports, "59")
+    exports = _sum_report_values(reports, "60")
+    outside_scope = _sum_report_values(reports, "120")
+    values: dict[str, Decimal | str] = {
+        "47": total_output_vat,
+        "48": _sum_report_values(reports, "domestic_current_input_base"),
+        "49": _sum_report_values(reports, "domestic_current_input_vat"),
+        "50": _sum_report_values(reports, "domestic_asset_input_base"),
+        "51": _sum_report_values(reports, "domestic_asset_input_vat"),
+        "52": _sum_report_values(reports, "import_current_input_base"),
+        "53": _sum_report_values(reports, "import_current_input_vat"),
+        "54": _sum_report_values(reports, "import_asset_input_base"),
+        "55": _sum_report_values(reports, "import_asset_input_vat"),
+        "56": _sum_report_values(reports, "intracommunity_goods_current_input_base"),
+        "57": _sum_report_values(reports, "intracommunity_goods_current_input_vat"),
+        "58": _sum_report_values(reports, "intracommunity_goods_asset_input_base"),
+        "59": _sum_report_values(reports, "intracommunity_goods_asset_input_vat"),
+        "597": _sum_report_values(reports, "intracommunity_service_input_base"),
+        "598": _sum_report_values(reports, "intracommunity_service_input_vat"),
+        "64": total_deductible_vat,
+        "65": annual_general_result,
+        "84": annual_general_result,
+        "85": prior_year_applied,
+        "86": liquidation_result,
+        "95": total_payable,
+        "97": final_period_compensation,
+        "98": final_period_refund,
+        "662": current_year_balance,
+        "99": domestic_operations,
+        "103": eu_supplies,
+        "104": exports,
+        "110": outside_scope,
+        "108": cents(domestic_operations + eu_supplies + exports + outside_scope),
+        "523": _sum_report_values(reports, "reverse_charge_service_base"),
+        "closing_compensation": closing_compensation,
+        "result": liquidation_result,
+        "rule_source": MODELO390_RULE_SOURCE,
     }
-    for key in MODELO303_NON_ADDITIVE_BOXES:
-        nonzero = {_decimal(report.values.get(key, ZERO)) for report in reports} - {ZERO}
-        if len(nonzero) > 1:
-            raise CalculationBlocked(f"Modelo 390 found inconsistent non-additive casilla {key}")
-        values[key] = next(iter(nonzero), ZERO)
     return CalculationResult(
         "390",
         str(year),
         values,
         warnings=(
-            "This is an inventory-driven annual reconciliation of Modelo 303 casillas, not an AEAT-ready Modelo 390 submission file.",
+            "Casillas 84/85/86/95/97/662 follow the cited AEAT annual settlement rules and preserve the sequential Modelo 303 compensation chain.",
+            "The output covers the common general-regime categories modeled by the ledger; special regimes, prorrata, rectifications, regional allocation, and rare statistical boxes still require explicit review before filing.",
         ),
     )
 
@@ -524,6 +679,10 @@ def _in_quarter(value: date, year: int, quarter: int) -> bool:
 
 def _sum(rows: Iterable[TaxRow], field_name: str) -> Decimal:
     return cents(sum((getattr(row, field_name) for row in rows), ZERO))
+
+
+def _sum_report_values(reports: Iterable[CalculationResult], key: str) -> Decimal:
+    return cents(sum((_decimal(report.values.get(key, ZERO)) for report in reports), ZERO))
 
 
 def _modelo303_rate(row: TaxRow) -> Decimal:

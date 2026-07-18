@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from pathlib import Path
 import re
@@ -44,6 +44,8 @@ class Modelo303Values:
     result: Decimal
     extraction_status: str
     monetary_sequence: tuple[Decimal, ...]
+    settlement_casillas: tuple[tuple[str, Decimal], ...] = ()
+    settlement_extraction_status: str = "not_extracted"
 
     @property
     def net_local_input_base(self) -> Decimal:
@@ -52,6 +54,17 @@ class Modelo303Values:
     @property
     def net_local_input_vat(self) -> Decimal:
         return cents(self.deductible_vat - self.output_vat)
+
+    @property
+    def settlement_values(self) -> dict[str, Decimal]:
+        return dict(self.settlement_casillas)
+
+    @property
+    def compensation_carryforward(self) -> Decimal | None:
+        if self.settlement_extraction_status != "casillas_extracted":
+            return None
+        values = self.settlement_values
+        return cents(max(values["87"], Decimal("0.00")) + max(values["72"], Decimal("0.00")))
 
 
 def build_modelo303_vat_crosscheck(
@@ -105,7 +118,13 @@ def extract_modelo303_values(path: Path) -> Modelo303Values:
     reader = PdfReader(str(path))
     if len(reader.pages) < 2:
         raise ValueError(f"Modelo 303 report has no form page: {path}")
-    return values_from_monetary_sequence(_extract_page2_monetary_sequence(reader.pages[1]))
+    values = values_from_monetary_sequence(_extract_page2_monetary_sequence(reader.pages[1]))
+    settlement_casillas, settlement_status = _extract_settlement_casillas(reader.pages)
+    return replace(
+        values,
+        settlement_casillas=settlement_casillas,
+        settlement_extraction_status=settlement_status,
+    )
 
 
 def values_from_monetary_sequence(sequence: list[Decimal] | tuple[Decimal, ...]) -> Modelo303Values:
@@ -216,6 +235,66 @@ def _extract_page2_monetary_sequence(page) -> list[Decimal]:
 
     page.extract_text(visitor_text=visitor)
     return [amount for _y, _x, amount in sorted(values, key=lambda item: (-item[0], item[1]))]
+
+
+SETTLEMENT_BOXES = ("64", "110", "78", "87", "69", "71", "72", "73")
+
+
+def _extract_settlement_casillas(pages) -> tuple[tuple[tuple[str, Decimal], ...], str]:
+    positioned_pages: list[list[tuple[str, Decimal, Decimal, Decimal]]] = []
+    for page in pages:
+        fragments: list[tuple[str, Decimal, Decimal, Decimal]] = []
+
+        def visitor(fragment: str, _cm, tm, _font_dict, font_size: float) -> None:
+            value = fragment.strip()
+            if not value:
+                return
+            fragments.append(
+                (
+                    value,
+                    Decimal(str(tm[4])),
+                    Decimal(str(tm[5])),
+                    Decimal(str(font_size)),
+                )
+            )
+
+        page.extract_text(visitor_text=visitor)
+        positioned_pages.append(fragments)
+    return _settlement_casillas_from_fragments(positioned_pages)
+
+
+def _settlement_casillas_from_fragments(
+    positioned_pages: list[list[tuple[str, Decimal, Decimal, Decimal]]],
+) -> tuple[tuple[tuple[str, Decimal], ...], str]:
+    found: dict[str, Decimal] = {}
+    recognized: set[str] = set()
+    for fragments in positioned_pages:
+        for label, label_x, label_y, font_size in fragments:
+            if label not in SETTLEMENT_BOXES or font_size > Decimal("4"):
+                continue
+            if label in {"72", "73"}:
+                if label_x >= Decimal("150") or label_y <= Decimal("650"):
+                    if label != "73" or label_x >= Decimal("180") or not Decimal("500") <= label_y <= Decimal("550"):
+                        continue
+            elif label_x <= Decimal("400") or not Decimal("350") <= label_y <= Decimal("580"):
+                continue
+            recognized.add(label)
+            candidates: list[tuple[Decimal, Decimal, Decimal]] = []
+            for value, x, y, value_font_size in fragments:
+                if x <= label_x + Decimal("10") or abs(y - label_y) > Decimal("5"):
+                    continue
+                if value_font_size < Decimal("5") or not re.fullmatch(r"-?[0-9.]+,[0-9]{2}", value):
+                    continue
+                candidates.append((abs(y - label_y), x, parse_amount(value)))
+            if candidates:
+                found[label] = cents(min(candidates, key=lambda item: (item[0], item[1]))[2])
+
+    if not recognized:
+        return (), "settlement_layout_not_found"
+    values = tuple((box, found.get(box, Decimal("0.00"))) for box in SETTLEMENT_BOXES if box in recognized)
+    if recognized == set(SETTLEMENT_BOXES):
+        return values, "casillas_extracted"
+    return values, "incomplete_settlement_layout"
 
 
 def _raw_vat_bearing_totals_by_period(rows: list[RawXoloExpense]) -> dict[str, dict[str, Decimal]]:

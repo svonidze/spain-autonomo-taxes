@@ -70,14 +70,24 @@ def extract_filing_evidence(path: Path) -> FilingEvidence:
             payload["extraction_status"] = "values_unavailable"
             payload["extraction_error"] = str(exc)
         else:
-            payload["filed_values"] = {
+            filed_values = {
                 "output_base": f"{values.output_base:.2f}",
                 "output_vat": f"{values.output_vat:.2f}",
                 "deductible_base": f"{values.deductible_base:.2f}",
                 "deductible_vat": f"{values.deductible_vat:.2f}",
                 "result": f"{values.result:.2f}",
             }
+            filed_values.update(
+                {key: f"{value:.2f}" for key, value in values.settlement_casillas}
+            )
+            if values.compensation_carryforward is not None:
+                filed_values["compensation_carryforward"] = (
+                    f"{values.compensation_carryforward:.2f}"
+                )
+            payload["filed_values"] = filed_values
             payload["extraction_status"] = values.extraction_status
+            payload["settlement_extraction_status"] = values.settlement_extraction_status
+            payload["value_extraction_schema"] = "modelo303_v3"
 
     return FilingEvidence(
         form_code=form_code,

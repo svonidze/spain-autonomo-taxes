@@ -204,22 +204,9 @@ def migrate_xolo_history(
                 counts["historical_adjustments"] += 1
 
     if document_inventory_csv is not None:
-        inventory_path = Path(document_inventory_csv)
-        inventory_rows = _load_rows(inventory_path)
-        inventory_batch = db.add_import_batch(
-            source_name="xolo_document_inventory",
-            source_hash=_file_hash(inventory_path),
-            batch_key=inventory_path.name,
-            notes=f"Filing evidence inventory from {inventory_path}",
-        )
+        inventory_result = refresh_filing_inventory(db, document_inventory_csv)
         counts["import_batches"] += 1
-        for row in inventory_rows:
-            if _import_filing_inventory_row(
-                db,
-                row=row,
-                import_batch_id=inventory_batch["import_batch_id"],
-            ):
-                counts["filed_obligations_from_inventory"] += 1
+        counts["filed_obligations_from_inventory"] += inventory_result["recognized_rows"]
 
     counts["classified_source_book_obligations"] += _classify_source_book_obligations(
         db,
@@ -228,6 +215,41 @@ def migrate_xolo_history(
     counts["seeded_obligations"] += _seed_missing_obligations(db, source_rows)
 
     return {"counts": dict(counts), "issues": issues}
+
+
+def refresh_filing_inventory(
+    db: LedgerDB,
+    document_inventory_csv: str | Path,
+) -> dict[str, int]:
+    inventory_path = Path(document_inventory_csv)
+    inventory_rows = _load_rows(inventory_path)
+    inventory_batch = db.add_import_batch(
+        source_name="xolo_document_inventory",
+        source_hash=_file_hash(inventory_path),
+        batch_key=inventory_path.name,
+        notes=f"Filing evidence inventory from {inventory_path}",
+    )
+    snapshots_before = db.connection.execute(
+        "SELECT COUNT(*) FROM filing_snapshots"
+    ).fetchone()[0]
+    recognized_rows = sum(
+        int(
+            _import_filing_inventory_row(
+                db,
+                row=row,
+                import_batch_id=inventory_batch["import_batch_id"],
+            )
+        )
+        for row in inventory_rows
+    )
+    snapshots_after = db.connection.execute(
+        "SELECT COUNT(*) FROM filing_snapshots"
+    ).fetchone()[0]
+    return {
+        "inventory_rows": len(inventory_rows),
+        "recognized_rows": recognized_rows,
+        "new_snapshots": snapshots_after - snapshots_before,
+    }
 
 
 def _import_filed_baseline(db: LedgerDB, *, row: dict[str, str], import_batch_id: str) -> bool:
@@ -416,28 +438,49 @@ def _import_filing_inventory_row(
     if local_source.is_file():
         evidence = extract_filing_evidence(local_source)
         source_hash = (row.get("sha256") or evidence.source_sha256).strip().upper()
-        snapshot_exists = db.connection.execute(
-            "SELECT 1 FROM filing_snapshots WHERE source_hash = ?",
+        payload = {
+            **evidence.payload,
+            "inventory_import_batch_id": import_batch_id,
+            "drive_relative_path": (row.get("drive_relative_path") or "").strip(),
+            "drive_url": (row.get("drive_url") or "").strip(),
+        }
+        existing_snapshots = db.connection.execute(
+            "SELECT snapshot_hash, payload_json FROM filing_snapshots WHERE source_hash = ?",
             (source_hash,),
-        ).fetchone()
-        if snapshot_exists is None:
+        ).fetchall()
+        extraction_schema = str(payload.get("value_extraction_schema") or "")
+        schema_already_imported = any(
+            str(json.loads(snapshot["payload_json"]).get("value_extraction_schema") or "")
+            == extraction_schema
+            for snapshot in existing_snapshots
+        )
+        should_import = not existing_snapshots or (
+            bool(extraction_schema) and not schema_already_imported
+        )
+        if should_import:
             filed_on = evidence.filed_on or (row.get("received_at") or "").strip()
             if not filed_on:
                 filed_on = db.connection.execute(
                     "SELECT ends_on FROM periods WHERE period_key = ?",
                     (recognized.period,),
                 ).fetchone()["ends_on"]
+            snapshot_hash = (
+                source_hash
+                if not existing_snapshots
+                else _stable_payload_hash(
+                    {
+                        "source_hash": source_hash,
+                        "value_extraction_schema": extraction_schema,
+                        "payload": payload,
+                    }
+                )
+            )
             db.create_filing_snapshot(
                 recognized.period,
                 status="baseline",
                 filed_on=filed_on,
-                payload={
-                    **evidence.payload,
-                    "inventory_import_batch_id": import_batch_id,
-                    "drive_relative_path": (row.get("drive_relative_path") or "").strip(),
-                    "drive_url": (row.get("drive_url") or "").strip(),
-                },
-                snapshot_hash=source_hash,
+                payload=payload,
+                snapshot_hash=snapshot_hash,
                 source_hash=source_hash,
                 form_code=evidence.form_code,
                 submission_reference=evidence.submission_reference,
@@ -1681,9 +1724,16 @@ def _upsert_source_document(
     canonical_key = "|".join(
         [counterparty_id, document_type, document_number or line_key, issued_on]
     )
+    external_key = _external_key("document", canonical_key)
+    if existing is None:
+        existing_row = db.connection.execute(
+            "SELECT * FROM documents WHERE external_key = ?",
+            (external_key,),
+        ).fetchone()
+        existing = dict(existing_row) if existing_row is not None else None
     document = db.upsert_document(
         document_id=(existing["document_id"] if existing else _uuid_for("document", canonical_key)),
-        external_key=_external_key("document", canonical_key),
+        external_key=external_key,
         counterparty_id=counterparty_id,
         import_batch_id=import_batch_id,
         document_type=document_type,
@@ -1692,7 +1742,7 @@ def _upsert_source_document(
         period_key=period_key,
         currency="EUR",
         total_minor=total_minor,
-        lifecycle_status="approved",
+        lifecycle_status=(existing["lifecycle_status"] if existing else "approved"),
         source_hash=_stable_payload_hash({"kind": "canonical_document", "key": canonical_key}),
         expected_row_version=(existing["row_version"] if existing else None),
     )
