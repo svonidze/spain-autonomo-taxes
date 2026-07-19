@@ -865,15 +865,25 @@ def _render_markdown(report: Mapping[str, Any]) -> str:
         "",
         f"As of: {report['as_of']}.",
         "",
-        "| Outcome | Ready |",
-        "| --- | --- |",
-        f"| Accounting data | {_yes_no(summary['accounting_data_ready'])} |",
-        f"| Filing | {_yes_no(summary['filing_ready'])} |",
-        f"| Xolo archive | {_yes_no(summary['offboarding_archive_ready'])} |",
-        f"| Live operating proof | {_yes_no(summary['operational_acceptance_ready'])} |",
-        f"| Required tax settlements | {_required_gate_label(gates['required_tax_settlements'])} |",
-        f"| Replacement invoice channel | {_yes_no(summary['invoice_channel_ready'])} |",
-        f"| Cutover from Xolo | {_yes_no(summary['cutover_ready'])} |",
+        "| Outcome | Ready | Cutover role |",
+        "| --- | --- | --- |",
+        f"| Accounting data | {_yes_no(summary['accounting_data_ready'])} | required |",
+        f"| Filing | {_yes_no(summary['filing_ready'])} | informational |",
+        f"| Xolo archive | {_yes_no(summary['offboarding_archive_ready'])} | required |",
+        (
+            f"| Live operating proof | {_yes_no(summary['operational_acceptance_ready'])} | "
+            f"{_cutover_role(summary['operational_acceptance_required_for_cutover'])} |"
+        ),
+        (
+            "| Required tax settlements | "
+            f"{_required_gate_label(gates['required_tax_settlements'])} | "
+            f"{_cutover_role(summary['required_tax_settlements_required_for_cutover'])} |"
+        ),
+        (
+            f"| Replacement invoice channel | {_yes_no(summary['invoice_channel_ready'])} | "
+            f"{_cutover_role(summary['invoice_channel_required_for_cutover'])} |"
+        ),
+        f"| Cutover from Xolo | {_yes_no(summary['cutover_ready'])} | result |",
         "",
         "## Gate status",
         "",
@@ -917,6 +927,10 @@ def _render_markdown(report: Mapping[str, Any]) -> str:
 
 def _yes_no(value: Any) -> str:
     return "yes" if value else "no"
+
+
+def _cutover_role(required: Any) -> str:
+    return "required" if required else "informational"
 
 
 def _required_gate_label(gate: Mapping[str, Any]) -> str:
