@@ -825,6 +825,27 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     books_payload.add_argument("--template", type=Path, required=True)
     books_payload.add_argument("--out", type=Path, required=True)
     books_payload.set_defaults(_operational_handler=_cmd_books_aeat_payload)
+    books_write = books_sub.add_parser(
+        "aeat-write",
+        help="Populate the reviewed Registrar sheets in the official AEAT XLSX template",
+    )
+    _db_arg(books_write)
+    books_write.add_argument("--period", required=True)
+    books_write.add_argument("--taxpayer-tax-id")
+    books_write.add_argument("--allow-authoritative-history", action="store_true")
+    books_write.add_argument("--template", type=Path, required=True)
+    books_write.add_argument("--out", type=Path, required=True)
+    books_write.add_argument(
+        "--out-payload",
+        type=Path,
+        help="Optional JSON write plan retained beside the generated workbook",
+    )
+    books_write.add_argument(
+        "--out-manifest",
+        type=Path,
+        help="Optional audit manifest with template, payload, and workbook hashes",
+    )
+    books_write.set_defaults(_operational_handler=_cmd_books_aeat_write)
     books_validate = books_sub.add_parser(
         "aeat-validate",
         help="Upload an XLSX to the official AEAT validator and preserve its response",
@@ -3299,7 +3320,7 @@ def _cmd_books_aeat_preview(args: argparse.Namespace) -> int:
             "projection": str(target.resolve()),
             "period": args.period,
             "data_projection_ready": projection["data_projection_ready"],
-            "xlsx_generation_supported": False,
+            "xlsx_generation_supported": projection["xlsx_generation_supported"],
             "counts": projection["counts"],
         }
     )
@@ -3361,7 +3382,8 @@ def _cmd_books_aeat_payload(args: argparse.Namespace) -> int:
             "payload": str(target.resolve()),
             "period": args.period,
             "payload_ready": payload["payload_ready"],
-            "xlsx_generation_supported": False,
+            "xlsx_generation_supported": payload["xlsx_generation_supported"],
+            "xlsx_write_ready": payload["xlsx_write_ready"],
             "blocker_count": len(payload["blockers"]),
             "xlsx_generation_blocker_count": len(
                 payload["xlsx_generation_blockers"]
@@ -3369,7 +3391,116 @@ def _cmd_books_aeat_payload(args: argparse.Namespace) -> int:
             "writer_strategy_status": payload["writer_strategy_status"],
         }
     )
-    return 0 if payload["payload_ready"] else 2
+    return 0 if payload["xlsx_write_ready"] else 2
+
+
+def _cmd_books_aeat_write(args: argparse.Namespace) -> int:
+    from .aeat_books import (
+        AeatBookProjectionError,
+        build_aeat_book_projection,
+        failed_aeat_book_projection,
+    )
+    from .aeat_workbook import (
+        AeatWorkbookWriteError,
+        build_aeat_workbook_payload,
+        inspect_aeat_template,
+        write_aeat_workbook_payload,
+        write_aeat_workbook_xlsx,
+    )
+
+    try:
+        with open_ledger_db(args.db, read_only=True) as db:
+            projection = build_aeat_book_projection(
+                db,
+                period_key=args.period,
+                taxpayer_tax_id=args.taxpayer_tax_id,
+                allow_authoritative_history=args.allow_authoritative_history,
+            )
+    except AeatBookProjectionError as exc:
+        projection = failed_aeat_book_projection(
+            period_key=args.period,
+            message=str(exc),
+            allow_authoritative_history=args.allow_authoritative_history,
+        )
+    template_check = inspect_aeat_template(args.template)
+    payload = build_aeat_workbook_payload(
+        projection,
+        template_check=template_check,
+    )
+    payload_target = None
+    if args.out_payload is not None:
+        payload_target = write_aeat_workbook_payload(args.out_payload, payload)
+    if not payload["xlsx_write_ready"]:
+        _emit(
+            {
+                "ok": False,
+                "workbook_written": False,
+                "period": args.period,
+                "payload": (
+                    str(payload_target.resolve()) if payload_target is not None else None
+                ),
+                "blockers": payload["blockers"],
+                "xlsx_generation_blockers": payload["xlsx_generation_blockers"],
+                "writer_strategy_status": payload["writer_strategy_status"],
+            }
+        )
+        return 2
+    try:
+        target = write_aeat_workbook_xlsx(args.template, payload, args.out)
+    except AeatWorkbookWriteError as exc:
+        _emit(
+            {
+                "ok": False,
+                "workbook_written": False,
+                "period": args.period,
+                "error": str(exc),
+            }
+        )
+        return 2
+    workbook_sha256 = _sha256(target)
+    manifest_payload = {
+        "schema_version": 1,
+        "artifact_type": "aeat_unified_books_xlsx_manifest",
+        "period": args.period,
+        "source_template": {
+            "name": args.template.name,
+            "sha256": payload["template"]["actual_sha256"],
+        },
+        "payload": {
+            "name": payload_target.name if payload_target is not None else None,
+            "sha256": payload["payload_sha256"],
+        },
+        "workbook": {
+            "name": target.name,
+            "sha256": workbook_sha256,
+            "size_bytes": target.stat().st_size,
+        },
+        "counts": projection["counts"],
+        "writer_strategy_status": payload["writer_strategy_status"],
+        "validator_status": "not_run",
+    }
+    manifest_target = None
+    if args.out_manifest is not None:
+        manifest_target = _write_json(args.out_manifest, manifest_payload)
+    _emit(
+        {
+            "ok": True,
+            "workbook_written": True,
+            "workbook": str(target.resolve()),
+            "workbook_sha256": workbook_sha256,
+            "workbook_size_bytes": target.stat().st_size,
+            "payload": str(payload_target.resolve()) if payload_target is not None else None,
+            "payload_sha256": payload["payload_sha256"],
+            "manifest": (
+                str(manifest_target.resolve()) if manifest_target is not None else None
+            ),
+            "period": args.period,
+            "counts": projection["counts"],
+            "writer_strategy_status": payload["writer_strategy_status"],
+            "validator_status": "not_run",
+        }
+    )
+    return 0
 
 
 def _cmd_books_aeat_validate(args: argparse.Namespace) -> int:

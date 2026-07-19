@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import base64
-from datetime import datetime, timezone
+import copy
+from datetime import date, datetime, timezone
+from decimal import Decimal, InvalidOperation
 import hashlib
 import json
+import os
 from pathlib import Path
+import re
+import tempfile
 from typing import Any, Mapping, Sequence
 from urllib import error, parse, request
 import xml.etree.ElementTree as ET
@@ -25,6 +30,10 @@ TEMPLATE_DATA_CAPACITY = TEMPLATE_DATA_END_ROW - TEMPLATE_DATA_START_ROW + 1
 
 class AeatValidationConsentError(ValueError):
     """Raised when an AEAT upload was not explicitly confirmed."""
+
+
+class AeatWorkbookWriteError(ValueError):
+    """Raised when an official AEAT workbook cannot be emitted safely."""
 
 
 def _column_letter(index: int) -> str:
@@ -188,6 +197,41 @@ INPUT_SHEET_BY_CONTRACT = {
     "BIENES-INVERSIÓN": "Registrar bienes de inversión",
 }
 
+_ACTIVITY_SUBTYPE_CATEGORY = "__activity_subtype__"
+INPUT_LITERAL_CATEGORY_BY_CONTRACT = {
+    "EXPEDIDAS_INGRESOS": {
+        "C": "ACTIVIDAD",
+        "D": _ACTIVITY_SUBTYPE_CATEGORY,
+        "F": "TIPO FACTURA",
+        "G": "CONCEPTO INGRESO",
+        "N": "TIPO NIF",
+        "R": "CLAVE OPERACION",
+        "S": "CALIFICACION OPERACION",
+        "T": "OPERACION EXENTA",
+        "AC": "MEDIO UTILIZADO",
+        "AH": "SITUACION",
+    },
+    "RECIBIDAS_GASTOS": {
+        "C": "ACTIVIDAD",
+        "D": _ACTIVITY_SUBTYPE_CATEGORY,
+        "F": "TIPO FACTURA GASTO",
+        "G": "CONCEPTO GASTO",
+        "P": "TIPO NIF",
+        "T": "CLAVE OPERACION GASTO",
+        "AI": "MEDIO UTILIZADO",
+        "AN": "SITUACION",
+    },
+    "BIENES-INVERSIÓN": {
+        "C": "ACTIVIDAD",
+        "D": _ACTIVITY_SUBTYPE_CATEGORY,
+        "F": "TIPO BIEN",
+        "L": "METODO AMORTIZACION",
+        "W": "TIPO NIF",
+        "AI": "CAUSA BAJA BIEN",
+        "AN": "SITUACION",
+    },
+}
+
 TYPE_ROW_CONTRACTS = {
     "EXPEDIDAS_INGRESOS": (
         "Decimal (4,0)", "Alfanumérico (2)", "Alfanumérico (1)",
@@ -269,7 +313,25 @@ def inspect_aeat_template(
     try:
         with zipfile.ZipFile(source) as archive:
             workbook_sheets = _workbook_sheets(archive)
+            for package_part in {"xl/workbook.xml", *workbook_sheets.values()}:
+                missing_prefixes = _undeclared_ignorable_prefixes(
+                    archive.read(package_part)
+                )
+                if missing_prefixes:
+                    architecture_errors.append(
+                        f"{package_part} has undeclared mc:Ignorable prefixes: "
+                        + ", ".join(sorted(missing_prefixes))
+                    )
             shared_strings = _shared_strings(archive)
+            try:
+                literal_lookup = _code_literal_lookup(archive)
+            except AeatWorkbookWriteError as exc:
+                architecture_errors.append(str(exc))
+                literal_lookup = {}
+            if not literal_lookup:
+                architecture_errors.append(
+                    "AEAT template CODIGO-LITERAL lookup is empty"
+                )
             calc_chain_check = _calc_chain_check(archive)
             if not all(calc_chain_check.values()):
                 architecture_errors.append(
@@ -363,11 +425,11 @@ def inspect_aeat_template(
     architecture_valid = not errors and formula_mirrors
     writer_strategy = {
         "status": (
-            "validator_spike_required"
+            "input_sheet_writer_ready"
             if architecture_valid
             else "template_architecture_invalid"
         ),
-        "xlsx_generation_supported": False,
+        "xlsx_generation_supported": architecture_valid,
         "contract_sheets_are_formula_mirrors": formula_mirrors,
         "data_start_row": TEMPLATE_DATA_START_ROW,
         "data_end_row": TEMPLATE_DATA_END_ROW,
@@ -376,8 +438,9 @@ def inspect_aeat_template(
         "input_sheets": input_sheet_checks,
         "reason": (
             "The reviewed ALL-CAPS sheets are formula mirrors of Registrar input sheets. "
-            "The authoritative write target must be confirmed by the official AEAT validator "
-            "before XLSX generation is implemented."
+            "The deterministic writer populates only the unlocked Registrar cells and marks "
+            "the workbook for recalculation. Official validator acceptance remains a separate "
+            "manual gate."
         ),
     }
     return {
@@ -417,17 +480,7 @@ def build_aeat_workbook_payload(
             ASSET_COLUMNS, projection.get("asset_rows", [])
         ),
     }
-    generation_blockers = [
-        {
-            "code": "aeat_writer_strategy_unverified",
-            "subject": str(template_check.get("actual_sha256") or "template"),
-            "message": (
-                "The official template uses Registrar input sheets and ALL-CAPS formula "
-                "mirrors. Confirm the authoritative write strategy with the official AEAT "
-                "validator before generating XLSX."
-            ),
-        }
-    ]
+    generation_blockers: list[dict[str, Any]] = []
     for sheet_name, sheet in sheets.items():
         if int(sheet["row_count"]) <= TEMPLATE_DATA_CAPACITY:
             continue
@@ -442,7 +495,7 @@ def build_aeat_workbook_payload(
             }
         )
     payload: dict[str, Any] = {
-        "schema_version": 2,
+        "schema_version": 3,
         "payload_type": "aeat_unified_books_xlsx_write_plan",
         "period": projection.get("period"),
         "scope": projection.get("scope"),
@@ -460,18 +513,25 @@ def build_aeat_workbook_payload(
         "sheets": sheets,
         "blockers": blockers,
         "payload_ready": bool(projection.get("data_projection_ready")) and not blockers,
-        "xlsx_generation_supported": False,
+        "xlsx_generation_supported": True,
         "writer_strategy_status": (
             template_check.get("writer_strategy", {}).get("status")
-            or "validator_spike_required"
+            or (
+                "input_sheet_writer_ready"
+                if template_check.get("valid")
+                else "template_architecture_invalid"
+            )
         ),
         "xlsx_generation_blockers": generation_blockers,
         "instructions": (
-            "Do not write these rows directly into the ALL-CAPS formula-mirror sheets. "
-            "XLSX generation remains disabled until an input-sheet versus literal-mirror "
-            "strategy is accepted by the official AEAT validator."
+            "Write rows only into the unlocked Registrar input sheets. Translate controlled "
+            "codes through the template CODIGO-LITERAL lookup, replace Registrar helper "
+            "formulas with literals, preserve the ALL-CAPS formula mirrors, request full "
+            "recalculation on open, and treat official validator acceptance as a separate "
+            "manual gate."
         ),
     }
+    payload["xlsx_write_ready"] = bool(payload["payload_ready"]) and not generation_blockers
     payload["payload_sha256"] = hashlib.sha256(
         json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode(
             "utf-8"
@@ -487,6 +547,538 @@ def write_aeat_workbook_payload(path: str | Path, payload: Mapping[str, Any]) ->
         json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
     return target
+
+
+def write_aeat_workbook_xlsx(
+    template_path: str | Path,
+    payload: Mapping[str, Any],
+    out_path: str | Path,
+) -> Path:
+    source = Path(template_path)
+    target = Path(out_path)
+    if source.suffix.lower() != ".xlsx" or not source.is_file():
+        raise AeatWorkbookWriteError("AEAT source template must be an existing .xlsx file")
+    if target.suffix.lower() != ".xlsx":
+        raise AeatWorkbookWriteError("AEAT workbook output must use the .xlsx suffix")
+    if source.resolve() == target.resolve():
+        raise AeatWorkbookWriteError("Refusing to overwrite the source template")
+    if not payload.get("payload_ready"):
+        raise AeatWorkbookWriteError("AEAT workbook payload is not ready")
+    generation_blockers = list(payload.get("xlsx_generation_blockers", []))
+    if generation_blockers:
+        codes = ", ".join(str(row.get("code") or "unknown") for row in generation_blockers)
+        if "aeat_template_capacity_exceeded" in codes:
+            raise AeatWorkbookWriteError(f"AEAT workbook capacity blocker: {codes}")
+        raise AeatWorkbookWriteError(f"AEAT workbook generation is blocked: {codes}")
+    if not payload.get("xlsx_write_ready"):
+        raise AeatWorkbookWriteError("AEAT workbook payload is not ready for XLSX output")
+    if payload.get("payload_type") != "aeat_unified_books_xlsx_write_plan":
+        raise AeatWorkbookWriteError("Unsupported AEAT workbook payload type")
+    if payload.get("payload_sha256") != _payload_sha256(payload):
+        raise AeatWorkbookWriteError("AEAT workbook payload hash does not match its content")
+
+    template_meta = payload.get("template")
+    if not isinstance(template_meta, Mapping):
+        raise AeatWorkbookWriteError("AEAT payload does not identify its source template")
+    expected_hash = str(template_meta.get("expected_sha256") or "")
+    payload_template_hash = str(template_meta.get("actual_sha256") or "")
+    source_hash = _sha256(source)
+    if not expected_hash or source_hash != expected_hash or source_hash != payload_template_hash:
+        raise AeatWorkbookWriteError("AEAT source template hash does not match the payload")
+    template_check = inspect_aeat_template(source, expected_sha256=expected_hash)
+    if not template_check.get("valid"):
+        raise AeatWorkbookWriteError(
+            "AEAT source template contract is invalid: "
+            + "; ".join(str(row) for row in template_check.get("errors", []))
+        )
+
+    sheet_payloads = payload.get("sheets")
+    if not isinstance(sheet_payloads, Mapping):
+        raise AeatWorkbookWriteError("AEAT payload has no sheet data")
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary_handle = tempfile.NamedTemporaryFile(
+        prefix=f".{target.stem}-",
+        suffix=".xlsx.tmp",
+        dir=target.parent,
+        delete=False,
+    )
+    temporary = Path(temporary_handle.name)
+    temporary_handle.close()
+    try:
+        with zipfile.ZipFile(source, "r") as source_archive:
+            workbook_sheets = _workbook_sheets(source_archive)
+            workbook_sheet_ids = _workbook_sheet_ids(source_archive)
+            literal_lookup = _code_literal_lookup(source_archive)
+            replacements = {
+                "xl/workbook.xml": _workbook_recalculation_xml(
+                    source_archive.read("xl/workbook.xml")
+                )
+            }
+            removed_formula_cells: dict[str, set[str]] = {}
+            for contract_name, columns in SHEET_CONTRACTS.items():
+                input_name = INPUT_SHEET_BY_CONTRACT[contract_name]
+                input_target = workbook_sheets.get(input_name)
+                if input_target is None:
+                    raise AeatWorkbookWriteError(
+                        f"AEAT source template is missing input sheet {input_name}"
+                    )
+                sheet_payload = sheet_payloads.get(contract_name)
+                if not isinstance(sheet_payload, Mapping):
+                    raise AeatWorkbookWriteError(
+                        f"AEAT payload is missing sheet {contract_name}"
+                    )
+                rewritten_sheet, removed_references = _populated_input_sheet_xml(
+                    source_archive.read(input_target),
+                    columns=columns,
+                    sheet_payload=sheet_payload,
+                    sheet_name=input_name,
+                    contract_name=contract_name,
+                    literal_lookup=literal_lookup,
+                )
+                replacements[input_target] = rewritten_sheet
+                sheet_id = workbook_sheet_ids.get(input_name)
+                if sheet_id is None:
+                    raise AeatWorkbookWriteError(
+                        f"AEAT source template has no sheet id for {input_name}"
+                    )
+                if removed_references:
+                    removed_formula_cells[sheet_id] = removed_references
+            replacements["xl/calcChain.xml"] = _calc_chain_without_cells(
+                source_archive.read("xl/calcChain.xml"),
+                removed_formula_cells=removed_formula_cells,
+            )
+
+            with zipfile.ZipFile(temporary, "w") as output_archive:
+                output_archive.comment = source_archive.comment
+                for member in source_archive.infolist():
+                    member_copy = copy.copy(member)
+                    content = replacements.get(member.filename)
+                    if content is None:
+                        content = source_archive.read(member.filename)
+                    output_archive.writestr(member_copy, content)
+
+        if temporary.stat().st_size > MAX_AEAT_WORKBOOK_BYTES:
+            raise AeatWorkbookWriteError("Generated AEAT workbook exceeds the official 4 MB limit")
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return target
+
+
+def _workbook_recalculation_xml(content: bytes) -> bytes:
+    pattern = re.compile(
+        rb"<(?P<qname>(?:[A-Za-z_][A-Za-z0-9_.-]*:)?calcPr)\b"
+        rb"(?P<attrs>[^>]*?)(?P<ending>/?>)",
+        re.DOTALL,
+    )
+
+    def replace(match: re.Match[bytes]) -> bytes:
+        attrs = _set_xml_attribute(
+            match.group("attrs"),
+            b"fullCalcOnLoad",
+            b"1",
+        )
+        return b"<" + match.group("qname") + attrs + match.group("ending")
+
+    output, count = pattern.subn(replace, content, count=1)
+    if count != 1:
+        raise AeatWorkbookWriteError("AEAT template workbook.xml has no calcPr element")
+    _validate_rewritten_xml(output, package_part="xl/workbook.xml")
+    return output
+
+
+def _populated_input_sheet_xml(
+    content: bytes,
+    *,
+    columns: Sequence[Mapping[str, Any]],
+    sheet_payload: Mapping[str, Any],
+    sheet_name: str,
+    contract_name: str,
+    literal_lookup: Mapping[tuple[str, str], str],
+) -> tuple[bytes, set[str]]:
+    payload_columns = sheet_payload.get("columns")
+    if not isinstance(payload_columns, list) or payload_columns != [
+        dict(column) for column in columns
+    ]:
+        raise AeatWorkbookWriteError(
+            f"AEAT payload column contract differs for {sheet_name}"
+        )
+    rows = sheet_payload.get("rows")
+    if not isinstance(rows, list):
+        raise AeatWorkbookWriteError(f"AEAT payload rows are invalid for {sheet_name}")
+    if int(sheet_payload.get("row_count", -1)) != len(rows):
+        raise AeatWorkbookWriteError(
+            f"AEAT payload row count differs for {sheet_name}"
+        )
+    if len(rows) > TEMPLATE_DATA_CAPACITY:
+        raise AeatWorkbookWriteError(
+            f"AEAT workbook capacity exceeded for {sheet_name}"
+        )
+
+    root = ET.fromstring(content)
+    cells = {
+        cell.attrib.get("r", ""): cell
+        for cell in root.findall(".//{*}sheetData/{*}row/{*}c")
+    }
+    writes: dict[str, tuple[Any, str, str]] = {}
+    formula_references: set[str] = set()
+    for row_offset, row_values in enumerate(rows):
+        row_number = TEMPLATE_DATA_START_ROW + row_offset
+        if not isinstance(row_values, list) or len(row_values) != len(columns):
+            raise AeatWorkbookWriteError(
+                f"AEAT payload row {row_offset + 1} has the wrong width for {sheet_name}"
+            )
+        for column_offset, column in enumerate(columns, start=1):
+            reference = f"{_column_letter(column_offset)}{row_number}"
+            cell = cells.get(reference)
+            if cell is None or "s" not in cell.attrib:
+                raise AeatWorkbookWriteError(
+                    f"AEAT template lacks styled input cell {sheet_name}!{reference}"
+                )
+            writes[reference] = (
+                _input_template_value(
+                    contract_name=contract_name,
+                    column_letter=str(column["letter"]),
+                    row_values=row_values,
+                    projected_value=row_values[column_offset - 1],
+                    literal_lookup=literal_lookup,
+                    reference=f"{sheet_name}!{reference}",
+                ),
+                str(column["value_type"]),
+                f"{sheet_name}!{reference}",
+            )
+    for reference, cell in cells.items():
+        formula = cell.find("{*}f")
+        if formula is None:
+            continue
+        row_number = _row_index(reference)
+        column_index = _column_index(reference)
+        if not (
+            TEMPLATE_DATA_START_ROW <= row_number <= TEMPLATE_DATA_END_ROW
+            and 1 <= column_index <= len(columns)
+        ):
+            continue
+        if any(_local_name(child.tag) not in {"f", "v"} for child in cell):
+            raise AeatWorkbookWriteError(
+                f"AEAT formula cell has unsupported children: {sheet_name}!{reference}"
+            )
+        formula_references.add(reference)
+        writes.setdefault(
+            reference,
+            (
+                "",
+                str(columns[column_index - 1]["value_type"]),
+                f"{sheet_name}!{reference}",
+            ),
+        )
+    seen: set[str] = set()
+
+    def replace_cell(match: re.Match[bytes]) -> bytes:
+        reference_bytes = _xml_attribute_value(match.group("attrs"), b"r")
+        if reference_bytes is None:
+            return match.group(0)
+        reference = reference_bytes.decode("ascii", errors="strict")
+        write = writes.get(reference)
+        if write is None:
+            return match.group(0)
+        if reference in seen:
+            raise AeatWorkbookWriteError(
+                f"AEAT template contains duplicate input cell {sheet_name}!{reference}"
+            )
+        seen.add(reference)
+        value, value_type, qualified_reference = write
+        return _rewritten_cell_fragment(
+            match,
+            value=value,
+            value_type=value_type,
+            reference=qualified_reference,
+        )
+
+    output = _CELL_FRAGMENT_PATTERN.sub(replace_cell, content)
+    missing = set(writes) - seen
+    if missing:
+        raise AeatWorkbookWriteError(
+            f"AEAT template XML lacks input cells in {sheet_name}: "
+            + ", ".join(sorted(missing))
+        )
+    _validate_rewritten_xml(output, package_part=sheet_name)
+    return output, formula_references
+
+
+_CELL_FRAGMENT_PATTERN = re.compile(
+    rb"<(?P<qname>(?:[A-Za-z_][A-Za-z0-9_.-]*:)?c)\b"
+    rb"(?P<attrs>[^>]*?)(?:(?P<self_closing>/>)|>"
+    rb"(?P<inner>.*?)</(?P=qname)>)",
+    re.DOTALL,
+)
+
+
+def _rewritten_cell_fragment(
+    match: re.Match[bytes],
+    *,
+    value: Any,
+    value_type: str,
+    reference: str,
+) -> bytes:
+    qname = match.group("qname")
+    attrs = match.group("attrs")
+    prefix = qname[:-1]
+    if value is None or value == "":
+        attrs = _set_xml_attribute(attrs, b"t", None)
+        return b"<" + qname + attrs + b"/>"
+
+    rendered, _numeric = _render_typed_value(
+        value,
+        value_type=value_type,
+        reference=reference,
+    )
+    escaped = _escape_xml_text(rendered)
+    if value_type == "text":
+        attrs = _set_xml_attribute(attrs, b"t", b"inlineStr")
+        xml_space = b' xml:space="preserve"' if rendered != rendered.strip() else b""
+        return (
+            b"<"
+            + qname
+            + attrs
+            + b"><"
+            + prefix
+            + b"is><"
+            + prefix
+            + b"t"
+            + xml_space
+            + b">"
+            + escaped
+            + b"</"
+            + prefix
+            + b"t></"
+            + prefix
+            + b"is></"
+            + qname
+            + b">"
+        )
+    attrs = _set_xml_attribute(attrs, b"t", None)
+    return (
+        b"<"
+        + qname
+        + attrs
+        + b"><"
+        + prefix
+        + b"v>"
+        + escaped
+        + b"</"
+        + prefix
+        + b"v></"
+        + qname
+        + b">"
+    )
+
+
+def _xml_attribute_value(attrs: bytes, name: bytes) -> bytes | None:
+    pattern = re.compile(
+        rb"(?:^|\s)" + re.escape(name) + rb"=(?P<quote>['\"])(?P<value>.*?)(?P=quote)",
+        re.DOTALL,
+    )
+    match = pattern.search(attrs)
+    return match.group("value") if match is not None else None
+
+
+def _calc_chain_without_cells(
+    content: bytes,
+    *,
+    removed_formula_cells: Mapping[str, set[str]],
+) -> bytes:
+    current_sheet_id: str | None = None
+    last_output_sheet_id: str | None = None
+
+    def replace_cell(match: re.Match[bytes]) -> bytes:
+        nonlocal current_sheet_id, last_output_sheet_id
+        attrs = match.group("attrs")
+        explicit_sheet_id = _xml_attribute_value(attrs, b"i")
+        if explicit_sheet_id is not None:
+            current_sheet_id = explicit_sheet_id.decode("ascii", errors="strict")
+        if current_sheet_id is None:
+            raise AeatWorkbookWriteError("AEAT calcChain cell has no sheet id context")
+        reference_bytes = _xml_attribute_value(attrs, b"r")
+        if reference_bytes is None:
+            raise AeatWorkbookWriteError("AEAT calcChain cell has no reference")
+        reference = reference_bytes.decode("ascii", errors="strict")
+        if reference in removed_formula_cells.get(current_sheet_id, set()):
+            return b""
+        if explicit_sheet_id is None and current_sheet_id != last_output_sheet_id:
+            attrs = _set_xml_attribute(
+                attrs,
+                b"i",
+                current_sheet_id.encode("ascii"),
+            )
+            rendered = _fragment_with_attrs(match, attrs)
+        else:
+            rendered = match.group(0)
+        last_output_sheet_id = current_sheet_id
+        return rendered
+
+    output = _CELL_FRAGMENT_PATTERN.sub(replace_cell, content)
+    _validate_rewritten_xml(output, package_part="xl/calcChain.xml")
+    root = ET.fromstring(output)
+    current_sheet_id = None
+    for cell in root.findall("{*}c"):
+        if "i" in cell.attrib:
+            current_sheet_id = cell.attrib["i"]
+        if current_sheet_id is None:
+            raise AeatWorkbookWriteError("Rewritten AEAT calcChain lost sheet context")
+        if cell.attrib.get("r") in removed_formula_cells.get(current_sheet_id, set()):
+            raise AeatWorkbookWriteError(
+                "Rewritten AEAT calcChain still references a literal input cell"
+            )
+    return output
+
+
+def _fragment_with_attrs(match: re.Match[bytes], attrs: bytes) -> bytes:
+    qname = match.group("qname")
+    if match.group("self_closing") is not None:
+        return b"<" + qname + attrs + b"/>"
+    return (
+        b"<"
+        + qname
+        + attrs
+        + b">"
+        + (match.group("inner") or b"")
+        + b"</"
+        + qname
+        + b">"
+    )
+
+
+def _set_xml_attribute(attrs: bytes, name: bytes, value: bytes | None) -> bytes:
+    pattern = re.compile(
+        rb"(?P<leading>\s+)"
+        + re.escape(name)
+        + rb"=(?P<quote>['\"])(?P<value>.*?)(?P=quote)",
+        re.DOTALL,
+    )
+    match = pattern.search(attrs)
+    if match is not None:
+        replacement = b"" if value is None else match.group("leading") + name + b'="' + value + b'"'
+        return attrs[: match.start()] + replacement + attrs[match.end() :]
+    if value is None:
+        return attrs
+    return attrs + b" " + name + b'="' + value + b'"'
+
+
+def _escape_xml_text(value: str) -> bytes:
+    return (
+        value.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .encode("utf-8")
+    )
+
+
+def _render_typed_value(
+    value: Any,
+    *,
+    value_type: str,
+    reference: str,
+) -> tuple[str, bool]:
+    if value_type == "text":
+        return str(value), False
+    if value_type == "integer":
+        rendered = str(value).strip()
+        if not re.fullmatch(r"[+-]?\d+", rendered):
+            raise AeatWorkbookWriteError(f"Invalid integer value at {reference}: {value!r}")
+        return str(int(rendered)), True
+    elif value_type == "decimal":
+        try:
+            decimal_value = Decimal(str(value).strip())
+        except (InvalidOperation, ValueError) as exc:
+            raise AeatWorkbookWriteError(
+                f"Invalid decimal value at {reference}: {value!r}"
+            ) from exc
+        if not decimal_value.is_finite():
+            raise AeatWorkbookWriteError(
+                f"Invalid decimal value at {reference}: {value!r}"
+            )
+        return format(decimal_value, "f"), True
+    elif value_type == "date":
+        try:
+            if isinstance(value, datetime):
+                parsed_date = value.date()
+            elif isinstance(value, date):
+                parsed_date = value
+            else:
+                parsed_date = datetime.strptime(str(value).strip(), "%d/%m/%Y").date()
+        except ValueError as exc:
+            raise AeatWorkbookWriteError(
+                f"Invalid date value at {reference}: {value!r}"
+            ) from exc
+        return str((parsed_date - date(1899, 12, 30)).days), True
+    else:
+        raise AeatWorkbookWriteError(
+            f"Unsupported AEAT value type at {reference}: {value_type}"
+        )
+
+
+def _validate_rewritten_xml(content: bytes, *, package_part: str) -> None:
+    try:
+        ET.fromstring(content)
+    except ET.ParseError as exc:
+        raise AeatWorkbookWriteError(
+            f"Rewritten AEAT XML is invalid in {package_part}: {exc}"
+        ) from exc
+    missing_prefixes = _undeclared_ignorable_prefixes(content)
+    if missing_prefixes:
+        raise AeatWorkbookWriteError(
+            f"Rewritten AEAT XML has undeclared mc:Ignorable prefixes in {package_part}: "
+            + ", ".join(sorted(missing_prefixes))
+        )
+
+
+def _undeclared_ignorable_prefixes(content: bytes) -> set[str]:
+    root_match = re.search(
+        rb"<(?:[A-Za-z_][A-Za-z0-9_.-]*:)?(?:workbook|worksheet)\b"
+        rb"(?P<attrs>[^>]*)>",
+        content,
+        re.DOTALL,
+    )
+    if root_match is None:
+        return set()
+    attrs = root_match.group("attrs")
+    declared = {
+        match.group("prefix").decode("ascii")
+        for match in re.finditer(
+            rb"\sxmlns:(?P<prefix>[A-Za-z_][A-Za-z0-9_.-]*)\s*=\s*"
+            rb"(?P<quote>['\"])(?P<uri>.*?)(?P=quote)",
+            attrs,
+            re.DOTALL,
+        )
+    }
+    referenced: set[str] = set()
+    for match in re.finditer(
+        rb"\s(?:[A-Za-z_][A-Za-z0-9_.-]*:)?Ignorable\s*=\s*"
+        rb"(?P<quote>['\"])(?P<value>.*?)(?P=quote)",
+        attrs,
+        re.DOTALL,
+    ):
+        referenced.update(match.group("value").decode("ascii").split())
+    return referenced - declared
+
+
+def _local_name(tag: Any) -> str:
+    rendered = str(tag)
+    return rendered.split("}", 1)[-1] if "}" in rendered else rendered
+
+
+def _payload_sha256(payload: Mapping[str, Any]) -> str:
+    content = dict(payload)
+    content.pop("payload_sha256", None)
+    return hashlib.sha256(
+        json.dumps(
+            content,
+            sort_keys=True,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def validate_aeat_workbook(
@@ -672,6 +1264,14 @@ def _workbook_sheets(archive: zipfile.ZipFile) -> dict[str, str]:
     return result
 
 
+def _workbook_sheet_ids(archive: zipfile.ZipFile) -> dict[str, str]:
+    workbook = ET.fromstring(archive.read("xl/workbook.xml"))
+    return {
+        sheet.attrib["name"]: sheet.attrib["sheetId"]
+        for sheet in workbook.findall(".//{*}sheet")
+    }
+
+
 def _shared_strings(archive: zipfile.ZipFile) -> list[str]:
     if "xl/sharedStrings.xml" not in archive.namelist():
         return []
@@ -680,6 +1280,73 @@ def _shared_strings(archive: zipfile.ZipFile) -> list[str]:
         "".join(text.text or "" for text in item.findall(".//{*}t"))
         for item in root.findall(".//{*}si")
     ]
+
+
+def _code_literal_lookup(
+    archive: zipfile.ZipFile,
+) -> dict[tuple[str, str], str]:
+    workbook_sheets = _workbook_sheets(archive)
+    target = workbook_sheets.get("CODIGO-LITERAL")
+    if target is None:
+        raise AeatWorkbookWriteError(
+            "AEAT source template is missing CODIGO-LITERAL sheet"
+        )
+    rows = _sheet_rows(
+        archive,
+        target,
+        _shared_strings(archive),
+        through_row=1000,
+    )
+    lookup: dict[tuple[str, str], str] = {}
+    for values in rows.values():
+        if len(values) < 4:
+            continue
+        category = values[0].strip()
+        literal = values[1]
+        code = values[3].strip()
+        if not category or not literal or not code:
+            continue
+        key = (category, code)
+        previous = lookup.get(key)
+        if previous is not None and previous != literal:
+            raise AeatWorkbookWriteError(
+                "AEAT CODIGO-LITERAL has conflicting literals for "
+                f"category {category!r}, code {code!r}"
+            )
+        lookup[key] = literal
+    return lookup
+
+
+def _input_template_value(
+    *,
+    contract_name: str,
+    column_letter: str,
+    row_values: Sequence[Any],
+    projected_value: Any,
+    literal_lookup: Mapping[tuple[str, str], str],
+    reference: str,
+) -> Any:
+    if projected_value is None or projected_value == "":
+        return ""
+    category = INPUT_LITERAL_CATEGORY_BY_CONTRACT.get(contract_name, {}).get(
+        column_letter
+    )
+    if category is None:
+        return projected_value
+    if category == _ACTIVITY_SUBTYPE_CATEGORY:
+        if len(row_values) < 3:
+            raise AeatWorkbookWriteError(
+                f"AEAT activity context is missing at {reference}"
+            )
+        category = str(row_values[2]).strip()
+    code = str(projected_value).strip()
+    literal = literal_lookup.get((category, code))
+    if literal is None:
+        raise AeatWorkbookWriteError(
+            f"AEAT CODIGO-LITERAL has no literal for {reference}: "
+            f"category {category!r}, code {code!r}"
+        )
+    return literal
 
 
 def _sheet_rows(
@@ -722,6 +1389,11 @@ def _column_index(reference: str) -> int:
             break
         index = index * 26 + ord(char.upper()) - ord("A") + 1
     return index
+
+
+def _row_index(reference: str) -> int:
+    digits = "".join(char for char in reference if char.isdigit())
+    return int(digits) if digits else 0
 
 
 def _sha256(path: Path) -> str:

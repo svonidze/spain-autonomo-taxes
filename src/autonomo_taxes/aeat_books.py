@@ -55,7 +55,7 @@ def failed_aeat_book_projection(
         "taxpayer": None,
         "contract": AEAT_BOOK_CONTRACT,
         "provisional_filename": None,
-        "xlsx_generation_supported": False,
+        "xlsx_generation_supported": True,
         "xlsx_ready": False,
         "data_projection_ready": False,
         "allow_authoritative_history": allow_authoritative_history,
@@ -123,7 +123,7 @@ def build_aeat_book_projection(
             if transaction["entry_type"].startswith("income"):
                 income_rows.append(_income_row(transaction, treatment, activity))
             elif transaction["entry_type"].startswith("expense"):
-                expense_rows.append(_expense_row(transaction, treatment, activity))
+                expense_rows.extend(_expense_rows(transaction, treatment, activity))
         except AeatBookProjectionError as exc:
             blockers.append(
                 _blocker(
@@ -161,7 +161,7 @@ def build_aeat_book_projection(
         },
         "contract": AEAT_BOOK_CONTRACT,
         "provisional_filename": _provisional_filename(year, profile),
-        "xlsx_generation_supported": False,
+        "xlsx_generation_supported": True,
         "xlsx_ready": False,
         "data_projection_ready": not blockers,
         "allow_authoritative_history": allow_authoritative_history,
@@ -178,6 +178,7 @@ def build_aeat_book_projection(
         "warnings": [
             "This JSON is a reviewed row projection, not an AEAT-importable XLSX.",
             "Only posted rows and explicitly allowed authoritative historical rows are included.",
+            "Counts describe projected book rows; one source transaction may produce consecutive component rows.",
             "The exact 2026 filename grammar remains unverified because the current AEAT workbook and PDF are inconsistent.",
         ],
     }
@@ -345,11 +346,11 @@ def _income_row(
     }
 
 
-def _expense_row(
+def _expense_rows(
     transaction: Mapping[str, Any],
     treatment: Mapping[str, Any],
     activity: Mapping[str, Any],
-) -> dict[str, Any]:
+) -> list[dict[str, Any]]:
     _require_document_and_counterparty(transaction)
     concept = _required_text(treatment, "aeat_expense_concept")
     amount_minor = _eur_amount_minor(transaction)
@@ -373,13 +374,12 @@ def _expense_row(
         vat_minor=vat_minor,
     )
     row_year, row_quarter = _transaction_period(transaction)
-    return {
+    common = {
         "autoliquidacion_ejercicio": row_year,
         "autoliquidacion_periodo": f"{row_quarter}T",
         **_activity_columns(activity),
         "tipo_factura": invoice_type,
         "concepto_gasto": concept,
-        "gasto_deducible_eur": _money(deductible_irpf_minor),
         "fecha_expedicion": _date_es(transaction["issued_on"]),
         "fecha_operacion": _date_es(transaction["transaction_date"]),
         "factura_expedidor_serie_numero": transaction["document_number"],
@@ -391,11 +391,6 @@ def _expense_row(
         "clave_operacion": operation_key,
         "bien_inversion": "S" if transaction.get("is_asset_acquisition") else "N",
         "inversion_sujeto_pasivo": "S" if reverse_charge else "N",
-        "total_factura_eur": _money(amount_minor),
-        "base_imponible_eur": _money(taxable_base_minor),
-        "tipo_iva_percent": _rate_percent(rate),
-        "cuota_iva_soportado_eur": _money(vat_minor),
-        "cuota_deducible_eur": _money(deductible_vat_minor),
         "tipo_retencion_irpf_percent": _withholding_rate(
             taxable_base_minor, withholding_minor
         ),
@@ -403,6 +398,125 @@ def _expense_row(
         "referencia_externa": transaction.get("external_key") or transaction["transaction_id"],
         "transaction_id": transaction["transaction_id"],
         "source_hash": transaction["source_hash"],
+    }
+
+    if taxable_base_minor == 0 and vat_minor == 0:
+        if deductible_vat_minor != 0:
+            raise AeatBookProjectionError(
+                "Zero-IVA expense cannot have a deductible IVA quota"
+            )
+        if deductible_irpf_minor > amount_minor + 1:
+            raise AeatBookProjectionError(
+                "Deductible IRPF expense exceeds the invoice total"
+            )
+        return [
+            _expense_component(
+                common,
+                deductible_irpf_minor=deductible_irpf_minor,
+                total_minor=amount_minor,
+                taxable_base_minor=amount_minor,
+                rate_basis_points=None,
+                vat_minor=None,
+                deductible_vat_minor=None,
+                component="no_iva",
+            )
+        ]
+
+    invoice_total_minor = taxable_base_minor + vat_minor
+    if reverse_charge:
+        if abs(amount_minor - taxable_base_minor) > 1:
+            raise AeatBookProjectionError(
+                "Reverse-charge supplier amount must equal its reviewed taxable base"
+            )
+        return [
+            _expense_component(
+                common,
+                deductible_irpf_minor=deductible_irpf_minor,
+                total_minor=invoice_total_minor,
+                taxable_base_minor=taxable_base_minor,
+                rate_basis_points=rate,
+                vat_minor=vat_minor,
+                deductible_vat_minor=deductible_vat_minor,
+                component="reverse_charge",
+            )
+        ]
+
+    residual_minor = amount_minor - invoice_total_minor
+    if residual_minor < 0:
+        if withholding_minor and amount_minor + withholding_minor == invoice_total_minor:
+            residual_minor = 0
+        else:
+            raise AeatBookProjectionError(
+                "Invoice total is lower than its reviewed taxable base and IVA quota"
+            )
+    if residual_minor > 0 and withholding_minor:
+        raise AeatBookProjectionError(
+            "Invoices combining IRPF withholding with non-taxable residual components "
+            "require an explicit reviewed gross allocation"
+        )
+    primary_deductible_minor = min(deductible_irpf_minor, taxable_base_minor)
+    residual_deductible_minor = deductible_irpf_minor - primary_deductible_minor
+    if residual_deductible_minor > residual_minor:
+        raise AeatBookProjectionError(
+            "Deductible IRPF amount cannot be allocated across the reviewed invoice components"
+        )
+    primary = _expense_component(
+        common,
+        deductible_irpf_minor=primary_deductible_minor,
+        total_minor=invoice_total_minor,
+        taxable_base_minor=taxable_base_minor,
+        rate_basis_points=rate,
+        vat_minor=vat_minor,
+        deductible_vat_minor=deductible_vat_minor,
+        component="taxable",
+    )
+    if residual_minor == 0:
+        primary["gasto_deducible_eur"] = _money(deductible_irpf_minor)
+        return [primary]
+
+    residual_common = dict(common)
+    residual_common["tipo_retencion_irpf_percent"] = ""
+    residual_common["importe_retenido_irpf_eur"] = ""
+    residual_common["referencia_externa"] = (
+        f"{common['referencia_externa']}:non_taxable_component"
+    )
+    residual = _expense_component(
+        residual_common,
+        deductible_irpf_minor=residual_deductible_minor,
+        total_minor=residual_minor,
+        taxable_base_minor=residual_minor,
+        rate_basis_points=None,
+        vat_minor=None,
+        deductible_vat_minor=None,
+        component="non_taxable",
+    )
+    return [primary, residual]
+
+
+def _expense_component(
+    common: Mapping[str, Any],
+    *,
+    deductible_irpf_minor: int,
+    total_minor: int,
+    taxable_base_minor: int,
+    rate_basis_points: int | None,
+    vat_minor: int | None,
+    deductible_vat_minor: int | None,
+    component: str,
+) -> dict[str, Any]:
+    return {
+        **common,
+        "gasto_deducible_eur": _money(deductible_irpf_minor),
+        "total_factura_eur": _money(total_minor),
+        "base_imponible_eur": _money(taxable_base_minor),
+        "tipo_iva_percent": _rate_percent(rate_basis_points),
+        "cuota_iva_soportado_eur": (
+            "" if vat_minor is None else _money(vat_minor)
+        ),
+        "cuota_deducible_eur": (
+            "" if deductible_vat_minor is None else _money(deductible_vat_minor)
+        ),
+        "book_component": component,
     }
 
 
