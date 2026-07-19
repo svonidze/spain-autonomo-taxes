@@ -3150,7 +3150,16 @@ def _cmd_books_aeat_template_check(args: argparse.Namespace) -> int:
 
     check = inspect_aeat_template(args.template)
     _write_json(args.out, check)
-    _emit({"template_check": str(args.out.resolve()), "valid": check["valid"]})
+    _emit(
+        {
+            "template_check": str(args.out.resolve()),
+            "valid": check["valid"],
+            "writer_strategy_status": check["writer_strategy"]["status"],
+            "xlsx_generation_supported": check["writer_strategy"][
+                "xlsx_generation_supported"
+            ],
+        }
+    )
     return 0 if check["valid"] else 2
 
 
@@ -3193,6 +3202,10 @@ def _cmd_books_aeat_payload(args: argparse.Namespace) -> int:
             "payload_ready": payload["payload_ready"],
             "xlsx_generation_supported": False,
             "blocker_count": len(payload["blockers"]),
+            "xlsx_generation_blocker_count": len(
+                payload["xlsx_generation_blockers"]
+            ),
+            "writer_strategy_status": payload["writer_strategy_status"],
         }
     )
     return 0 if payload["payload_ready"] else 2

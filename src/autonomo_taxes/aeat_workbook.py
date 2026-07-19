@@ -18,6 +18,9 @@ AEAT_VALIDATOR_POST_URL = (
     "https://www2.agenciatributaria.gob.es/wlpl/PACM-SERV/ServletValidarLLRSI"
 )
 MAX_AEAT_WORKBOOK_BYTES = 4 * 1024 * 1024
+TEMPLATE_DATA_START_ROW = 4
+TEMPLATE_DATA_END_ROW = 103
+TEMPLATE_DATA_CAPACITY = TEMPLATE_DATA_END_ROW - TEMPLATE_DATA_START_ROW + 1
 
 
 class AeatValidationConsentError(ValueError):
@@ -179,6 +182,12 @@ SHEET_CONTRACTS = {
     "BIENES-INVERSIÓN": ASSET_COLUMNS,
 }
 
+INPUT_SHEET_BY_CONTRACT = {
+    "EXPEDIDAS_INGRESOS": "Registrar expedidas_ingresos",
+    "RECIBIDAS_GASTOS": "Registrar recibidas_gastos",
+    "BIENES-INVERSIÓN": "Registrar bienes de inversión",
+}
+
 TYPE_ROW_CONTRACTS = {
     "EXPEDIDAS_INGRESOS": (
         "Decimal (4,0)", "Alfanumérico (2)", "Alfanumérico (1)",
@@ -243,16 +252,50 @@ def inspect_aeat_template(
             "expected_sha256": expected_sha256,
             "actual_sha256": None,
             "sheets": {},
+            "writer_strategy": _writer_strategy_unavailable("template_missing"),
             "errors": ["Template file does not exist"],
         }
     actual_hash = _sha256(source)
     if actual_hash != expected_sha256:
         errors.append("Template SHA-256 does not match the reviewed AEAT 2026 template")
     sheet_checks: dict[str, Any] = {}
+    architecture_errors: list[str] = []
+    input_sheet_checks: dict[str, Any] = {}
+    calc_chain_check = {
+        "part_present": False,
+        "content_type_registered": False,
+        "relationship_present": False,
+    }
     try:
         with zipfile.ZipFile(source) as archive:
             workbook_sheets = _workbook_sheets(archive)
             shared_strings = _shared_strings(archive)
+            calc_chain_check = _calc_chain_check(archive)
+            if not all(calc_chain_check.values()):
+                architecture_errors.append(
+                    "Reviewed template calcChain package links are incomplete"
+                )
+            for contract_name, input_name in INPUT_SHEET_BY_CONTRACT.items():
+                target = workbook_sheets.get(input_name)
+                if target is None:
+                    architecture_errors.append(f"Missing input sheet: {input_name}")
+                    continue
+                root = ET.fromstring(archive.read(target))
+                validation_count = len(root.findall(".//{*}dataValidation"))
+                if validation_count == 0:
+                    architecture_errors.append(
+                        f"{input_name} has no data-validation rules"
+                    )
+                input_sheet_checks[contract_name] = {
+                    "name": input_name,
+                    "target": target,
+                    "data_validation_count": validation_count,
+                    "data_formula_count": _formula_cell_count(
+                        root,
+                        start_row=TEMPLATE_DATA_START_ROW,
+                        end_row=TEMPLATE_DATA_END_ROW,
+                    ),
+                }
             for sheet_name, columns in SHEET_CONTRACTS.items():
                 target = workbook_sheets.get(sheet_name)
                 if target is None:
@@ -268,21 +311,82 @@ def inspect_aeat_template(
                     )
                 if width_ok and not type_row_ok:
                     errors.append(f"{sheet_name} type row differs from the reviewed contract")
+                root = ET.fromstring(archive.read(target))
+                formula_references = _formula_cell_references(
+                    root,
+                    start_row=TEMPLATE_DATA_START_ROW,
+                    end_row=TEMPLATE_DATA_END_ROW,
+                )
+                expected_formula_references = {
+                    f"{_column_letter(column_index)}{row_number}"
+                    for row_number in range(
+                        TEMPLATE_DATA_START_ROW, TEMPLATE_DATA_END_ROW + 1
+                    )
+                    for column_index in range(1, len(columns) + 1)
+                }
+                missing_formula_references = (
+                    expected_formula_references - formula_references
+                )
+                unexpected_formula_references = (
+                    formula_references - expected_formula_references
+                )
+                formula_mirror = not (
+                    missing_formula_references or unexpected_formula_references
+                )
+                if not formula_mirror:
+                    architecture_errors.append(
+                        f"{sheet_name} is not the reviewed 100-row formula mirror"
+                    )
                 sheet_checks[sheet_name] = {
                     "target": target,
                     "column_count": len(type_row),
                     "expected_column_count": len(columns),
                     "type_row_matches": type_row_ok,
-                    "data_start_row": 4,
+                    "data_start_row": TEMPLATE_DATA_START_ROW,
+                    "data_end_row": TEMPLATE_DATA_END_ROW,
+                    "data_capacity": TEMPLATE_DATA_CAPACITY,
+                    "formula_cell_count": len(formula_references),
+                    "expected_formula_cell_count": len(expected_formula_references),
+                    "missing_formula_cell_count": len(missing_formula_references),
+                    "unexpected_formula_cell_count": len(
+                        unexpected_formula_references
+                    ),
+                    "formula_mirror": formula_mirror,
+                    "input_sheet": input_sheet_checks.get(sheet_name),
                 }
     except (zipfile.BadZipFile, KeyError, ET.ParseError) as exc:
         errors.append(f"Invalid XLSX package: {exc}")
+    errors.extend(architecture_errors)
+    formula_mirrors = bool(sheet_checks) and all(
+        bool(check.get("formula_mirror")) for check in sheet_checks.values()
+    )
+    architecture_valid = not errors and formula_mirrors
+    writer_strategy = {
+        "status": (
+            "validator_spike_required"
+            if architecture_valid
+            else "template_architecture_invalid"
+        ),
+        "xlsx_generation_supported": False,
+        "contract_sheets_are_formula_mirrors": formula_mirrors,
+        "data_start_row": TEMPLATE_DATA_START_ROW,
+        "data_end_row": TEMPLATE_DATA_END_ROW,
+        "data_capacity": TEMPLATE_DATA_CAPACITY,
+        "calc_chain": calc_chain_check,
+        "input_sheets": input_sheet_checks,
+        "reason": (
+            "The reviewed ALL-CAPS sheets are formula mirrors of Registrar input sheets. "
+            "The authoritative write target must be confirmed by the official AEAT validator "
+            "before XLSX generation is implemented."
+        ),
+    }
     return {
         "valid": not errors,
         "path": str(source.resolve()),
         "expected_sha256": expected_sha256,
         "actual_sha256": actual_hash,
         "sheets": sheet_checks,
+        "writer_strategy": writer_strategy,
         "errors": errors,
     }
 
@@ -313,8 +417,32 @@ def build_aeat_workbook_payload(
             ASSET_COLUMNS, projection.get("asset_rows", [])
         ),
     }
+    generation_blockers = [
+        {
+            "code": "aeat_writer_strategy_unverified",
+            "subject": str(template_check.get("actual_sha256") or "template"),
+            "message": (
+                "The official template uses Registrar input sheets and ALL-CAPS formula "
+                "mirrors. Confirm the authoritative write strategy with the official AEAT "
+                "validator before generating XLSX."
+            ),
+        }
+    ]
+    for sheet_name, sheet in sheets.items():
+        if int(sheet["row_count"]) <= TEMPLATE_DATA_CAPACITY:
+            continue
+        generation_blockers.append(
+            {
+                "code": "aeat_template_capacity_exceeded",
+                "subject": sheet_name,
+                "message": (
+                    f"{sheet_name} has {sheet['row_count']} rows; the reviewed template "
+                    f"supports at most {TEMPLATE_DATA_CAPACITY}."
+                ),
+            }
+        )
     payload: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "payload_type": "aeat_unified_books_xlsx_write_plan",
         "period": projection.get("period"),
         "scope": projection.get("scope"),
@@ -324,15 +452,24 @@ def build_aeat_workbook_payload(
             "actual_sha256": template_check.get("actual_sha256"),
             "expected_sha256": template_check.get("expected_sha256"),
             "valid": bool(template_check.get("valid")),
+            "writer_strategy": dict(template_check.get("writer_strategy", {})),
         },
-        "data_start_row": 4,
+        "data_start_row": TEMPLATE_DATA_START_ROW,
+        "data_end_row": TEMPLATE_DATA_END_ROW,
+        "data_capacity": TEMPLATE_DATA_CAPACITY,
         "sheets": sheets,
         "blockers": blockers,
         "payload_ready": bool(projection.get("data_projection_ready")) and not blockers,
         "xlsx_generation_supported": False,
+        "writer_strategy_status": (
+            template_check.get("writer_strategy", {}).get("status")
+            or "validator_spike_required"
+        ),
+        "xlsx_generation_blockers": generation_blockers,
         "instructions": (
-            "Write the row arrays into the reviewed AEAT template with @oai/artifact-tool, "
-            "preserving the first three rows and all workbook validations."
+            "Do not write these rows directly into the ALL-CAPS formula-mirror sheets. "
+            "XLSX generation remains disabled until an input-sheet versus literal-mirror "
+            "strategy is accepted by the official AEAT validator."
         ),
     }
     payload["payload_sha256"] = hashlib.sha256(
@@ -453,6 +590,72 @@ def _sheet_payload(
             for row in rows
         ],
     }
+
+
+def _writer_strategy_unavailable(status: str) -> dict[str, Any]:
+    return {
+        "status": status,
+        "xlsx_generation_supported": False,
+        "contract_sheets_are_formula_mirrors": False,
+        "data_start_row": TEMPLATE_DATA_START_ROW,
+        "data_end_row": TEMPLATE_DATA_END_ROW,
+        "data_capacity": TEMPLATE_DATA_CAPACITY,
+        "calc_chain": {
+            "part_present": False,
+            "content_type_registered": False,
+            "relationship_present": False,
+        },
+        "input_sheets": {},
+        "reason": "The reviewed template architecture is unavailable.",
+    }
+
+
+def _calc_chain_check(archive: zipfile.ZipFile) -> dict[str, bool]:
+    content_types = ET.fromstring(archive.read("[Content_Types].xml"))
+    relationships = ET.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
+    return {
+        "part_present": "xl/calcChain.xml" in archive.namelist(),
+        "content_type_registered": any(
+            row.attrib.get("PartName") == "/xl/calcChain.xml"
+            for row in content_types.findall("{*}Override")
+        ),
+        "relationship_present": any(
+            row.attrib.get("Type", "").endswith("/calcChain")
+            and row.attrib.get("Target", "").lstrip("/") in {"calcChain.xml", "xl/calcChain.xml"}
+            for row in relationships
+        ),
+    }
+
+
+def _formula_cell_count(
+    root: ET.Element,
+    *,
+    start_row: int,
+    end_row: int,
+) -> int:
+    return len(
+        _formula_cell_references(root, start_row=start_row, end_row=end_row)
+    )
+
+
+def _formula_cell_references(
+    root: ET.Element,
+    *,
+    start_row: int,
+    end_row: int,
+) -> set[str]:
+    references: set[str] = set()
+    for row in root.findall(".//{*}sheetData/{*}row"):
+        row_number = int(row.attrib["r"])
+        if not start_row <= row_number <= end_row:
+            continue
+        references.update(
+            cell.attrib.get("r", "")
+            for cell in row.findall("{*}c")
+            if cell.find("{*}f") is not None
+        )
+    references.discard("")
+    return references
 
 
 def _workbook_sheets(archive: zipfile.ZipFile) -> dict[str, str]:
