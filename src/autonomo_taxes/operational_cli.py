@@ -38,6 +38,14 @@ from .revolut import (
     match_revolut_payments,
 )
 from .review_packet import apply_review_packet, packet_json, prepare_review_packet
+from .sheet_intake import (
+    INTAKE_TABS,
+    IntakeSheetError,
+    IntakeSheetRow,
+    load_intake_csv,
+    resolve_evidence_path,
+    write_intake_writeback_csv,
+)
 from .sheet_sync import SheetRow, diff_sheet_rows
 from .tax_engine import (
     CalculationBlocked,
@@ -203,6 +211,7 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     ingest.add_argument("--issued-on")
     ingest.add_argument("--document-number")
     ingest.add_argument("--counterparty-id")
+    ingest.add_argument("--counterparty-name")
     ingest.add_argument("--drive-file-id")
     ingest.add_argument("--archive-root", type=Path)
     ingest.add_argument("--tesseract-command", default="tesseract")
@@ -216,6 +225,29 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
         help="Archive and review the document without creating an invoice transaction draft",
     )
     ingest.set_defaults(_operational_handler=_cmd_ingest)
+
+    intake = subparsers.add_parser(
+        "intake",
+        help="Accept expense or income rows from the Google Sheet intake tabs",
+    )
+    intake_sub = intake.add_subparsers(dest="intake_command", required=True)
+    intake_apply = intake_sub.add_parser(
+        "apply",
+        help="Validate a tab CSV, ingest its evidence, and emit system_id write-back rows",
+    )
+    _db_arg(intake_apply)
+    intake_apply.add_argument("--tab", required=True, choices=INTAKE_TABS)
+    intake_apply.add_argument("--remote-csv", type=Path, required=True)
+    intake_apply.add_argument("--out-csv", type=Path, required=True)
+    intake_apply.add_argument("--inbox-root", type=Path)
+    intake_apply.add_argument("--archive-root", type=Path)
+    intake_apply.add_argument("--tesseract-command", default="tesseract")
+    intake_apply.add_argument(
+        "--show-paths",
+        action="store_true",
+        help="Include absolute private filesystem paths in JSON output",
+    )
+    intake_apply.set_defaults(_operational_handler=_cmd_intake_apply)
 
     inbox = subparsers.add_parser(
         "inbox",
@@ -1100,6 +1132,169 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_intake_apply(args: argparse.Namespace) -> int:
+    if args.inbox_root is None:
+        raise ValueError("--inbox-root is required (or set inbox_root in .local/config.yaml)")
+    if args.archive_root is None:
+        raise ValueError("--archive-root is required (or set archive_root in .local/config.yaml)")
+    with open_ledger_db(args.db):
+        pass
+    intake = load_intake_csv(args.remote_csv, args.tab)
+    system_ids: dict[int, str] = {}
+    items: list[dict[str, Any]] = [
+        {
+            "row_number": error.row_number,
+            "status": "failed",
+            "message": error.message,
+        }
+        for error in intake.errors
+    ]
+    counts = {
+        "accepted": 0,
+        "already_accepted": 0,
+        "recovered": 0,
+        "failed": len(intake.errors),
+        "blank": len(intake.raw_rows) - len(intake.rows) - len(intake.errors),
+    }
+
+    for row in intake.rows:
+        try:
+            existing_status = _existing_intake_receipt(args.db, row)
+            if existing_status is not None:
+                receipt, status = existing_status
+                receipt_id = receipt["intake_receipt_id"]
+                _ensure_intake_follow_up_issues(
+                    args.db,
+                    row,
+                    transaction_id=receipt["transaction_id"],
+                )
+                system_ids[row.row_number] = receipt_id
+                counts[status] += 1
+                items.append(
+                    {
+                        "row_number": row.row_number,
+                        "status": status,
+                        "system_id": receipt_id,
+                        "document_id": receipt["document_id"],
+                        "transaction_id": receipt["transaction_id"],
+                    }
+                )
+                continue
+
+            evidence_path = resolve_evidence_path(row, args.inbox_root)
+            evidence_sha256 = _file_sha256(evidence_path)
+            with open_ledger_db(args.db, read_only=True) as db:
+                evidence_receipt = db.find_intake_receipt_by_evidence(evidence_sha256)
+            if evidence_receipt is not None:
+                raise IntakeSheetError(
+                    f"row {row.row_number}: this evidence file was already accepted with "
+                    "different row values"
+                )
+
+            result = _ingest_document(
+                argparse.Namespace(
+                    db=args.db,
+                    path=evidence_path,
+                    kind=row.document_kind,
+                    period=row.period_key,
+                    issued_on=row.tax_date.isoformat(),
+                    document_number=row.document_number,
+                    counterparty_id=None,
+                    counterparty_name=row.counterparty_name,
+                    drive_file_id=None,
+                    archive_root=args.archive_root,
+                    tesseract_command=args.tesseract_command,
+                    gross=row.gross_amount,
+                    taxable_base=None,
+                    vat=None,
+                    currency=row.currency,
+                    document_only=False,
+                )
+            )
+            if result["sha256"] != evidence_sha256:
+                raise IntakeSheetError(
+                    f"row {row.row_number}: evidence file changed while it was being imported"
+                )
+            transaction = result.get("transaction") or {}
+            transaction_id = transaction.get("transaction_id")
+            treatment_id = transaction.get("tax_treatment_id")
+            if not transaction_id or not treatment_id:
+                raise IntakeSheetError(
+                    f"row {row.row_number}: invoice did not produce a review transaction"
+                )
+            with open_ledger_db(args.db) as db:
+                live_transaction = db.connection.execute(
+                    "SELECT * FROM transactions WHERE transaction_id = ?",
+                    (transaction_id,),
+                ).fetchone()
+                if live_transaction["lifecycle_status"] in {"received", "extracted"}:
+                    live_transaction = db.transition_transaction(
+                        transaction_id,
+                        lifecycle_status="needs_review",
+                        expected_row_version=live_transaction["row_version"],
+                    )
+                if live_transaction["lifecycle_status"] != "needs_review":
+                    raise IntakeSheetError(
+                        f"row {row.row_number}: existing transaction is "
+                        f"{live_transaction['lifecycle_status']!r}, not needs_review"
+                    )
+                receipt = db.add_intake_receipt(
+                    intake_tab=row.tab,
+                    source_row_number=row.row_number,
+                    row_fingerprint=row.row_fingerprint,
+                    evidence_sha256=evidence_sha256,
+                    document_id=result["document_id"],
+                    transaction_id=transaction_id,
+                    treatment_id=treatment_id,
+                    input_payload=row.values,
+                )
+            _ensure_intake_follow_up_issues(args.db, row, transaction_id=transaction_id)
+            receipt_id = receipt["intake_receipt_id"]
+            system_ids[row.row_number] = receipt_id
+            counts["accepted"] += 1
+            item = {
+                "row_number": row.row_number,
+                "status": "accepted",
+                "system_id": receipt_id,
+                "document_id": result["document_id"],
+                "transaction_id": transaction_id,
+                "needs_review": True,
+            }
+            if args.show_paths:
+                item["evidence_path"] = str(evidence_path)
+            else:
+                item["file_name"] = row.values["file_name"]
+            items.append(item)
+        except (
+            IntakeSheetError,
+            LedgerDbError,
+            KeyError,
+            OSError,
+            ValueError,
+            sqlite3.Error,
+        ) as exc:
+            counts["failed"] += 1
+            items.append(
+                {
+                    "row_number": row.row_number,
+                    "status": "failed",
+                    "message": str(exc),
+                }
+            )
+
+    write_intake_writeback_csv(args.out_csv, intake, system_ids)
+    _emit(
+        {
+            "tab": args.tab,
+            "counts": counts,
+            "items": sorted(items, key=lambda item: item["row_number"]),
+            "writeback_csv": str(args.out_csv),
+            "meaning_of_system_id": "accepted_for_review_not_posted",
+        }
+    )
+    return 2 if counts["failed"] else 0
+
+
 def _ingest_document(args: argparse.Namespace) -> dict[str, Any]:
     if args.document_only and any(
         value is not None for value in (args.gross, args.taxable_base, args.vat, args.currency)
@@ -1145,7 +1340,11 @@ def _ingest_document(args: argparse.Namespace) -> dict[str, Any]:
             batch_key=f"document:{result.sha256}",
             notes=f"Extraction method: {result.extraction_method}",
         )
-        counterparty_id = args.counterparty_id or _upsert_intake_counterparty(db, suggestion)
+        counterparty_id = args.counterparty_id or _upsert_intake_counterparty(
+            db,
+            suggestion,
+            preferred_name=getattr(args, "counterparty_name", None),
+        )
         document_number = args.document_number or extract_invoice_number(result.extracted_text)
         if document_number is None and suggestion is not None:
             parsed_description = suggestion.description or ""
@@ -5162,25 +5361,104 @@ def _intake_transaction_summary(
     return summary
 
 
-def _upsert_intake_counterparty(db: LedgerDB, suggestion: LedgerEntry | None) -> str | None:
-    if suggestion is None or not suggestion.counterparty or suggestion.counterparty == "Unknown":
+def _upsert_intake_counterparty(
+    db: LedgerDB,
+    suggestion: LedgerEntry | None,
+    *,
+    preferred_name: str | None = None,
+) -> str | None:
+    counterparty_name = (preferred_name or "").strip()
+    if not counterparty_name and suggestion is not None:
+        counterparty_name = suggestion.counterparty
+    if not counterparty_name or counterparty_name == "Unknown":
         return None
     matches = db.connection.execute(
         "SELECT * FROM counterparties WHERE display_name = ? COLLATE NOCASE",
-        (suggestion.counterparty,),
+        (counterparty_name,),
     ).fetchall()
     if len(matches) == 1:
         return matches[0]["counterparty_id"]
-    normalized = "".join(character for character in suggestion.counterparty.casefold() if character.isalnum())
+    normalized = "".join(character for character in counterparty_name.casefold() if character.isalnum())
     row = db.upsert_counterparty(
         external_key=f"intake-name:{normalized}",
-        display_name=suggestion.counterparty,
+        display_name=counterparty_name,
         country_code="ZZ",
         source_hash=hashlib.sha256(
             f"intake-counterparty:{normalized}".encode("utf-8")
         ).hexdigest(),
     )
     return row["counterparty_id"]
+
+
+def _existing_intake_receipt(
+    database_path: Path,
+    row: IntakeSheetRow,
+) -> tuple[dict[str, Any], str] | None:
+    with open_ledger_db(database_path, read_only=True) as db:
+        if row.system_id is not None:
+            receipt = db.get_intake_receipt(row.system_id)
+            if receipt is None:
+                raise IntakeSheetError(
+                    f"row {row.row_number}: system_id is not known to the ledger"
+                )
+            if receipt["intake_tab"] != row.tab or receipt["row_fingerprint"] != row.row_fingerprint:
+                raise IntakeSheetError(
+                    f"row {row.row_number}: an accepted row was edited; add a new correcting row"
+                )
+            return receipt, "already_accepted"
+        receipt = db.find_intake_receipt_by_fingerprint(row.row_fingerprint)
+        if receipt is not None:
+            return receipt, "recovered"
+    return None
+
+
+def _ensure_intake_follow_up_issues(
+    database_path: Path,
+    row: IntakeSheetRow,
+    *,
+    transaction_id: str,
+) -> None:
+    correction_of = row.values.get("correction_of")
+    if row.tab != "income_intake" or not correction_of:
+        return
+    with open_ledger_db(database_path) as db:
+        existing = db.connection.execute(
+            """
+            SELECT 1
+            FROM validation_issues vi
+            JOIN periods p ON p.period_id = vi.period_id
+            WHERE p.period_key = ?
+              AND vi.issue_code = 'invoice_correction_review'
+              AND vi.subject_table = 'transactions'
+              AND vi.subject_id = ?
+            """,
+            (row.period_key, transaction_id),
+        ).fetchone()
+        if existing is not None:
+            return
+        db.add_validation_issue(
+            period_key=row.period_key,
+            issue_code="invoice_correction_review",
+            severity="error",
+            message=(
+                "Resolve the operator correction reference before approval: "
+                + correction_of
+            ),
+            subject_table="transactions",
+            subject_id=transaction_id,
+            blocking=True,
+            source_hash=hashlib.sha256(
+                f"intake-correction:{row.row_fingerprint}".encode("utf-8")
+            ).hexdigest(),
+        )
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _quarter_key(value: date) -> str:
