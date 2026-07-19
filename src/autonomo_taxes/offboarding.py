@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 import hashlib
 from pathlib import Path
 import re
@@ -79,8 +80,37 @@ def build_offboarding_manifest(
     return rows
 
 
-def verify_offboarding_manifest(rows: Iterable[Mapping[str, str]]) -> dict[str, object]:
-    source_rows = [dict(row) for row in rows]
+def build_offboarding_manifest_document(
+    paths: Iterable[Path],
+    *,
+    generated_on: date,
+    category_overrides: Mapping[str, str] | None = None,
+    excluded_paths: Iterable[Path] = (),
+) -> dict[str, object]:
+    source_paths = [Path(path) for path in paths]
+    rows = build_offboarding_manifest(
+        source_paths,
+        category_overrides=category_overrides,
+        excluded_paths=excluded_paths,
+    )
+    return {
+        "schema_version": 2,
+        "report_type": "xolo_offboarding_manifest",
+        "generated_on": generated_on.isoformat(),
+        "source_roots": sorted(
+            {str(path.resolve()) for path in source_paths},
+            key=str.casefold,
+        ),
+        "rows": rows,
+    }
+
+
+def verify_offboarding_manifest(
+    manifest: Iterable[Mapping[str, str]] | Mapping[str, object],
+    *,
+    required_generated_on: date | None = None,
+) -> dict[str, object]:
+    source_rows, metadata = _unpack_manifest(manifest)
     ignored_system_paths = sorted(
         row.get("path", "")
         for row in source_rows
@@ -116,16 +146,41 @@ def verify_offboarding_manifest(rows: Iterable[Mapping[str, str]]) -> dict[str, 
         category: sum(1 for row in normalized_rows if row.get("category") == category)
         for category in OFFBOARDING_CATEGORIES
     }
-    blocked = bool(
+    integrity_blocked = bool(
         missing_categories
         or invalid_hashes
         or missing_paths
         or hash_mismatch_paths
         or size_mismatch_paths
     )
+    manifest_fresh: bool | None = None
+    freshness_reason = "not_required"
+    if required_generated_on is not None:
+        generated_on = metadata["generated_on"]
+        if generated_on is None:
+            manifest_fresh = False
+            freshness_reason = "generated_on_missing"
+        elif generated_on != required_generated_on.isoformat():
+            manifest_fresh = False
+            freshness_reason = "generated_on_mismatch"
+        else:
+            manifest_fresh = True
+            freshness_reason = "generated_on_matches"
+    blocked = integrity_blocked or manifest_fresh is False
     return {
         "ok": not blocked,
         "blocked": blocked,
+        "integrity_ok": not integrity_blocked,
+        "manifest_schema_version": metadata["schema_version"],
+        "manifest_generated_on": metadata["generated_on"],
+        "manifest_source_roots": metadata["source_roots"],
+        "required_generated_on": (
+            required_generated_on.isoformat()
+            if required_generated_on is not None
+            else None
+        ),
+        "manifest_fresh": manifest_fresh,
+        "freshness_reason": freshness_reason,
         "missing_categories": missing_categories,
         "optional_missing_categories": [
             category
@@ -138,6 +193,52 @@ def verify_offboarding_manifest(rows: Iterable[Mapping[str, str]]) -> dict[str, 
         "size_mismatch_paths": sorted(size_mismatch_paths),
         "ignored_system_paths": ignored_system_paths,
         "category_counts": category_counts,
+    }
+
+
+def _unpack_manifest(
+    manifest: Iterable[Mapping[str, str]] | Mapping[str, object],
+) -> tuple[list[dict[str, str]], dict[str, object]]:
+    if isinstance(manifest, Mapping):
+        if manifest.get("schema_version") != 2:
+            raise ValueError("Unsupported offboarding manifest schema_version")
+        if manifest.get("report_type") != "xolo_offboarding_manifest":
+            raise ValueError("Unsupported offboarding manifest report_type")
+        generated_on = manifest.get("generated_on")
+        if not isinstance(generated_on, str):
+            raise ValueError("Offboarding manifest generated_on must be YYYY-MM-DD")
+        try:
+            date.fromisoformat(generated_on)
+        except ValueError as exc:
+            raise ValueError(
+                "Offboarding manifest generated_on must be YYYY-MM-DD"
+            ) from exc
+        raw_rows = manifest.get("rows")
+        if not isinstance(raw_rows, list):
+            raise ValueError("Offboarding manifest rows must be a JSON array")
+        raw_roots = manifest.get("source_roots", [])
+        if not isinstance(raw_roots, list) or not all(
+            isinstance(value, str) for value in raw_roots
+        ):
+            raise ValueError("Offboarding manifest source_roots must be a string array")
+        schema_version = 2
+        source_roots = list(raw_roots)
+    else:
+        raw_rows = list(manifest)
+        generated_on = None
+        schema_version = 1
+        source_roots = []
+
+    if not all(isinstance(row, Mapping) for row in raw_rows):
+        raise ValueError("Offboarding manifest rows must contain JSON objects")
+    rows = [
+        {str(key): str(value) for key, value in row.items()}
+        for row in raw_rows
+    ]
+    return rows, {
+        "schema_version": schema_version,
+        "generated_on": generated_on,
+        "source_roots": source_roots,
     }
 
 

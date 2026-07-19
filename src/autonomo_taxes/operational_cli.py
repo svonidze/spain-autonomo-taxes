@@ -934,10 +934,21 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     offboarding_sub = offboarding.add_subparsers(dest="offboarding_command", required=True)
     offboarding_build = offboarding_sub.add_parser("build")
     offboarding_build.add_argument("paths", type=Path, nargs="+")
+    offboarding_build.add_argument(
+        "--generated-on",
+        type=date.fromisoformat,
+        default=date.today(),
+        help="Operational date represented by this manifest (default: today)",
+    )
     offboarding_build.add_argument("--out", type=Path, required=True)
     offboarding_build.set_defaults(_operational_handler=_cmd_offboarding_build)
     offboarding_verify = offboarding_sub.add_parser("verify")
     offboarding_verify.add_argument("--manifest", type=Path, required=True)
+    offboarding_verify.add_argument(
+        "--required-generated-on",
+        type=date.fromisoformat,
+        help="Also require the manifest to have been generated on this date",
+    )
     offboarding_verify.set_defaults(_operational_handler=_cmd_offboarding_verify)
 
     verify_history = subparsers.add_parser("verify-history", help="Rebuild legacy history without production FX shortcuts")
@@ -2355,10 +2366,13 @@ def _cmd_period_shadow_close(args: argparse.Namespace) -> int:
 
     offboarding_verification = None
     if args.offboarding_manifest is not None:
-        rows = json.loads(
+        manifest = json.loads(
             args.offboarding_manifest.read_text(encoding="utf-8")
         )
-        offboarding_verification = verify_offboarding_manifest(rows)
+        offboarding_verification = verify_offboarding_manifest(
+            manifest,
+            required_generated_on=args.as_of,
+        )
         offboarding_verification["manifest_path"] = str(
             args.offboarding_manifest.resolve()
         )
@@ -3723,19 +3737,35 @@ def _cmd_period_annual_status(args: argparse.Namespace) -> int:
 
 
 def _cmd_offboarding_build(args: argparse.Namespace) -> int:
-    from .offboarding import build_offboarding_manifest
+    from .offboarding import build_offboarding_manifest_document
 
-    rows = build_offboarding_manifest(args.paths, excluded_paths=[args.out])
+    manifest = build_offboarding_manifest_document(
+        args.paths,
+        generated_on=args.generated_on,
+        excluded_paths=[args.out],
+    )
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(rows, indent=2, ensure_ascii=False), encoding="utf-8")
-    _emit({"manifest": str(args.out.resolve()), "rows": len(rows)})
+    args.out.write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    _emit(
+        {
+            "manifest": str(args.out.resolve()),
+            "generated_on": manifest["generated_on"],
+            "rows": len(manifest["rows"]),
+        }
+    )
     return 0
 
 
 def _cmd_offboarding_verify(args: argparse.Namespace) -> int:
     from .offboarding import verify_offboarding_manifest
 
-    result = verify_offboarding_manifest(json.loads(args.manifest.read_text(encoding="utf-8")))
+    result = verify_offboarding_manifest(
+        json.loads(args.manifest.read_text(encoding="utf-8")),
+        required_generated_on=args.required_generated_on,
+    )
     _emit(result)
     return 0 if result["ok"] else 2
 
