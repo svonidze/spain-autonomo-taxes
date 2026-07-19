@@ -919,8 +919,10 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     calculate.add_argument(
         "--final-vat-settlement",
         choices=["compensate", "refund"],
-        default="compensate",
-        help="For Q4 Modelo 303/390, carry a negative result forward or request its refund",
+        help=(
+            "For Q4 Modelo 303, carry a negative result forward or request its refund. "
+            "Modelo 390 derives the choice from final filed Modelo 303 evidence and rejects a conflict."
+        ),
     )
     calculate.add_argument("--withholding-and-payments")
     calculate.add_argument("--reduction")
@@ -3581,6 +3583,24 @@ def _cmd_calculate(args: argparse.Namespace) -> int:
                     f"{annual_readiness_error(annual_readiness)}. "
                     "Run period annual-status for the complete report."
                 )
+            if args.form == "390":
+                categories = annual_readiness["form_specific_gates"]["390"]["categories"]
+                settlement_gate = next(
+                    row
+                    for row in categories
+                    if row["category"] == "final_refund_or_compensation"
+                )
+                evidenced_choice = settlement_gate.get("choice") or "compensate"
+                if (
+                    args.final_vat_settlement is not None
+                    and args.final_vat_settlement != evidenced_choice
+                ):
+                    raise CalculationBlocked(
+                        "Modelo 390 final settlement choice conflicts with filed Q4 Modelo 303 "
+                        f"evidence: requested {args.final_vat_settlement}, "
+                        f"evidenced {evidenced_choice}"
+                    )
+                args.final_vat_settlement = evidenced_choice
         modelo303_periods: tuple[str, ...] = ()
         modelo303_opening_compensation = Decimal("0.00")
         periods = [f"{args.year}-Q{args.quarter}"] if args.quarter else []
@@ -3780,7 +3800,7 @@ def _calculate(
             year=args.year,
             quarter=args.quarter,
             previous_compensation=Decimal(args.previous_vat_compensation),
-            final_settlement=args.final_vat_settlement,
+            final_settlement=args.final_vat_settlement or "compensate",
         )
     if args.form == "349":
         return calculate_modelo349_rows(rows, year=args.year, quarter=args.quarter)
@@ -3794,7 +3814,7 @@ def _calculate(
                 quarter=int(period[-1]),
                 previous_compensation=compensation,
                 final_settlement=(
-                    args.final_vat_settlement
+                    (args.final_vat_settlement or "compensate")
                     if int(period[-1]) == 4
                     else "compensate"
                 ),
