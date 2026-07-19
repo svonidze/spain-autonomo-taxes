@@ -2617,6 +2617,7 @@ def _cmd_backup_create(args: argparse.Namespace) -> int:
 
 
 def _cmd_backup_restore(args: argparse.Namespace) -> int:
+    args.db.parent.mkdir(parents=True, exist_ok=True)
     with open_ledger_db(args.db) as db:
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
         safety_backup = args.db.with_name(
