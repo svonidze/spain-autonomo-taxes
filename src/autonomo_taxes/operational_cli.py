@@ -3,13 +3,13 @@ from __future__ import annotations
 import argparse
 import csv
 from dataclasses import asdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 import hashlib
 import json
 from pathlib import Path
 import sqlite3
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Mapping
 
 from .fx_policy import ALLOWED_PRODUCTION_SOURCES
 from .intake import archive_evidence, evidence_archive_path, inspect_document
@@ -549,6 +549,36 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     calendar_list.add_argument("--period")
     calendar_list.add_argument("--out", type=Path)
     calendar_list.set_defaults(_operational_handler=_cmd_calendar_list)
+
+    agenda = subparsers.add_parser(
+        "agenda",
+        help="Show the forward tax, payment, and cash agenda",
+    )
+    _db_arg(agenda)
+    agenda.add_argument(
+        "--as-of",
+        type=date.fromisoformat,
+        default=date.today(),
+        help="Agenda date (default: today)",
+    )
+    agenda.add_argument(
+        "--horizon-days",
+        type=int,
+        default=120,
+        help="Forward schedule window in days (default: 120)",
+    )
+    agenda.add_argument(
+        "--available-eur",
+        type=Decimal,
+        help="Cash currently available for tax payments",
+    )
+    agenda.add_argument(
+        "--cash-buffer-eur",
+        type=Decimal,
+        help="Override the default operating reserve buffer",
+    )
+    agenda.add_argument("--out", type=Path, help="Write JSON instead of stdout")
+    agenda.set_defaults(_operational_handler=_cmd_agenda)
 
     issues = subparsers.add_parser("issues", help="List or explicitly waive validation issues")
     issues_sub = issues.add_subparsers(dest="issues_command", required=True)
@@ -2056,6 +2086,53 @@ def _cmd_calendar_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_agenda(args: argparse.Namespace) -> int:
+    from .agenda import build_tax_agenda, select_cash_period
+
+    if args.horizon_days <= 0:
+        raise ValueError("horizon_days must be positive")
+    with open_ledger_db(args.db, read_only=True) as db:
+        periods = db.list_periods()
+        obligations_by_period = {
+            str(period["period_key"]): db.list_obligations_with_deadlines(
+                period_key=str(period["period_key"])
+            )
+            for period in periods
+        }
+        cash_period = select_cash_period(
+            periods=periods,
+            obligations_by_period=obligations_by_period,
+            as_of=args.as_of,
+        )
+        cash_check = None
+        if cash_period is not None:
+            _, _, preparation = _build_period_preparation_context(
+                db,
+                period_key=cash_period,
+                as_of=args.as_of,
+                available_eur=args.available_eur,
+                cash_buffer_eur=args.cash_buffer_eur,
+            )
+            cash_check = preparation["cash_check"]
+        settlements = _agenda_pending_settlements(
+            db,
+            obligations_by_period=obligations_by_period,
+            as_of=args.as_of,
+            through=args.as_of + timedelta(days=args.horizon_days),
+        )
+        report = build_tax_agenda(
+            periods=periods,
+            obligations_by_period=obligations_by_period,
+            as_of=args.as_of,
+            horizon_days=args.horizon_days,
+            cash_period=cash_period,
+            cash_check=cash_check,
+            settlements=settlements,
+        )
+    _write_or_emit(report, args.out)
+    return 0
+
+
 def _cmd_issues_list(args: argparse.Namespace) -> int:
     with open_ledger_db(args.db) as db:
         _emit(db.list_issues(period_key=args.period))
@@ -2172,65 +2249,15 @@ def _cmd_period_dashboard(args: argparse.Namespace) -> int:
 
 
 def _cmd_period_prepare(args: argparse.Namespace) -> int:
-    from .current_quarter import (
-        build_current_quarter_dashboard,
-        write_current_quarter_dashboard,
-    )
+    from .current_quarter import write_current_quarter_dashboard
     from .filing_package import write_filing_package
-    from .period_prepare import build_period_preparation, write_period_preparation
+    from .period_prepare import write_period_preparation
 
-    year, quarter = _parse_quarter_period(args.period)
     with open_ledger_db(args.db, read_only=True) as db:
-        period = next(
-            (row for row in db.list_periods() if row["period_key"] == args.period),
-            None,
-        )
-        if period is None:
-            raise ValueError(f"Unknown period: {args.period}")
-        actual_rows = _tax_rows_from_db(
+        _, dashboard, report = _build_period_preparation_context(
             db,
-            year,
-            mode="production",
-            allow_authoritative_history=True,
-        )
-        projected_rows = _tax_rows_from_db(
-            db,
-            year,
-            mode="production",
-            allow_authoritative_history=True,
-            include_approved_periods={args.period},
-        )
-        obligations = db.list_obligations_with_deadlines(period_key=args.period)
-        rule = difficult_expense_rule_for_year(year)
-        dashboard = build_current_quarter_dashboard(
-            actual_rows=actual_rows,
-            projected_rows=projected_rows,
             period_key=args.period,
             as_of=args.as_of,
-            difficult_expenses_rate=rule.rate,
-            previous_positive_casilla_07=_previous_filed_positive(db, year, quarter),
-            previous_negative_carry=_previous_filed_negative_carry(db, year, quarter),
-            previous_vat_compensation=_previous_filed_vat_compensation(db, year, quarter),
-            approved_current_rows=_approved_forecast_rows(db, args.period),
-            obligations=obligations,
-            period_validation=db.validate_period(
-                args.period,
-                allow_authoritative_history=True,
-            ),
-        )
-        calculations = _period_prepare_calculations(
-            dashboard=dashboard,
-            rows=projected_rows,
-            obligations=obligations,
-            year=year,
-            quarter=quarter,
-        )
-        report = build_period_preparation(
-            period=period,
-            as_of=args.as_of,
-            dashboard=dashboard,
-            calculations=calculations,
-            obligations=obligations,
             available_eur=args.available_eur,
             cash_buffer_eur=args.cash_buffer_eur,
         )
@@ -2260,6 +2287,124 @@ def _cmd_period_prepare(args: argparse.Namespace) -> int:
         }
     )
     return 2 if report["status"] == "blocked" else 0
+
+
+def _build_period_preparation_context(
+    db: LedgerDB,
+    *,
+    period_key: str,
+    as_of: date,
+    available_eur: Decimal | None,
+    cash_buffer_eur: Decimal | None,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    from .current_quarter import build_current_quarter_dashboard
+    from .period_prepare import build_period_preparation
+
+    year, quarter = _parse_quarter_period(period_key)
+    period = next(
+        (row for row in db.list_periods() if row["period_key"] == period_key),
+        None,
+    )
+    if period is None:
+        raise ValueError(f"Unknown period: {period_key}")
+    actual_rows = _tax_rows_from_db(
+        db,
+        year,
+        mode="production",
+        allow_authoritative_history=True,
+    )
+    projected_rows = _tax_rows_from_db(
+        db,
+        year,
+        mode="production",
+        allow_authoritative_history=True,
+        include_approved_periods={period_key},
+    )
+    obligations = db.list_obligations_with_deadlines(period_key=period_key)
+    rule = difficult_expense_rule_for_year(year)
+    dashboard = build_current_quarter_dashboard(
+        actual_rows=actual_rows,
+        projected_rows=projected_rows,
+        period_key=period_key,
+        as_of=as_of,
+        difficult_expenses_rate=rule.rate,
+        previous_positive_casilla_07=_previous_filed_positive(db, year, quarter),
+        previous_negative_carry=_previous_filed_negative_carry(db, year, quarter),
+        previous_vat_compensation=_previous_filed_vat_compensation(db, year, quarter),
+        approved_current_rows=_approved_forecast_rows(db, period_key),
+        obligations=obligations,
+        period_validation=db.validate_period(
+            period_key,
+            allow_authoritative_history=True,
+        ),
+    )
+    calculations = _period_prepare_calculations(
+        dashboard=dashboard,
+        rows=projected_rows,
+        obligations=obligations,
+        year=year,
+        quarter=quarter,
+    )
+    report = build_period_preparation(
+        period=period,
+        as_of=as_of,
+        dashboard=dashboard,
+        calculations=calculations,
+        obligations=obligations,
+        available_eur=available_eur,
+        cash_buffer_eur=cash_buffer_eur,
+    )
+    return period, dashboard, report
+
+
+def _agenda_pending_settlements(
+    db: LedgerDB,
+    *,
+    obligations_by_period: Mapping[str, list[dict[str, Any]]],
+    as_of: date,
+    through: date,
+) -> list[dict[str, Any]]:
+    from .cash_check import PAYABLE_KEYS
+    from .shadow_close import summarize_required_tax_settlements
+
+    lookback = as_of - timedelta(days=45)
+    due_dates: dict[tuple[str, str], date] = {}
+    for period_key, obligations in obligations_by_period.items():
+        for obligation in obligations:
+            if (
+                obligation.get("determination") != "due"
+                or obligation.get("filing_status") != "filed"
+                or str(obligation.get("obligation_code")) not in PAYABLE_KEYS
+            ):
+                continue
+            raw_due = obligation.get("due_on") or obligation.get(
+                "calendar_statutory_due_on"
+            )
+            if not raw_due:
+                continue
+            due_on = date.fromisoformat(str(raw_due))
+            if lookback <= due_on <= through:
+                due_dates[(period_key, str(obligation["obligation_code"]))] = due_on
+    if not due_dates:
+        return []
+
+    state = summarize_required_tax_settlements(db, selectors=due_dates)
+    settlements: list[dict[str, Any]] = []
+    for requirement in state["requirements"]:
+        period_key, form = str(requirement["selector"]).split(":", 1)
+        expected_minor = requirement.get("expected_amount_minor")
+        if expected_minor is None or int(expected_minor) <= 0:
+            continue
+        settlements.append(
+            {
+                "period": period_key,
+                "form": form,
+                "due_on": due_dates[(period_key, form)].isoformat(),
+                "expected_amount_eur": f"{Decimal(int(expected_minor)) / 100:.2f}",
+                "status": requirement["status"],
+            }
+        )
+    return settlements
 
 
 def _cmd_period_shadow_close(args: argparse.Namespace) -> int:

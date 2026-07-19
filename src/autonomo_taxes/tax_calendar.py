@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import asdict, dataclass
 from datetime import date, timedelta
 import hashlib
@@ -37,6 +38,17 @@ class TaxCalendarLoadResult:
     calendar_year: int
     source_file_hash: str
     entries: tuple[TaxCalendarEntry, ...]
+
+
+@dataclass(frozen=True)
+class TaxScheduleEvent:
+    kind: str
+    event_date: date
+    summary: str
+    description: str
+    forms: tuple[str, ...]
+    determinations: tuple[tuple[str, str], ...]
+    statutory_due_on: date | None = None
 
 
 def load_tax_calendar(path: Path) -> TaxCalendarLoadResult:
@@ -112,65 +124,149 @@ def build_period_ics(
     obligations: list[dict[str, Any]],
     cash_check: Mapping[str, Any] | None = None,
 ) -> str:
+    schedulable = [
+        row for row in obligations if obligation_has_confirmed_schedule(row)
+    ]
+    events = build_period_schedule_events(
+        period_key=period_key,
+        period_ends_on=period_ends_on,
+        obligations=schedulable,
+        cash_check=cash_check,
+        split_by_determination=False,
+    )
+    return _serialize_ics(events, period_key=period_key)
+
+
+def build_period_schedule_events(
+    *,
+    period_key: str,
+    period_ends_on: date,
+    obligations: list[dict[str, Any]],
+    cash_check: Mapping[str, Any] | None = None,
+    split_by_determination: bool = True,
+) -> list[TaxScheduleEvent]:
     actionable = [
         row
         for row in obligations
         if row.get("determination") in {"due", "unknown"}
         and row.get("filing_status") not in {"filed", "waived"}
     ]
-    forms = sorted({str(row["obligation_code"]) for row in actionable})
-    if not forms:
-        return _serialize_ics([])
+    if not actionable:
+        return []
 
-    filing_dates = [
-        date.fromisoformat(str(row["filing_opens_on"]))
-        for row in actionable
-        if row.get("filing_opens_on")
-    ]
-    internal_dates = [
-        date.fromisoformat(str(row["internal_due_on"]))
-        for row in actionable
-        if row.get("internal_due_on")
-    ]
-    debit_dates = [
-        date.fromisoformat(str(row["direct_debit_cutoff_on"]))
-        for row in actionable
-        if row.get("direct_debit_cutoff_on")
-    ]
-    statutory_dates = [
-        date.fromisoformat(str(row.get("due_on") or row.get("calendar_statutory_due_on")))
-        for row in actionable
-        if row.get("due_on") or row.get("calendar_statutory_due_on")
-    ]
-    if not filing_dates or not internal_dates or not statutory_dates:
-        raise ValueError(f"{period_key} has actionable obligations without confirmed calendar dates")
-
-    filing_opens = min(filing_dates)
-    internal_due = min(internal_dates)
-    statutory_due = min(statutory_dates)
-    cash_due = internal_due
-    if debit_dates:
-        cash_due = min(cash_due, min(debit_dates) - timedelta(days=1))
-    form_text = ", ".join(f"Modelo {form}" for form in forms)
-    events = [
-        ("intake-close", period_ends_on, "Close invoice and expense intake", form_text),
-        ("draft", min(filing_opens + timedelta(days=9), internal_due), "Prepare draft tax returns", form_text),
-        ("blockers", internal_due - timedelta(days=2), "Resolve tax preparation blockers", form_text),
-        ("internal", internal_due, "Complete internal tax review", form_text),
-        (
-            "cash",
-            cash_due,
-            "Confirm tax payment cash",
-            _cash_event_description(form_text, cash_check),
-        ),
-        ("statutory", statutory_due, "Submit and pay tax returns", form_text),
-        ("evidence", statutory_due + timedelta(days=2), "Archive AEAT filing evidence", form_text),
-    ]
-    if debit_dates:
-        events.append(
-            ("direct-debit", min(debit_dates), "Direct debit filing cutoff", form_text)
+    grouped: dict[
+        tuple[str, date, str, date | None, str],
+        dict[str, str],
+    ] = {}
+    for row in actionable:
+        if not obligation_has_confirmed_schedule(row):
+            raise ValueError(
+                f"{period_key} has actionable obligations without confirmed calendar dates"
+            )
+        form = str(row["obligation_code"])
+        determination = str(row["determination"])
+        filing_opens = date.fromisoformat(str(row["filing_opens_on"]))
+        internal_due = date.fromisoformat(str(row["internal_due_on"]))
+        statutory_due = _effective_statutory_due(row)
+        assert statutory_due is not None
+        debit_due = (
+            date.fromisoformat(str(row["direct_debit_cutoff_on"]))
+            if row.get("direct_debit_cutoff_on")
+            else None
         )
-    return _serialize_ics(events, period_key=period_key)
+        cash_due = min(
+            internal_due,
+            debit_due - timedelta(days=1) if debit_due is not None else internal_due,
+        )
+        checkpoints = [
+            ("intake-close", period_ends_on, "Close invoice and expense intake", None),
+            (
+                "draft",
+                min(filing_opens + timedelta(days=9), internal_due),
+                "Prepare draft tax returns",
+                None,
+            ),
+            (
+                "blockers",
+                internal_due - timedelta(days=2),
+                "Resolve tax preparation blockers",
+                None,
+            ),
+            ("internal", internal_due, "Complete internal tax review", None),
+            ("cash", cash_due, "Confirm tax payment cash", None),
+            ("statutory", statutory_due, "Submit and pay tax returns", None),
+            (
+                "evidence",
+                statutory_due + timedelta(days=2),
+                "Archive AEAT filing evidence",
+                None,
+            ),
+        ]
+        if debit_due is not None:
+            checkpoints.append(
+                (
+                    "direct-debit",
+                    debit_due,
+                    "Direct debit filing cutoff",
+                    statutory_due,
+                )
+            )
+        for kind, event_date, summary, linked_statutory_due in checkpoints:
+            grouped.setdefault(
+                (
+                    kind,
+                    event_date,
+                    summary,
+                    linked_statutory_due,
+                    determination if split_by_determination else "all",
+                ),
+                {},
+            )[form] = determination
+
+    events: list[TaxScheduleEvent] = []
+    for (
+        kind,
+        event_date,
+        summary,
+        statutory_due,
+        _determination,
+    ), determinations in grouped.items():
+        forms = tuple(sorted(determinations))
+        form_text = ", ".join(f"Modelo {form}" for form in forms)
+        description = (
+            _cash_event_description(form_text, cash_check)
+            if kind == "cash"
+            else form_text
+        )
+        events.append(
+            TaxScheduleEvent(
+                kind=kind,
+                event_date=event_date,
+                summary=summary,
+                description=description,
+                forms=forms,
+                determinations=tuple(
+                    (form, determinations[form]) for form in forms
+                ),
+                statutory_due_on=statutory_due,
+            )
+        )
+    return sorted(events, key=lambda event: (event.event_date, event.kind, event.forms))
+
+
+def obligation_has_confirmed_schedule(obligation: Mapping[str, Any]) -> bool:
+    return bool(
+        obligation.get("filing_opens_on")
+        and obligation.get("internal_due_on")
+        and _effective_statutory_due(obligation) is not None
+    )
+
+
+def _effective_statutory_due(obligation: Mapping[str, Any]) -> date | None:
+    raw_due = obligation.get("due_on")
+    if not raw_due and obligation.get("deadline_status") != "provisional":
+        raw_due = obligation.get("calendar_statutory_due_on")
+    return date.fromisoformat(str(raw_due)) if raw_due else None
 
 
 def _cash_event_description(
@@ -190,7 +286,7 @@ def _cash_event_description(
 
 
 def _serialize_ics(
-    events: list[tuple[str, date, str, str]],
+    events: list[TaxScheduleEvent],
     *,
     period_key: str = "empty",
 ) -> str:
@@ -202,17 +298,27 @@ def _serialize_ics(
         "METHOD:PUBLISH",
     ]
     year = period_key[:4] if period_key[:4].isdigit() else "2000"
-    for kind, event_date, summary, description in sorted(events, key=lambda row: (row[1], row[0])):
-        uid = f"{period_key}-{kind}@spain-autonomo-taxes"
+    kind_counts = Counter(event.kind for event in events)
+    kind_date_counts = Counter((event.kind, event.event_date) for event in events)
+    kind_date_seen: Counter[tuple[str, date]] = Counter()
+    for event in sorted(events, key=lambda row: (row.event_date, row.kind, row.forms)):
+        uid_suffix = event.kind
+        if kind_counts[event.kind] > 1:
+            uid_suffix = f"{event.kind}-{event.event_date:%Y%m%d}"
+        identity = (event.kind, event.event_date)
+        kind_date_seen[identity] += 1
+        if kind_date_counts[identity] > 1:
+            uid_suffix = f"{uid_suffix}-{kind_date_seen[identity]}"
+        uid = f"{period_key}-{uid_suffix}@spain-autonomo-taxes"
         lines.extend(
             [
                 "BEGIN:VEVENT",
                 f"UID:{uid}",
                 f"DTSTAMP:{year}0101T000000Z",
-                f"DTSTART;VALUE=DATE:{event_date:%Y%m%d}",
-                f"DTEND;VALUE=DATE:{event_date + timedelta(days=1):%Y%m%d}",
-                f"SUMMARY:{_ics_escape(summary)}",
-                f"DESCRIPTION:{_ics_escape(description)}",
+                f"DTSTART;VALUE=DATE:{event.event_date:%Y%m%d}",
+                f"DTEND;VALUE=DATE:{event.event_date + timedelta(days=1):%Y%m%d}",
+                f"SUMMARY:{_ics_escape(event.summary)}",
+                f"DESCRIPTION:{_ics_escape(event.description)}",
                 "END:VEVENT",
             ]
         )
