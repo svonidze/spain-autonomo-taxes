@@ -39,6 +39,20 @@ class IntakeResult:
         return self.status == "needs_review"
 
 
+@dataclass(frozen=True)
+class ExpenseInboxCleanupCandidate:
+    source_path: Path
+    archive_path: Path
+    inbox_root: Path
+    archive_root: Path
+    period_key: str
+    sha256: str
+
+
+class InboxCleanupError(ValueError):
+    pass
+
+
 def inspect_document(
     path: Path,
     kind: str,
@@ -140,6 +154,103 @@ def evidence_archive_path(
         raise ValueError("Evidence digest must be a SHA-256 hexadecimal value")
     safe_name = re.sub(r"[^0-9A-Za-z._ -]+", "_", path.name).strip(" ._") or "evidence"
     return (archive_root / period_key / evidence_kind / f"{source_digest[:12]}-{safe_name}").resolve()
+
+
+def validate_expense_inbox_cleanup(candidate: ExpenseInboxCleanupCandidate) -> str:
+    """Validate one expense Inbox cleanup without changing the filesystem."""
+    status, _, _ = _validated_expense_cleanup_paths(candidate)
+    return status
+
+
+def cleanup_expense_inbox_source(candidate: ExpenseInboxCleanupCandidate) -> str:
+    """Delete one verified expense source while preserving its Evidence copy."""
+    status, _, _ = _validated_expense_cleanup_paths(candidate)
+    if status == "already_absent":
+        return status
+    candidate.source_path.unlink()
+    return "deleted"
+
+
+def _validated_expense_cleanup_paths(
+    candidate: ExpenseInboxCleanupCandidate,
+) -> tuple[str, Path, Path]:
+    expected_digest = candidate.sha256.strip().lower()
+    if len(expected_digest) != 64 or any(
+        character not in "0123456789abcdef" for character in expected_digest
+    ):
+        raise InboxCleanupError("Stored evidence SHA-256 is invalid")
+    if re.fullmatch(r"\d{4}-Q[1-4]", candidate.period_key) is None:
+        raise InboxCleanupError("Stored accounting period is invalid for Inbox cleanup")
+
+    expected_source_dir = (
+        candidate.inbox_root / candidate.period_key / "expense_invoice"
+    )
+    expected_archive_dir = (
+        candidate.archive_root / candidate.period_key / "expense_invoice"
+    )
+    source_path = _resolve_cleanup_path(
+        candidate.source_path,
+        expected_source_dir,
+        label="Inbox source",
+        require_exists=False,
+    )
+    archive_path = _resolve_cleanup_path(
+        candidate.archive_path,
+        expected_archive_dir,
+        label="Evidence archive",
+        require_exists=True,
+    )
+    if source_path == archive_path:
+        raise InboxCleanupError("Inbox source and Evidence archive resolve to the same file")
+    if not archive_path.is_file():
+        raise InboxCleanupError("Evidence archive is not a regular file")
+    if _cleanup_sha256(archive_path, label="Evidence archive") != expected_digest:
+        raise InboxCleanupError("Evidence archive SHA-256 does not match SQLite")
+
+    try:
+        source_path.stat()
+    except FileNotFoundError:
+        return "already_absent", source_path, archive_path
+    except OSError as exc:
+        raise InboxCleanupError("Inbox source could not be inspected") from exc
+    source_path = _resolve_cleanup_path(
+        candidate.source_path,
+        expected_source_dir,
+        label="Inbox source",
+        require_exists=True,
+    )
+    if source_path == archive_path:
+        raise InboxCleanupError("Inbox source and Evidence archive resolve to the same file")
+    if not source_path.is_file():
+        raise InboxCleanupError("Inbox source is not a regular file")
+    if _cleanup_sha256(source_path, label="Inbox source") != expected_digest:
+        raise InboxCleanupError("Inbox source SHA-256 does not match SQLite")
+    return "ready", source_path, archive_path
+
+
+def _resolve_cleanup_path(
+    path: Path,
+    expected_dir: Path,
+    *,
+    label: str,
+    require_exists: bool,
+) -> Path:
+    try:
+        resolved_dir = expected_dir.resolve(strict=False)
+        resolved_path = path.resolve(strict=require_exists)
+        resolved_path.relative_to(resolved_dir)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise InboxCleanupError(
+            f"{label} must resolve inside its configured period directory"
+        ) from exc
+    return resolved_path
+
+
+def _cleanup_sha256(path: Path, *, label: str) -> str:
+    try:
+        return _sha256(path).lower()
+    except OSError as exc:
+        raise InboxCleanupError(f"{label} could not be read for SHA-256 verification") from exc
 
 
 def structural_errors(kind: str, text: str) -> tuple[str, ...]:

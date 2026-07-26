@@ -12,7 +12,15 @@ import sqlite3
 from typing import Any, Callable, Iterable, Mapping
 
 from .fx_policy import ALLOWED_PRODUCTION_SOURCES
-from .intake import archive_evidence, evidence_archive_path, inspect_document
+from .intake import (
+    ExpenseInboxCleanupCandidate,
+    InboxCleanupError,
+    archive_evidence,
+    cleanup_expense_inbox_source,
+    evidence_archive_path,
+    inspect_document,
+    validate_expense_inbox_cleanup,
+)
 from .intake_bundle import (
     InvoiceAmounts,
     extract_invoice_amounts,
@@ -251,7 +259,7 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
 
     inbox = subparsers.add_parser(
         "inbox",
-        help="Process a quarter inbox without moving or deleting source documents",
+        help="Process quarter Inbox files and clean verified posted expense sources",
     )
     inbox_sub = inbox.add_subparsers(dest="inbox_command", required=True)
     inbox_process = inbox_sub.add_parser(
@@ -269,6 +277,20 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
         help="Include absolute private filesystem paths in JSON output",
     )
     inbox_process.set_defaults(_operational_handler=_cmd_inbox_process)
+    inbox_cleanup = inbox_sub.add_parser(
+        "cleanup-posted",
+        help="Delete one verified expense_intake source after its transaction was posted",
+    )
+    _db_arg(inbox_cleanup)
+    inbox_cleanup.add_argument("review_id")
+    inbox_cleanup.add_argument("--inbox-root", type=Path)
+    inbox_cleanup.add_argument("--archive-root", type=Path)
+    inbox_cleanup.add_argument(
+        "--show-paths",
+        action="store_true",
+        help="Include absolute private filesystem paths in JSON output",
+    )
+    inbox_cleanup.set_defaults(_operational_handler=_cmd_inbox_cleanup_posted)
 
     expense = subparsers.add_parser(
         "expense",
@@ -367,6 +389,13 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     _db_arg(review_post)
     review_post.add_argument("review_id")
     review_post.add_argument("--expected-row-version", type=int, required=True)
+    review_post.add_argument("--inbox-root", type=Path)
+    review_post.add_argument("--archive-root", type=Path)
+    review_post.add_argument(
+        "--show-paths",
+        action="store_true",
+        help="Include absolute private filesystem paths in JSON output",
+    )
     review_post.set_defaults(_operational_handler=_cmd_review_post)
 
     documents = subparsers.add_parser("documents", help="Review document lifecycle decisions")
@@ -1912,13 +1941,268 @@ def _cmd_review_post(args: argparse.Namespace) -> int:
     if review_kind != "transaction":
         raise ValueError("Only transaction:<uuid> review items can be posted")
     with open_ledger_db(args.db) as db:
+        current = _transaction_for_cleanup_output(db, subject_id)
+        cleanup_row = _expense_inbox_cleanup_row(db, subject_id)
+        candidate: ExpenseInboxCleanupCandidate | None = None
+        if cleanup_row is not None:
+            try:
+                candidate = _expense_inbox_cleanup_candidate(cleanup_row, args)
+                validate_expense_inbox_cleanup(candidate)
+            except InboxCleanupError as exc:
+                _emit(
+                    {
+                        **current,
+                        "inbox_cleanup": _inbox_cleanup_payload(
+                            "failed",
+                            cleanup_row=cleanup_row,
+                            candidate=candidate,
+                            message=str(exc),
+                            show_paths=args.show_paths,
+                        ),
+                    }
+                )
+                return 2
         row = db.transition_transaction(
             subject_id,
             lifecycle_status="posted",
             expected_row_version=args.expected_row_version,
         )
-    _emit(row)
+    if candidate is None:
+        _emit(
+            {
+                **row,
+                "inbox_cleanup": _inbox_cleanup_payload(
+                    "not_applicable",
+                    message="Automatic cleanup applies only to expense_intake expense invoices.",
+                    show_paths=args.show_paths,
+                ),
+            }
+        )
+        return 0
+    try:
+        cleanup_status = cleanup_expense_inbox_source(candidate)
+    except (InboxCleanupError, OSError) as exc:
+        _emit(
+            {
+                **row,
+                "inbox_cleanup": _inbox_cleanup_payload(
+                    "failed",
+                    cleanup_row=cleanup_row,
+                    candidate=candidate,
+                    message=_inbox_cleanup_error_message(
+                        exc,
+                        show_paths=args.show_paths,
+                    ),
+                    show_paths=args.show_paths,
+                ),
+            }
+        )
+        return 2
+    _emit(
+        {
+            **row,
+            "inbox_cleanup": _inbox_cleanup_payload(
+                cleanup_status,
+                cleanup_row=cleanup_row,
+                candidate=candidate,
+                show_paths=args.show_paths,
+            ),
+        }
+    )
     return 0
+
+
+def _cmd_inbox_cleanup_posted(args: argparse.Namespace) -> int:
+    review_kind, subject_id = _parse_review_id(args.review_id)
+    if review_kind != "transaction":
+        raise ValueError("Only transaction:<uuid> review items can be cleaned")
+    with open_ledger_db(args.db, read_only=True) as db:
+        current = _transaction_for_cleanup_output(db, subject_id)
+        cleanup_row = _expense_inbox_cleanup_row(db, subject_id)
+    if current["lifecycle_status"] != "posted":
+        _emit(
+            {
+                **current,
+                "inbox_cleanup": _inbox_cleanup_payload(
+                    "failed",
+                    cleanup_row=cleanup_row,
+                    message="Inbox cleanup requires a posted transaction.",
+                    show_paths=args.show_paths,
+                ),
+            }
+        )
+        return 2
+    if cleanup_row is None:
+        _emit(
+            {
+                **current,
+                "inbox_cleanup": _inbox_cleanup_payload(
+                    "failed",
+                    message="Transaction is not an expense_intake expense invoice.",
+                    show_paths=args.show_paths,
+                ),
+            }
+        )
+        return 2
+
+    candidate: ExpenseInboxCleanupCandidate | None = None
+    try:
+        candidate = _expense_inbox_cleanup_candidate(cleanup_row, args)
+        cleanup_status = cleanup_expense_inbox_source(candidate)
+    except (InboxCleanupError, OSError) as exc:
+        _emit(
+            {
+                **current,
+                "inbox_cleanup": _inbox_cleanup_payload(
+                    "failed",
+                    cleanup_row=cleanup_row,
+                    candidate=candidate,
+                    message=_inbox_cleanup_error_message(
+                        exc,
+                        show_paths=args.show_paths,
+                    ),
+                    show_paths=args.show_paths,
+                ),
+            }
+        )
+        return 2
+    _emit(
+        {
+            **current,
+            "inbox_cleanup": _inbox_cleanup_payload(
+                cleanup_status,
+                cleanup_row=cleanup_row,
+                candidate=candidate,
+                show_paths=args.show_paths,
+            ),
+        }
+    )
+    return 0
+
+
+def _transaction_for_cleanup_output(db: LedgerDB, transaction_id: str) -> dict[str, Any]:
+    row = db.connection.execute(
+        "SELECT * FROM transactions WHERE transaction_id = ?",
+        (transaction_id,),
+    ).fetchone()
+    if row is None:
+        raise LedgerDbError(f"Transaction not found: {transaction_id}")
+    return dict(row)
+
+
+def _expense_inbox_cleanup_row(
+    db: LedgerDB,
+    transaction_id: str,
+) -> dict[str, Any] | None:
+    row = db.connection.execute(
+        """
+        SELECT t.transaction_id, p.period_key, d.document_type,
+               d.source_path AS archive_path,
+               d.source_hash AS evidence_sha256,
+               ib.source_name AS inbox_source_path,
+               ir.intake_tab
+        FROM transactions t
+        JOIN periods p ON p.period_id = t.period_id
+        LEFT JOIN documents d ON d.document_id = t.document_id
+        LEFT JOIN import_batches ib ON ib.import_batch_id = d.import_batch_id
+        LEFT JOIN intake_receipts ir ON ir.transaction_id = t.transaction_id
+        WHERE t.transaction_id = ?
+        """,
+        (transaction_id,),
+    ).fetchone()
+    if (
+        row is None
+        or row["intake_tab"] != "expense_intake"
+        or row["document_type"] != "expense_invoice"
+    ):
+        return None
+    return dict(row)
+
+
+def _expense_inbox_cleanup_candidate(
+    row: Mapping[str, Any],
+    args: argparse.Namespace,
+) -> ExpenseInboxCleanupCandidate:
+    if args.inbox_root is None:
+        raise InboxCleanupError(
+            "--inbox-root is required for expense_intake cleanup "
+            "(or set inbox_root in .local/config.yaml)"
+        )
+    if args.archive_root is None:
+        raise InboxCleanupError(
+            "--archive-root is required for expense_intake cleanup "
+            "(or set archive_root in .local/config.yaml)"
+        )
+    source_path = str(row.get("inbox_source_path") or "").strip()
+    archive_path = str(row.get("archive_path") or "").strip()
+    evidence_sha256 = str(row.get("evidence_sha256") or "").strip()
+    period_key = str(row.get("period_key") or "").strip()
+    if not source_path:
+        raise InboxCleanupError("Expense intake is missing its stored Inbox source path")
+    if not archive_path:
+        raise InboxCleanupError("Expense document is missing its Evidence archive path")
+    if not period_key:
+        raise InboxCleanupError("Expense transaction is missing its accounting period")
+    return ExpenseInboxCleanupCandidate(
+        source_path=Path(source_path),
+        archive_path=Path(archive_path),
+        inbox_root=args.inbox_root,
+        archive_root=args.archive_root,
+        period_key=period_key,
+        sha256=evidence_sha256,
+    )
+
+
+def _inbox_cleanup_payload(
+    status: str,
+    *,
+    cleanup_row: Mapping[str, Any] | None = None,
+    candidate: ExpenseInboxCleanupCandidate | None = None,
+    message: str | None = None,
+    show_paths: bool,
+) -> dict[str, Any]:
+    source_value = (
+        str(candidate.source_path)
+        if candidate is not None
+        else str((cleanup_row or {}).get("inbox_source_path") or "")
+    )
+    archive_value = (
+        str(candidate.archive_path)
+        if candidate is not None
+        else str((cleanup_row or {}).get("archive_path") or "")
+    )
+    payload: dict[str, Any] = {
+        "status": status,
+        "message": message or _inbox_cleanup_message(status),
+    }
+    if source_value:
+        payload["file_name"] = Path(source_value).name
+    if show_paths:
+        if source_value:
+            payload["source_path"] = source_value
+        if archive_value:
+            payload["archive_path"] = archive_value
+    return payload
+
+
+def _inbox_cleanup_message(status: str) -> str:
+    if status == "deleted":
+        return "Verified expense source was removed from Inbox; Evidence archive was preserved."
+    if status == "already_absent":
+        return "Stored Inbox source is already absent; no other files were searched."
+    if status == "not_applicable":
+        return "Automatic Inbox cleanup does not apply to this transaction."
+    return "Inbox cleanup failed."
+
+
+def _inbox_cleanup_error_message(
+    error: InboxCleanupError | OSError,
+    *,
+    show_paths: bool,
+) -> str:
+    if isinstance(error, InboxCleanupError) or show_paths:
+        return str(error)
+    return f"Filesystem cleanup failed ({type(error).__name__}); retry when the file is available."
 
 
 def _parse_review_id(value: str) -> tuple[str, str]:
