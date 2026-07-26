@@ -29,6 +29,12 @@ class CounterpartyFact:
     employee_compensation: bool | None = None
     counts_for_modelo347: bool | None = None
     nonresident_income_reportable: bool | None = None
+    country_code: str | None = None
+    has_reviewed_payment_in_period: bool | None = None
+    is_nonresident_individual_professional: bool | None = None
+    treaty_relief_applies: bool | None = None
+    treaty_residence_evidence_confirmed: bool | None = None
+    expense_deductible: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -60,6 +66,7 @@ class ActivityFact:
     foreign_crypto_value_eur: Decimal | None = None
     previously_reported_foreign_crypto: bool | None = None
     foreign_crypto_increase_since_last_report_eur: Decimal | None = None
+    nonresident_professional_payments_reviewed: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -90,11 +97,7 @@ def detect_obligations(
     base_status["115"] = _modelo115(activity, counterparties)
     base_status["180"] = _annual_from_base("180", base_status["115"][0], "Modelo 180 follows rent withholding reported via Modelo 115.")
     base_status["216"] = _modelo216(activity, counterparties)
-    base_status["296"] = _annual_from_base(
-        "296",
-        base_status["216"][0],
-        "Modelo 296 follows non-resident income reported via Modelo 216.",
-    )
+    base_status["296"] = _modelo296(activity, base_status["216"][0])
     base_status["100"] = _modelo100(activity)
     base_status["714"] = _modelo714(activity)
     base_status["720"] = _modelo720(activity)
@@ -246,10 +249,61 @@ def _modelo216(
 ) -> tuple[ObligationStatus, str]:
     if activity.pays_nonresident_income_reportable is True:
         return "due", "Payments to non-residents reportable under IRNR indicate a Modelo 216 obligation."
-    if any(counterparty.nonresident_income_reportable is True for counterparty in counterparties):
+
+    reportable = [
+        counterparty
+        for counterparty in counterparties
+        if counterparty.nonresident_income_reportable is True
+        and counterparty.has_reviewed_payment_in_period is not False
+    ]
+    treaty_relief_payments = [
+        counterparty
+        for counterparty in reportable
+        if counterparty.has_reviewed_payment_in_period is True
+        and counterparty.is_nonresident_individual_professional is True
+        and counterparty.treaty_relief_applies is True
+    ]
+    if any(
+        counterparty.treaty_residence_evidence_confirmed is not True
+        for counterparty in treaty_relief_payments
+    ):
+        return (
+            "unknown",
+            "The payment is reportable under IRNR and treaty relief was selected, but the residence evidence "
+            "supporting that relief has not been confirmed.",
+        )
+    if reportable:
+        if treaty_relief_payments and len(treaty_relief_payments) == len(reportable):
+            return (
+                "due",
+                "Reviewed treaty-exempt payments are reportable under IRNR with zero withholding, requiring "
+                "a negative Modelo 216 and inclusion in annual Modelo 296.",
+            )
         return "due", "Counterparty facts include non-resident income reportable under IRNR."
+
+    reviewed_nonresident_professional_payments = [
+        counterparty
+        for counterparty in counterparties
+        if counterparty.has_reviewed_payment_in_period is True
+        and counterparty.is_nonresident_individual_professional is True
+    ]
+    if any(
+        counterparty.nonresident_income_reportable is None
+        for counterparty in reviewed_nonresident_professional_payments
+    ):
+        return (
+            "unknown",
+            "A reviewed current-period payment to a non-resident individual professional has unresolved IRNR "
+            "reportability. This determination does not affect expense deductibility.",
+        )
     if activity.pays_nonresident_income_reportable is False:
         return "not_due", "The supplied facts explicitly show no non-resident income reportable under IRNR."
+    if activity.nonresident_professional_payments_reviewed is True:
+        return (
+            "not_due",
+            "The current-period payment review found no non-resident individual professional payment "
+            "reportable under IRNR.",
+        )
     if activity.counterparties_complete is True and counterparties:
         if all(counterparty.nonresident_income_reportable is False for counterparty in counterparties):
             return "not_due", "Complete counterparty facts show no non-resident income reportable under IRNR."
@@ -257,6 +311,27 @@ def _modelo216(
         "unknown",
         "Modelo 216 depends on whether any reviewed payment is income reportable under IRNR. "
         "Supplier identity, country, and expense treatment alone do not determine that.",
+    )
+
+
+def _modelo296(
+    activity: ActivityFact,
+    modelo216_status: ObligationStatus,
+) -> tuple[ObligationStatus, str]:
+    if (
+        modelo216_status == "not_due"
+        and activity.nonresident_professional_payments_reviewed is True
+        and activity.pays_nonresident_income_reportable is None
+    ):
+        return (
+            "unknown",
+            "A completed current-period review can establish that Modelo 216 is not due for that period, "
+            "but it does not retroactively determine the annual Modelo 296 obligation.",
+        )
+    return _annual_from_base(
+        "296",
+        modelo216_status,
+        "Modelo 296 follows non-resident income reported via Modelo 216.",
     )
 
 
