@@ -594,6 +594,24 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     obligation_mark.add_argument("--filed-at")
     obligation_mark.add_argument("--expected-row-version", type=int)
     obligation_mark.set_defaults(_operational_handler=_cmd_obligation_mark)
+    obligation_evidence = obligation_sub.add_parser(
+        "record-evidence",
+        help="Attach hashed evidence to a reviewed obligation decision",
+    )
+    _db_arg(obligation_evidence)
+    obligation_evidence.add_argument("--period", required=True)
+    obligation_evidence.add_argument("--form", required=True)
+    obligation_evidence.add_argument(
+        "--kind",
+        choices=["aeat_account_check", "independent_calculation"],
+        required=True,
+    )
+    obligation_evidence.add_argument("--evidence", type=Path, required=True)
+    obligation_evidence.add_argument("--source-reference")
+    obligation_evidence.add_argument("--notes")
+    obligation_evidence.set_defaults(
+        _operational_handler=_cmd_obligation_record_evidence
+    )
 
     tax_calendar = subparsers.add_parser(
         "calendar",
@@ -707,7 +725,7 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     period_shadow_close.add_argument(
         "--operational-proof-since",
         type=date.fromisoformat,
-        help="Require independently posted supplier and non-invoice expense proof since this date",
+        help="Require at least one independently reviewed and posted expense since this date",
     )
     period_shadow_close.add_argument(
         "--required-settled-obligation",
@@ -1045,6 +1063,7 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     offboarding = subparsers.add_parser("offboarding", help="Build or verify the Xolo exit manifest")
     offboarding_sub = offboarding.add_subparsers(dest="offboarding_command", required=True)
     offboarding_build = offboarding_sub.add_parser("build")
+    _db_arg(offboarding_build)
     offboarding_build.add_argument("paths", type=Path, nargs="+")
     offboarding_build.add_argument(
         "--generated-on",
@@ -2563,6 +2582,34 @@ def _cmd_obligation_mark(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_obligation_record_evidence(args: argparse.Namespace) -> int:
+    if not args.evidence.is_file():
+        raise FileNotFoundError(f"Obligation evidence is missing: {args.evidence}")
+    with open_ledger_db(args.db) as db:
+        obligation = db.connection.execute(
+            """
+            SELECT o.obligation_id
+            FROM obligations o
+            JOIN periods p ON p.period_id = o.period_id
+            WHERE p.period_key = ? AND o.obligation_code = ?
+            """,
+            (args.period, args.form),
+        ).fetchone()
+        if obligation is None:
+            raise ValueError(
+                f"Obligation {args.period}:{args.form} is not present in the database"
+            )
+        row = db.add_obligation_evidence(
+            obligation_id=str(obligation["obligation_id"]),
+            evidence_kind=args.kind,
+            source_reference=args.source_reference or str(args.evidence.resolve()),
+            source_hash=_sha256(args.evidence),
+            notes=args.notes,
+        )
+    _emit(row)
+    return 0
+
+
 def _cmd_calendar_import(args: argparse.Namespace) -> int:
     loaded = load_tax_calendar(args.input)
     records = [entry_as_record(entry) for entry in loaded.entries]
@@ -3530,9 +3577,9 @@ def _cmd_sheet_export(args: argparse.Namespace) -> int:
             ).fetchall(),
             "counterparties": db.connection.execute(
                 """SELECT counterparty_id AS uuid, row_version, 'open' AS status,
-                          display_name, tax_id, country_code, vat_id, roi_status,
-                          professional_supplier, retention_expected, email, phone
-                   FROM counterparties ORDER BY display_name, counterparty_id"""
+                           display_name, tax_id, country_code, vat_id, roi_status,
+                           legal_form, professional_supplier, retention_expected, email, phone
+                    FROM counterparties ORDER BY display_name, counterparty_id"""
             ).fetchall(),
             "transactions": db.connection.execute(
                 """SELECT t.transaction_id AS uuid, t.row_version,
@@ -4416,7 +4463,14 @@ def _cmd_calculate(args: argparse.Namespace) -> int:
                 obligation_blockers = [
                     row
                     for row in validation["unresolved_obligations"]
-                    if not is_current or row["determination"] == "unknown"
+                    if (
+                        is_current
+                        and row["determination"] == "unknown"
+                    )
+                    or (
+                        not is_current
+                        and row["obligation_code"] == args.form
+                    )
                 ]
                 data_blockers = (
                     validation["blocking_issues"],
@@ -4427,7 +4481,16 @@ def _cmd_calculate(args: argparse.Namespace) -> int:
                 )
                 if any(data_blockers):
                     raise CalculationBlocked(f"{period_key} has unresolved production accounting data")
-                if not is_current and period_rows[period_key]["status"] not in {"closed", "amended"}:
+                prior_filed_baseline = (
+                    not is_current
+                    and args.allow_authoritative_history
+                    and _filed_baseline(db, period_key, args.form) is not None
+                )
+                if (
+                    not is_current
+                    and period_rows[period_key]["status"] not in {"closed", "amended"}
+                    and not prior_filed_baseline
+                ):
                     raise CalculationBlocked(
                         f"Prior YTD period {period_key} must be closed before production calculation"
                     )
@@ -4499,11 +4562,13 @@ def _cmd_period_annual_status(args: argparse.Namespace) -> int:
 def _cmd_offboarding_build(args: argparse.Namespace) -> int:
     from .offboarding import build_offboarding_manifest_document
 
-    manifest = build_offboarding_manifest_document(
-        args.paths,
-        generated_on=args.generated_on,
-        excluded_paths=[args.out],
-    )
+    with open_ledger_db(args.db, read_only=True) as db:
+        manifest = build_offboarding_manifest_document(
+            args.paths,
+            generated_on=args.generated_on,
+            database=db,
+            excluded_paths=[args.out, args.db],
+        )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False),
@@ -4512,8 +4577,11 @@ def _cmd_offboarding_build(args: argparse.Namespace) -> int:
     _emit(
         {
             "manifest": str(args.out.resolve()),
+            "database": str(args.db.resolve()),
+            "schema_version": manifest["schema_version"],
             "generated_on": manifest["generated_on"],
             "rows": len(manifest["rows"]),
+            "expected_filings": len(manifest["expected_filings"]),
         }
     )
     return 0
@@ -4818,9 +4886,9 @@ def _sheet_rows_from_db(db: LedgerDB, tab: str) -> list[SheetRow]:
                          LEFT JOIN periods p ON p.period_id=d.period_id
                          LEFT JOIN counterparties c ON c.counterparty_id=d.counterparty_id""",
         "counterparties": """SELECT counterparty_id AS uuid, row_version, 'open' AS status,
-                            display_name, tax_id, country_code, vat_id, roi_status,
-                            professional_supplier, retention_expected, email, phone
-                         FROM counterparties""",
+                             display_name, tax_id, country_code, vat_id, roi_status,
+                             legal_form, professional_supplier, retention_expected, email, phone
+                          FROM counterparties""",
         "transactions": """SELECT t.transaction_id AS uuid, t.row_version,
                             CASE WHEN p.status IN ('closed', 'amended') THEN 'closed'
                                  ELSE 'open' END AS status,
@@ -4928,6 +4996,7 @@ def _read_sheet_rows(
             "country_code",
             "vat_id",
             "roi_status",
+            "legal_form",
             "professional_supplier",
             "retention_expected",
             "email",
@@ -5022,6 +5091,7 @@ def _editable_sheet_values(tab: str, values: dict[str, Any]) -> dict[str, Any]:
             "country_code",
             "vat_id",
             "roi_status",
+            "legal_form",
             "professional_supplier",
             "retention_expected",
             "email",
@@ -5075,6 +5145,11 @@ def _apply_reviewed_sheet_row(
             country_code=str(remote.values.get("country_code", "")),
             vat_id=_optional_sheet_text(remote.values.get("vat_id")),
             roi_status=str(remote.values.get("roi_status", "unknown")) or "unknown",
+            legal_form=(
+                str(remote.values["legal_form"]) or "unknown"
+                if "legal_form" in remote.values
+                else None
+            ),
             professional_supplier=_optional_sheet_bool(
                 remote.values.get("professional_supplier")
             ),
@@ -5226,6 +5301,8 @@ def _normalize_counterparty_sheet_values(values: dict[str, Any]) -> dict[str, An
         normalized["country_code"] = normalized["country_code"].upper()
     if "roi_status" in normalized:
         normalized["roi_status"] = normalized["roi_status"].casefold()
+    if "legal_form" in normalized:
+        normalized["legal_form"] = normalized["legal_form"].casefold()
     for key in ("professional_supplier", "retention_expected"):
         if key not in normalized:
             continue

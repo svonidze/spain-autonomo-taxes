@@ -423,7 +423,19 @@ def _expense_rows(
         ]
 
     invoice_total_minor = taxable_base_minor + vat_minor
+    if deductible_vat_minor < 0 or deductible_vat_minor > vat_minor:
+        raise AeatBookProjectionError(
+            "Deductible IVA quota is outside the reviewed IVA quota"
+        )
+    deductible_irpf_capacity_minor = (
+        taxable_base_minor + vat_minor - deductible_vat_minor
+    )
     if reverse_charge:
+        if deductible_irpf_minor > deductible_irpf_capacity_minor:
+            raise AeatBookProjectionError(
+                "Deductible IRPF expense exceeds the reviewed taxable base plus "
+                "non-deductible IVA"
+            )
         if abs(amount_minor - taxable_base_minor) > 1:
             raise AeatBookProjectionError(
                 "Reverse-charge supplier amount must equal its reviewed taxable base"
@@ -454,7 +466,10 @@ def _expense_rows(
             "Invoices combining IRPF withholding with non-taxable residual components "
             "require an explicit reviewed gross allocation"
         )
-    primary_deductible_minor = min(deductible_irpf_minor, taxable_base_minor)
+    primary_deductible_minor = min(
+        deductible_irpf_minor,
+        deductible_irpf_capacity_minor,
+    )
     residual_deductible_minor = deductible_irpf_minor - primary_deductible_minor
     if residual_deductible_minor > residual_minor:
         raise AeatBookProjectionError(

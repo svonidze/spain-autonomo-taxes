@@ -467,11 +467,10 @@ def summarize_operational_acceptance(
     non_invoice_rows = [
         row for row in independent if row["document_type"] in _NON_INVOICE_PROOF_TYPES
     ]
+    operational_rows = supplier_rows + non_invoice_rows
     missing: list[str] = []
-    if not supplier_rows:
-        missing.append("posted_supplier_expense")
-    if not non_invoice_rows:
-        missing.append("posted_social_security_or_bank_fee")
+    if not operational_rows:
+        missing.append("posted_independent_expense")
     ready = not missing
     return {
         "status": "ready" if ready else "in_progress",
@@ -481,6 +480,7 @@ def summarize_operational_acceptance(
         "checked_through": as_of.isoformat(),
         "supplier_expenses": [_proof_row(row) for row in supplier_rows],
         "non_invoice_expenses": [_proof_row(row) for row in non_invoice_rows],
+        "operational_expenses": [_proof_row(row) for row in operational_rows],
         "excluded_xolo_derived_count": len(records) - len(independent),
         "missing_proofs": missing,
     }
@@ -655,11 +655,9 @@ def _normalize_operational_acceptance(
             "required": True,
             "supplier_expenses": [],
             "non_invoice_expenses": [],
+            "operational_expenses": [],
             "excluded_xolo_derived_count": 0,
-            "missing_proofs": [
-                "posted_supplier_expense",
-                "posted_social_security_or_bank_fee",
-            ],
+            "missing_proofs": ["posted_independent_expense"],
         }
     normalized = dict(acceptance)
     normalized["ready"] = bool(acceptance.get("ready"))
@@ -669,6 +667,13 @@ def _normalize_operational_acceptance(
     )
     normalized.setdefault("supplier_expenses", [])
     normalized.setdefault("non_invoice_expenses", [])
+    normalized.setdefault(
+        "operational_expenses",
+        [
+            *normalized["supplier_expenses"],
+            *normalized["non_invoice_expenses"],
+        ],
+    )
     normalized.setdefault("excluded_xolo_derived_count", 0)
     normalized.setdefault("missing_proofs", [])
     return normalized
@@ -817,13 +822,9 @@ def _next_actions(
         actions.append("Build and verify the complete Xolo offboarding evidence manifest.")
     if not operational_acceptance.get("ready"):
         missing = set(operational_acceptance.get("missing_proofs") or [])
-        if "posted_supplier_expense" in missing:
+        if "posted_independent_expense" in missing:
             actions.append(
-                "Post one independently reviewed supplier expense whose lineage does not come from Xolo."
-            )
-        if "posted_social_security_or_bank_fee" in missing:
-            actions.append(
-                "Post one independently reviewed TGSS contribution or business bank fee."
+                "Post one independently reviewed expense whose lineage does not come from Xolo."
             )
     for missing in required_tax_settlements.get("missing_settlements") or []:
         selector = missing.get("selector", "unknown")
