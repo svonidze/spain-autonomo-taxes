@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Autónomo Accounting</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">A</span>
+      <span>
+        <strong>Autónomo</strong>
+        <small>Spain accounting</small>
+      </span>
+    </div>
+
+    <nav class="primary-nav" aria-label="Основная навигация">
+      <button class="nav-item active" data-view="dashboard"><span aria-hidden="true">▦</span> Обзор</button>
+      <button class="nav-item" data-view="income"><span aria-hidden="true">↗</span> Доходы</button>
+      <button class="nav-item" data-view="expenses"><span aria-hidden="true">↙</span> Расходы</button>
+      <button class="nav-item" data-view="review"><span aria-hidden="true">✓</span> Проверка</button>
+      <button class="nav-item" data-view="assets"><span aria-hidden="true">◇</span> Активы</button>
+      <button class="nav-item" data-view="taxes"><span aria-hidden="true">%</span> Налоги</button>
+      <button class="nav-item" data-view="contacts"><span aria-hidden="true">◎</span> Контрагенты</button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <span class="status-dot"></span>
+      <span>Локальная SQLite</span>
+    </div>
+  </aside>
+
+  <main class="workspace">
+    <header class="topbar">
+      <div>
+        <h1 id="page-title">Обзор</h1>
+        <p id="profile-name">Autónomo</p>
+      </div>
+      <div class="topbar-actions">
+        <label class="period-control">
+          <span>Период</span>
+          <select id="period-select" aria-label="Налоговый период"></select>
+        </label>
+        <button id="refresh-button" class="icon-button" title="Обновить расчет" aria-label="Обновить расчет">↻</button>
+        <button id="new-entry-button" class="primary-button"><span aria-hidden="true">+</span> Добавить</button>
+      </div>
+    </header>
+
+    <section id="app" class="content" aria-live="polite">
+      <div class="loading-state">Загрузка данных…</div>
+    </section>
+  </main>
+
+  <dialog id="intake-dialog" class="intake-dialog">
+    <form id="intake-form" method="dialog">
+      <header class="dialog-header">
+        <div>
+          <h2>Новая запись</h2>
+          <p id="intake-period-label"></p>
+        </div>
+        <button type="button" class="icon-button" id="close-dialog" aria-label="Закрыть">×</button>
+      </header>
+
+      <div class="segmented-control" role="group" aria-label="Тип записи">
+        <button type="button" data-kind="expense_invoice" class="active">Расход</button>
+        <button type="button" data-kind="income_invoice">Доход</button>
+      </div>
+      <input type="hidden" name="kind" id="intake-kind" value="expense_invoice">
+      <input type="hidden" name="period" id="intake-period">
+
+      <label class="file-drop" id="file-drop">
+        <input type="file" name="file" id="intake-file" required accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.webp,.csv,.txt">
+        <strong id="file-label">Выберите factura или перетащите файл</strong>
+        <span>PDF, изображение, CSV или TXT до 30 MB</span>
+      </label>
+
+      <div class="form-grid">
+        <label>
+          <span>Дата документа</span>
+          <input type="date" name="issued_on" id="issued-on">
+        </label>
+        <label>
+          <span id="counterparty-label">Поставщик</span>
+          <input type="text" name="counterparty_name" autocomplete="organization">
+        </label>
+        <label>
+          <span>Номер</span>
+          <input type="text" name="document_number">
+        </label>
+        <label>
+          <span>Валюта</span>
+          <select name="currency">
+            <option value="EUR">EUR</option>
+            <option value="USD">USD</option>
+            <option value="GBP">GBP</option>
+          </select>
+        </label>
+        <label>
+          <span>Итого</span>
+          <input type="number" name="gross" min="0" step="0.01" inputmode="decimal">
+        </label>
+        <label class="expense-only">
+          <span>База IVA</span>
+          <input type="number" name="taxable_base" min="0" step="0.01" inputmode="decimal">
+        </label>
+        <label class="expense-only">
+          <span>IVA</span>
+          <input type="number" name="vat" min="0" step="0.01" inputmode="decimal">
+        </label>
+      </div>
+
+      <footer class="dialog-actions">
+        <span id="intake-status"></span>
+        <button type="button" class="secondary-button" id="cancel-dialog">Отмена</button>
+        <button type="submit" class="primary-button" id="submit-intake">Принять в систему</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
