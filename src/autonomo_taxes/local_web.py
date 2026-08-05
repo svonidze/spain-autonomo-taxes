@@ -21,6 +21,7 @@ import socket
 import sqlite3
 import subprocess
 import sys
+import threading
 from typing import Any, Iterable, Mapping
 from urllib.parse import parse_qs, urlparse
 
@@ -29,7 +30,8 @@ try:
 except Exception:  # pragma: no cover - dependency guard
     yaml = None
 
-from .ledger_db import open as open_ledger_db
+from .ledger_db import LedgerDbError, open as open_ledger_db
+from .posting import build_posting_preview
 from .review_packet import (
     ReviewPacketError,
     classify_review_packet_failure,
@@ -67,6 +69,18 @@ SNAPSHOT_STATUS_RANKS = {
     "filed": 3,
     "final": 4,
 }
+POSTING_ERROR_STATUS_CODES = {
+    "request_error": HTTPStatus.BAD_REQUEST,
+    "busy": HTTPStatus.CONFLICT,
+    "retry_later": HTTPStatus.CONFLICT,
+    "closed": HTTPStatus.CONFLICT,
+    "period_not_open": HTTPStatus.CONFLICT,
+    "fatal": HTTPStatus.INTERNAL_SERVER_ERROR,
+    "internal_error": HTTPStatus.INTERNAL_SERVER_ERROR,
+    "unknown": HTTPStatus.NOT_FOUND,
+    "unknown_period": HTTPStatus.NOT_FOUND,
+}
+_POSTING_BATCH_LOCK = threading.Lock()
 
 
 class LocalWebError(ValueError):
@@ -78,6 +92,17 @@ class LocalWebApiError(LocalWebError):
         super().__init__(message)
         self.status = status
         self.code = code
+
+
+class LocalWebPostingCommandError(LocalWebError):
+    def __init__(self, payload: Mapping[str, Any]) -> None:
+        status = str(payload.get("status") or "").strip().lower()
+        detail = (
+            str(payload.get("message") or payload.get("error") or status or "CLI error")
+        ).strip()
+        super().__init__(detail)
+        self.payload = dict(payload)
+        self.status = status
 
 
 @dataclass(frozen=True)
@@ -204,6 +229,7 @@ class LocalAccountingApp:
                 obligations=obligations,
                 cached=cached,
             )
+            posting_preview = self._build_posting_preview(period)
             document_counts = {
                 row["lifecycle_status"]: int(row["count"])
                 for row in connection.execute(
@@ -222,7 +248,7 @@ class LocalAccountingApp:
                 lifecycle_status="review",
                 limit=500,
             )
-            posting_summary = _posting_summary(review_rows)
+            review_summary = _review_summary(review_rows)
         return {
             "period": dict(period_row),
             "totals": totals,
@@ -234,10 +260,61 @@ class LocalAccountingApp:
             "tax_forms": tax_forms,
             "forecast_as_of": cached.get("as_of") if cached else None,
             "filing_ready": bool(cached and cached.get("filing_ready")),
+            "posting_preview_summary": _posting_preview_summary(posting_preview),
             "submission_ready": bool(cached and cached.get("submission_ready")),
-            "readyCount": posting_summary["ready"],
-            "posting_summary": posting_summary,
+            "readyCount": review_summary["ready"],
+            "posting_summary": review_summary,
         }
+
+    def posting_preview(self, period_key: str) -> dict[str, Any]:
+        period = _validate_period(period_key)
+        try:
+            return self._build_posting_preview(period)
+        except LedgerDbError as exc:
+            if str(exc).startswith("Unknown period: "):
+                raise FileNotFoundError(str(exc)) from exc
+            raise
+
+    def post_ready(
+        self,
+        *,
+        period_key: str,
+        items: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        period = _validate_period(period_key)
+        if not items:
+            raise LocalWebError("Posting preview has no ready items")
+        if not _POSTING_BATCH_LOCK.acquire(blocking=False):
+            return {
+                "error": "posting_in_progress",
+                "message": "Another posting batch is already running",
+                "status": "busy",
+            }
+        try:
+            command = [
+                sys.executable,
+                "-m",
+                "autonomo_taxes.cli",
+                "review",
+                "post-batch",
+                "--db",
+                str(self.config.database),
+                "--period",
+                period,
+            ]
+            if self.config.inbox_root is not None:
+                command.extend(("--inbox-root", str(self.config.inbox_root)))
+            if self.config.archive_root is not None:
+                command.extend(("--archive-root", str(self.config.archive_root)))
+            return self._run_cli_json(
+                command,
+                stdin_json={
+                    "period": period,
+                    "items": items,
+                },
+            )
+        finally:
+            _POSTING_BATCH_LOCK.release()
 
     def transactions(
         self,
@@ -870,6 +947,21 @@ class LocalAccountingApp:
                     return value
         return {}
 
+    def _build_posting_preview(
+        self,
+        period_key: str,
+    ) -> dict[str, Any]:
+        with open_ledger_db(self.config.database, read_only=True) as db:
+            preview = build_posting_preview(
+                db,
+                period_key=period_key,
+                inbox_root=self.config.inbox_root,
+                archive_root=self.config.archive_root,
+            )
+        if not isinstance(preview, dict):
+            raise LocalWebError("Posting preview must be a JSON object")
+        return preview
+
     def _run_cli(self, command: list[str]) -> dict[str, Any]:
         return self._run_cli_with_input(command, input_text=None)
 
@@ -953,6 +1045,48 @@ class LocalAccountingApp:
         code, status = classify_review_packet_failure(str(exc))
         return LocalWebApiError(HTTPStatus(status), code, str(exc))
 
+    def _run_cli_json(
+        self,
+        command: list[str],
+        *,
+        stdin_json: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        environment = os.environ.copy()
+        source_root = str(self.config.project_root / "src")
+        environment["PYTHONPATH"] = os.pathsep.join(
+            part
+            for part in (source_root, environment.get("PYTHONPATH", ""))
+            if part
+        )
+        run = subprocess.run(
+            command,
+            cwd=self.config.project_root,
+            env=environment,
+            input=(
+                json.dumps(stdin_json, ensure_ascii=False, separators=(",", ":"))
+                if stdin_json is not None
+                else None
+            ),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=180,
+        )
+        if run.returncode != 0:
+            payload = _parse_cli_json_payload(run.stdout) or _parse_cli_json_payload(
+                run.stderr
+            )
+            if payload is not None:
+                raise LocalWebPostingCommandError(payload)
+            detail = run.stderr.strip() or run.stdout.strip() or "unknown CLI error"
+            raise LocalWebError(detail)
+        payload = _parse_cli_json_payload(run.stdout)
+        if payload is None:
+            raise LocalWebError("CLI returned invalid JSON")
+        return payload
+
 
 class LocalAccountingServer(ThreadingHTTPServer):
     daemon_threads = True
@@ -1022,6 +1156,10 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                 self._send_json(
                     self.server.app.taxes(_single_query(query, "period"))
                 )
+            elif parsed.path == "/api/review/posting-preview":
+                self._send_json(
+                    self.server.app.posting_preview(_single_query(query, "period"))
+                )
             elif parsed.path == "/api/counterparties":
                 self._send_json(self.server.app.counterparties())
             elif parsed.path == "/api/review/work-item":
@@ -1084,6 +1222,19 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                 self._send_json(self.server.app.review_apply(self._read_review_packet()))
             elif parsed.path == "/api/review/apply-fx":
                 self._send_json(self.server.app.review_apply_fx(self._read_fx_review()))
+            elif parsed.path == "/api/review/post-ready":
+                self._require_same_origin()
+                self._require_json_content_type()
+                payload = self._read_json()
+                period = _validate_post_ready_period(payload.get("period"))
+                items = _validate_post_ready_items(payload.get("items"))
+                result = self.server.app.post_ready(period_key=period, items=items)
+                status = (
+                    POSTING_ERROR_STATUS_CODES["busy"]
+                    if result.get("error") == "posting_in_progress"
+                    else HTTPStatus.OK
+                )
+                self._send_json(result, status=status)
             elif parsed.path.startswith("/api/"):
                 self._send_error_json(HTTPStatus.NOT_FOUND, "Unknown API endpoint")
             else:
@@ -1092,6 +1243,14 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             self._send_error_json(exc.status, str(exc), code=exc.code)
         except FileNotFoundError as exc:
             self._send_error_json(HTTPStatus.NOT_FOUND, str(exc))
+        except LocalWebPostingCommandError as exc:
+            self._send_json(
+                exc.payload,
+                status=POSTING_ERROR_STATUS_CODES.get(
+                    exc.status,
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                ),
+            )
         except (LocalWebError, ValueError) as exc:
             self._send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
         except Exception as exc:  # pragma: no cover - final HTTP boundary
@@ -1432,7 +1591,7 @@ def _empty_scope() -> dict[str, Any]:
     }
 
 
-def _posting_summary(rows: list[Mapping[str, Any]]) -> dict[str, int]:
+def _review_summary(rows: list[Mapping[str, Any]]) -> dict[str, int]:
     summary = {"needs_review": 0, "ready": 0, "later": 0, "blocked": 0}
     today = date.today().isoformat()
     for row in rows:
@@ -1518,6 +1677,105 @@ def _form_preview_from_cache(cached: Mapping[str, Any]) -> dict[str, dict[str, A
             "preview_as_of": preview_as_of if values else None,
         }
     return result
+
+
+def _validate_post_ready_period(value: Any) -> str:
+    if not isinstance(value, str):
+        raise LocalWebError("period must be a string")
+    return _validate_period(value)
+
+
+def _validate_post_ready_items(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        raise LocalWebError("items must be a list")
+    if not value:
+        raise LocalWebError("Posting preview has no ready items")
+    seen_transaction_ids: set[str] = set()
+    result: list[dict[str, Any]] = []
+    for index, raw_item in enumerate(value):
+        if not isinstance(raw_item, Mapping):
+            raise LocalWebError(f"items[{index}] must be an object")
+        if "expected_row_version" not in raw_item:
+            raise LocalWebError(
+                f"items[{index}] must include transaction_id or review_id plus expected_row_version"
+            )
+        review_id = str(raw_item.get("review_id") or "").strip()
+        transaction_id = str(raw_item.get("transaction_id") or "").strip()
+        expected_row_version = raw_item.get("expected_row_version")
+        if review_id:
+            review_kind, separator, subject_id = review_id.partition(":")
+            if (
+                review_kind != "transaction"
+                or separator != ":"
+                or UUID_RE.fullmatch(subject_id) is None
+            ):
+                raise LocalWebError(
+                    f"items[{index}].review_id must be transaction:<uuid>"
+                )
+            if transaction_id and transaction_id != subject_id:
+                raise LocalWebError(
+                    f"items[{index}].transaction_id must match review_id"
+                )
+            transaction_id = subject_id
+        if not transaction_id:
+            raise LocalWebError(
+                f"items[{index}] must include transaction_id or review_id"
+            )
+        if UUID_RE.fullmatch(transaction_id) is None:
+            raise LocalWebError(
+                f"items[{index}].transaction_id must be a UUID"
+            )
+        if type(expected_row_version) is not int or expected_row_version < 0:
+            raise LocalWebError(
+                f"items[{index}].expected_row_version must be a non-negative integer"
+            )
+        if transaction_id in seen_transaction_ids:
+            raise LocalWebError("items must not contain duplicate transaction IDs")
+        seen_transaction_ids.add(transaction_id)
+        result.append(
+            {
+                "transaction_id": transaction_id,
+                "expected_row_version": expected_row_version,
+            }
+        )
+    return result
+
+
+def _posting_preview_summary(preview: Mapping[str, Any]) -> dict[str, Any]:
+    summary = preview.get("summary")
+    if isinstance(summary, Mapping):
+        return dict(summary)
+    counts = preview.get("counts")
+    if isinstance(counts, Mapping):
+        return dict(counts)
+    ready = preview.get("ready")
+    deferred = preview.get("deferred")
+    blocked = preview.get("blocked")
+    if isinstance(ready, list) or isinstance(deferred, list) or isinstance(blocked, list):
+        return {
+            "ready_to_post": len(ready) if isinstance(ready, list) else 0,
+            "deferred": len(deferred) if isinstance(deferred, list) else 0,
+            "blocked": len(blocked) if isinstance(blocked, list) else 0,
+        }
+    items = preview.get("items")
+    if isinstance(items, list):
+        return {"items": len(items)}
+    return {}
+
+
+def _parse_cli_json_payload(text: str) -> dict[str, Any] | None:
+    stripped = text.strip()
+    if not stripped:
+        return None
+    candidates = [stripped, *reversed(stripped.splitlines())]
+    for candidate in candidates:
+        try:
+            payload = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            return payload
+    return None
 
 
 def _normalize_filed_on(raw: Any) -> str | None:

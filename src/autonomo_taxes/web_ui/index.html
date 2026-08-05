@@ -125,6 +125,26 @@
     </form>
   </dialog>
 
+  <dialog id="posting-confirm-dialog" class="intake-dialog posting-dialog">
+    <form method="dialog">
+      <header class="dialog-header">
+        <div>
+          <h2 data-i18n="review.postConfirmTitle">Провести готовые операции</h2>
+          <p id="posting-confirm-period"></p>
+        </div>
+        <button type="button" class="icon-button" id="close-posting-dialog" aria-label="Закрыть" data-i18n-aria="common.close">×</button>
+      </header>
+
+      <div id="posting-confirm-body" class="dialog-body"></div>
+
+      <footer class="dialog-actions">
+        <span id="posting-confirm-status"></span>
+        <button type="button" class="secondary-button" id="cancel-posting-dialog" data-i18n="common.cancel">Отмена</button>
+        <button type="button" class="primary-button" id="confirm-posting-button" data-i18n="review.postConfirmAction">Провести</button>
+      </footer>
+    </form>
+  </dialog>
+
   <div id="toast" class="toast" role="status"></div>
   <script src="/app.js"></script>
 </body>

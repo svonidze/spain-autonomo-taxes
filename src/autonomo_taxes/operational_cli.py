@@ -29,7 +29,13 @@ from .intake_bundle import (
     review_requirements,
 )
 from .invoice_series import collect_invoice_number_observations, invoice_series_status
-from .ledger_db import LedgerDB, LedgerDbError, initialize, open as open_ledger_db
+from .ledger_db import (
+    LedgerDB,
+    LedgerDbError,
+    StaleRowVersionError,
+    initialize,
+    open as open_ledger_db,
+)
 from .money import cents
 from .non_invoice_expenses import (
     IDENTITY_AEAT_TYPES,
@@ -40,6 +46,13 @@ from .non_invoice_expenses import (
 )
 from .obligations import ActivityFact, CounterpartyFact, detect_obligations
 from .parsers import LedgerEntry, parse_any_date, parse_expense, parse_income_invoice
+from .posting import (
+    build_expense_inbox_cleanup_candidate,
+    build_posting_preview,
+    evaluate_transaction_posting,
+    expense_inbox_cleanup_row,
+    prevalidate_expense_inbox_cleanup,
+)
 from .revolut import (
     RevolutMatchCandidate,
     RevolutPayment,
@@ -348,6 +361,8 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     )
     _db_arg(review_list)
     review_list.add_argument("--period", required=True)
+    review_list.add_argument("--inbox-root", type=Path)
+    review_list.add_argument("--archive-root", type=Path)
     review_list.add_argument(
         "--show-paths",
         action="store_true",
@@ -405,6 +420,20 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
         help="Include absolute private filesystem paths in JSON output",
     )
     review_post.set_defaults(_operational_handler=_cmd_review_post)
+    review_post_batch = review_sub.add_parser(
+        "post-batch",
+        help="Post review list transaction items from a JSON object on stdin without batch rollback",
+    )
+    _db_arg(review_post_batch)
+    review_post_batch.add_argument("--period", required=True)
+    review_post_batch.add_argument("--inbox-root", type=Path)
+    review_post_batch.add_argument("--archive-root", type=Path)
+    review_post_batch.add_argument(
+        "--show-paths",
+        action="store_true",
+        help="Include absolute private filesystem paths in JSON output",
+    )
+    review_post_batch.set_defaults(_operational_handler=_cmd_review_post_batch)
 
     documents = subparsers.add_parser("documents", help="Review document lifecycle decisions")
     document_sub = documents.add_subparsers(dest="document_command", required=True)
@@ -1807,6 +1836,7 @@ def _cmd_review_list(args: argparse.Namespace) -> int:
                     "period": document["period_key"],
                     "lifecycle_status": document["lifecycle_status"],
                     "row_version": document["row_version"],
+                    "expected_row_version": document["row_version"],
                     "issued_on": document["issued_on"],
                     "document_number": document["document_number"],
                     "amount_minor": document["total_minor"],
@@ -1823,95 +1853,17 @@ def _cmd_review_list(args: argparse.Namespace) -> int:
                 }
             )
 
-        for transaction in db.list_transactions(period_key=args.period):
-            if transaction["lifecycle_status"] not in transaction_statuses:
-                continue
-            treatments = [
-                dict(row)
-                for row in db.connection.execute(
-                    "SELECT * FROM tax_treatments WHERE transaction_id = ? ORDER BY treatment_id",
-                    (transaction["transaction_id"],),
-                ).fetchall()
-            ]
-            linked_document = (
-                db.connection.execute(
-                    "SELECT lifecycle_status FROM documents WHERE document_id = ?",
-                    (transaction["document_id"],),
-                ).fetchone()
-                if transaction["document_id"] is not None
-                else None
-            )
-            related_issue_rows: dict[str, dict[str, Any]] = {}
-            for subject_table, subject_id in (
-                ("transactions", transaction["transaction_id"]),
-                ("documents", transaction["document_id"]),
-                ("counterparties", transaction["counterparty_id"]),
-            ):
-                if subject_id is None:
-                    continue
-                for issue in issues_by_subject.get((subject_table, subject_id), []):
-                    if issue["blocking"]:
-                        related_issue_rows[issue["validation_issue_id"]] = {
-                            "issue_id": issue["validation_issue_id"],
-                            "row_version": issue["row_version"],
-                            "subject_table": subject_table,
-                            "code": issue["issue_code"],
-                            "message": issue["message"],
-                        }
-            blocking_issues = list(related_issue_rows.values())
-            tax_reviewed = bool(treatments) and all(
-                (row.get("tax_code") or "unknown") != "unknown" for row in treatments
-            )
-            linked_document_approved = linked_document is None or linked_document[
-                "lifecycle_status"
-            ] in {"approved", "posted", "included_in_snapshot"}
-            posting_date_reached = (
-                date.fromisoformat(transaction["transaction_date"]) <= date.today()
-            )
-            rows.append(
-                {
-                    "review_id": f"transaction:{transaction['transaction_id']}",
-                    "kind": "transaction",
-                    "period": transaction["period_key"],
-                    "lifecycle_status": transaction["lifecycle_status"],
-                    "row_version": transaction["row_version"],
-                    "transaction_date": transaction["transaction_date"],
-                    "entry_type": transaction["entry_type"],
-                    "description": transaction["description"],
-                    "amount_minor": transaction["amount_minor"],
-                    "currency": transaction["currency"],
-                    "document_id": transaction["document_id"],
-                    "tax_treatments": [
-                        {
-                            "treatment_id": row["treatment_id"],
-                            "row_version": row["row_version"],
-                            "tax_code": row.get("tax_code") or "unknown",
-                        }
-                        for row in treatments
-                    ],
-                    "blocking_issues": blocking_issues,
-                    "linked_document_approved": linked_document_approved,
-                    "ready_to_approve": (
-                        transaction["lifecycle_status"] in {"extracted", "needs_review"}
-                        and tax_reviewed
-                        and linked_document_approved
-                        and not blocking_issues
-                    ),
-                    "ready_to_post": (
-                        transaction["lifecycle_status"] == "approved"
-                        and posting_date_reached
-                        and tax_reviewed
-                        and linked_document_approved
-                        and not blocking_issues
-                    ),
-                    "posting_deferred_until": (
-                        transaction["transaction_date"]
-                        if transaction["lifecycle_status"] == "approved"
-                        and not posting_date_reached
-                        else None
-                    ),
-                }
-            )
+        preview = build_posting_preview(
+            db,
+            period_key=args.period,
+            inbox_root=args.inbox_root,
+            archive_root=args.archive_root,
+        )
+        rows.extend(
+            item
+            for item in preview["items"]
+            if item["lifecycle_status"] in transaction_statuses
+        )
     if args.ready_to_post:
         rows = [row for row in rows if row.get("ready_to_post") is True]
     _emit(rows)
@@ -2013,75 +1965,593 @@ def _cmd_review_post(args: argparse.Namespace) -> int:
     if review_kind != "transaction":
         raise ValueError("Only transaction:<uuid> review items can be posted")
     with open_ledger_db(args.db) as db:
-        current = _transaction_for_cleanup_output(db, subject_id)
-        cleanup_row = _expense_inbox_cleanup_row(db, subject_id)
-        candidate: ExpenseInboxCleanupCandidate | None = None
-        if cleanup_row is not None:
-            try:
-                candidate = _expense_inbox_cleanup_candidate(cleanup_row, args)
-                validate_expense_inbox_cleanup(candidate)
-            except InboxCleanupError as exc:
-                _emit(
-                    {
-                        **current,
-                        "inbox_cleanup": _inbox_cleanup_payload(
-                            "failed",
-                            cleanup_row=cleanup_row,
-                            candidate=candidate,
-                            message=str(exc),
-                            show_paths=args.show_paths,
-                        ),
-                    }
-                )
-                return 2
-        row = db.transition_transaction(
-            subject_id,
-            lifecycle_status="posted",
+        outcome, payload, _ = _post_transaction_review(
+            db,
+            review_id=args.review_id,
+            transaction_id=subject_id,
             expected_row_version=args.expected_row_version,
+            expected_period=None,
+            inbox_root=args.inbox_root,
+            archive_root=args.archive_root,
+            show_paths=args.show_paths,
+            allow_already_posted=False,
         )
-    if candidate is None:
-        _emit(
-            {
-                **row,
-                "inbox_cleanup": _inbox_cleanup_payload(
-                    "not_applicable",
-                    message="Automatic cleanup applies only to expense_intake expense invoices.",
-                    show_paths=args.show_paths,
-                ),
-            }
-        )
-        return 0
+    _emit(payload)
+    return 0 if outcome == "posted" and payload.get("reason_code") is None else 2
+
+
+def _cmd_review_post_batch(args: argparse.Namespace) -> int:
+    request = _load_post_batch_request(sys.stdin, expected_period=args.period)
+    requested = request["items"]
+    results: list[dict[str, Any]] = []
+    summary = {
+        "requested": len(requested),
+        "posted": 0,
+        "already_posted": 0,
+        "already_finalized": 0,
+        "skipped": 0,
+        "failed": 0,
+        "interrupted": 0,
+        "not_attempted": 0,
+    }
+    committed_any = False
     try:
-        cleanup_status = cleanup_expense_inbox_source(candidate)
-    except (InboxCleanupError, OSError) as exc:
+        with open_ledger_db(args.db) as db:
+            preflight = _preflight_post_batch_period(
+                db,
+                period_key=args.period,
+                requested=requested,
+            )
+            if preflight is not None:
+                _emit(preflight)
+                return 2
+            for index, item in enumerate(requested):
+                review_id, expected_row_version = _parse_post_batch_item(item)
+                review_kind, subject_id = _parse_review_id(review_id)
+                if review_kind != "transaction":
+                    raise ValueError("Only transaction:<uuid> review items can be posted")
+                try:
+                    outcome, result, committed = _post_transaction_review(
+                        db,
+                        review_id=review_id,
+                        transaction_id=subject_id,
+                        expected_row_version=expected_row_version,
+                        expected_period=args.period,
+                        inbox_root=args.inbox_root,
+                        archive_root=args.archive_root,
+                        show_paths=args.show_paths,
+                        allow_already_posted=True,
+                    )
+                except StaleRowVersionError as exc:
+                    outcome = "skipped"
+                    result = _post_batch_failure_result(
+                        db,
+                        transaction_id=subject_id,
+                        review_id=review_id,
+                        expected_row_version=expected_row_version,
+                        error=exc,
+                    )
+                    result["reason_code"] = "skipped_stale"
+                    committed = False
+                except (LedgerDbError, ValueError) as exc:
+                    if (
+                        not committed_any
+                        and _post_batch_reason_code(exc) == "period_not_open"
+                    ):
+                        preflight = _preflight_post_batch_period(
+                            db,
+                            period_key=args.period,
+                            requested=requested,
+                        )
+                        if preflight is not None:
+                            _emit(preflight)
+                            return 2
+                    outcome = "failed"
+                    result = _post_batch_failure_result(
+                        db,
+                        transaction_id=subject_id,
+                        review_id=review_id,
+                        expected_row_version=expected_row_version,
+                        error=exc,
+                    )
+                    committed = False
+                except Exception as exc:
+                    if not committed_any and _is_sqlite_busy(exc):
+                        _emit(
+                            {
+                                "status": "retry_later",
+                                "period": args.period,
+                                "error": "db_busy",
+                                "message": str(exc),
+                            }
+                        )
+                        return 2
+                    if not committed_any:
+                        _emit(
+                            {
+                                "status": "internal_error",
+                                "error": "internal_error",
+                                "period": args.period,
+                                "message": str(exc),
+                            }
+                        )
+                        return 2
+                    results.append(
+                        {
+                            "index": index,
+                            "review_id": review_id,
+                            "expected_row_version": expected_row_version,
+                            "outcome": "failed",
+                            "result": _post_batch_failure_result(
+                                db,
+                                transaction_id=subject_id,
+                                review_id=review_id,
+                                expected_row_version=expected_row_version,
+                                error=exc,
+                            ),
+                        }
+                    )
+                    summary["failed"] += 1
+                    remaining = len(requested) - (index + 1)
+                    for remainder in range(index + 1, len(requested)):
+                        next_review_id, next_expected = _parse_post_batch_item(
+                            requested[remainder]
+                        )
+                        results.append(
+                            {
+                                "index": remainder,
+                                "review_id": next_review_id,
+                                "expected_row_version": next_expected,
+                                "outcome": "not_attempted",
+                                "result": {
+                                    "reason_code": "internal_error",
+                                    "error_type": type(exc).__name__,
+                                    "message": str(exc),
+                                },
+                                "transaction_id": None,
+                                "previous_row_version": None,
+                                "new_row_version": None,
+                                "cleanup_status": None,
+                            }
+                        )
+                    summary["not_attempted"] = remaining
+                    payload = {
+                        "status": "interrupted",
+                        "interrupted": True,
+                        "period": args.period,
+                        "summary": summary,
+                        "results": results,
+                    }
+                    _emit(payload)
+                    return 0
+                committed_any = committed_any or committed
+                if outcome == "skipped":
+                    summary["skipped"] += 1
+                else:
+                    summary[outcome] += 1
+                if outcome == "posted" and result.get("reason_code") == "posted_cleanup_failed":
+                    summary["interrupted"] += 1
+                results.append(
+                    _post_batch_result_row(
+                        index=index,
+                        review_id=review_id,
+                        expected_row_version=expected_row_version,
+                        outcome=outcome,
+                        result=result,
+                    )
+                )
+    except sqlite3.OperationalError as exc:
+        if _is_sqlite_busy(exc):
+            _emit(
+                {
+                    "status": "retry_later",
+                    "period": args.period,
+                    "error": "db_busy",
+                    "message": str(exc),
+                }
+            )
+            return 2
         _emit(
             {
-                **row,
-                "inbox_cleanup": _inbox_cleanup_payload(
-                    "failed",
-                    cleanup_row=cleanup_row,
-                    candidate=candidate,
-                    message=_inbox_cleanup_error_message(
-                        exc,
-                        show_paths=args.show_paths,
-                    ),
-                    show_paths=args.show_paths,
-                ),
+                "status": "internal_error",
+                "error": "internal_error",
+                "period": args.period,
+                "message": str(exc),
             }
         )
         return 2
-    _emit(
+    payload = {
+        "status": _post_batch_status(summary),
+        "interrupted": summary["not_attempted"] > 0,
+        "period": args.period,
+        "summary": summary,
+        "results": results,
+    }
+    _emit(payload)
+    return 0
+
+
+def _post_transaction_review(
+    db: LedgerDB,
+    *,
+    review_id: str,
+    transaction_id: str,
+    expected_row_version: int,
+    expected_period: str | None,
+    inbox_root: Path | None,
+    archive_root: Path | None,
+    show_paths: bool,
+    allow_already_posted: bool,
+) -> tuple[str, dict[str, Any], bool]:
+    current = _transaction_for_cleanup_output(db, transaction_id)
+    if expected_period is not None and current["period_key"] != expected_period:
+        return (
+            "failed",
+            {
+                **current,
+                "error_type": "ValueError",
+                "message": (
+                    "Review item period does not match the requested batch period: "
+                    f"{current['period_key']} != {expected_period}"
+                ),
+            },
+            False,
+        )
+    if allow_already_posted and current["lifecycle_status"] == "included_in_snapshot":
+        return (
+            "already_finalized",
+            {
+                **current,
+                "reason_code": "already_finalized",
+                "inbox_cleanup": _inbox_cleanup_payload(
+                    "not_applicable",
+                    message="Transaction is already included in a snapshot.",
+                    show_paths=show_paths,
+                ),
+            },
+            False,
+        )
+    if (
+        allow_already_posted
+        and current["lifecycle_status"] == "posted"
+    ):
+        return _summarize_already_posted_transaction(
+            current,
+            prevalidate_expense_inbox_cleanup(
+                db,
+                transaction_id,
+                inbox_root=inbox_root,
+                archive_root=archive_root,
+            ),
+            show_paths=show_paths,
+        )
+
+    cleanup = prevalidate_expense_inbox_cleanup(
+        db,
+        transaction_id,
+        inbox_root=inbox_root,
+        archive_root=archive_root,
+    )
+    if cleanup.status == "failed":
+        return (
+            "failed",
+            {
+                **current,
+                "reason_code": cleanup.reason_code,
+                "inbox_cleanup": _inbox_cleanup_payload(
+                    "failed",
+                    cleanup_row=cleanup.cleanup_row,
+                    candidate=cleanup.candidate,
+                    message=cleanup.message,
+                    show_paths=show_paths,
+                ),
+            },
+            False,
+        )
+    row = db.transition_transaction(
+        transaction_id,
+        lifecycle_status="posted",
+        expected_row_version=expected_row_version,
+    )
+    return _finalize_posted_transaction(
+        row,
+        cleanup,
+        show_paths=show_paths,
+    )
+
+
+def _finalize_posted_transaction(
+    row: Mapping[str, Any],
+    cleanup: Any,
+    *,
+    show_paths: bool,
+) -> tuple[str, dict[str, Any], bool]:
+    if cleanup.candidate is None:
+        return (
+            "posted",
+            {
+                **dict(row),
+                "reason_code": None,
+                "inbox_cleanup": _inbox_cleanup_payload(
+                    cleanup.status,
+                    cleanup_row=cleanup.cleanup_row,
+                    candidate=cleanup.candidate,
+                    message=cleanup.message,
+                    show_paths=show_paths,
+                ),
+            },
+            True,
+        )
+    try:
+        cleanup_status = cleanup_expense_inbox_source(cleanup.candidate)
+    except Exception as exc:
+        return (
+            "posted",
+            {
+                **dict(row),
+                "reason_code": "posted_cleanup_failed",
+                "inbox_cleanup": _inbox_cleanup_payload(
+                    "failed",
+                    cleanup_row=cleanup.cleanup_row,
+                    candidate=cleanup.candidate,
+                    message=_inbox_cleanup_error_message(
+                        exc,
+                        show_paths=show_paths,
+                    ),
+                    show_paths=show_paths,
+                ),
+            },
+            True,
+        )
+    return (
+        "posted",
         {
-            **row,
+            **dict(row),
+            "reason_code": None,
             "inbox_cleanup": _inbox_cleanup_payload(
                 cleanup_status,
-                cleanup_row=cleanup_row,
-                candidate=candidate,
-                show_paths=args.show_paths,
+                cleanup_row=cleanup.cleanup_row,
+                candidate=cleanup.candidate,
+                show_paths=show_paths,
             ),
-        }
+        },
+        True,
     )
-    return 0
+
+
+def _summarize_already_posted_transaction(
+    row: Mapping[str, Any],
+    cleanup: Any,
+    *,
+    show_paths: bool,
+) -> tuple[str, dict[str, Any], bool]:
+    if cleanup.status == "failed":
+        inbox_cleanup = _inbox_cleanup_payload(
+            "failed",
+            cleanup_row=cleanup.cleanup_row,
+            candidate=cleanup.candidate,
+            message=cleanup.message,
+            show_paths=show_paths,
+        )
+    elif cleanup.status == "ready":
+        inbox_cleanup = _inbox_cleanup_payload(
+            "failed",
+            cleanup_row=cleanup.cleanup_row,
+            candidate=cleanup.candidate,
+            message="Transaction is already posted; run inbox cleanup-posted to finish verified cleanup.",
+            show_paths=show_paths,
+        )
+    else:
+        inbox_cleanup = _inbox_cleanup_payload(
+            cleanup.status,
+            cleanup_row=cleanup.cleanup_row,
+            candidate=cleanup.candidate,
+            message=cleanup.message,
+            show_paths=show_paths,
+        )
+    return (
+        "already_posted",
+        {
+            **dict(row),
+            "reason_code": "already_posted",
+            "inbox_cleanup": inbox_cleanup,
+        },
+        False,
+    )
+
+
+def _load_post_batch_request(
+    handle,
+    *,
+    expected_period: str,
+) -> dict[str, Any]:
+    payload = json.load(handle)
+    if not isinstance(payload, dict):
+        raise ValueError("review post-batch expects a JSON object on stdin")
+    period = str(payload.get("period") or "").strip()
+    if not period:
+        raise ValueError("review post-batch stdin payload requires period")
+    if period != expected_period:
+        raise ValueError("review post-batch stdin period must match --period")
+    items = payload.get("items")
+    if not isinstance(items, list):
+        raise ValueError("review post-batch stdin payload requires an items array")
+    return {"period": period, "items": items}
+
+
+def _parse_post_batch_item(item: Any) -> tuple[str, int]:
+    if not isinstance(item, dict):
+        raise ValueError("Each post-batch stdin item must be a JSON object")
+    review_id = str(item.get("review_id") or "").strip()
+    transaction_id = str(item.get("transaction_id") or "").strip()
+    if review_id:
+        review_kind, subject_id = _parse_review_id(review_id)
+        if review_kind != "transaction":
+            raise ValueError("Only transaction review items can be posted in batch")
+        if transaction_id and transaction_id != subject_id:
+            raise ValueError("Each post-batch item transaction_id must match review_id")
+        transaction_id = subject_id
+    elif transaction_id:
+        review_id = f"transaction:{transaction_id}"
+    else:
+        raise ValueError("Each post-batch item requires transaction_id or review_id")
+    if not review_id:
+        raise ValueError("Each post-batch item requires transaction_id or review_id")
+    raw_version = item.get("expected_row_version")
+    if raw_version is None:
+        raise ValueError("Each post-batch item requires expected_row_version")
+    return review_id, int(raw_version)
+
+
+def _post_batch_failure_result(
+    db: LedgerDB,
+    *,
+    transaction_id: str,
+    review_id: str,
+    expected_row_version: int,
+    error: Exception,
+) -> dict[str, Any]:
+    try:
+        current = _transaction_for_cleanup_output(db, transaction_id)
+    except Exception:
+        current = {
+            "review_id": review_id,
+            "expected_row_version": expected_row_version,
+        }
+    return {
+        **current,
+        "reason_code": _post_batch_reason_code(error),
+        "error_type": type(error).__name__,
+        "message": str(error),
+    }
+
+
+def _post_batch_result_row(
+    *,
+    index: int,
+    review_id: str,
+    expected_row_version: int,
+    outcome: str,
+    result: Mapping[str, Any],
+) -> dict[str, Any]:
+    current_row_version = result.get("row_version")
+    if outcome == "posted" and isinstance(current_row_version, int):
+        previous_row_version: int | None = expected_row_version
+        new_row_version: int | None = current_row_version
+    elif isinstance(current_row_version, int):
+        previous_row_version = current_row_version
+        new_row_version = current_row_version
+    else:
+        previous_row_version = None
+        new_row_version = None
+    return {
+        "index": index,
+        "review_id": review_id,
+        "transaction_id": result.get("transaction_id"),
+        "expected_row_version": expected_row_version,
+        "previous_row_version": previous_row_version,
+        "new_row_version": new_row_version,
+        "outcome": outcome,
+        "reason_code": result.get("reason_code"),
+        "cleanup_status": (result.get("inbox_cleanup") or {}).get("status"),
+        "result": result,
+    }
+
+
+def _post_batch_status(summary: Mapping[str, int]) -> str:
+    if summary["not_attempted"]:
+        return "interrupted"
+    if summary["failed"] or summary["interrupted"] or summary["skipped"]:
+        return "partial"
+    return "completed"
+
+
+def _preflight_post_batch_period(
+    db: LedgerDB,
+    *,
+    period_key: str,
+    requested: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    row = db.connection.execute(
+        "SELECT status FROM periods WHERE period_key = ?",
+        (period_key,),
+    ).fetchone()
+    if row is None:
+        return {
+            "status": "unknown_period",
+            "period": period_key,
+            "error": "unknown_period",
+            "message": f"Unknown period: {period_key}",
+        }
+    if row["status"] not in {"closed", "amended"}:
+        return None
+    message = f"Period {period_key} is immutable after close"
+    summary = {
+        "requested": len(requested),
+        "posted": 0,
+        "already_posted": 0,
+        "already_finalized": 0,
+        "skipped": 0,
+        "failed": 0,
+        "interrupted": 0,
+        "not_attempted": len(requested),
+    }
+    results: list[dict[str, Any]] = []
+    for index, item in enumerate(requested):
+        review_id, expected_row_version = _parse_post_batch_item(item)
+        results.append(
+            {
+                "index": index,
+                "review_id": review_id,
+                "expected_row_version": expected_row_version,
+                "outcome": "not_attempted",
+                "result": {
+                    "reason_code": "period_not_open",
+                    "error_type": "ClosedPeriodError",
+                    "message": message,
+                },
+            }
+        )
+    return {
+        "status": "period_not_open",
+        "interrupted": False,
+        "period": period_key,
+        "reason_code": "period_not_open",
+        "message": message,
+        "summary": summary,
+        "results": results,
+    }
+
+
+def _post_batch_reason_code(error: Exception) -> str | None:
+    message = str(error)
+    if "Expected row_version" in message:
+        return "stale_row_version"
+    if "immutable after close" in message:
+        return "period_not_open"
+    if "requires an EUR amount" in message:
+        return "fx_missing"
+    if "requires sourced FX" in message:
+        return "fx_unsourced"
+    if "historical-only" in message:
+        return "fx_historical_only"
+    if "tax treatment is required" in message:
+        return "tax_treatment_missing"
+    if "Unknown tax treatment" in message:
+        return "tax_treatment_unknown"
+    if "must be approved before posting" in message:
+        return "document_not_ready"
+    if "cannot be posted before" in message:
+        return "future_dated"
+    if "prevent posting" in message:
+        return "blocking_issue"
+    if "-> posted" in message:
+        return "lifecycle_not_approved"
+    return None
+
+
+def _is_sqlite_busy(error: Exception) -> bool:
+    return isinstance(error, sqlite3.OperationalError) and "locked" in str(error).lower()
 
 
 def _cmd_inbox_cleanup_posted(args: argparse.Namespace) -> int:
@@ -2090,7 +2560,7 @@ def _cmd_inbox_cleanup_posted(args: argparse.Namespace) -> int:
         raise ValueError("Only transaction:<uuid> review items can be cleaned")
     with open_ledger_db(args.db, read_only=True) as db:
         current = _transaction_for_cleanup_output(db, subject_id)
-        cleanup_row = _expense_inbox_cleanup_row(db, subject_id)
+        cleanup_row = expense_inbox_cleanup_row(db, subject_id)
     if current["lifecycle_status"] != "posted":
         _emit(
             {
@@ -2119,7 +2589,11 @@ def _cmd_inbox_cleanup_posted(args: argparse.Namespace) -> int:
 
     candidate: ExpenseInboxCleanupCandidate | None = None
     try:
-        candidate = _expense_inbox_cleanup_candidate(cleanup_row, args)
+        candidate = build_expense_inbox_cleanup_candidate(
+            cleanup_row,
+            inbox_root=args.inbox_root,
+            archive_root=args.archive_root,
+        )
         cleanup_status = cleanup_expense_inbox_source(candidate)
     except (InboxCleanupError, OSError) as exc:
         _emit(
@@ -2154,75 +2628,17 @@ def _cmd_inbox_cleanup_posted(args: argparse.Namespace) -> int:
 
 def _transaction_for_cleanup_output(db: LedgerDB, transaction_id: str) -> dict[str, Any]:
     row = db.connection.execute(
-        "SELECT * FROM transactions WHERE transaction_id = ?",
+        """
+        SELECT t.*, p.period_key, p.status AS period_status
+        FROM transactions t
+        JOIN periods p ON p.period_id = t.period_id
+        WHERE t.transaction_id = ?
+        """,
         (transaction_id,),
     ).fetchone()
     if row is None:
         raise LedgerDbError(f"Transaction not found: {transaction_id}")
     return dict(row)
-
-
-def _expense_inbox_cleanup_row(
-    db: LedgerDB,
-    transaction_id: str,
-) -> dict[str, Any] | None:
-    row = db.connection.execute(
-        """
-        SELECT t.transaction_id, p.period_key, d.document_type,
-               d.source_path AS archive_path,
-               d.source_hash AS evidence_sha256,
-               ib.source_name AS inbox_source_path,
-               ir.intake_tab
-        FROM transactions t
-        JOIN periods p ON p.period_id = t.period_id
-        LEFT JOIN documents d ON d.document_id = t.document_id
-        LEFT JOIN import_batches ib ON ib.import_batch_id = d.import_batch_id
-        LEFT JOIN intake_receipts ir ON ir.transaction_id = t.transaction_id
-        WHERE t.transaction_id = ?
-        """,
-        (transaction_id,),
-    ).fetchone()
-    if (
-        row is None
-        or row["intake_tab"] != "expense_intake"
-        or row["document_type"] != "expense_invoice"
-    ):
-        return None
-    return dict(row)
-
-
-def _expense_inbox_cleanup_candidate(
-    row: Mapping[str, Any],
-    args: argparse.Namespace,
-) -> ExpenseInboxCleanupCandidate:
-    if args.inbox_root is None:
-        raise InboxCleanupError(
-            "--inbox-root is required for expense_intake cleanup "
-            "(or set inbox_root in .local/config.yaml)"
-        )
-    if args.archive_root is None:
-        raise InboxCleanupError(
-            "--archive-root is required for expense_intake cleanup "
-            "(or set archive_root in .local/config.yaml)"
-        )
-    source_path = str(row.get("inbox_source_path") or "").strip()
-    archive_path = str(row.get("archive_path") or "").strip()
-    evidence_sha256 = str(row.get("evidence_sha256") or "").strip()
-    period_key = str(row.get("period_key") or "").strip()
-    if not source_path:
-        raise InboxCleanupError("Expense intake is missing its stored Inbox source path")
-    if not archive_path:
-        raise InboxCleanupError("Expense document is missing its Evidence archive path")
-    if not period_key:
-        raise InboxCleanupError("Expense transaction is missing its accounting period")
-    return ExpenseInboxCleanupCandidate(
-        source_path=Path(source_path),
-        archive_path=Path(archive_path),
-        inbox_root=args.inbox_root,
-        archive_root=args.archive_root,
-        period_key=period_key,
-        sha256=evidence_sha256,
-    )
 
 
 def _inbox_cleanup_payload(
