@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from datetime import date
+import errno
 from email.parser import BytesParser
 from email.policy import default as email_policy
 import hashlib
@@ -15,6 +16,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -43,6 +45,7 @@ UPLOAD_SUFFIXES = {
     ".webp",
 }
 MAX_UPLOAD_BYTES = 30 * 1024 * 1024
+_SO_EXCLUSIVEADDRUSE = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
 
 
 class LocalWebError(ValueError):
@@ -796,6 +799,7 @@ class LocalAccountingApp:
 
 class LocalAccountingServer(ThreadingHTTPServer):
     daemon_threads = True
+    allow_reuse_address = _SO_EXCLUSIVEADDRUSE is None
 
     def __init__(
         self,
@@ -804,6 +808,11 @@ class LocalAccountingServer(ThreadingHTTPServer):
     ) -> None:
         self.app = app
         super().__init__(server_address, LocalAccountingHandler)
+
+    def server_bind(self) -> None:
+        if _SO_EXCLUSIVEADDRUSE is not None:
+            self.socket.setsockopt(socket.SOL_SOCKET, _SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
 
 
 class LocalAccountingHandler(BaseHTTPRequestHandler):
@@ -863,6 +872,8 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             ):
                 document_id = parsed.path.split("/")[3]
                 self._serve_document(document_id)
+            elif parsed.path.startswith("/api/"):
+                self._send_error_json(HTTPStatus.NOT_FOUND, "Unknown API endpoint")
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
         except FileNotFoundError as exc:
@@ -904,6 +915,8 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                     ),
                     status=HTTPStatus.CREATED,
                 )
+            elif parsed.path.startswith("/api/"):
+                self._send_error_json(HTTPStatus.NOT_FOUND, "Unknown API endpoint")
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
         except FileNotFoundError as exc:
@@ -1103,7 +1116,20 @@ def main(argv: list[str] | None = None) -> int:
         cache_root=args.cache_root,
     )
     app = LocalAccountingApp(config)
-    server = LocalAccountingServer((args.host, args.port), app)
+    display_host = f"[{args.host}]" if ":" in args.host else args.host
+    bind_url = f"http://{display_host}:{args.port}"
+    try:
+        server = LocalAccountingServer((args.host, args.port), app)
+    except OSError as exc:
+        if exc.errno in {errno.EADDRINUSE, errno.EACCES}:
+            raise SystemExit(
+                f"autonomo-web cannot bind {bind_url} (errno {exc.errno}): "
+                "the address is already in use or reserved. "
+                "Stop the process holding it "
+                f"(Get-NetTCPConnection -LocalPort {args.port} -State Listen), "
+                "or start on another port with --port <port>."
+            ) from exc
+        raise SystemExit(f"autonomo-web cannot bind {bind_url}: {exc}") from exc
     host, port = server.server_address[:2]
     print(f"Autónomo accounting: http://{host}:{port}", flush=True)
     try:
