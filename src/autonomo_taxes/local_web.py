@@ -28,6 +28,14 @@ try:
 except Exception:  # pragma: no cover - dependency guard
     yaml = None
 
+from .ledger_db import open as open_ledger_db
+from .review_packet import (
+    ReviewPacketError,
+    classify_review_packet_failure,
+    packet_json,
+    prepare_review_work_item,
+)
+
 
 QUARTER_RE = re.compile(r"^\d{4}-Q[1-4]$")
 UUID_RE = re.compile(r"^[0-9a-fA-F-]{32,36}$")
@@ -45,11 +53,19 @@ UPLOAD_SUFFIXES = {
     ".webp",
 }
 MAX_UPLOAD_BYTES = 30 * 1024 * 1024
+MAX_REVIEW_PACKET_BYTES = 64 * 1024
 _SO_EXCLUSIVEADDRUSE = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
 
 
 class LocalWebError(ValueError):
     pass
+
+
+class LocalWebApiError(LocalWebError):
+    def __init__(self, status: HTTPStatus, code: str, message: str) -> None:
+        super().__init__(message)
+        self.status = status
+        self.code = code
 
 
 @dataclass(frozen=True)
@@ -181,6 +197,13 @@ class LocalAccountingApp:
                     (period_row["period_id"],),
                 ).fetchall()
             }
+            review_rows = self._transactions(
+                connection,
+                period_id=period_row["period_id"],
+                lifecycle_status="review",
+                limit=500,
+            )
+            posting_summary = _posting_summary(review_rows)
         cached = self._load_cached_dashboard(period)
         return {
             "period": dict(period_row),
@@ -193,6 +216,8 @@ class LocalAccountingApp:
             "forecast_as_of": cached.get("as_of") if cached else None,
             "filing_ready": bool(cached and cached.get("filing_ready")),
             "submission_ready": bool(cached and cached.get("submission_ready")),
+            "readyCount": posting_summary["ready"],
+            "posting_summary": posting_summary,
         }
 
     def transactions(
@@ -484,6 +509,59 @@ class LocalAccountingApp:
             "system_marker": result.get("document_id"),
         }
 
+    def review_work_item(self, review_id: str) -> dict[str, Any]:
+        try:
+            with open_ledger_db(self.config.database, read_only=True) as db:
+                return prepare_review_work_item(db, review_id)
+        except ReviewPacketError as exc:
+            raise self._review_api_error(exc) from exc
+
+    def review_validate(self, packet: Mapping[str, Any]) -> dict[str, Any]:
+        self._ensure_supported_review_packet(packet)
+        return self._run_review_apply(packet, dry_run=True)
+
+    def review_apply(self, packet: Mapping[str, Any]) -> dict[str, Any]:
+        self._ensure_supported_review_packet(packet)
+        return self._run_review_apply(packet, dry_run=False)
+
+    def review_apply_fx(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        review_id = str(payload["review_id"]).strip()
+        self.review_work_item(review_id)
+        command = [
+            sys.executable,
+            "-m",
+            "autonomo_taxes.cli",
+            "review",
+            "apply-fx",
+            "--db",
+            str(self.config.database),
+            "--input",
+            "-",
+        ]
+        try:
+            self._run_cli_with_input(
+                command,
+                input_text=json.dumps(dict(payload), ensure_ascii=False) + "\n",
+            )
+        except LocalWebError as exc:
+            message = str(exc)
+            if message.startswith("Expected row_version"):
+                raise LocalWebApiError(
+                    HTTPStatus.CONFLICT, "stale_snapshot", message
+                ) from exc
+            if message.startswith("Conflicting FX"):
+                raise LocalWebApiError(
+                    HTTPStatus.CONFLICT, "fx_rate_conflict", message
+                ) from exc
+            if "immutable after close" in message or "lifecycle_status=" in message:
+                raise LocalWebApiError(
+                    HTTPStatus.CONFLICT, "review_conflict", message
+                ) from exc
+            raise LocalWebApiError(
+                HTTPStatus.BAD_REQUEST, "fx_review_invalid", message
+            ) from exc
+        return self.review_work_item(review_id)
+
     def document_file(self, document_id: str) -> tuple[Path, str]:
         if not UUID_RE.fullmatch(document_id):
             raise LocalWebError("Invalid document id")
@@ -767,6 +845,14 @@ class LocalAccountingApp:
         return {}
 
     def _run_cli(self, command: list[str]) -> dict[str, Any]:
+        return self._run_cli_with_input(command, input_text=None)
+
+    def _run_cli_with_input(
+        self,
+        command: list[str],
+        *,
+        input_text: str | None,
+    ) -> dict[str, Any]:
         environment = os.environ.copy()
         source_root = str(self.config.project_root / "src")
         environment["PYTHONPATH"] = os.pathsep.join(
@@ -778,6 +864,7 @@ class LocalAccountingApp:
             command,
             cwd=self.config.project_root,
             env=environment,
+            input=input_text,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -786,7 +873,7 @@ class LocalAccountingApp:
             timeout=180,
         )
         if run.returncode != 0:
-            detail = run.stderr.strip() or run.stdout.strip() or "unknown CLI error"
+            detail = _cli_error_detail(run.stderr, run.stdout)
             raise LocalWebError(detail)
         try:
             result = json.loads(run.stdout)
@@ -795,6 +882,50 @@ class LocalAccountingApp:
         if not isinstance(result, dict):
             raise LocalWebError("CLI returned an unexpected response")
         return result
+
+    def _run_review_apply(
+        self,
+        packet: Mapping[str, Any],
+        *,
+        dry_run: bool,
+    ) -> dict[str, Any]:
+        command = [
+            sys.executable,
+            "-m",
+            "autonomo_taxes.cli",
+            "review",
+            "apply",
+            "--db",
+            str(self.config.database),
+            "--input",
+            "-",
+        ]
+        if dry_run:
+            command.append("--dry-run")
+        try:
+            return self._run_cli_with_input(command, input_text=packet_json(packet))
+        except LocalWebError as exc:
+            code, status = classify_review_packet_failure(str(exc))
+            raise LocalWebApiError(HTTPStatus(status), code, str(exc)) from exc
+
+    def _ensure_supported_review_packet(self, packet: Mapping[str, Any]) -> None:
+        review_id = str(packet.get("review_id", "")).strip()
+        if not review_id:
+            return
+        work_item = self.review_work_item(review_id)
+        if work_item["supported"]:
+            return
+        reasons = ", ".join(str(value) for value in work_item["unsupported_reasons"])
+        raise LocalWebApiError(
+            HTTPStatus.CONFLICT,
+            "unsupported_work_item",
+            "Review work item is not supported by the local web workflow: "
+            + reasons,
+        )
+
+    def _review_api_error(self, exc: ReviewPacketError) -> LocalWebApiError:
+        code, status = classify_review_packet_failure(str(exc))
+        return LocalWebApiError(HTTPStatus(status), code, str(exc))
 
 
 class LocalAccountingServer(ThreadingHTTPServer):
@@ -867,6 +998,10 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                 )
             elif parsed.path == "/api/counterparties":
                 self._send_json(self.server.app.counterparties())
+            elif parsed.path == "/api/review/work-item":
+                self._send_json(
+                    self.server.app.review_work_item(_single_query(query, "review_id"))
+                )
             elif parsed.path.startswith("/api/document/") and parsed.path.endswith(
                 "/content"
             ):
@@ -876,6 +1011,8 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                 self._send_error_json(HTTPStatus.NOT_FOUND, "Unknown API endpoint")
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
+        except LocalWebApiError as exc:
+            self._send_error_json(exc.status, str(exc), code=exc.code)
         except FileNotFoundError as exc:
             self._send_error_json(HTTPStatus.NOT_FOUND, str(exc))
         except (LocalWebError, ValueError) as exc:
@@ -915,10 +1052,18 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                     ),
                     status=HTTPStatus.CREATED,
                 )
+            elif parsed.path == "/api/review/validate":
+                self._send_json(self.server.app.review_validate(self._read_review_packet()))
+            elif parsed.path == "/api/review/apply":
+                self._send_json(self.server.app.review_apply(self._read_review_packet()))
+            elif parsed.path == "/api/review/apply-fx":
+                self._send_json(self.server.app.review_apply_fx(self._read_fx_review()))
             elif parsed.path.startswith("/api/"):
                 self._send_error_json(HTTPStatus.NOT_FOUND, "Unknown API endpoint")
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
+        except LocalWebApiError as exc:
+            self._send_error_json(exc.status, str(exc), code=exc.code)
         except FileNotFoundError as exc:
             self._send_error_json(HTTPStatus.NOT_FOUND, str(exc))
         except (LocalWebError, ValueError) as exc:
@@ -951,6 +1096,30 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             "::1",
         }:
             raise LocalWebError("Cross-origin writes are not allowed")
+
+    def _require_same_origin(self) -> None:
+        origin = self.headers.get("Origin")
+        if not origin:
+            raise LocalWebApiError(
+                HTTPStatus.FORBIDDEN,
+                "origin_required",
+                "Origin header is required for review writes",
+            )
+        parsed = urlparse(origin)
+        host_name, host_port = _host_header_parts(
+            self.headers.get("Host", ""),
+            default_port=self.server.server_address[1],
+        )
+        if (
+            parsed.scheme != "http"
+            or parsed.hostname != host_name
+            or (parsed.port or 80) != host_port
+        ):
+            raise LocalWebApiError(
+                HTTPStatus.FORBIDDEN,
+                "cross_origin_forbidden",
+                "Cross-origin review writes are not allowed",
+            )
 
     def _require_session(self) -> None:
         cookie = SimpleCookie(self.headers.get("Cookie", ""))
@@ -1000,9 +1169,9 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 self.wfile.write(chunk)
 
-    def _read_json(self) -> dict[str, Any]:
+    def _read_json(self, *, max_bytes: int = 1024 * 1024) -> dict[str, Any]:
         length = _content_length(self.headers)
-        if length > 1024 * 1024:
+        if length > max_bytes:
             raise LocalWebError("JSON request is too large")
         raw = self.rfile.read(length)
         try:
@@ -1012,6 +1181,48 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
         if not isinstance(value, dict):
             raise LocalWebError("JSON request must be an object")
         return value
+
+    def _read_review_packet(self) -> dict[str, Any]:
+        self._require_same_origin()
+        self._require_json_content_type()
+        payload = self._read_json(max_bytes=MAX_REVIEW_PACKET_BYTES)
+        _exact_object_fields(payload, {"packet"}, "review request")
+        packet = payload["packet"]
+        if not isinstance(packet, Mapping):
+            raise LocalWebApiError(
+                HTTPStatus.BAD_REQUEST,
+                "review_packet_invalid",
+                "packet must be a JSON object",
+            )
+        return dict(packet)
+
+    def _read_fx_review(self) -> dict[str, Any]:
+        self._require_same_origin()
+        self._require_json_content_type()
+        payload = self._read_json(max_bytes=MAX_REVIEW_PACKET_BYTES)
+        _exact_object_fields(
+            payload,
+            {
+                "review_id",
+                "expected_row_version",
+                "rate_date",
+                "rate",
+                "rate_source",
+                "source_reference",
+            },
+            "FX review request",
+        )
+        return payload
+
+    def _require_json_content_type(self) -> None:
+        content_type = self.headers.get("Content-Type", "")
+        mime_type = content_type.split(";", 1)[0].strip().lower()
+        if mime_type != "application/json":
+            raise LocalWebApiError(
+                HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                "unsupported_content_type",
+                "Review writes require Content-Type: application/json",
+            )
 
     def _read_multipart(self) -> tuple[dict[str, str], str, bytes]:
         content_type = self.headers.get("Content-Type", "")
@@ -1068,10 +1279,19 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(content)
 
-    def _send_error_json(self, status: HTTPStatus, message: str) -> None:
+    def _send_error_json(
+        self,
+        status: HTTPStatus,
+        message: str,
+        *,
+        code: str | None = None,
+    ) -> None:
         if self.wfile.closed:
             return
-        self._send_json({"error": message}, status=status)
+        payload: dict[str, Any] = {"error": message}
+        if code is not None:
+            payload["code"] = code
+        self._send_json(payload, status=status)
 
     def _security_headers(self) -> None:
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -1186,6 +1406,33 @@ def _empty_scope() -> dict[str, Any]:
     }
 
 
+def _posting_summary(rows: list[Mapping[str, Any]]) -> dict[str, int]:
+    summary = {"needs_review": 0, "ready": 0, "later": 0, "blocked": 0}
+    today = date.today().isoformat()
+    for row in rows:
+        lifecycle_status = str(row.get("lifecycle_status") or "")
+        if lifecycle_status != "approved":
+            summary["needs_review"] += 1
+            continue
+        document_status = row.get("document_status")
+        blocked = (
+            int(row.get("open_issue_count") or 0) > 0
+            or str(row.get("tax_code") or "unknown") == "unknown"
+            or document_status not in {None, "approved", "posted", "included_in_snapshot"}
+            or (
+                str(row.get("currency") or "EUR").upper() != "EUR"
+                and not row.get("amount_eur")
+            )
+        )
+        if blocked:
+            summary["blocked"] += 1
+        elif str(row.get("transaction_date") or "") > today:
+            summary["later"] += 1
+        else:
+            summary["ready"] += 1
+    return summary
+
+
 def _minor_to_text(value: int | None) -> str | None:
     if value is None:
         return None
@@ -1292,6 +1539,25 @@ def _single_query(query: Mapping[str, list[str]], name: str) -> str:
     return values[0]
 
 
+def _host_header_parts(value: str, *, default_port: int) -> tuple[str, int]:
+    parsed = urlparse("//" + value.strip())
+    if parsed.hostname is None:
+        raise LocalWebApiError(
+            HTTPStatus.BAD_REQUEST,
+            "invalid_host",
+            "Host header is invalid",
+        )
+    try:
+        port = parsed.port or default_port
+    except ValueError as exc:
+        raise LocalWebApiError(
+            HTTPStatus.BAD_REQUEST,
+            "invalid_host",
+            "Host header is invalid",
+        ) from exc
+    return parsed.hostname.lower(), port
+
+
 def _optional_query(query: Mapping[str, list[str]], name: str) -> str | None:
     values = query.get(name, [])
     if not values:
@@ -1312,6 +1578,48 @@ def _content_length(headers: Mapping[str, str]) -> int:
     if value < 0:
         raise LocalWebError("Invalid Content-Length")
     return value
+
+
+def _exact_object_fields(
+    value: Mapping[str, Any],
+    expected: set[str],
+    label: str,
+) -> None:
+    missing = sorted(expected - set(value))
+    unexpected = sorted(set(value) - expected)
+    if not missing and not unexpected:
+        return
+    details = []
+    if missing:
+        details.append("missing: " + ", ".join(missing))
+    if unexpected:
+        details.append("unexpected: " + ", ".join(unexpected))
+    raise LocalWebApiError(
+        HTTPStatus.BAD_REQUEST,
+        "invalid_request",
+        f"Invalid {label} (" + "; ".join(details) + ")",
+    )
+
+
+def _cli_error_detail(stderr: str, stdout: str) -> str:
+    for raw in (stdout, stderr):
+        text = raw.strip()
+        if not text:
+            continue
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, Mapping):
+            detail = payload.get("error") or payload.get("message")
+            if detail:
+                return str(detail)
+    lines = [line.strip() for line in (stderr or stdout).splitlines() if line.strip()]
+    if not lines:
+        return "CLI command failed without an error message"
+    last_line = lines[-1]
+    match = re.match(r"^[\w.]+(?:Error|Exception):\s*(.+)$", last_line)
+    return match.group(1) if match else last_line
 
 
 def _header_filename(value: str) -> str:

@@ -9,6 +9,7 @@ import hashlib
 import json
 from pathlib import Path
 import sqlite3
+import sys
 from typing import Any, Callable, Iterable, Mapping
 
 from .fx_policy import ALLOWED_PRODUCTION_SOURCES
@@ -374,6 +375,13 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     review_apply.add_argument("--input", type=Path, required=True)
     review_apply.add_argument("--dry-run", action="store_true")
     review_apply.set_defaults(_operational_handler=_cmd_review_apply)
+    review_apply_fx = review_sub.add_parser(
+        "apply-fx",
+        help="Atomically record a sourced FX rate and apply it to a review transaction",
+    )
+    _db_arg(review_apply_fx)
+    review_apply_fx.add_argument("--input", type=Path, required=True)
+    review_apply_fx.set_defaults(_operational_handler=_cmd_review_apply_fx)
     review_confirm = review_sub.add_parser(
         "confirm",
         help="Approve one reviewed document or transaction without posting it",
@@ -1930,6 +1938,51 @@ def _cmd_review_apply(args: argparse.Namespace) -> int:
     packet = _load_json_object(args.input)
     with open_ledger_db(args.db) as db:
         result = apply_review_packet(db, packet, dry_run=args.dry_run)
+    _emit(result)
+    return 0
+
+
+def _cmd_review_apply_fx(args: argparse.Namespace) -> int:
+    payload = _load_json_object(args.input)
+    expected_fields = {
+        "review_id",
+        "expected_row_version",
+        "rate_date",
+        "rate",
+        "rate_source",
+        "source_reference",
+    }
+    unexpected = sorted(set(payload) - expected_fields)
+    missing = sorted(expected_fields - set(payload))
+    if unexpected or missing:
+        details = []
+        if missing:
+            details.append("missing: " + ", ".join(missing))
+        if unexpected:
+            details.append("unexpected: " + ", ".join(unexpected))
+        raise ValueError("Invalid FX review request (" + "; ".join(details) + ")")
+    review_kind, subject_id = _parse_review_id(str(payload["review_id"]))
+    with open_ledger_db(args.db) as db:
+        transaction_id = subject_id
+        if review_kind == "document":
+            rows = db.connection.execute(
+                "SELECT transaction_id FROM transactions WHERE document_id = ?",
+                (subject_id,),
+            ).fetchall()
+            if len(rows) != 1:
+                raise ValueError(
+                    "Document FX review requires exactly one linked transaction; "
+                    f"found {len(rows)}"
+                )
+            transaction_id = str(rows[0]["transaction_id"])
+        result = db.review_transaction_fx_rate(
+            transaction_id,
+            expected_row_version=int(payload["expected_row_version"]),
+            rate_date=str(payload["rate_date"]),
+            rate=str(payload["rate"]),
+            rate_source=str(payload["rate_source"]),
+            source_reference=str(payload["source_reference"]),
+        )
     _emit(result)
     return 0
 
@@ -6254,9 +6307,14 @@ def _calculation_diff(recomputed: dict[str, Any], filed: dict[str, Any]) -> dict
 
 
 def _load_json_object(path: Path) -> dict[str, Any]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    if str(path) == "-":
+        payload = json.loads(sys.stdin.read())
+        label = "<stdin>"
+    else:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        label = str(path)
     if not isinstance(payload, dict):
-        raise ValueError(f"Expected a JSON object in {path}")
+        raise ValueError(f"Expected a JSON object in {label}")
     return payload
 
 
