@@ -1,0 +1,6 @@
+{
+  "tax_id": "TEST-NIF-NOT-VALID",
+  "full_name": "Synthetic Taxpayer",
+  "residency_country": "ES",
+  "source_hash": "<sha256-of-private-taxpayer-evidence>"
+}

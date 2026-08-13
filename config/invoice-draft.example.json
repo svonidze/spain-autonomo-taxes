@@ -1,0 +1,19 @@
+{
+  "draft_key": "synthetic-services:2032-07",
+  "template_key": "synthetic-services",
+  "period_key": "2032-Q3",
+  "service_on": "2032-06-30",
+  "planned_issue_on": "2032-07-01",
+  "payment_due_on": "2032-07-31",
+  "lines": [
+    {
+      "description": "Synthetic professional services in June 2032",
+      "quantity": "1",
+      "unit_amount_minor": 10000,
+      "tax_code": "outside_scope",
+      "channel_tax_code": "N2",
+      "tax_rate_basis_points": 0
+    }
+  ],
+  "notes": "Draft only; issue through the reviewed external channel."
+}

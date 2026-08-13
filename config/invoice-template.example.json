@@ -1,0 +1,26 @@
+{
+  "template_key": "synthetic-services",
+  "template_name": "Synthetic professional services",
+  "counterparty_id": "<synthetic-counterparty-id>",
+  "currency": "USD",
+  "default_lines": [
+    {
+      "description": "Software development",
+      "quantity": "1",
+      "unit_amount_minor": 10000,
+      "tax_code": "outside_scope",
+      "channel_tax_code": "N2",
+      "tax_rate_basis_points": 0
+    }
+  ],
+  "payment_terms_days": 30,
+  "withholding_rate_basis_points": 0,
+  "channel_hint": "external_compliant_channel",
+  "delivery_email": "billing@example.invalid",
+  "recipient_address_line1": "NON-DELIVERABLE EXAMPLE ADDRESS",
+  "recipient_address_line2": null,
+  "recipient_postal_code": "TEST-CODE",
+  "recipient_city": "Example City",
+  "recipient_region": "EX",
+  "active": true
+}

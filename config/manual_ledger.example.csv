@@ -1,0 +1,2 @@
+kind,date,document,counterparty,description,amount_original,currency,amount_eur,deductible_eur,category,confidence,review_required,notes
+expense,2032-03-22,SYNTHETIC-DOCUMENT-001.pdf,Synthetic Supplier Alpha,Synthetic manually transcribed expense,123.45,EUR,123.45,123.45,synthetic_example,manual,yes,Synthetic example only; replace with reviewed private data in a local file

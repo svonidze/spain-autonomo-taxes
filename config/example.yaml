@@ -1,0 +1,33 @@
+ledger_db: "<private-root>/autonomo.sqlite"
+xolo_root: "<private-root>/imports/xolo"
+inbox_root: "<private-root>/inbox"
+drive_backup_dir: "<private-root>/backups"
+drive_evidence_dir: "<private-root>/evidence"
+review_export_dir: "<private-root>/review-exports"
+google_sheet_id: "<private-google-sheet-id-or-empty>"
+year: 2032
+quarter: 2
+target_report: "<private-root>/input/SYNTHETIC-MODELO-130-Q2.pdf"
+manual_ledger: ""
+# manual_ledger: "<private-root>/manual-ledger.csv"  # optional local review file
+xolo_expense_ledger: "<private-root>/imports/xolo-expenses.csv"
+source_book: "<private-root>/runs/xolo-source-book-rows.csv"
+document_inventory: "<private-root>/runs/document-index.csv"
+difficult_expenses_policy: "calculate"
+
+zenmoney:
+  # Set only when the export truly omits currency and every selected account
+  # uses the same known currency.
+  default_currency: null
+  business_accounts:
+    - "<business-account-name>"
+
+# Prefer real bank credited EUR amounts or per-transaction official rates for
+# production filings. Target-derived FX is verify-history only.
+fx_rates:
+  # USD: "0.85679"
+
+review:
+  # Large equipment purchases are queued by default because IRPF deductibility
+  # may require capitalization/amortization rather than full immediate expense.
+  asset_review_threshold_eur: "600.00"

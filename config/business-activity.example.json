@@ -1,0 +1,15 @@
+{
+  "taxpayer_profile_id": "<synthetic-taxpayer-profile-id>",
+  "activity_key": "synthetic-professional-activity",
+  "aeat_activity_code": "<activity-code>",
+  "aeat_activity_type": "<activity-type>",
+  "iae_section": "<iae-section>",
+  "iae_group_epigraph": "<iae-group-epigraph>",
+  "description": "Synthetic professional activity for configuration examples",
+  "starts_on": "2032-01-01",
+  "ends_on": null,
+  "irpf_method": "estimacion_directa_simplificada",
+  "iva_regime": "general",
+  "source_reference": "<private-source-reference>",
+  "source_hash": "<sha256-of-private-activity-evidence>"
+}

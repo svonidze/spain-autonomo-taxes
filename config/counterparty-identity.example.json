@@ -1,0 +1,9 @@
+{
+  "counterparty_id": "<synthetic-counterparty-id>",
+  "identity_kind": "official_id",
+  "country_code": "ZZ",
+  "identifier": "TEST-ID-NOT-VALID",
+  "is_primary": true,
+  "source_reference": "<private-source-reference>",
+  "source_hash": "<sha256-of-private-identity-evidence>"
+}

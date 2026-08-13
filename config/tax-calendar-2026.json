@@ -1,0 +1,147 @@
+{
+  "calendar_year": 2026,
+  "source_checked_on": "2026-07-17",
+  "source_url": "https://sede.agenciatributaria.gob.es/Sede/ayuda/calendario-contribuyente/calendario-contribuyente-2026.html",
+  "entries": [
+    {
+      "period_key": "2025-Q4",
+      "forms": ["111", "115", "216"],
+      "filing_opens_on": "2026-01-01",
+      "internal_due_on": "2026-01-14",
+      "direct_debit_cutoff_on": "2026-01-15",
+      "statutory_due_on": "2026-01-20",
+      "source_url": "https://sede.agenciatributaria.gob.es/Sede/ayuda/calendario-contribuyente/calendario-contribuyente-2026/plazos-presentacion-autoliquidaciones-domiciliacion-bancaria.html",
+      "notes": "Confirmed quarterly withholding and non-resident-income filing window."
+    },
+    {
+      "period_key": "2025-Q4",
+      "forms": ["130", "303"],
+      "filing_opens_on": "2026-01-01",
+      "internal_due_on": "2026-01-26",
+      "direct_debit_cutoff_on": "2026-01-27",
+      "statutory_due_on": "2026-01-30",
+      "source_url": "https://sede.agenciatributaria.gob.es/Sede/ayuda/calendario-contribuyente/calendario-contribuyente-2026/plazos-presentacion-autoliquidaciones-domiciliacion-bancaria.html",
+      "notes": "Confirmed Q4 2025 payment-on-account and quarterly VAT filing window."
+    },
+    {
+      "period_key": "2025-Q4",
+      "forms": ["349"],
+      "filing_opens_on": "2026-01-01",
+      "internal_due_on": "2026-01-26",
+      "direct_debit_cutoff_on": null,
+      "statutory_due_on": "2026-01-30",
+      "source_url": "https://sede.agenciatributaria.gob.es/Sede/ayuda/calendario-contribuyente/calendario-contribuyente-2026/calendario-anual/enero/hasta-30-enero.html",
+      "notes": "Confirmed Q4 2025 recapitulative statement window."
+    },
+    {
+      "period_key": "2025",
+      "forms": ["390"],
+      "filing_opens_on": "2026-01-01",
+      "internal_due_on": "2026-01-26",
+      "direct_debit_cutoff_on": null,
+      "statutory_due_on": "2026-01-30",
+      "source_url": "https://sede.agenciatributaria.gob.es/Sede/ayuda/calendario-contribuyente/calendario-contribuyente-2026/calendario-anual/enero/hasta-30-enero.html",
+      "notes": "Confirmed annual VAT summary deadline for tax year 2025."
+    },
+    {
+      "period_key": "2025",
+      "forms": ["180", "190", "296"],
+      "filing_opens_on": "2026-01-01",
+      "internal_due_on": "2026-01-28",
+      "direct_debit_cutoff_on": null,
+      "statutory_due_on": "2026-02-02",
+      "source_url": "https://sede.agenciatributaria.gob.es/Sede/ayuda/calendario-contribuyente/calendario-contribuyente-2026/calendario-anual/febrero/hasta-2-febrero.html",
+      "notes": "Confirmed annual withholding summaries deadline for tax year 2025."
+    },
+    {
+      "period_key": "2025",
+      "forms": ["347"],
+      "filing_opens_on": "2026-02-01",
+      "internal_due_on": "2026-02-25",
+      "direct_debit_cutoff_on": null,
+      "statutory_due_on": "2026-03-02",
+      "source_url": "https://sede.agenciatributaria.gob.es/Sede/ayuda/calendario-contribuyente/calendario-contribuyente-2026/calendario-anual/marzo/hasta-2-marzo.html",
+      "notes": "Confirmed annual third-party operations statement deadline for tax year 2025."
+    },
+    {
+      "period_key": "2025",
+      "forms": ["720", "721"],
+      "filing_opens_on": "2026-01-01",
+      "internal_due_on": "2026-03-25",
+      "direct_debit_cutoff_on": null,
+      "statutory_due_on": "2026-03-31",
+      "source_url": "https://sede.agenciatributaria.gob.es/Sede/ayuda/calendario-contribuyente/calendario-contribuyente-2026/calendario-anual/marzo/hasta-31-marzo.html",
+      "notes": "Confirmed foreign-assets and foreign-crypto information deadlines for tax year 2025."
+    },
+    {
+      "period_key": "2026-Q1",
+      "forms": ["111", "115", "130", "216", "303"],
+      "filing_opens_on": "2026-04-01",
+      "internal_due_on": "2026-04-14",
+      "direct_debit_cutoff_on": "2026-04-15",
+      "statutory_due_on": "2026-04-20",
+      "source_url": "https://sede.agenciatributaria.gob.es/Sede/ayuda/calendario-contribuyente/calendario-contribuyente-2026/plazos-presentacion-autoliquidaciones-domiciliacion-bancaria.html",
+      "notes": "Confirmed Q1 2026 quarterly filing and direct-debit window."
+    },
+    {
+      "period_key": "2026-Q1",
+      "forms": ["349"],
+      "filing_opens_on": "2026-04-01",
+      "internal_due_on": "2026-04-14",
+      "direct_debit_cutoff_on": null,
+      "statutory_due_on": "2026-04-20",
+      "source_url": "https://sede.agenciatributaria.gob.es/Sede/ayuda/calendario-contribuyente/calendario-contribuyente-2026/calendario-anual/abril/hasta-20-abril.html",
+      "notes": "Confirmed Q1 2026 recapitulative statement deadline."
+    },
+    {
+      "period_key": "2025",
+      "forms": ["100", "714"],
+      "filing_opens_on": "2026-04-08",
+      "internal_due_on": "2026-06-24",
+      "direct_debit_cutoff_on": "2026-06-25",
+      "statutory_due_on": "2026-06-30",
+      "source_url": "https://sede.agenciatributaria.gob.es/Sede/ayuda/calendario-contribuyente/calendario-contribuyente-2026/plazos-presentacion-autoliquidaciones-domiciliacion-bancaria.html",
+      "notes": "Confirmed 2025 Renta and wealth-tax campaign deadline."
+    },
+    {
+      "period_key": "2026-Q2",
+      "forms": ["111", "115", "130", "216", "303"],
+      "filing_opens_on": "2026-07-01",
+      "internal_due_on": "2026-07-14",
+      "direct_debit_cutoff_on": "2026-07-15",
+      "statutory_due_on": "2026-07-20",
+      "source_url": "https://sede.agenciatributaria.gob.es/Sede/ayuda/calendario-contribuyente/calendario-contribuyente-2026/plazos-presentacion-autoliquidaciones-domiciliacion-bancaria.html",
+      "notes": "Confirmed Q2 2026 quarterly filing and direct-debit window."
+    },
+    {
+      "period_key": "2026-Q2",
+      "forms": ["349"],
+      "filing_opens_on": "2026-07-01",
+      "internal_due_on": "2026-07-14",
+      "direct_debit_cutoff_on": null,
+      "statutory_due_on": "2026-07-20",
+      "source_url": "https://sede.agenciatributaria.gob.es/Sede/ayuda/calendario-contribuyente/calendario-contribuyente-2026/calendario-anual/julio/hasta-20-julio.html",
+      "notes": "Confirmed Q2 2026 recapitulative statement deadline."
+    },
+    {
+      "period_key": "2026-Q3",
+      "forms": ["111", "115", "130", "216", "303"],
+      "filing_opens_on": "2026-10-01",
+      "internal_due_on": "2026-10-14",
+      "direct_debit_cutoff_on": "2026-10-15",
+      "statutory_due_on": "2026-10-20",
+      "source_url": "https://sede.agenciatributaria.gob.es/Sede/ayuda/calendario-contribuyente/calendario-contribuyente-2026/plazos-presentacion-autoliquidaciones-domiciliacion-bancaria.html",
+      "notes": "Confirmed Q3 2026 quarterly filing and direct-debit window."
+    },
+    {
+      "period_key": "2026-Q3",
+      "forms": ["349"],
+      "filing_opens_on": "2026-10-01",
+      "internal_due_on": "2026-10-14",
+      "direct_debit_cutoff_on": null,
+      "statutory_due_on": "2026-10-20",
+      "source_url": "https://sede.agenciatributaria.gob.es/Sede/ayuda/calendario-contribuyente/calendario-contribuyente-2026/calendario-anual/octubre/hasta-20-octubre.html",
+      "notes": "Confirmed Q3 2026 recapitulative statement deadline."
+    }
+  ]
+}
