@@ -1745,57 +1745,6 @@ def test_migrate_updates_corrected_history_adjustment_without_duplicate(
         assert cleared[0]["deductible_irpf_minor"] == 0
 
 
-def test_tracked_xolo_history_replays_all_thirteen_filed_modelo130_periods(
-    tmp_path: Path,
-    capsys,
-) -> None:
-    root = Path(__file__).resolve().parents[1]
-    database = tmp_path / "history.sqlite3"
-    with LedgerDB.initialize(database) as db:
-        migrate_xolo_history(
-            db,
-            root / "runs" / "xolo_source_book_rows.csv",
-            root / "runs" / "2026-Q2" / "xolo_expense_reconcile.csv",
-            root / "runs" / "xolo_modelo130_calculations.csv",
-            root / "runs" / "xolo_source_book_reconciliation.csv",
-            root / "runs" / "drive_archive_index" / "document_index.csv",
-        )
-
-    periods = [
-        (2023, 2), (2023, 3), (2023, 4),
-        (2024, 1), (2024, 2), (2024, 3), (2024, 4),
-        (2025, 1), (2025, 2), (2025, 3), (2025, 4),
-        (2026, 1), (2026, 2),
-    ]
-    results: dict[str, dict[str, object]] = {}
-    for year, quarter in periods:
-        assert main(
-            [
-                "calculate",
-                "--db",
-                str(database),
-                "--form",
-                "130",
-                "--year",
-                str(year),
-                "--quarter",
-                str(quarter),
-                "--mode",
-                "verify_history",
-                "--difficult-expenses-policy",
-                "source_book_total",
-            ]
-        ) == 0
-        payload = json.loads(capsys.readouterr().out)
-        results[f"{year}-Q{quarter}"] = payload
-        assert max(abs(Decimal(value)) for value in payload["diff_from_filed"].values()) <= Decimal("0.02")
-
-    assert len(results) == 13
-    assert results["2026-Q2"]["values"]["01"] == "36770.89"
-    assert results["2026-Q2"]["values"]["02"] == "10280.23"
-    assert results["2026-Q2"]["values"]["19"] == "2639.12"
-
-
 def _transaction_identity(db: LedgerDB) -> dict[str, str]:
     rows = db.connection.execute(
         "SELECT external_key, transaction_id FROM transactions ORDER BY external_key"

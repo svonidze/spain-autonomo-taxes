@@ -32,7 +32,7 @@ class DriveArchiveIndexTests(unittest.TestCase):
             tax_pdf = xolo_root / "TAX_REPORT" / "MOD 130 2T 2026 exampleei example.pdf"
             expense_pdf = xolo_root / "EXPENSE" / "Xolo_INV.pdf"
             runtime_file = xolo_root / ".omc" / "state" / "runtime.json"
-            source_book = source_books / "Libros_contables_exampleei_example_2026.xlsx"
+            source_book = source_books / "Libros_contables_Example_User_2026.xlsx"
             audit_csv = runs / "xolo_source_book_rows.csv"
             tax_pdf.write_bytes(b"pdf")
             expense_pdf.write_bytes(b"expense")
@@ -48,7 +48,7 @@ class DriveArchiveIndexTests(unittest.TestCase):
                 [
                     {
                         "local_source_path": str(source_book),
-                        "drive_relative_path": "Xolo evidence archive/source_books/Libros_contables_exampleei_example_2026.xlsx",
+                        "drive_relative_path": "Xolo evidence archive/source_books/Libros_contables_Example_User_2026.xlsx",
                         "drive_url": "https://drive/source-book",
                         "drive_id": "source-book-id",
                     },
@@ -89,7 +89,7 @@ class DriveArchiveIndexTests(unittest.TestCase):
     def test_source_books_index_uses_content_check_import_counts_and_reconciliation(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            book = root / "Libros_contables_exampleei_example_2026.xlsx"
+            book = root / "Libros_contables_Example_User_2026.xlsx"
             book.write_bytes(b"book")
             content = root / "content.csv"
             imported = root / "rows.csv"
@@ -130,7 +130,7 @@ class DriveArchiveIndexTests(unittest.TestCase):
                 [
                     {
                         "local_source_path": str(book),
-                        "drive_relative_path": "Xolo evidence archive/source_books/Libros_contables_exampleei_example_2026.xlsx",
+                        "drive_relative_path": "Xolo evidence archive/source_books/Libros_contables_Example_User_2026.xlsx",
                         "drive_url": "https://drive/book",
                         "drive_id": "book-id",
                     }
@@ -161,7 +161,7 @@ class DriveArchiveIndexTests(unittest.TestCase):
             package.mkdir(parents=True)
             books.mkdir()
             message = package / "message_to_xolo.md"
-            book = books / "Libros_contables_exampleei_example_2025.xlsx"
+            book = books / "Libros_contables_Example_User_2025.xlsx"
             message.write_text("request", encoding="utf-8")
             book.write_bytes(b"book")
 
@@ -187,7 +187,7 @@ class DriveArchiveIndexTests(unittest.TestCase):
             books.mkdir()
             runs.mkdir()
             (xolo_root / "TAX_REPORT" / "M130 2T 2023 exampleei example.pdf").write_bytes(b"pdf")
-            book = books / "Libros_contables_exampleei_example_2023.xlsx"
+            book = books / "Libros_contables_Example_User_2023.xlsx"
             book.write_bytes(b"book")
             _write_csv(
                 runs / "xolo_source_book_content_check.csv",

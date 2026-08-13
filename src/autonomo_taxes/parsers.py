@@ -186,7 +186,11 @@ def parse_expense(
 
     if "TGSS. COTIZACION" in text:
         issued = parse_any_date(text)
-        labelled = re.search(r"exampleEI example\s+04856-00\s+([0-9.]+,[0-9]{2})", text)
+        tgss_text = text[text.index("TGSS. COTIZACION") :]
+        labelled = re.search(
+            r"(?im)^[^\r\n]{0,160}\b\d{3,}(?:-\d{2,})+\s+([0-9]+(?:\.[0-9]{3})*,[0-9]{2})\s*$",
+            tgss_text,
+        )
         amount = parse_amount(labelled.group(1)) if labelled else None
         return LedgerEntry(
             kind="expense",

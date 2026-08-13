@@ -199,7 +199,7 @@ def build_xolo_correspondence_index(
                 "notes": "Local request package used to ask Xolo for official accounting books.",
             }
         )
-    for path in sorted(source_books_root.glob("Libros_contables_exampleei_example_*.xlsx")):
+    for path in sorted(source_books_root.glob("Libros_contables_*.xlsx")):
         year = _infer_year_period(path.name)[0]
         entry = _lookup_drive_map(drive_map, path, f"Xolo evidence archive/source_books/{path.name}")
         rows.append(
@@ -276,7 +276,7 @@ def _source_book_rows(
     indexed_at: str,
 ) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
-    for path in sorted(source_books_root.glob("Libros_contables_exampleei_example_*.xlsx")):
+    for path in sorted(source_books_root.glob("Libros_contables_*.xlsx")):
         year, period = _infer_year_period(path.name)
         drive_relative_path = f"Xolo evidence archive/source_books/{path.name}"
         entry = _lookup_drive_map(drive_map, path, drive_relative_path)

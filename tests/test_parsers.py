@@ -63,6 +63,18 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(entry.date.isoformat(), "2026-06-04")
         self.assertEqual(entry.amount_original, Decimal("131.96"))
 
+    def test_parse_tgss_debit_without_person_specific_literals(self):
+        text = """
+        TGSS. COTIZACION
+        EXAMPLE CONTRIBUTOR 12345-67 370,59
+        """
+
+        entry = parse_expense(Path("tgss.pdf"), text)
+
+        self.assertEqual(entry.counterparty, "TGSS")
+        self.assertEqual(entry.amount_original, Decimal("370.59"))
+        self.assertFalse(entry.review_required)
+
     def test_parse_plenitude_uses_invoice_date_not_consumption_period(self):
         text = """
         Eni Plenitude Iberia, SL

@@ -17,6 +17,8 @@ def test_review_post_cleans_expense_source_using_configured_roots(
     monkeypatch,
     capsys,
 ) -> None:
+    monkeypatch.delenv("AUTONOMO_PRIVATE_ROOT", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
     seeded = _seed_intake_transaction(tmp_path)
     config_dir = tmp_path / ".local"
     config_dir.mkdir()
