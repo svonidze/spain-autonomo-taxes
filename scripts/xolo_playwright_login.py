@@ -3,16 +3,25 @@ from __future__ import annotations
 import argparse
 from datetime import datetime
 from pathlib import Path
+import sys
 
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import sync_playwright
 
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+from autonomo_taxes.private_paths import configured_private_root  # noqa: E402
+
 
 def main() -> int:
+    browser_root = configured_private_root() / "browser" / "xolo"
     parser = argparse.ArgumentParser(description="Open Xolo in Playwright and save an authenticated storage state")
-    parser.add_argument("--profile-dir", type=Path, default=Path(".omx/xolo-playwright-profile"))
-    parser.add_argument("--state-path", type=Path, default=Path(".omx/xolo-storage-state.json"))
-    parser.add_argument("--log-path", type=Path, default=Path(".omx/xolo-playwright-login.log"))
+    parser.add_argument("--profile-dir", type=Path, default=browser_root / "profile")
+    parser.add_argument("--state-path", type=Path, default=browser_root / "storage-state.json")
+    parser.add_argument("--log-path", type=Path, default=browser_root / "login.log")
     parser.add_argument("--url", default="https://app.xolo.io/selfservice/expense")
     parser.add_argument("--timeout-minutes", type=int, default=30)
     args = parser.parse_args()

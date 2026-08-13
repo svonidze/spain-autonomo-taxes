@@ -53,6 +53,7 @@ from .posting import (
     expense_inbox_cleanup_row,
     prevalidate_expense_inbox_cleanup,
 )
+from .private_paths import default_private_root
 from .revolut import (
     RevolutMatchCandidate,
     RevolutPayment,
@@ -92,7 +93,7 @@ from .tax_rules import (
 from .zenmoney import ZenMoneyPayment, inspect_zenmoney_csv, load_zenmoney_payments_csv
 
 
-DEFAULT_DB = Path(".local") / "autonomo.sqlite"
+DEFAULT_DB = default_private_root() / "autonomo.sqlite"
 Handler = Callable[[argparse.Namespace], int]
 PAYMENT_SHEET_FIELDS = [
     "uuid",
@@ -1219,9 +1220,9 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
 
 def _cmd_intake_apply(args: argparse.Namespace) -> int:
     if args.inbox_root is None:
-        raise ValueError("--inbox-root is required (or set inbox_root in .local/config.yaml)")
+        raise ValueError("--inbox-root is required (or set inbox_root in the private config)")
     if args.archive_root is None:
-        raise ValueError("--archive-root is required (or set archive_root in .local/config.yaml)")
+        raise ValueError("--archive-root is required (or set archive_root in the private config)")
     with open_ledger_db(args.db):
         pass
     intake = load_intake_csv(args.remote_csv, args.tab)
@@ -1554,9 +1555,9 @@ def _ingest_document(args: argparse.Namespace) -> dict[str, Any]:
 
 def _cmd_inbox_process(args: argparse.Namespace) -> int:
     if args.inbox_root is None:
-        raise ValueError("--inbox-root is required (or set inbox_root in .local/config.yaml)")
+        raise ValueError("--inbox-root is required (or set inbox_root in the private config)")
     if args.archive_root is None:
-        raise ValueError("--archive-root is required (or set archive_root in .local/config.yaml)")
+        raise ValueError("--archive-root is required (or set archive_root in the private config)")
     period_root = args.inbox_root / args.period
     if not period_root.is_dir():
         raise ValueError(f"Quarter inbox not found: {period_root}")
@@ -1707,7 +1708,7 @@ def _cmd_inbox_process(args: argparse.Namespace) -> int:
 
 def _cmd_expense_record(args: argparse.Namespace) -> int:
     if args.archive_root is None:
-        raise ValueError("--archive-root is required (or set archive_root in .local/config.yaml)")
+        raise ValueError("--archive-root is required (or set archive_root in the private config)")
     preset = NON_INVOICE_EXPENSE_PRESETS[args.kind]
     inspection = inspect_document(
         args.evidence,
@@ -3721,7 +3722,7 @@ def _cmd_bank_record_payment(args: argparse.Namespace) -> int:
     if not args.evidence.is_file():
         raise FileNotFoundError(args.evidence)
     if args.archive_root is None:
-        raise ValueError("--archive-root is required (or set archive_root in .local/config.yaml)")
+        raise ValueError("--archive-root is required (or set archive_root in the private config)")
     amount_minor = _positive_minor(args.amount, field="amount")
     currency = str(args.currency).strip().upper()
     if len(currency) != 3 or not currency.isalpha():
@@ -4594,7 +4595,7 @@ def _cmd_filing_receipt(args: argparse.Namespace) -> int:
         raise FileNotFoundError(args.calculation)
     if args.archive_root is None and not args.dry_run:
         raise ValueError(
-            "--archive-root is required (or set archive_root in .local/config.yaml)"
+            "--archive-root is required (or set archive_root in the private config)"
         )
 
     calculation, calculation_sha256 = load_calculation_file(args.calculation)
@@ -4710,7 +4711,7 @@ def _cmd_tax_procedure_receipt(args: argparse.Namespace) -> int:
         raise FileNotFoundError(args.evidence)
     if args.archive_root is None and not args.dry_run:
         raise ValueError(
-            "--archive-root is required (or set archive_root in .local/config.yaml)"
+            "--archive-root is required (or set archive_root in the private config)"
         )
 
     source_sha256 = sha256_file(args.evidence)

@@ -4,6 +4,8 @@ from collections import Counter
 import csv
 from pathlib import Path
 
+from .private_paths import configured_private_root
+
 
 SOURCE_BOOK_WAITLIST_FIELDS = [
     "period",
@@ -42,7 +44,7 @@ def build_source_book_waitlist(
         row.get("period", ""): row.get("status", "") for row in _load_rows(source_book_reconciliation_csv)
     }
     package_status = _package_status(source_book_availability_csv)
-    dropzone = str(response_root or Path("evidence") / "xolo-source-books")
+    dropzone = str(response_root or configured_private_root() / "evidence" / "xolo-source-books")
 
     rows: list[dict[str, str]] = []
     for acceptance in acceptance_rows:
@@ -89,7 +91,8 @@ def write_source_book_waitlist_markdown(path: Path, rows: list[dict[str, str]]) 
     priority_counts = Counter(row.get("priority", "") for row in open_rows)
     status_counts = Counter(row.get("acceptance_status", "") for row in open_rows)
     package_status = rows[0].get("package_status", "unknown") if rows else "unknown"
-    dropzone = rows[0].get("dropzone", str(Path("evidence") / "xolo-source-books")) if rows else ""
+    default_dropzone = str(configured_private_root() / "evidence" / "xolo-source-books")
+    dropzone = rows[0].get("dropzone", default_dropzone) if rows else ""
     unique_missing = sorted(
         {
             item.strip()
@@ -117,7 +120,7 @@ def write_source_book_waitlist_markdown(path: Path, rows: list[dict[str, str]]) 
         "",
         "## Next Action",
         "",
-        "Send or paste `runs/xolo_source_book_request_package/message_to_xolo.md` to Xolo support.",
+        "Send or paste the private runs artifact `xolo_source_book_request_package/message_to_xolo.md` to Xolo support.",
         f"When Xolo replies, place the received CSV/XLSX/PDF files under `{dropzone}` and run `audit-source-book-refresh`.",
         "Do not close an open quarter by guessing Apple amortization, VAT base treatment, or row inclusion from the filed target.",
         "",

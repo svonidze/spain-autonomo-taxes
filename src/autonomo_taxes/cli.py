@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+from typing import Any, Mapping
 
 try:
     import yaml
@@ -294,7 +295,13 @@ from .xolo_dataexport_inventory import (
     write_xolo_dataexport_inventory_markdown,
 )
 from .xolo_questions import build_xolo_questions, write_questions_csv, write_questions_markdown
-from .operational_cli import DEFAULT_DB, register_operational_commands, run_operational_handler
+from .operational_cli import register_operational_commands, run_operational_handler
+from .private_paths import (
+    PrivatePathError,
+    PrivatePaths,
+    config_path,
+    resolve_private_paths,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -304,7 +311,7 @@ def main(argv: list[str] | None = None) -> int:
 
     modelo = subparsers.add_parser("modelo130", help="Build Modelo 130 ledger/report")
     _add_common_args(modelo)
-    modelo.add_argument("--out-dir", type=Path, help="Output directory. Defaults to runs/YYYY-QN")
+    modelo.add_argument("--out-dir", type=Path, help="Output directory. Defaults to the private runs directory")
     modelo.add_argument("--fx-rate", action="append", default=[], help="Currency rate, e.g. USD=0.85679")
     modelo.add_argument("--asset-review-threshold-eur", help="Expense amount threshold for asset/amortization review")
     modelo.add_argument(
@@ -455,7 +462,7 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         help="Existing Xolo evidence archive root containing recovered raw exports, expenses, and tax reports",
     )
-    build_drive_archive_index.add_argument("--runs-root", type=Path, default=Path("runs"))
+    build_drive_archive_index.add_argument("--runs-root", type=Path)
     build_drive_archive_index.add_argument("--drive-map", type=Path)
     build_drive_archive_index.add_argument("--xolo-export-folder-url", default="")
     build_drive_archive_index.add_argument("--archive-folder-url", default="")
@@ -888,6 +895,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Create a dropzone guide for expected Xolo source-book response files",
     )
     audit_source_book_dropzone.add_argument("--response-root", type=Path, required=True)
+    audit_source_book_dropzone.add_argument("--runs-root", type=Path)
     audit_source_book_dropzone.add_argument("--source-book-response-check", type=Path, required=True)
     audit_source_book_dropzone.add_argument("--out-csv", type=Path, required=True)
     audit_source_book_dropzone.add_argument("--out-md", type=Path, required=True)
@@ -917,7 +925,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Run source-book response check, content check, import, reconciliation, acceptance, and goal status",
     )
     audit_source_book_refresh.add_argument("--response-root", type=Path, required=True)
-    audit_source_book_refresh.add_argument("--runs-root", type=Path, default=Path("runs"))
+    audit_source_book_refresh.add_argument("--runs-root", type=Path)
     audit_source_book_refresh.add_argument("--quarter-acceptance", type=Path)
     audit_source_book_refresh.add_argument("--history-audit", type=Path)
     audit_source_book_refresh.add_argument("--quarter-closure", type=Path)
@@ -942,7 +950,7 @@ def main(argv: list[str] | None = None) -> int:
     audit_source_book_waitlist.add_argument(
         "--response-root",
         type=Path,
-        default=Path("evidence") / "xolo-source-books",
+        default=None,
     )
     audit_source_book_waitlist.add_argument("--out-csv", type=Path, required=True)
     audit_source_book_waitlist.add_argument("--out-md", type=Path, required=True)
@@ -977,8 +985,8 @@ def main(argv: list[str] | None = None) -> int:
     register_operational_commands(subparsers)
 
     args = parser.parse_args(argv)
-    config = _load_config(args.config)
-    _merge_config(args, config)
+    config, private_paths = _load_config(args.config)
+    _merge_config(args, config, private_paths)
 
     operational_result = run_operational_handler(args)
     if operational_result is not None:
@@ -1529,9 +1537,19 @@ def main(argv: list[str] | None = None) -> int:
             response_root=args.response_root,
         )
         write_source_book_dropzone_csv(args.out_csv, rows)
-        write_source_book_dropzone_markdown(args.out_md, rows, response_root=args.response_root)
+        write_source_book_dropzone_markdown(
+            args.out_md,
+            rows,
+            response_root=args.response_root,
+            runs_root=args.runs_root,
+        )
         if args.dropzone_readme:
-            write_source_book_dropzone_readme(args.dropzone_readme, rows, response_root=args.response_root)
+            write_source_book_dropzone_readme(
+                args.dropzone_readme,
+                rows,
+                response_root=args.response_root,
+                runs_root=args.runs_root,
+            )
         print(f"Wrote {len(rows)} source-book dropzone rows to {args.out_csv} and {args.out_md}")
         return 0
     if args.command == "audit-source-book-import":
@@ -1545,8 +1563,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "audit-source-book-reconcile":
         annual_comparison = args.annual_comparison
-        if annual_comparison is None and Path("runs/modelo100_annual_comparison.csv").exists():
-            annual_comparison = Path("runs/modelo100_annual_comparison.csv")
+        default_annual_comparison = args._private_paths.runs / "modelo100_annual_comparison.csv"
+        if annual_comparison is None and default_annual_comparison.exists():
+            annual_comparison = default_annual_comparison
         rows = build_source_book_reconciliation(args.history_audit, args.source_book_rows, annual_comparison)
         write_source_book_reconciliation_csv(args.out_csv, rows)
         write_source_book_reconciliation_markdown(args.out_md, rows)
@@ -1612,7 +1631,7 @@ def _cmd_modelo130(args: argparse.Namespace) -> int:
     xolo_root = Path(args.xolo_root)
     year = int(args.year)
     quarter = int(args.quarter)
-    out_dir = args.out_dir or Path.cwd() / "runs" / f"{year}-Q{quarter}"
+    out_dir = args.out_dir or args._private_paths.runs / f"{year}-Q{quarter}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     target = None
@@ -1788,22 +1807,36 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--target-report", type=Path, required=False)
 
 
-def _load_config(path: Path | None) -> dict:
-    explicit = path is not None
-    path = path or Path(".local") / "config.yaml"
-    if not path.is_file():
-        if explicit:
-            raise SystemExit(f"Config file not found: {path}")
-        return {}
+def _load_config(path: Path | None) -> tuple[dict[str, Any], PrivatePaths]:
+    try:
+        private_paths = resolve_private_paths(
+            project_root=Path.cwd(),
+            explicit_config=path,
+        )
+    except PrivatePathError as exc:
+        raise SystemExit(str(exc)) from exc
+    config_file = private_paths.config_path
+    if config_file is None:
+        return {}, private_paths
+    if not config_file.is_file():
+        raise SystemExit(f"Config file not found: {config_file}")
     if yaml is None:
         raise SystemExit("PyYAML is required to use --config")
-    with path.open("r", encoding="utf-8") as handle:
-        return yaml.safe_load(handle) or {}
+    with config_file.open("r", encoding="utf-8") as handle:
+        loaded = yaml.safe_load(handle) or {}
+    if not isinstance(loaded, Mapping):
+        raise SystemExit(f"Config file must contain a mapping: {config_file}")
+    return dict(loaded), private_paths
 
 
-def _merge_config(args: argparse.Namespace, config: dict) -> None:
+def _merge_config(
+    args: argparse.Namespace,
+    config: dict[str, Any],
+    private_paths: PrivatePaths,
+) -> None:
+    args._private_paths = private_paths
     if hasattr(args, "db") and getattr(args, "db", None) is None:
-        args.db = Path(config.get("ledger_db") or DEFAULT_DB)
+        args.db = _config_value_path(config.get("ledger_db"), private_paths) or private_paths.database
     path_defaults = {
         "inbox_root": ("inbox_root",),
         "archive_root": ("archive_root", "drive_evidence_dir"),
@@ -1817,23 +1850,26 @@ def _merge_config(args: argparse.Namespace, config: dict) -> None:
             None,
         )
         if configured is not None:
-            setattr(args, argument, Path(configured))
+            setattr(args, argument, _config_value_path(configured, private_paths))
+    if hasattr(args, "runs_root") and getattr(args, "runs_root", None) is None:
+        args.runs_root = private_paths.runs
+    if hasattr(args, "response_root") and getattr(args, "response_root", None) is None:
+        args.response_root = private_paths.evidence / "xolo-source-books"
     review = config.get("review") or {}
     if hasattr(args, "asset_review_threshold_eur") and getattr(args, "asset_review_threshold_eur", None) in (None, ""):
         threshold = review.get("asset_review_threshold_eur")
         if threshold not in (None, ""):
             setattr(args, "asset_review_threshold_eur", str(threshold))
     for key in (
-        "xolo_root",
         "year",
         "quarter",
-        "target_report",
-        "manual_ledger",
-        "xolo_expense_ledger",
         "difficult_expenses_policy",
     ):
         if hasattr(args, key) and getattr(args, key, None) in (None, "") and key in config:
             setattr(args, key, config[key])
+    for key in ("xolo_root", "target_report", "manual_ledger", "xolo_expense_ledger"):
+        if hasattr(args, key) and getattr(args, key, None) in (None, "") and config.get(key) not in (None, ""):
+            setattr(args, key, _config_value_path(config[key], private_paths))
     if hasattr(args, "fx_rate") and not args.fx_rate:
         fx = config.get("fx_rates") or {}
         args.fx_rate = [f"{currency}={rate}" for currency, rate in fx.items() if rate not in (None, "")]
@@ -1847,6 +1883,14 @@ def _merge_config(args: argparse.Namespace, config: dict) -> None:
     missing = [key for key in required if getattr(args, key, None) in (None, "")]
     if missing:
         raise SystemExit(f"Missing required option(s): {', '.join('--' + m.replace('_', '-') for m in missing)}")
+
+
+def _config_value_path(value: object, private_paths: PrivatePaths) -> Path | None:
+    if value in (None, ""):
+        return None
+    if private_paths.config_path is None:
+        return Path(str(value)).expanduser().resolve()
+    return config_path(value, config_file=private_paths.config_path)
 
 
 def _parse_fx_rates(values: list[str]) -> dict[str, Decimal]:

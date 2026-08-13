@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
+from .private_paths import configured_private_root
 from .source_book_content_check import REQUIRED_GROUPS
 
 
@@ -54,9 +55,16 @@ def write_source_book_dropzone_csv(path: Path, rows: list[dict[str, str]]) -> No
         writer.writerows(rows)
 
 
-def write_source_book_dropzone_markdown(path: Path, rows: list[dict[str, str]], *, response_root: Path) -> None:
+def write_source_book_dropzone_markdown(
+    path: Path,
+    rows: list[dict[str, str]],
+    *,
+    response_root: Path,
+    runs_root: Path | None = None,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     response_root_display = str(response_root.resolve())
+    runs_root_display = str((runs_root or configured_private_root() / "runs").resolve())
     missing = [row for row in rows if row["status"] == "missing"]
     found = [row for row in rows if row["status"] == "found"]
     lines = [
@@ -100,12 +108,12 @@ def write_source_book_dropzone_markdown(path: Path, rows: list[dict[str, str]], 
             "Run the full source-book refresh first:",
             "",
             "```powershell",
-            '$env:PYTHONPATH = "C:\\projects\\spain-autonomo-taxes\\src"',
+            '$env:PYTHONPATH = "<project-root>\\src"',
             "python -m autonomo_taxes.cli audit-source-book-refresh `",
             f'  --response-root "{response_root_display}" `',
-            '  --runs-root "C:\\projects\\spain-autonomo-taxes\\runs" `',
-            '  --out-csv "C:\\projects\\spain-autonomo-taxes\\runs\\xolo_source_book_refresh.csv" `',
-            '  --out-md "C:\\projects\\spain-autonomo-taxes\\runs\\xolo_source_book_refresh.md"',
+            f'  --runs-root "{runs_root_display}" `',
+            f'  --out-csv "{runs_root_display}\\xolo_source_book_refresh.csv" `',
+            f'  --out-md "{runs_root_display}\\xolo_source_book_refresh.md"',
             "```",
             "",
             "This refresh intentionally regenerates the canonical audit artifacts under `--runs-root`; use a scratch `--runs-root` for experiments.",
@@ -113,50 +121,50 @@ def write_source_book_dropzone_markdown(path: Path, rows: list[dict[str, str]], 
             "If any refresh step reports a non-complete status, rerun the expanded commands below to inspect that gate directly:",
             "",
             "```powershell",
-            '$env:PYTHONPATH = "C:\\projects\\spain-autonomo-taxes\\src"',
+            '$env:PYTHONPATH = "<project-root>\\src"',
             "python -m autonomo_taxes.cli audit-source-book-response-check `",
             f'  --response-root "{response_root_display}" `',
-            '  --quarter-acceptance "C:\\projects\\spain-autonomo-taxes\\runs\\modelo130_quarter_acceptance.csv" `',
-            '  --out-csv "C:\\projects\\spain-autonomo-taxes\\runs\\xolo_source_book_response_check.csv" `',
-            '  --out-md "C:\\projects\\spain-autonomo-taxes\\runs\\xolo_source_book_response_check.md"',
+            f'  --quarter-acceptance "{runs_root_display}\\modelo130_quarter_acceptance.csv" `',
+            f'  --out-csv "{runs_root_display}\\xolo_source_book_response_check.csv" `',
+            f'  --out-md "{runs_root_display}\\xolo_source_book_response_check.md"',
             "",
             "python -m autonomo_taxes.cli audit-source-book-content-check `",
             f'  --response-root "{response_root_display}" `',
-            '  --source-book-response-check "C:\\projects\\spain-autonomo-taxes\\runs\\xolo_source_book_response_check.csv" `',
-            '  --out-csv "C:\\projects\\spain-autonomo-taxes\\runs\\xolo_source_book_content_check.csv" `',
-            '  --out-md "C:\\projects\\spain-autonomo-taxes\\runs\\xolo_source_book_content_check.md"',
+            f'  --source-book-response-check "{runs_root_display}\\xolo_source_book_response_check.csv" `',
+            f'  --out-csv "{runs_root_display}\\xolo_source_book_content_check.csv" `',
+            f'  --out-md "{runs_root_display}\\xolo_source_book_content_check.md"',
             "",
             "python -m autonomo_taxes.cli audit-source-book-import `",
             f'  --response-root "{response_root_display}" `',
-            '  --source-book-content-check "C:\\projects\\spain-autonomo-taxes\\runs\\xolo_source_book_content_check.csv" `',
-            '  --out-csv "C:\\projects\\spain-autonomo-taxes\\runs\\xolo_source_book_rows.csv" `',
-            '  --out-md "C:\\projects\\spain-autonomo-taxes\\runs\\xolo_source_book_rows.md"',
+            f'  --source-book-content-check "{runs_root_display}\\xolo_source_book_content_check.csv" `',
+            f'  --out-csv "{runs_root_display}\\xolo_source_book_rows.csv" `',
+            f'  --out-md "{runs_root_display}\\xolo_source_book_rows.md"',
             "",
             "python -m autonomo_taxes.cli audit-source-book-reconcile `",
-            '  --history-audit "C:\\projects\\spain-autonomo-taxes\\runs\\modelo130_history_audit.csv" `',
-            '  --source-book-rows "C:\\projects\\spain-autonomo-taxes\\runs\\xolo_source_book_rows.csv" `',
-            '  --out-csv "C:\\projects\\spain-autonomo-taxes\\runs\\xolo_source_book_reconciliation.csv" `',
-            '  --out-md "C:\\projects\\spain-autonomo-taxes\\runs\\xolo_source_book_reconciliation.md"',
+            f'  --history-audit "{runs_root_display}\\modelo130_history_audit.csv" `',
+            f'  --source-book-rows "{runs_root_display}\\xolo_source_book_rows.csv" `',
+            f'  --out-csv "{runs_root_display}\\xolo_source_book_reconciliation.csv" `',
+            f'  --out-md "{runs_root_display}\\xolo_source_book_reconciliation.md"',
             "",
             "python -m autonomo_taxes.cli audit-quarter-acceptance `",
-            '  --quarter-closure "C:\\projects\\spain-autonomo-taxes\\runs\\modelo130_quarter_closure.csv" `',
-            '  --quarter-balance-bridge "C:\\projects\\spain-autonomo-taxes\\runs\\modelo130_quarter_balance_bridge.csv" `',
-            '  --material-gap-drilldown "C:\\projects\\spain-autonomo-taxes\\runs\\modelo130_material_gap_drilldown.csv" `',
-            '  --packets-dir "C:\\projects\\spain-autonomo-taxes\\runs\\modelo130_quarter_packets" `',
-            '  --source-book-reconciliation "C:\\projects\\spain-autonomo-taxes\\runs\\xolo_source_book_reconciliation.csv" `',
-            '  --out-csv "C:\\projects\\spain-autonomo-taxes\\runs\\modelo130_quarter_acceptance.csv" `',
-            '  --out-md "C:\\projects\\spain-autonomo-taxes\\runs\\modelo130_quarter_acceptance.md"',
+            f'  --quarter-closure "{runs_root_display}\\modelo130_quarter_closure.csv" `',
+            f'  --quarter-balance-bridge "{runs_root_display}\\modelo130_quarter_balance_bridge.csv" `',
+            f'  --material-gap-drilldown "{runs_root_display}\\modelo130_material_gap_drilldown.csv" `',
+            f'  --packets-dir "{runs_root_display}\\modelo130_quarter_packets" `',
+            f'  --source-book-reconciliation "{runs_root_display}\\xolo_source_book_reconciliation.csv" `',
+            f'  --out-csv "{runs_root_display}\\modelo130_quarter_acceptance.csv" `',
+            f'  --out-md "{runs_root_display}\\modelo130_quarter_acceptance.md"',
             "",
             "python -m autonomo_taxes.cli audit-goal-status `",
-            '  --tax-report-sequence "C:\\projects\\spain-autonomo-taxes\\runs\\modelo130_tax_report_sequence.csv" `',
-            '  --target-values-coverage "C:\\projects\\spain-autonomo-taxes\\runs\\modelo130_target_values_coverage.csv" `',
-            '  --quarter-acceptance "C:\\projects\\spain-autonomo-taxes\\runs\\modelo130_quarter_acceptance.csv" `',
-            '  --first-gate-answer-check "C:\\projects\\spain-autonomo-taxes\\runs\\modelo130_first_gate_answer_check.csv" `',
-            '  --source-book-response-check "C:\\projects\\spain-autonomo-taxes\\runs\\xolo_source_book_response_check.csv" `',
-            '  --source-book-content-check "C:\\projects\\spain-autonomo-taxes\\runs\\xolo_source_book_content_check.csv" `',
-            '  --source-book-reconciliation "C:\\projects\\spain-autonomo-taxes\\runs\\xolo_source_book_reconciliation.csv" `',
-            '  --out-csv "C:\\projects\\spain-autonomo-taxes\\runs\\modelo130_goal_status.csv" `',
-            '  --out-md "C:\\projects\\spain-autonomo-taxes\\runs\\modelo130_goal_status.md"',
+            f'  --tax-report-sequence "{runs_root_display}\\modelo130_tax_report_sequence.csv" `',
+            f'  --target-values-coverage "{runs_root_display}\\modelo130_target_values_coverage.csv" `',
+            f'  --quarter-acceptance "{runs_root_display}\\modelo130_quarter_acceptance.csv" `',
+            f'  --first-gate-answer-check "{runs_root_display}\\modelo130_first_gate_answer_check.csv" `',
+            f'  --source-book-response-check "{runs_root_display}\\xolo_source_book_response_check.csv" `',
+            f'  --source-book-content-check "{runs_root_display}\\xolo_source_book_content_check.csv" `',
+            f'  --source-book-reconciliation "{runs_root_display}\\xolo_source_book_reconciliation.csv" `',
+            f'  --out-csv "{runs_root_display}\\modelo130_goal_status.csv" `',
+            f'  --out-md "{runs_root_display}\\modelo130_goal_status.md"',
             "```",
             "",
             "A quarter is not closed merely because a file exists. It closes only after imported official-register rows and any investment-goods amortization rows reconcile to the filed values and the refreshed acceptance matrix marks it `accepted_from_source_books`.",
@@ -166,8 +174,19 @@ def write_source_book_dropzone_markdown(path: Path, rows: list[dict[str, str]], 
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def write_source_book_dropzone_readme(path: Path, rows: list[dict[str, str]], *, response_root: Path) -> None:
-    write_source_book_dropzone_markdown(path, rows, response_root=response_root)
+def write_source_book_dropzone_readme(
+    path: Path,
+    rows: list[dict[str, str]],
+    *,
+    response_root: Path,
+    runs_root: Path | None = None,
+) -> None:
+    write_source_book_dropzone_markdown(
+        path,
+        rows,
+        response_root=response_root,
+        runs_root=runs_root,
+    )
 
 
 def _suggested_filename(check: str, scope: str) -> str:

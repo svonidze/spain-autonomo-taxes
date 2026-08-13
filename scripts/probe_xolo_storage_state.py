@@ -7,11 +7,19 @@ from collections import deque
 from dataclasses import asdict, dataclass
 from pathlib import Path
 import re
+import sys
 from typing import Any
 from urllib.parse import parse_qsl, urljoin, urlparse, urlunparse
 
 
 BASE_URL = "https://app.xolo.io"
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+from autonomo_taxes.private_paths import configured_private_root  # noqa: E402
 
 DEFAULT_ENDPOINTS = [
     "/selfservice",
@@ -93,7 +101,11 @@ def main() -> int:
             "The output intentionally strips query values and never serializes cookies or CSRF tokens."
         )
     )
-    parser.add_argument("--storage-state", type=Path, default=Path(".omx/xolo-storage-state.json"))
+    parser.add_argument(
+        "--storage-state",
+        type=Path,
+        default=configured_private_root() / "browser" / "xolo" / "storage-state.json",
+    )
     parser.add_argument(
         "--profile-dir",
         type=Path,

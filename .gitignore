@@ -4,6 +4,9 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .venv/
+.idea/
+.vscode/
+.ipynb_checkpoints/
 .omc/
 .omx/
 .local/
@@ -18,9 +21,27 @@ build/
 dist/
 tmp/
 *.egg-info/
-.env
-data/xolo_live_*
-data/xolo-expense-page-*.json
-data/*.secret.*
-evidence/xolo-source-books/*.xlsx
-evidence/xolo-source-books/*.pdf
+.env*
+
+# Private inputs and generated tax artifacts must never enter Git.
+data/
+runs/
+evidence/
+
+# Local databases, credentials, browser captures, and archives.
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.pem
+*.key
+*.p12
+*.pfx
+*.har
+*.log
+*.zip
+*.7z
+*.rar
+*.tar
+*.tgz
+*.gz

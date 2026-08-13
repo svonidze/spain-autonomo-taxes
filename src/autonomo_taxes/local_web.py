@@ -32,6 +32,11 @@ except Exception:  # pragma: no cover - dependency guard
 
 from .ledger_db import LedgerDbError, open as open_ledger_db
 from .posting import build_posting_preview
+from .private_paths import (
+    PrivatePathError,
+    config_path as resolve_config_path,
+    resolve_private_paths,
+)
 from .review_packet import (
     ReviewPacketError,
     classify_review_packet_failure,
@@ -118,30 +123,49 @@ class LocalWebConfig:
 def load_config(
     project_root: Path,
     *,
+    config_path: Path | None = None,
     database: Path | None = None,
     inbox_root: Path | None = None,
     archive_root: Path | None = None,
     cache_root: Path | None = None,
 ) -> LocalWebConfig:
     root = project_root.resolve()
-    private_config = root / ".local" / "config.yaml"
+    try:
+        private_paths = resolve_private_paths(
+            project_root=root,
+            explicit_config=config_path,
+        )
+    except PrivatePathError as exc:
+        raise LocalWebError(str(exc)) from exc
+    private_config = private_paths.config_path
     values: Mapping[str, Any] = {}
-    if private_config.is_file():
+    if private_config is not None:
+        if not private_config.is_file():
+            raise LocalWebError(f"Config file does not exist: {private_config}")
         if yaml is None:
-            raise LocalWebError("PyYAML is required to read .local/config.yaml")
+            raise LocalWebError(f"PyYAML is required to read {private_config}")
         loaded = yaml.safe_load(private_config.read_text(encoding="utf-8")) or {}
         if not isinstance(loaded, Mapping):
-            raise LocalWebError(".local/config.yaml must contain a mapping")
+            raise LocalWebError(f"{private_config} must contain a mapping")
         values = loaded
 
     resolved_database = (
         database
-        or _optional_path(values.get("ledger_db"))
-        or root / ".local" / "autonomo.sqlite"
+        or _configured_path(values.get("ledger_db"), private_config)
+        or private_paths.database
     ).resolve()
-    resolved_inbox = inbox_root or _optional_path(values.get("inbox_root"))
-    resolved_archive = archive_root or _optional_path(
-        values.get("drive_evidence_dir") or values.get("archive_root")
+    resolved_inbox = (
+        inbox_root
+        or _configured_path(values.get("inbox_root"), private_config)
+        or private_paths.inbox
+    )
+    resolved_archive = (
+        archive_root
+        or _configured_path(
+            values.get("drive_evidence_dir") or values.get("archive_root"),
+            private_config,
+        )
+        or private_paths.evidence
     )
     return LocalWebConfig(
         project_root=root,
@@ -149,7 +173,9 @@ def load_config(
         inbox_root=resolved_inbox.resolve() if resolved_inbox else None,
         archive_root=resolved_archive.resolve() if resolved_archive else None,
         cache_root=(
-            cache_root or root / ".local" / "web" / "dashboard"
+            cache_root
+            or _configured_path(values.get("cache_root"), private_config)
+            or private_paths.cache / "web" / "dashboard"
         ).resolve(),
         static_root=(Path(__file__).resolve().parent / "web_ui").resolve(),
     )
@@ -546,7 +572,7 @@ class LocalAccountingApp:
     ) -> dict[str, Any]:
         if self.config.inbox_root is None or self.config.archive_root is None:
             raise LocalWebError(
-                "Intake requires inbox_root and drive_evidence_dir in .local/config.yaml"
+                "Intake requires configured private inbox and evidence roots"
             )
         period = _validate_period(fields.get("period", ""))
         kind = fields.get("kind", "")
@@ -681,7 +707,6 @@ class LocalAccountingApp:
             for root in (
                 self.config.archive_root,
                 self.config.inbox_root,
-                self.config.project_root / "evidence",
             )
             if root is not None
         ]
@@ -929,14 +954,7 @@ class LocalAccountingApp:
         return [_row_dict(row) for row in rows]
 
     def _load_cached_dashboard(self, period_key: str) -> dict[str, Any]:
-        candidates = (
-            self.config.cache_root / period_key / "dashboard.json",
-            self.config.project_root
-            / ".local"
-            / "dashboard"
-            / period_key
-            / "dashboard.json",
-        )
+        candidates = (self.config.cache_root / period_key / "dashboard.json",)
         for path in candidates:
             if path.is_file():
                 try:
@@ -1500,6 +1518,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=_default_project_root(),
     )
+    parser.add_argument("--config", type=Path, help="Optional private YAML config file")
     parser.add_argument("--db", type=Path)
     parser.add_argument("--inbox-root", type=Path)
     parser.add_argument("--archive-root", type=Path)
@@ -1515,6 +1534,7 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("autonomo-web only accepts a loopback --host")
     config = load_config(
         args.project_root,
+        config_path=args.config,
         database=args.db,
         inbox_root=args.inbox_root,
         archive_root=args.archive_root,
@@ -1555,6 +1575,15 @@ def _optional_path(value: Any) -> Path | None:
     if value is None or not str(value).strip():
         return None
     return Path(str(value))
+
+
+def _configured_path(value: Any, config_file: Path | None) -> Path | None:
+    path = _optional_path(value)
+    if path is None:
+        return None
+    if config_file is None:
+        return path.resolve()
+    return resolve_config_path(path, config_file=config_file)
 
 
 def _validate_period(value: str) -> str:

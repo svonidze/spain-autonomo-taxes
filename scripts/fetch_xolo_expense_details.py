@@ -11,6 +11,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from autonomo_taxes.private_paths import configured_private_root  # noqa: E402
 from autonomo_taxes.xolo_expense_details import (  # noqa: E402
     enrich_raw_expense_rows,
     parse_detail_facts,
@@ -23,7 +24,11 @@ from autonomo_taxes.xolo_expense_details import (  # noqa: E402
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Fetch Xolo expense detail-page exchange rates through Playwright")
-    parser.add_argument("--storage-state", type=Path, default=Path(".omx/xolo-storage-state.json"))
+    parser.add_argument(
+        "--storage-state",
+        type=Path,
+        default=configured_private_root() / "browser" / "xolo" / "storage-state.json",
+    )
     parser.add_argument("--raw-csv", type=Path, required=True)
     parser.add_argument("--out-facts-csv", type=Path, required=True)
     parser.add_argument("--out-facts-md", type=Path, required=True)

@@ -12,6 +12,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from autonomo_taxes.private_paths import configured_private_root  # noqa: E402
 from autonomo_taxes.xolo_tax_calculations import (  # noqa: E402
     build_calculation_rows,
     parse_tax_report_links,
@@ -22,7 +23,11 @@ from autonomo_taxes.xolo_tax_calculations import (  # noqa: E402
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Fetch Xolo Modelo 130 calculation popups through Playwright")
-    parser.add_argument("--storage-state", type=Path, default=Path(".omx/xolo-storage-state.json"))
+    parser.add_argument(
+        "--storage-state",
+        type=Path,
+        default=configured_private_root() / "browser" / "xolo" / "storage-state.json",
+    )
     parser.add_argument("--out-csv", type=Path, required=True)
     parser.add_argument("--out-md", type=Path, required=True)
     parser.add_argument("--out-json", type=Path, help="Optional raw calculation HTML bundle for debugging")
