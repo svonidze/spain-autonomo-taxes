@@ -48,7 +48,14 @@ def _run_web_ui_node_json(script: str) -> object:
     return json.loads(result.stdout)
 
 
-def _config(tmp_path: Path) -> LocalWebConfig:
+def _config(
+    tmp_path: Path,
+    *,
+    trusted_proxy_mode: str | None = None,
+    allowed_tailscale_logins: tuple[str, ...] = (),
+    read_only_document_roots: tuple[Path, ...] = (),
+    legacy_path_map_file: Path | None = None,
+) -> LocalWebConfig:
     static_root = (
         Path(__file__).resolve().parents[1]
         / "src"
@@ -62,6 +69,10 @@ def _config(tmp_path: Path) -> LocalWebConfig:
         archive_root=tmp_path / "Evidence",
         cache_root=tmp_path / "cache",
         static_root=static_root,
+        trusted_proxy_mode=trusted_proxy_mode,
+        allowed_tailscale_logins=allowed_tailscale_logins,
+        read_only_document_roots=read_only_document_roots,
+        legacy_path_map_file=legacy_path_map_file,
     )
 
 
@@ -1640,6 +1651,8 @@ def test_http_interface_sets_local_session_and_protects_api(tmp_path: Path) -> N
         assert response.status == 200
         assert b"Aut\xc3\xb3nomo" in body
         assert "autonomo_session=test-token" in cookie
+        assert "__Host-autonomo_session" not in cookie
+        assert "Secure" not in cookie
 
         connection.request(
             "GET",
@@ -1697,6 +1710,258 @@ def test_http_interface_sets_local_session_and_protects_api(tmp_path: Path) -> N
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_tailscale_proxy_requires_identity_before_setting_cookie(tmp_path: Path) -> None:
+    config = _config(
+        tmp_path,
+        trusted_proxy_mode="tailscale_serve",
+        allowed_tailscale_logins=("agent-login",),
+    )
+    _database(config)
+    app = LocalAccountingApp(
+        config,
+        session_token="test-token",
+        principal_session_secret="secret-key",
+    )
+    server = LocalAccountingServer(("127.0.0.1", 0), app)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        connection = HTTPConnection("127.0.0.1", port, timeout=5)
+        headers = {
+            "Host": "ubuntu-16gb-nbg1-2.tail6c29f3.ts.net",
+            "Tailscale-User-Login": "agent-login",
+            "X-Forwarded-Proto": "https",
+        }
+        connection.request("GET", "/", headers=headers)
+        response = connection.getresponse()
+        body = response.read()
+        cookie = response.getheader("Set-Cookie")
+        assert response.status == 200
+        assert b"Aut\xc3\xb3nomo" in body
+        assert "__Host-autonomo_session=" in cookie
+        assert "Secure" in cookie
+        assert "HttpOnly" in cookie
+        assert "SameSite=Strict" in cookie
+        assert "autonomo_session=test-token" not in cookie
+
+        session_cookie = cookie.split(";", 1)[0]
+        connection.request(
+            "GET",
+            "/api/bootstrap",
+            headers={
+                **headers,
+                "Cookie": session_cookie,
+            },
+        )
+        api_response = connection.getresponse()
+        api_body = api_response.read()
+        assert api_response.status == 200
+        assert b'"default_period":"2026-Q3"' in api_body
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_tailscale_proxy_rejects_missing_or_wrong_identity_without_cookie(
+    tmp_path: Path,
+) -> None:
+    config = _config(
+        tmp_path,
+        trusted_proxy_mode="tailscale_serve",
+        allowed_tailscale_logins=("agent-login",),
+    )
+    _database(config)
+    app = LocalAccountingApp(
+        config,
+        session_token="test-token",
+        principal_session_secret="secret-key",
+    )
+    server = LocalAccountingServer(("127.0.0.1", 0), app)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        connection = HTTPConnection("127.0.0.1", port, timeout=5)
+        connection.request(
+            "GET",
+            "/",
+            headers={
+                "Host": "ubuntu-16gb-nbg1-2.tail6c29f3.ts.net",
+                "X-Forwarded-Proto": "https",
+            },
+        )
+        missing_identity = connection.getresponse()
+        missing_body = json.loads(missing_identity.read())
+        assert missing_identity.status == 403
+        assert missing_identity.getheader("Set-Cookie") is None
+        assert missing_body["code"] == "tailscale_identity_required"
+
+        connection.request(
+            "GET",
+            "/",
+            headers={
+                "Host": "ubuntu-16gb-nbg1-2.tail6c29f3.ts.net",
+                "Tailscale-User-Login": "intruder-login",
+                "X-Forwarded-Proto": "https",
+            },
+        )
+        wrong_identity = connection.getresponse()
+        wrong_body = json.loads(wrong_identity.read())
+        assert wrong_identity.status == 403
+        assert wrong_identity.getheader("Set-Cookie") is None
+        assert wrong_body["code"] == "tailscale_identity_forbidden"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_tailscale_proxy_binds_session_to_principal_and_https_origin(
+    tmp_path: Path,
+) -> None:
+    config = _config(
+        tmp_path,
+        trusted_proxy_mode="tailscale_serve",
+        allowed_tailscale_logins=("agent-login", "second-login"),
+    )
+    _database(config)
+    app = LocalAccountingApp(
+        config,
+        session_token="test-token",
+        principal_session_secret="secret-key",
+    )
+    server = LocalAccountingServer(("127.0.0.1", 0), app)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        connection = HTTPConnection("127.0.0.1", port, timeout=5)
+        base_headers = {
+            "Host": "ubuntu-16gb-nbg1-2.tail6c29f3.ts.net",
+            "Tailscale-User-Login": "agent-login",
+            "X-Forwarded-Proto": "https",
+        }
+        connection.request("GET", "/", headers=base_headers)
+        landing = connection.getresponse()
+        cookie = landing.getheader("Set-Cookie")
+        landing.read()
+        assert cookie is not None
+        session_cookie = cookie.split(";", 1)[0]
+
+        connection.request(
+            "POST",
+            "/api/not-a-route",
+            body=b"",
+            headers={
+                **base_headers,
+                "Cookie": session_cookie,
+                "Origin": "https://ubuntu-16gb-nbg1-2.tail6c29f3.ts.net",
+                "Content-Length": "0",
+            },
+        )
+        same_origin = connection.getresponse()
+        same_origin_body = json.loads(same_origin.read())
+        assert same_origin.status == 404
+        assert same_origin_body == {"error": "Unknown API endpoint"}
+
+        connection.request(
+            "GET",
+            "/api/bootstrap",
+            headers={
+                "Host": "ubuntu-16gb-nbg1-2.tail6c29f3.ts.net",
+                "Tailscale-User-Login": "second-login",
+                "X-Forwarded-Proto": "https",
+                "Cookie": session_cookie,
+            },
+        )
+        rebound = connection.getresponse()
+        rebound_body = json.loads(rebound.read())
+        assert rebound.status == 403
+        assert rebound_body == {
+            "code": "session_forbidden",
+            "error": "Session is missing or expired",
+        }
+
+        connection.request(
+            "POST",
+            "/api/not-a-route",
+            body=b"",
+            headers={
+                **base_headers,
+                "Cookie": session_cookie,
+                "Origin": "http://ubuntu-16gb-nbg1-2.tail6c29f3.ts.net",
+                "Content-Length": "0",
+            },
+        )
+        bad_origin = connection.getresponse()
+        bad_origin_body = json.loads(bad_origin.read())
+        assert bad_origin.status == 400
+        assert bad_origin_body["error"] == "Cross-origin writes are not allowed"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_document_file_returns_503_when_read_only_root_is_unavailable(
+    tmp_path: Path,
+) -> None:
+    readonly_root = tmp_path / "gdrive"
+    config = _config(tmp_path, read_only_document_roots=(readonly_root,))
+    _database(config)
+    document_path = readonly_root / "2026" / "receipt.pdf"
+    document_path.parent.mkdir(parents=True, exist_ok=True)
+    document_path.write_bytes(b"pdf")
+    with LedgerDB.open(config.database) as db:
+        document = db.upsert_document(
+            external_key="gdrive-doc",
+            document_type="expense_invoice",
+            issued_on="2026-08-01",
+            period_key="2026-Q3",
+            currency="EUR",
+            total_minor=12100,
+            lifecycle_status="approved",
+            source_hash="sha256:readonly-document",
+        )
+        document_id = str(document["document_id"])
+        db.set_document_storage(
+            document_id,
+            source_path=str(document_path),
+            mime_type="application/pdf",
+            expected_row_version=int(document["row_version"]),
+        )
+    shutil.rmtree(readonly_root)
+
+    app = LocalAccountingApp(config)
+
+    with pytest.raises(LocalWebApiError) as raised:
+        app.document_file(document_id)
+
+    assert raised.value.status == 503
+    assert raised.value.code == "document_root_unavailable"
+
+
+@pytest.mark.skipif(
+    not Path("/proc/self/fd").is_dir(),
+    reason="requires procfs to inspect file descriptors",
+)
+def test_bootstrap_does_not_leak_file_descriptors(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    _database(config)
+    app = LocalAccountingApp(config)
+
+    def fd_count() -> int:
+        return len(list(Path("/proc/self/fd").iterdir()))
+
+    baseline = fd_count()
+    for _ in range(2000):
+        payload = app.bootstrap()
+        assert payload["default_period"] == "2026-Q3"
+    assert fd_count() <= baseline + 3
 
 
 def test_review_apply_fx_uses_cli_boundary_and_refreshes_packet(
@@ -1774,9 +2039,14 @@ def test_host_header_parts_requires_a_valid_same_origin_target() -> None:
         "127.0.0.1",
         8876,
     )
+    assert _host_header_parts("[::1]:8876", default_port=80) == ("::1", 8876)
     assert _host_header_parts("localhost", default_port=8876) == (
         "localhost",
         8876,
     )
+    assert _host_header_parts(
+        "ubuntu-16gb-nbg1-2.tail6c29f3.ts.net",
+        default_port=443,
+    ) == ("ubuntu-16gb-nbg1-2.tail6c29f3.ts.net", 443)
     with pytest.raises(LocalWebApiError, match="Host header is invalid"):
         _host_header_parts("localhost:not-a-port", default_port=8876)

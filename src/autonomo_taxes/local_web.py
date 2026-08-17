@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -8,6 +9,8 @@ import errno
 from email.parser import BytesParser
 from email.policy import default as email_policy
 import hashlib
+import hmac
+import ipaddress
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -31,6 +34,7 @@ except Exception:  # pragma: no cover - dependency guard
     yaml = None
 
 from .ledger_db import LedgerDbError, open as open_ledger_db
+from .legacy_paths import LegacyPathResolver
 from .posting import build_posting_preview
 from .private_paths import (
     PrivatePathError,
@@ -86,6 +90,11 @@ POSTING_ERROR_STATUS_CODES = {
     "unknown_period": HTTPStatus.NOT_FOUND,
 }
 _POSTING_BATCH_LOCK = threading.Lock()
+TRUSTED_PROXY_MODES = {"tailscale_serve"}
+REMOTE_COOKIE_NAME = "__Host-autonomo_session"
+LOCAL_COOKIE_NAME = "autonomo_session"
+TAILSCALE_LOGIN_HEADER = "Tailscale-User-Login"
+FORWARDED_PROTO_HEADER = "X-Forwarded-Proto"
 
 
 class LocalWebError(ValueError):
@@ -118,6 +127,10 @@ class LocalWebConfig:
     archive_root: Path | None
     cache_root: Path
     static_root: Path
+    trusted_proxy_mode: str | None = None
+    allowed_tailscale_logins: tuple[str, ...] = ()
+    read_only_document_roots: tuple[Path, ...] = ()
+    legacy_path_map_file: Path | None = None
 
 
 def load_config(
@@ -148,6 +161,23 @@ def load_config(
         if not isinstance(loaded, Mapping):
             raise LocalWebError(f"{private_config} must contain a mapping")
         values = loaded
+    trusted_proxy_mode = _configured_proxy_mode(values.get("trusted_proxy_mode"))
+    allowed_tailscale_logins = _configured_string_list(
+        values.get("allowed_tailscale_logins"),
+        field_name="allowed_tailscale_logins",
+    )
+    if trusted_proxy_mode == "tailscale_serve" and not allowed_tailscale_logins:
+        raise LocalWebError(
+            "allowed_tailscale_logins must not be empty in tailscale_serve mode"
+        )
+    read_only_document_roots = tuple(
+        _configured_path(item, private_config).resolve()
+        for item in _configured_string_list(
+            values.get("read_only_document_roots"),
+            field_name="read_only_document_roots",
+        )
+    )
+    legacy_path_map = _configured_path(values.get("legacy_path_map_file"), private_config)
 
     resolved_database = (
         database
@@ -162,7 +192,7 @@ def load_config(
     resolved_archive = (
         archive_root
         or _configured_path(
-            values.get("drive_evidence_dir") or values.get("archive_root"),
+            values.get("archive_root") or values.get("drive_evidence_dir"),
             private_config,
         )
         or private_paths.evidence
@@ -178,18 +208,85 @@ def load_config(
             or private_paths.cache / "web" / "dashboard"
         ).resolve(),
         static_root=(Path(__file__).resolve().parent / "web_ui").resolve(),
+        trusted_proxy_mode=trusted_proxy_mode,
+        allowed_tailscale_logins=allowed_tailscale_logins,
+        read_only_document_roots=read_only_document_roots,
+        legacy_path_map_file=legacy_path_map.resolve() if legacy_path_map else None,
     )
 
 
 class LocalAccountingApp:
-    def __init__(self, config: LocalWebConfig, *, session_token: str | None = None) -> None:
+    def __init__(
+        self,
+        config: LocalWebConfig,
+        *,
+        session_token: str | None = None,
+        principal_session_secret: str | bytes | None = None,
+    ) -> None:
         if not config.database.is_file():
             raise FileNotFoundError(f"SQLite database does not exist: {config.database}")
         self.config = config
         self.session_token = session_token or secrets.token_urlsafe(32)
+        self.principal_session_secret = (
+            _coerce_session_secret(principal_session_secret)
+            if self.config.trusted_proxy_mode == "tailscale_serve"
+            else None
+        )
+        self.legacy_path_resolver = LegacyPathResolver.from_json_file(
+            self.config.legacy_path_map_file
+        )
+
+    @property
+    def uses_trusted_proxy(self) -> bool:
+        return self.config.trusted_proxy_mode == "tailscale_serve"
+
+    @property
+    def cookie_name(self) -> str:
+        return REMOTE_COOKIE_NAME if self.uses_trusted_proxy else LOCAL_COOKIE_NAME
+
+    @property
+    def document_roots(self) -> tuple[Path, ...]:
+        roots: list[Path] = []
+        for root in (
+            self.config.archive_root,
+            self.config.inbox_root,
+            *self.config.read_only_document_roots,
+        ):
+            if root is not None and root not in roots:
+                roots.append(root)
+        return tuple(roots)
+
+    def resolve_document_path(self, value: str | None) -> Path:
+        if value is None or not str(value).strip():
+            raise FileNotFoundError("Document source is unavailable")
+        direct = Path(str(value)).resolve(strict=False)
+        if direct.exists():
+            return direct
+        resolved = self.legacy_path_resolver.resolve(str(value))
+        if resolved is not None:
+            return resolved.resolve(strict=False)
+        return direct
+
+    def session_cookie_value(self, principal: str | None) -> str:
+        if not self.uses_trusted_proxy:
+            return self.session_token
+        if not principal:
+            raise LocalWebError("Tailscale identity is required")
+        secret = self.principal_session_secret
+        if secret is None:
+            raise LocalWebError("Tailscale session secret is not configured")
+        payload = f"{self.session_token}\0{principal}".encode("utf-8")
+        return hmac.new(secret, payload, hashlib.sha256).hexdigest()
+
+    def session_cookie_header(self, principal: str | None) -> str:
+        value = self.session_cookie_value(principal)
+        parts = [f"{self.cookie_name}={value}", "Path=/", "HttpOnly", "SameSite=Strict"]
+        if self.uses_trusted_proxy:
+            parts.insert(1, "Secure")
+        return "; ".join(parts)
 
     def bootstrap(self) -> dict[str, Any]:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
             periods = [
                 dict(row)
                 for row in connection.execute(
@@ -232,7 +329,7 @@ class LocalAccountingApp:
     def dashboard(self, period_key: str) -> dict[str, Any]:
         period = _validate_period(period_key)
         cached = self._load_cached_dashboard(period)
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
             period_row = self._period_row(connection, period)
             totals = self._transaction_totals(connection, period_row["period_id"])
             recent = self._transactions(
@@ -368,7 +465,7 @@ class LocalAccountingApp:
         }
         if lifecycle_status not in allowed_statuses | {None}:
             raise LocalWebError("Unsupported lifecycle status")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
             period_row = self._period_row(connection, period)
             return self._transactions(
                 connection,
@@ -393,7 +490,7 @@ class LocalAccountingApp:
             where.append("d.document_type = ?")
             parameters.append(document_type)
         parameters.append(min(max(limit, 1), 500))
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
             rows = connection.execute(
                 f"""
                 SELECT
@@ -433,7 +530,8 @@ class LocalAccountingApp:
                 if row["currency"] == "EUR"
                 else None,
                 "source_available": bool(
-                    row["source_path"] and Path(row["source_path"]).is_file()
+                    row["source_path"]
+                    and self.resolve_document_path(str(row["source_path"])).is_file()
                 ),
                 "source_path": None,
             }
@@ -442,7 +540,7 @@ class LocalAccountingApp:
 
     def issues(self, period_key: str) -> list[dict[str, Any]]:
         period = _validate_period(period_key)
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
             period_row = self._period_row(connection, period)
             return self._issues(
                 connection,
@@ -451,7 +549,7 @@ class LocalAccountingApp:
             )
 
     def assets(self) -> list[dict[str, Any]]:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
             rows = connection.execute(
                 """
                 SELECT
@@ -495,7 +593,7 @@ class LocalAccountingApp:
     def taxes(self, period_key: str) -> dict[str, Any]:
         period = _validate_period(period_key)
         cached = self._load_cached_dashboard(period)
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
             period_row = self._period_row(connection, period)
             obligations = self._obligations(
                 connection,
@@ -517,7 +615,7 @@ class LocalAccountingApp:
         }
 
     def counterparties(self) -> list[dict[str, Any]]:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
             rows = connection.execute(
                 """
                 SELECT
@@ -694,24 +792,25 @@ class LocalAccountingApp:
     def document_file(self, document_id: str) -> tuple[Path, str]:
         if not UUID_RE.fullmatch(document_id):
             raise LocalWebError("Invalid document id")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
             row = connection.execute(
                 "SELECT source_path, mime_type FROM documents WHERE document_id = ?",
                 (document_id,),
             ).fetchone()
         if row is None or not row["source_path"]:
             raise FileNotFoundError("Document source is unavailable")
-        path = Path(row["source_path"]).resolve()
-        allowed_roots = [
-            root
-            for root in (
-                self.config.archive_root,
-                self.config.inbox_root,
-            )
-            if root is not None
-        ]
+        path = self.resolve_document_path(str(row["source_path"]))
+        allowed_roots = self.document_roots
         if not any(_is_relative_to(path, root.resolve()) for root in allowed_roots):
             raise LocalWebError("Document source is outside configured evidence roots")
+        for root in self.config.read_only_document_roots:
+            resolved_root = root.resolve()
+            if _is_relative_to(path, resolved_root) and not path.is_file():
+                raise LocalWebApiError(
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                    "document_root_unavailable",
+                    "Document source root is temporarily unavailable",
+                )
         if not path.is_file():
             raise FileNotFoundError(path)
         mime_type = row["mime_type"] or mimetypes.guess_type(path.name)[0]
@@ -1127,12 +1226,16 @@ class LocalAccountingServer(ThreadingHTTPServer):
 class LocalAccountingHandler(BaseHTTPRequestHandler):
     server: LocalAccountingServer
 
+    def _external_default_port(self) -> int:
+        return 443 if self.server.app.uses_trusted_proxy else self.server.server_address[1]
+
     def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler contract
         try:
+            principal = self._require_request_principal()
             self._guard_host()
             parsed = urlparse(self.path)
             if parsed.path == "/":
-                self._serve_static("index.html", set_cookie=True)
+                self._serve_static("index.html", set_cookie=True, principal=principal)
                 return
             if parsed.path in {"/app.js", "/styles.css"}:
                 self._serve_static(parsed.path.removeprefix("/"))
@@ -1140,7 +1243,7 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             if parsed.path == "/favicon.ico":
                 self.send_error(HTTPStatus.NOT_FOUND)
                 return
-            self._require_session()
+            self._require_session(principal)
             query = parse_qs(parsed.query)
             if parsed.path == "/api/bootstrap":
                 self._send_json(self.server.app.bootstrap())
@@ -1207,8 +1310,9 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler contract
         try:
+            principal = self._require_request_principal()
             self._guard_host()
-            self._require_session()
+            self._require_session(principal)
             self._guard_origin()
             parsed = urlparse(self.path)
             if parsed.path == "/api/dashboard/refresh":
@@ -1283,8 +1387,38 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             f"{self.log_date_time_string()} {format % args}\n"
         )
 
+    def _require_request_principal(self) -> str | None:
+        if not self.server.app.uses_trusted_proxy:
+            return None
+        if not _is_loopback_peer(self.client_address[0]):
+            raise LocalWebApiError(
+                HTTPStatus.FORBIDDEN,
+                "tailscale_identity_required",
+                "Tailscale identity is required",
+            )
+        principal = _single_header_value(self.headers, TAILSCALE_LOGIN_HEADER)
+        forwarded_proto = _single_header_value(self.headers, FORWARDED_PROTO_HEADER)
+        if not principal or forwarded_proto.lower() != "https":
+            raise LocalWebApiError(
+                HTTPStatus.FORBIDDEN,
+                "tailscale_identity_required",
+                "Tailscale identity is required",
+            )
+        if principal not in self.server.app.config.allowed_tailscale_logins:
+            raise LocalWebApiError(
+                HTTPStatus.FORBIDDEN,
+                "tailscale_identity_forbidden",
+                "Tailscale identity is not allowed",
+            )
+        return principal
+
     def _guard_host(self) -> None:
-        host = self.headers.get("Host", "").split(":", 1)[0].strip("[]").lower()
+        host, _port = _host_header_parts(
+            self.headers.get("Host", ""),
+            default_port=self._external_default_port(),
+        )
+        if self.server.app.uses_trusted_proxy:
+            return
         if host not in {"127.0.0.1", "localhost", "::1"}:
             raise LocalWebError("Only loopback Host headers are accepted")
 
@@ -1293,11 +1427,19 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
         if origin is None:
             return
         parsed = urlparse(origin)
-        if parsed.scheme != "http" or parsed.hostname not in {
-            "127.0.0.1",
-            "localhost",
-            "::1",
-        }:
+        if self.server.app.uses_trusted_proxy:
+            host_name, host_port = _host_header_parts(
+                self.headers.get("Host", ""),
+                default_port=self._external_default_port(),
+            )
+            if (
+                parsed.scheme != "https"
+                or parsed.hostname != host_name
+                or (parsed.port or 443) != host_port
+            ):
+                raise LocalWebError("Cross-origin writes are not allowed")
+            return
+        if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
             raise LocalWebError("Cross-origin writes are not allowed")
 
     def _require_same_origin(self) -> None:
@@ -1311,12 +1453,14 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
         parsed = urlparse(origin)
         host_name, host_port = _host_header_parts(
             self.headers.get("Host", ""),
-            default_port=self.server.server_address[1],
+            default_port=self._external_default_port(),
         )
+        expected_scheme = "https" if self.server.app.uses_trusted_proxy else "http"
+        expected_port = 443 if expected_scheme == "https" else 80
         if (
-            parsed.scheme != "http"
+            parsed.scheme != expected_scheme
             or parsed.hostname != host_name
-            or (parsed.port or 80) != host_port
+            or (parsed.port or expected_port) != host_port
         ):
             raise LocalWebApiError(
                 HTTPStatus.FORBIDDEN,
@@ -1324,16 +1468,31 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                 "Cross-origin review writes are not allowed",
             )
 
-    def _require_session(self) -> None:
+    def _require_session(self, principal: str | None) -> None:
         cookie = SimpleCookie(self.headers.get("Cookie", ""))
-        value = cookie.get("autonomo_session")
-        if value is None or not secrets.compare_digest(
-            value.value,
-            self.server.app.session_token,
-        ):
-            raise LocalWebError("Local session is missing or expired")
+        value = cookie.get(self.server.app.cookie_name)
+        if value is None:
+            self._raise_session_error()
+        expected = self.server.app.session_cookie_value(principal)
+        if not secrets.compare_digest(value.value, expected):
+            self._raise_session_error()
 
-    def _serve_static(self, name: str, *, set_cookie: bool = False) -> None:
+    def _raise_session_error(self) -> None:
+        if self.server.app.uses_trusted_proxy:
+            raise LocalWebApiError(
+                HTTPStatus.FORBIDDEN,
+                "session_forbidden",
+                "Session is missing or expired",
+            )
+        raise LocalWebError("Local session is missing or expired")
+
+    def _serve_static(
+        self,
+        name: str,
+        *,
+        set_cookie: bool = False,
+        principal: str | None = None,
+    ) -> None:
         path = (self.server.app.config.static_root / name).resolve()
         if not _is_relative_to(path, self.server.app.config.static_root):
             raise LocalWebError("Invalid static path")
@@ -1347,11 +1506,7 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(content)))
         self.send_header("Cache-Control", "no-store")
         if set_cookie:
-            self.send_header(
-                "Set-Cookie",
-                "autonomo_session="
-                f"{self.server.app.session_token}; Path=/; HttpOnly; SameSite=Strict",
-            )
+            self.send_header("Set-Cookie", self.server.app.session_cookie_header(principal))
         self.end_headers()
         self.wfile.write(content)
 
@@ -1577,6 +1732,33 @@ def _optional_path(value: Any) -> Path | None:
     return Path(str(value))
 
 
+def _configured_proxy_mode(value: Any) -> str | None:
+    if value is None or not str(value).strip():
+        return None
+    mode = str(value).strip().lower()
+    if mode not in TRUSTED_PROXY_MODES:
+        allowed = ", ".join(sorted(TRUSTED_PROXY_MODES))
+        raise LocalWebError(f"trusted_proxy_mode must be one of: {allowed}")
+    return mode
+
+
+def _configured_string_list(value: Any, *, field_name: str) -> tuple[str, ...]:
+    if value in (None, ""):
+        return ()
+    if isinstance(value, str):
+        items = [value]
+    elif isinstance(value, (list, tuple, set)):
+        items = list(value)
+    else:
+        raise LocalWebError(f"{field_name} must be a string or list of strings")
+    if any(not isinstance(item, str) for item in items):
+        raise LocalWebError(f"{field_name} must contain only strings")
+    normalized = tuple(item.strip() for item in items if item.strip())
+    if len(normalized) != len(set(normalized)):
+        raise LocalWebError(f"{field_name} must not contain duplicates")
+    return normalized
+
+
 def _configured_path(value: Any, config_file: Path | None) -> Path | None:
     path = _optional_path(value)
     if path is None:
@@ -1584,6 +1766,24 @@ def _configured_path(value: Any, config_file: Path | None) -> Path | None:
     if config_file is None:
         return path.resolve()
     return resolve_config_path(path, config_file=config_file)
+
+
+def _coerce_session_secret(value: str | bytes | None) -> bytes:
+    if value is None:
+        env_file = os.environ.get("AUTONOMO_SESSION_PRINCIPAL_SECRET_FILE", "").strip()
+        if env_file:
+            value = Path(env_file).read_text(encoding="utf-8").strip()
+        else:
+            value = os.environ.get("AUTONOMO_SESSION_PRINCIPAL_SECRET", "").strip()
+    if isinstance(value, bytes):
+        secret = value
+    elif value:
+        secret = str(value).encode("utf-8")
+    else:
+        secret = secrets.token_bytes(32)
+    if not secret:
+        raise LocalWebError("Session principal secret must not be empty")
+    return secret
 
 
 def _validate_period(value: str) -> str:
@@ -2141,6 +2341,26 @@ def _is_relative_to(path: Path, root: Path) -> bool:
     return True
 
 
+def _is_loopback_peer(value: str) -> bool:
+    try:
+        return ipaddress.ip_address(value).is_loopback
+    except ValueError:
+        return value == "localhost"
+
+
+def _single_header_value(headers: Mapping[str, Any], name: str) -> str:
+    values = []
+    getter = getattr(headers, "get_all", None)
+    if callable(getter):
+        values = [item.strip() for item in getter(name, []) if str(item).strip()]
+    elif name in headers:
+        values = [str(headers[name]).strip()]
+    if len(values) != 1:
+        return ""
+    parts = [item.strip() for item in values[0].split(",") if item.strip()]
+    return parts[0] if len(parts) == 1 else ""
+
+
 def _single_query(query: Mapping[str, list[str]], name: str) -> str:
     values = query.get(name, [])
     if len(values) != 1:
@@ -2149,8 +2369,17 @@ def _single_query(query: Mapping[str, list[str]], name: str) -> str:
 
 
 def _host_header_parts(value: str, *, default_port: int) -> tuple[str, int]:
-    parsed = urlparse("//" + value.strip())
-    if parsed.hostname is None:
+    raw = value.strip()
+    parsed = urlparse("//" + raw)
+    if (
+        not raw
+        or parsed.hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
         raise LocalWebApiError(
             HTTPStatus.BAD_REQUEST,
             "invalid_host",
