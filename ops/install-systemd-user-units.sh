@@ -18,7 +18,7 @@ install -m 644 "$script_dir/systemd/autonomo-backup.service" "$units_dir/autonom
 install -m 644 "$script_dir/systemd/autonomo-backup.timer" "$units_dir/autonomo-backup.timer"
 install -m 644 "$script_dir/systemd/autonomo-backup-monthly.service" "$units_dir/autonomo-backup-monthly.service"
 install -m 644 "$script_dir/systemd/autonomo-backup-monthly.timer" "$units_dir/autonomo-backup-monthly.timer"
-install -m 644 "$script_dir/systemd/autonomo-alert@.service" "$units_dir/autonomo-alert@.service"
+install -m 644 "$script_dir/systemd/autonomo-alert.service" "$units_dir/autonomo-alert.service"
 systemctl --user daemon-reload
 systemctl --user enable --now autonomo-backup.timer
 systemctl --user enable --now autonomo-backup-monthly.timer
