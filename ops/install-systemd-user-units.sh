@@ -16,6 +16,8 @@ install -m 644 "$script_dir/healthcheck.py" "$ops_root/healthcheck.py"
 install -m 644 "$script_dir/../scripts/backup_sqlite.py" "$ops_root/backup_sqlite.py"
 install -m 644 "$script_dir/../scripts/backup_private_root.py" "$ops_root/backup_private_root.py"
 install -m 644 "$script_dir/../scripts/restore_private_root.py" "$ops_root/restore_private_root.py"
+install -d -m 700 "$ops_root/systemd"
+install -m 644 "$script_dir/systemd/autonomo-web.service.template" "$ops_root/systemd/autonomo-web.service.template"
 render_unit() {
   local template="$1" destination="$2"
   python3 - "$template" "$destination" "$ops_root" "$private_root" <<'PY'
