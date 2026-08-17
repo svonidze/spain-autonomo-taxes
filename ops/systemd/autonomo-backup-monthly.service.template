@@ -6,8 +6,8 @@ OnFailure=autonomo-alert.service
 Type=oneshot
 EnvironmentFile=%h/.config/autonomo-tax/runtime.env
 Environment=AUTONOMO_BACKUP_CLASS=monthly
-ExecStart=${AUTONOMO_OPS_ROOT}/backup.sh
+ExecStart=@OPS_ROOT@/backup.sh
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
-ReadWritePaths=${AUTONOMO_PRIVATE_ROOT}
+ReadWritePaths=@PRIVATE_ROOT@
