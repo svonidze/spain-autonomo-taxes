@@ -1,6 +1,13 @@
 ledger_db: "<private-root>/autonomo.sqlite"
 xolo_root: "<private-root>/imports/xolo"
 inbox_root: "<private-root>/inbox"
+archive_root: "<private-root>/evidence"
+read_only_document_roots:
+  - "/home/agent/mnt/gdrive-espana"
+legacy_path_map_file: "<private-root>/legacy-path-map.json"
+trusted_proxy_mode: "tailscale_serve"
+allowed_tailscale_logins:
+  - "<tailscale-login>"
 drive_backup_dir: "<private-root>/backups"
 drive_evidence_dir: "<private-root>/evidence"
 review_export_dir: "<private-root>/review-exports"

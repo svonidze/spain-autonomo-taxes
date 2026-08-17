@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Mapping
 from uuid import UUID
 
@@ -271,7 +271,17 @@ def parse_intake_row(
 def resolve_evidence_path(row: IntakeSheetRow, inbox_root: Path) -> Path:
     folder = "expense_invoice" if row.tab == EXPENSE_INTAKE else "income_invoice"
     base = (inbox_root / row.period_key / folder).resolve()
-    raw_path = Path(row.values["file_name"])
+    raw_value = row.values["file_name"]
+    if "\\" in raw_value:
+        windows_path = PureWindowsPath(raw_value)
+        if windows_path.is_absolute() or windows_path.drive:
+            raise IntakeSheetError(
+                f"row {row.row_number}: file_name must resolve inside "
+                f"{row.period_key}/{folder}"
+            )
+        raw_path = Path(*windows_path.parts)
+    else:
+        raw_path = Path(raw_value)
     candidate = raw_path.resolve() if raw_path.is_absolute() else (base / raw_path).resolve()
     try:
         candidate.relative_to(base)

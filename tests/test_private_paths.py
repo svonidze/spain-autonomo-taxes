@@ -124,8 +124,18 @@ def test_web_defaults_are_outside_project_and_config_paths_are_relative_to_confi
     private = tmp_path / "private"
     private.mkdir()
     config_file = private / "config.yaml"
+    legacy_map = private / "legacy-path-map.json"
+    legacy_map.write_text("{}", encoding="utf-8")
     config_file.write_text(
-        "ledger_db: db/ledger.sqlite\ninbox_root: intake\ndrive_evidence_dir: evidence-store\n",
+        "ledger_db: db/ledger.sqlite\n"
+        "inbox_root: intake\n"
+        "drive_evidence_dir: evidence-store\n"
+        "trusted_proxy_mode: tailscale_serve\n"
+        "allowed_tailscale_logins:\n"
+        "  - agent-login\n"
+        "read_only_document_roots:\n"
+        "  - drive-docs\n"
+        "legacy_path_map_file: legacy-path-map.json\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("AUTONOMO_PRIVATE_ROOT", str(tmp_path / "ignored"))
@@ -136,3 +146,7 @@ def test_web_defaults_are_outside_project_and_config_paths_are_relative_to_confi
     assert config.inbox_root == (private / "intake").resolve()
     assert config.archive_root == (private / "evidence-store").resolve()
     assert config.cache_root == (private / "cache" / "web" / "dashboard").resolve()
+    assert config.trusted_proxy_mode == "tailscale_serve"
+    assert config.allowed_tailscale_logins == ("agent-login",)
+    assert config.read_only_document_roots == ((private / "drive-docs").resolve(),)
+    assert config.legacy_path_map_file == legacy_map.resolve()
