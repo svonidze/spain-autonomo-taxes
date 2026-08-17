@@ -59,6 +59,11 @@ The release-specific unit then runs `autonomo-tax storage migrate --startup
 other schema-17 releases. Startup backfill inventories existing local or mounted
 files only; Google/Yandex uploads reconcile after the service is healthy.
 
+For the first managed cutover set `AUTONOMO_LEGACY_UNIT` to the existing user
+unit name. The deploy script stops it only after all preflight checks pass,
+starts it again on a failed release, and disables it only after the new release
+passes health checks. The legacy unit file and checkout remain untouched.
+
 ## Backup and restore
 
 `autonomo-backup.timer` creates a daily verified SQLite snapshot plus a full

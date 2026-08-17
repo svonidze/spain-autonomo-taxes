@@ -111,6 +111,8 @@ restore_previous() {
 systemctl --user daemon-reload
 if [[ -n "$previous" && "$previous" != "$sha" ]]; then
   systemctl --user stop "autonomo-web-$previous.service"
+elif [[ -n "${AUTONOMO_LEGACY_UNIT:-}" ]]; then
+  systemctl --user stop "$AUTONOMO_LEGACY_UNIT"
 fi
 if ! systemctl --user enable --now "autonomo-web-$sha.service"; then
   restore_previous
@@ -130,5 +132,7 @@ ln -sfn "releases/$sha" "$root/current.new"
 mv -Tf "$root/current.new" "$root/current"
 if [[ -n "$previous" && "$previous" != "$sha" ]]; then
   systemctl --user disable "autonomo-web-$previous.service" || true
+elif [[ -n "${AUTONOMO_LEGACY_UNIT:-}" ]]; then
+  systemctl --user disable "$AUTONOMO_LEGACY_UNIT" || true
 fi
 printf 'deployed_sha=%s\nprevious_sha=%s\n' "$sha" "${previous:-none}"
