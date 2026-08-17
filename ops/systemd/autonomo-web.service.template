@@ -1,0 +1,23 @@
+[Unit]
+Description=Spain autonomo accounting web (@SHA@)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/autonomo-tax/runtime.env
+@MIGRATION_ENV@
+WorkingDirectory=@RELEASE_ROOT@/releases/@SHA@
+@MIGRATION_PRE@
+ExecStart=@RELEASE_ROOT@/releases/@SHA@/.venv/bin/autonomo-web --project-root @RELEASE_ROOT@/releases/@SHA@ --host 127.0.0.1 --port 8765
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=5min
+StartLimitBurst=2
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=@PRIVATE_ROOT@
+
+[Install]
+WantedBy=default.target

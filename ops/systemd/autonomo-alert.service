@@ -1,0 +1,7 @@
+[Unit]
+Description=Autonomo operational alert
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/autonomo-tax/runtime.env
+ExecStart=${AUTONOMO_OPS_ROOT}/alert.sh backup-failed
