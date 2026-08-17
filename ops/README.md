@@ -23,6 +23,9 @@ The installer copies the control-plane scripts and private-root backup tool into
 `AUTONOMO_OPS_ROOT`, so the first deployed code release does not need to contain
 those scripts.
 
+See [PROVISIONING.md](PROVISIONING.md) for the one-time GitHub, Yandex, Google
+Drive, and server-runtime setup steps.
+
 Keep this `ops/` directory at the `AUTONOMO_OPS_ROOT` control-plane location,
 such as `~/.local/lib/autonomo-ops`; execute `deploy.sh` from there. It renders the
 unit and health check independently of the target release, while the target
