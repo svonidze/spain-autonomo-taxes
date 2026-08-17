@@ -21,12 +21,49 @@ def test_db_init_and_status(tmp_path: Path, capsys) -> None:
 
     assert main(["db", "init", "--db", str(database)]) == 0
     initialized = json.loads(capsys.readouterr().out)
-    assert initialized["schema_version"] == 17
+    assert initialized["schema_version"] == 18
 
     assert main(["db", "status", "--db", str(database)]) == 0
     status = json.loads(capsys.readouterr().out)
     assert status["database"] == str(database.resolve())
     assert status["counts"]["transactions"] == 0
+
+
+def test_storage_backend_upsert_uses_non_secret_configuration(tmp_path: Path, capsys) -> None:
+    database = tmp_path / "ledger.sqlite"
+    assert main(["db", "init", "--db", str(database)]) == 0
+    capsys.readouterr()
+    payload = tmp_path / "backend.json"
+    payload.write_text(
+        json.dumps(
+            {
+                "backend_key": "local_test",
+                "display_name": "Local test",
+                "driver_key": "filesystem",
+                "provider_key": "local",
+                "access_mode": "read_write",
+                "config": {"schema_version": 1, "root": str(tmp_path / "root")},
+                "credential_ref": None,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        main(
+            [
+                "storage",
+                "backend-upsert",
+                "--db",
+                str(database),
+                "--input",
+                str(payload),
+            ]
+        )
+        == 0
+    )
+    row = json.loads(capsys.readouterr().out)
+    assert row["backend_key"] == "local_test"
 
 
 def test_backup_restore_creates_missing_target_parent(tmp_path: Path, capsys) -> None:
@@ -635,6 +672,23 @@ def test_income_intake_infers_q3_and_archives_original(tmp_path: Path, capsys) -
         assert document["document_number"] == "FACT-2026-00001"
         assert document["total_minor"] == 10000
         assert Path(document["source_path"]).is_file()
+        attachment = db.connection.execute(
+            """
+            SELECT da.*, f.content_sha256, f.byte_size, fr.provider_locator,
+                   fr.is_primary, fr.last_verified_at, sb.backend_key
+            FROM document_attachments da
+            JOIN files f ON f.file_id = da.file_id
+            JOIN file_replicas fr ON fr.file_id = f.file_id
+            JOIN storage_backends sb ON sb.storage_backend_id = fr.storage_backend_id
+            WHERE da.document_id = ? AND da.attachment_role = 'source'
+            """,
+            (document["document_id"],),
+        ).fetchone()
+        assert attachment["content_sha256"] == result["sha256"]
+        assert attachment["byte_size"] == Path(document["source_path"]).stat().st_size
+        assert attachment["backend_key"] == "local_staging"
+        assert attachment["is_primary"] == 1
+        assert attachment["last_verified_at"]
         transaction = db.connection.execute("SELECT * FROM transactions").fetchone()
         assert transaction["document_id"] == document["document_id"]
         assert transaction["lifecycle_status"] == "extracted"

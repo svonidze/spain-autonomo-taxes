@@ -47,6 +47,8 @@ from .review_packet import (
     packet_json,
     prepare_review_work_item,
 )
+from .storage_service import resolve_verified_filesystem_replica
+from .storage_migration import StorageMigrationError, assert_storage_startup_ready
 
 
 QUARTER_RE = re.compile(r"^\d{4}-Q[1-4]$")
@@ -797,10 +799,18 @@ class LocalAccountingApp:
                 "SELECT source_path, mime_type FROM documents WHERE document_id = ?",
                 (document_id,),
             ).fetchone()
+            replica = resolve_verified_filesystem_replica(
+                connection,
+                document_id=document_id,
+            )
+        allowed_roots = self.document_roots
+        if replica is not None and any(
+            _is_relative_to(replica.path, root.resolve()) for root in allowed_roots
+        ):
+            return replica.path, replica.media_type
         if row is None or not row["source_path"]:
             raise FileNotFoundError("Document source is unavailable")
         path = self.resolve_document_path(str(row["source_path"]))
-        allowed_roots = self.document_roots
         if not any(_is_relative_to(path, root.resolve()) for root in allowed_roots):
             raise LocalWebError("Document source is outside configured evidence roots")
         for root in self.config.read_only_document_roots:
@@ -1695,6 +1705,11 @@ def main(argv: list[str] | None = None) -> int:
         archive_root=args.archive_root,
         cache_root=args.cache_root,
     )
+    if os.environ.get("AUTONOMO_REQUIRE_STORAGE_MIGRATION") == "1":
+        try:
+            assert_storage_startup_ready(config.database)
+        except StorageMigrationError as exc:
+            raise SystemExit(str(exc)) from exc
     app = LocalAccountingApp(config)
     display_host = f"[{args.host}]" if ":" in args.host else args.host
     bind_url = f"http://{display_host}:{args.port}"

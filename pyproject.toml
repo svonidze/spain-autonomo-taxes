@@ -9,6 +9,8 @@ description = "SQLite-backed accounting and tax preparation toolkit for a Spanis
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "google-api-python-client>=2.0",
+  "google-auth-oauthlib>=1.2",
   "pypdf>=5",
   "PyYAML>=6",
 ]

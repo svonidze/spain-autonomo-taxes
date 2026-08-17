@@ -24,7 +24,7 @@ from .outgoing_invoices import (
 from .tax_rules import ALL_FORM_CODES
 
 
-LATEST_SCHEMA_VERSION = 17
+LATEST_SCHEMA_VERSION = 18
 
 ACTIVE_LIFECYCLE_STATUSES = (
     "received",
@@ -116,12 +116,30 @@ def initialize(path: str | Path) -> "LedgerDB":
     return LedgerDB.initialize(path)
 
 
-def open(path: str | Path, *, read_only: bool = False) -> "LedgerDB":
-    return LedgerDB.open(path, read_only=read_only)
+def open(
+    path: str | Path,
+    *,
+    read_only: bool = False,
+    apply_migrations: bool = False,
+) -> "LedgerDB":
+    return LedgerDB.open(
+        path,
+        read_only=read_only,
+        apply_migrations=apply_migrations,
+    )
 
 
-def open_database(path: str | Path, *, read_only: bool = False) -> "LedgerDB":
-    return LedgerDB.open(path, read_only=read_only)
+def open_database(
+    path: str | Path,
+    *,
+    read_only: bool = False,
+    apply_migrations: bool = False,
+) -> "LedgerDB":
+    return LedgerDB.open(
+        path,
+        read_only=read_only,
+        apply_migrations=apply_migrations,
+    )
 
 
 class LedgerDB:
@@ -146,7 +164,13 @@ class LedgerDB:
         return database
 
     @classmethod
-    def open(cls, path: str | Path, *, read_only: bool = False) -> "LedgerDB":
+    def open(
+        cls,
+        path: str | Path,
+        *,
+        read_only: bool = False,
+        apply_migrations: bool = False,
+    ) -> "LedgerDB":
         db_path = Path(path)
         if read_only:
             uri = f"file:{db_path.as_posix()}?mode=ro"
@@ -154,21 +178,31 @@ class LedgerDB:
         else:
             connection = sqlite3.connect(db_path)
         database = cls(connection, path=db_path)
-        if read_only:
-            current_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
-            if current_version != LATEST_SCHEMA_VERSION:
+        current_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+        if current_version != LATEST_SCHEMA_VERSION:
+            if read_only:
                 connection.close()
                 raise SchemaVersionError(
                     f"Read-only database schema is {current_version}; "
-                    f"open it writable to migrate to {LATEST_SCHEMA_VERSION}"
+                    f"expected {LATEST_SCHEMA_VERSION}"
                 )
-        else:
+            if not apply_migrations:
+                connection.close()
+                raise SchemaVersionError(
+                    f"Database schema is {current_version}; explicit migration to "
+                    f"{LATEST_SCHEMA_VERSION} is required (open with apply_migrations=True)"
+                )
             try:
                 database._apply_migrations()
             except Exception:
                 connection.close()
                 raise
         return database
+
+    @classmethod
+    def migrate(cls, path: str | Path) -> "LedgerDB":
+        """Open a database through the sole opt-in schema migration path."""
+        return cls.open(path, apply_migrations=True)
 
     def close(self) -> None:
         self.connection.close()
@@ -1212,6 +1246,221 @@ class LedgerDB:
                 ),
             )
         return self._fetch_one("SELECT * FROM documents WHERE document_id = ?", (document_id,))
+
+    def upsert_file(
+        self,
+        *,
+        content_sha256: str,
+        byte_size: int,
+        media_type: str,
+        file_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Register immutable content, deduplicating only identical byte streams."""
+        digest = _normalize_sha256(content_sha256)
+        if byte_size < 0:
+            raise ValueError("byte_size must be non-negative")
+        if not media_type.strip():
+            raise ValueError("media_type must not be empty")
+        existing = self._fetch_optional(
+            "SELECT * FROM files WHERE content_sha256 = ?", (digest,)
+        )
+        if existing is not None:
+            if existing["byte_size"] != byte_size:
+                raise LedgerDbError(
+                    "Existing file content identity has different byte_size"
+                )
+            return existing
+        timestamp = _utc_now()
+        new_id = file_id or _new_id()
+        with self.connection:
+            self.connection.execute(
+                """
+                INSERT INTO files (file_id, content_sha256, byte_size, media_type, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (new_id, digest, byte_size, media_type, timestamp),
+            )
+        return self._fetch_one("SELECT * FROM files WHERE file_id = ?", (new_id,))
+
+    def upsert_storage_backend(
+        self,
+        *,
+        backend_key: str,
+        display_name: str,
+        driver_key: str,
+        provider_key: str,
+        access_mode: str,
+        config: Mapping[str, Any] | None = None,
+        credential_ref: str | None = None,
+        read_priority: int = 100,
+        enabled: bool = True,
+        storage_backend_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Create or update a configured storage endpoint without storing credentials."""
+        if not backend_key.strip() or not display_name.strip():
+            raise ValueError("backend_key and display_name must not be empty")
+        if not driver_key.strip() or not provider_key.strip():
+            raise ValueError("driver_key and provider_key must not be empty")
+        if access_mode not in {"read_only", "read_write"}:
+            raise ValueError("access_mode must be read_only or read_write")
+        config_json = _storage_config_json(config)
+        existing = self._fetch_optional(
+            "SELECT * FROM storage_backends WHERE backend_key = ?", (backend_key,)
+        )
+        timestamp = _utc_now()
+        if existing is None:
+            new_id = storage_backend_id or _new_id()
+            with self.connection:
+                self.connection.execute(
+                    """
+                    INSERT INTO storage_backends (
+                        storage_backend_id, backend_key, display_name, driver_key, provider_key,
+                        access_mode, config_json, credential_ref, read_priority, enabled,
+                        row_version, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                    """,
+                    (
+                        new_id, backend_key, display_name, driver_key, provider_key, access_mode,
+                        config_json, credential_ref, read_priority, int(enabled), timestamp, timestamp,
+                    ),
+                )
+            return self._fetch_one(
+                "SELECT * FROM storage_backends WHERE storage_backend_id = ?", (new_id,)
+            )
+
+        with self.connection:
+            self.connection.execute(
+                """
+                UPDATE storage_backends
+                SET display_name = ?, driver_key = ?, provider_key = ?, access_mode = ?,
+                    config_json = ?, credential_ref = ?, read_priority = ?, enabled = ?,
+                    row_version = ?, updated_at = ?
+                WHERE storage_backend_id = ?
+                """,
+                (
+                    display_name, driver_key, provider_key, access_mode, config_json, credential_ref,
+                    read_priority, int(enabled), existing["row_version"] + 1, timestamp,
+                    existing["storage_backend_id"],
+                ),
+            )
+        return self._fetch_one(
+            "SELECT * FROM storage_backends WHERE storage_backend_id = ?",
+            (existing["storage_backend_id"],),
+        )
+
+    def attach_file_to_document(
+        self,
+        *,
+        document_id: str,
+        file_id: str,
+        attachment_role: str,
+        display_name: str | None = None,
+        document_attachment_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Attach content metadata without changing the business document aggregate."""
+        if attachment_role not in {"source", "supporting", "generated"}:
+            raise ValueError("attachment_role must be source, supporting, or generated")
+        self._fetch_one("SELECT document_id FROM documents WHERE document_id = ?", (document_id,))
+        self._fetch_one("SELECT file_id FROM files WHERE file_id = ?", (file_id,))
+        existing = self._fetch_optional(
+            """
+            SELECT * FROM document_attachments
+            WHERE document_id = ? AND file_id = ? AND attachment_role = ?
+            """,
+            (document_id, file_id, attachment_role),
+        )
+        if existing is not None:
+            return existing
+        new_id = document_attachment_id or _new_id()
+        timestamp = _utc_now()
+        with self.connection:
+            self.connection.execute(
+                """
+                INSERT INTO document_attachments (
+                    document_attachment_id, document_id, file_id, attachment_role, display_name,
+                    created_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (new_id, document_id, file_id, attachment_role, display_name, timestamp),
+            )
+        return self._fetch_one(
+            "SELECT * FROM document_attachments WHERE document_attachment_id = ?", (new_id,)
+        )
+
+    def register_file_replica(
+        self,
+        *,
+        file_id: str,
+        storage_backend_id: str,
+        provider_locator: str,
+        provider_version: str | None = None,
+        replica_status: str = "available",
+        is_primary: bool = False,
+        web_url: str | None = None,
+        provider_metadata: Mapping[str, Any] | None = None,
+        last_verified_at: str | None = None,
+        file_replica_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Register a physical copy; callers may mark it available only after verification."""
+        if replica_status not in {"available", "missing", "corrupt", "retired"}:
+            raise ValueError("Unknown replica_status")
+        if not provider_locator.strip():
+            raise ValueError("provider_locator must not be empty")
+        if replica_status == "available" and not last_verified_at:
+            raise ValueError("available replicas require last_verified_at")
+        if is_primary and replica_status != "available":
+            raise ValueError("Only available replicas may be primary")
+        self._fetch_one("SELECT file_id FROM files WHERE file_id = ?", (file_id,))
+        self._fetch_one(
+            "SELECT storage_backend_id FROM storage_backends WHERE storage_backend_id = ?",
+            (storage_backend_id,),
+        )
+        metadata_json = _storage_config_json(provider_metadata)
+        existing = self._fetch_optional(
+            "SELECT * FROM file_replicas WHERE file_id = ? AND storage_backend_id = ?",
+            (file_id, storage_backend_id),
+        )
+        timestamp = _utc_now()
+        with self.connection:
+            if is_primary:
+                self.connection.execute(
+                    "UPDATE file_replicas SET is_primary = 0, row_version = row_version + 1, updated_at = ? "
+                    "WHERE file_id = ? AND is_primary = 1",
+                    (timestamp, file_id),
+                )
+            if existing is None:
+                new_id = file_replica_id or _new_id()
+                self.connection.execute(
+                    """
+                    INSERT INTO file_replicas (
+                        file_replica_id, file_id, storage_backend_id, provider_locator,
+                        provider_version, replica_status, is_primary, web_url,
+                        provider_metadata_json, last_verified_at, row_version, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                    """,
+                    (
+                        new_id, file_id, storage_backend_id, provider_locator, provider_version,
+                        replica_status, int(is_primary), web_url, metadata_json, last_verified_at,
+                        timestamp, timestamp,
+                    ),
+                )
+            else:
+                new_id = existing["file_replica_id"]
+                self.connection.execute(
+                    """
+                    UPDATE file_replicas
+                    SET provider_locator = ?, provider_version = ?, replica_status = ?,
+                        is_primary = ?, web_url = ?, provider_metadata_json = ?,
+                        last_verified_at = ?, row_version = ?, updated_at = ?
+                    WHERE file_replica_id = ?
+                    """,
+                    (
+                        provider_locator, provider_version, replica_status, int(is_primary), web_url,
+                        metadata_json, last_verified_at, existing["row_version"] + 1,
+                        timestamp, new_id,
+                    ),
+                )
+        return self._fetch_one("SELECT * FROM file_replicas WHERE file_replica_id = ?", (new_id,))
 
     def transition_document(
         self,
@@ -4907,6 +5156,10 @@ class LedgerDB:
             "counterparties",
             "counterparty_identities",
             "documents",
+            "files",
+            "document_attachments",
+            "storage_backends",
+            "file_replicas",
             "document_sources",
             "intake_receipts",
             "transactions",
@@ -5174,6 +5427,44 @@ def _validate_sha256(value: str) -> None:
         character not in "0123456789abcdef" for character in normalized
     ):
         raise ValueError("source_hash must be a SHA-256 hex digest")
+
+
+def _normalize_sha256(value: str) -> str:
+    normalized = value.casefold()
+    if len(normalized) != 64 or any(
+        character not in "0123456789abcdef" for character in normalized
+    ):
+        raise ValueError("content_sha256 must be a SHA-256 hex digest")
+    return normalized
+
+
+def _storage_config_json(config: Mapping[str, Any] | None) -> str:
+    payload = dict(config or {})
+    _reject_secret_storage_fields(payload)
+    try:
+        return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Storage metadata must be JSON serializable") from exc
+
+
+def _reject_secret_storage_fields(value: Any) -> None:
+    if isinstance(value, Mapping):
+        for key, nested in value.items():
+            normalized = str(key).casefold().replace("-", "_")
+            if normalized in {
+                "access_key",
+                "secret",
+                "secret_key",
+                "password",
+                "private_key",
+                "token",
+                "refresh_token",
+            }:
+                raise ValueError("Storage credentials must be referenced through credential_ref")
+            _reject_secret_storage_fields(nested)
+    elif isinstance(value, (list, tuple)):
+        for nested in value:
+            _reject_secret_storage_fields(nested)
 
 
 def _validate_tax_calendar_payload(payload: Mapping[str, Any]) -> None:
@@ -6199,6 +6490,86 @@ def _migration_17(connection: sqlite3.Connection) -> None:
     connection.execute("ALTER TABLE fx_rates ADD COLUMN source_reference TEXT")
 
 
+def _migration_18(connection: sqlite3.Connection) -> None:
+    """Add provider-neutral storage metadata without modifying business documents."""
+    statements = (
+        """
+        CREATE TABLE files (
+            file_id TEXT PRIMARY KEY,
+            content_sha256 TEXT NOT NULL UNIQUE
+                CHECK (length(content_sha256) = 64 AND content_sha256 NOT GLOB '*[^0-9a-f]*'),
+            byte_size INTEGER NOT NULL CHECK (byte_size >= 0),
+            media_type TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE storage_backends (
+            storage_backend_id TEXT PRIMARY KEY,
+            backend_key TEXT NOT NULL UNIQUE,
+            display_name TEXT NOT NULL,
+            driver_key TEXT NOT NULL,
+            provider_key TEXT NOT NULL,
+            access_mode TEXT NOT NULL CHECK (access_mode IN ('read_only', 'read_write')),
+            config_json TEXT NOT NULL DEFAULT '{}',
+            credential_ref TEXT,
+            read_priority INTEGER NOT NULL DEFAULT 100,
+            enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+            row_version INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE document_attachments (
+            document_attachment_id TEXT PRIMARY KEY,
+            document_id TEXT NOT NULL REFERENCES documents(document_id),
+            file_id TEXT NOT NULL REFERENCES files(file_id),
+            attachment_role TEXT NOT NULL CHECK (attachment_role IN ('source', 'supporting', 'generated')),
+            display_name TEXT,
+            created_at TEXT NOT NULL,
+            UNIQUE (document_id, file_id, attachment_role)
+        )
+        """,
+        """
+        CREATE TABLE file_replicas (
+            file_replica_id TEXT PRIMARY KEY,
+            file_id TEXT NOT NULL REFERENCES files(file_id),
+            storage_backend_id TEXT NOT NULL REFERENCES storage_backends(storage_backend_id),
+            provider_locator TEXT NOT NULL,
+            provider_version TEXT,
+            replica_status TEXT NOT NULL CHECK (replica_status IN ('available', 'missing', 'corrupt', 'retired')),
+            is_primary INTEGER NOT NULL DEFAULT 0 CHECK (is_primary IN (0, 1)),
+            web_url TEXT,
+            provider_metadata_json TEXT NOT NULL DEFAULT '{}',
+            last_verified_at TEXT,
+            row_version INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE (file_id, storage_backend_id),
+            UNIQUE (storage_backend_id, provider_locator),
+            CHECK (is_primary = 0 OR replica_status = 'available')
+        )
+        """,
+        """
+        CREATE UNIQUE INDEX document_attachments_one_source_per_document
+            ON document_attachments(document_id)
+            WHERE attachment_role = 'source'
+        """,
+        """
+        CREATE UNIQUE INDEX file_replicas_one_primary_per_file
+            ON file_replicas(file_id)
+            WHERE is_primary = 1
+        """,
+        """
+        CREATE INDEX file_replicas_read_lookup_idx
+            ON file_replicas(file_id, replica_status, storage_backend_id)
+        """,
+    )
+    for statement in statements:
+        connection.execute(statement)
+
+
 _MIGRATIONS = {
     1: _migration_1,
     2: _migration_2,
@@ -6217,4 +6588,5 @@ _MIGRATIONS = {
     15: _migration_15,
     16: _migration_16,
     17: _migration_17,
+    18: _migration_18,
 }
