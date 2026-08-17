@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import errno
+import hashlib
 from http.client import HTTPConnection
 import json
 from pathlib import Path
@@ -1943,6 +1944,124 @@ def test_document_file_returns_503_when_read_only_root_is_unavailable(
 
     assert raised.value.status == 503
     assert raised.value.code == "document_root_unavailable"
+
+
+def test_document_file_prefers_verified_local_replica_over_legacy_path(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    _database(config)
+    replica_path = config.archive_root / "2026-Q3" / "invoice.pdf"
+    replica_path.parent.mkdir(parents=True)
+    content = b"verified invoice bytes"
+    replica_path.write_bytes(content)
+    digest = hashlib.sha256(content).hexdigest()
+    with LedgerDB.open(config.database) as db:
+        document = db.upsert_document(
+            external_key="replica-doc",
+            document_type="expense_invoice",
+            issued_on="2026-08-01",
+            period_key="2026-Q3",
+            lifecycle_status="approved",
+            source_hash=digest,
+        )
+        document = db.set_document_storage(
+            str(document["document_id"]),
+            source_path=str(tmp_path / "legacy-missing.pdf"),
+            mime_type="application/pdf",
+            expected_row_version=int(document["row_version"]),
+        )
+        backend = db.upsert_storage_backend(
+            backend_key="local_staging",
+            display_name="Local staging",
+            driver_key="filesystem",
+            provider_key="local",
+            access_mode="read_write",
+            config={"schema_version": 1, "root": str(config.archive_root)},
+            read_priority=20,
+        )
+        file_row = db.upsert_file(
+            content_sha256=digest,
+            byte_size=len(content),
+            media_type="application/pdf",
+        )
+        db.attach_file_to_document(
+            document_id=str(document["document_id"]),
+            file_id=str(file_row["file_id"]),
+            attachment_role="source",
+            display_name=replica_path.name,
+        )
+        db.register_file_replica(
+            file_id=str(file_row["file_id"]),
+            storage_backend_id=str(backend["storage_backend_id"]),
+            provider_locator="2026-Q3/invoice.pdf",
+            is_primary=True,
+            last_verified_at="2026-08-17T12:00:00Z",
+        )
+
+    path, mime_type = LocalAccountingApp(config).document_file(str(document["document_id"]))
+
+    assert path == replica_path.resolve()
+    assert mime_type == "application/pdf"
+
+
+def test_document_file_falls_back_when_catalogued_replica_is_corrupt(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    _database(config)
+    legacy_path = config.archive_root / "legacy.pdf"
+    legacy_content = b"intact legacy invoice"
+    legacy_path.parent.mkdir(parents=True)
+    legacy_path.write_bytes(legacy_content)
+    corrupt_path = config.archive_root / "replicas" / "invoice.pdf"
+    corrupt_path.parent.mkdir()
+    corrupt_path.write_bytes(b"corrupt")
+    digest = hashlib.sha256(legacy_content).hexdigest()
+    with LedgerDB.open(config.database) as db:
+        document = db.upsert_document(
+            external_key="corrupt-replica-doc",
+            document_type="expense_invoice",
+            issued_on="2026-08-01",
+            period_key="2026-Q3",
+            lifecycle_status="approved",
+            source_hash=digest,
+        )
+        document = db.set_document_storage(
+            str(document["document_id"]),
+            source_path=str(legacy_path),
+            mime_type="application/pdf",
+            expected_row_version=int(document["row_version"]),
+        )
+        backend = db.upsert_storage_backend(
+            backend_key="local_staging",
+            display_name="Local staging",
+            driver_key="filesystem",
+            provider_key="local",
+            access_mode="read_write",
+            config={"schema_version": 1, "root": str(config.archive_root)},
+        )
+        file_row = db.upsert_file(
+            content_sha256=digest,
+            byte_size=len(legacy_content),
+            media_type="application/pdf",
+        )
+        db.attach_file_to_document(
+            document_id=str(document["document_id"]),
+            file_id=str(file_row["file_id"]),
+            attachment_role="source",
+        )
+        db.register_file_replica(
+            file_id=str(file_row["file_id"]),
+            storage_backend_id=str(backend["storage_backend_id"]),
+            provider_locator="replicas/invoice.pdf",
+            is_primary=True,
+            last_verified_at="2026-08-17T12:00:00Z",
+        )
+
+    path, _ = LocalAccountingApp(config).document_file(str(document["document_id"]))
+
+    assert path == legacy_path.resolve()
 
 
 @pytest.mark.skipif(

@@ -1,0 +1,15 @@
+{
+  "backend_key": "yandex_evidence",
+  "display_name": "Yandex encrypted evidence mirror",
+  "driver_key": "s3",
+  "provider_key": "yandex_cloud",
+  "access_mode": "read_write",
+  "config": {
+    "schema_version": 1,
+    "rclone_remote": "yandex-evidence-crypt:",
+    "crypt_config_fingerprint": "replace-with-non-secret-config-fingerprint"
+  },
+  "credential_ref": "file:/absolute/private/path/rclone.conf",
+  "read_priority": 80,
+  "enabled": true
+}

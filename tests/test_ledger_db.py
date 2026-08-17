@@ -63,9 +63,9 @@ class LedgerDbTests(unittest.TestCase):
             finally:
                 connection.close()
 
-            with open_ledger_db(path) as db:
+            with open_ledger_db(path, apply_migrations=True) as db:
                 version = db.connection.execute("PRAGMA user_version").fetchone()[0]
-                self.assertEqual(version, 17)
+                self.assertEqual(version, 18)
 
                 tables = {
                     row[0]
@@ -142,7 +142,7 @@ class LedgerDbTests(unittest.TestCase):
             finally:
                 connection.close()
 
-            with open_ledger_db(path) as db:
+            with open_ledger_db(path, apply_migrations=True) as db:
                 version = db.connection.execute("PRAGMA user_version").fetchone()[0]
                 issues = db.connection.execute(
                     "SELECT subject_id, dedupe_key FROM validation_issues"
@@ -154,7 +154,7 @@ class LedgerDbTests(unittest.TestCase):
                     "SELECT * FROM payments WHERE payment_id = 'legacy-payment'"
                 ).fetchone()
 
-                self.assertEqual(version, 17)
+                self.assertEqual(version, 18)
                 self.assertEqual(len(issues), 1)
                 self.assertEqual(
                     issues[0]["dedupe_key"],
@@ -189,7 +189,7 @@ class LedgerDbTests(unittest.TestCase):
             ledger_db_module._MIGRATIONS[8] = fail_after_first_ddl
             try:
                 with self.assertRaisesRegex(RuntimeError, "forced migration failure"):
-                    open_ledger_db(path)
+                    open_ledger_db(path, apply_migrations=True)
             finally:
                 ledger_db_module._MIGRATIONS[8] = original
 
@@ -204,8 +204,8 @@ class LedgerDbTests(unittest.TestCase):
             self.assertEqual(version, 7)
             self.assertNotIn("source_system", columns)
 
-            with open_ledger_db(path) as db:
-                self.assertEqual(db.connection.execute("PRAGMA user_version").fetchone()[0], 17)
+            with open_ledger_db(path, apply_migrations=True) as db:
+                self.assertEqual(db.connection.execute("PRAGMA user_version").fetchone()[0], 18)
 
     def test_schema_9_ddl_rolls_back_atomically_on_failure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -231,7 +231,7 @@ class LedgerDbTests(unittest.TestCase):
             ledger_db_module._MIGRATIONS[9] = fail_after_first_ddl
             try:
                 with self.assertRaisesRegex(RuntimeError, "forced migration failure"):
-                    open_ledger_db(path)
+                    open_ledger_db(path, apply_migrations=True)
             finally:
                 ledger_db_module._MIGRATIONS[9] = original
 
@@ -246,8 +246,8 @@ class LedgerDbTests(unittest.TestCase):
             self.assertEqual(version, 8)
             self.assertIsNone(table)
 
-            with open_ledger_db(path) as db:
-                self.assertEqual(db.connection.execute("PRAGMA user_version").fetchone()[0], 17)
+            with open_ledger_db(path, apply_migrations=True) as db:
+                self.assertEqual(db.connection.execute("PRAGMA user_version").fetchone()[0], 18)
 
     def test_schema_12_ddl_rolls_back_atomically_on_failure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -274,7 +274,7 @@ class LedgerDbTests(unittest.TestCase):
             ledger_db_module._MIGRATIONS[12] = fail_after_first_ddl
             try:
                 with self.assertRaisesRegex(RuntimeError, "forced migration failure"):
-                    open_ledger_db(path)
+                    open_ledger_db(path, apply_migrations=True)
             finally:
                 ledger_db_module._MIGRATIONS[12] = original
 
@@ -290,8 +290,8 @@ class LedgerDbTests(unittest.TestCase):
             self.assertEqual(version, 11)
             self.assertIsNone(table)
 
-            with open_ledger_db(path) as db:
-                self.assertEqual(db.connection.execute("PRAGMA user_version").fetchone()[0], 17)
+            with open_ledger_db(path, apply_migrations=True) as db:
+                self.assertEqual(db.connection.execute("PRAGMA user_version").fetchone()[0], 18)
 
     def test_schema_13_ddl_rolls_back_atomically_on_failure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -317,7 +317,7 @@ class LedgerDbTests(unittest.TestCase):
             ledger_db_module._MIGRATIONS[13] = fail_after_first_ddl
             try:
                 with self.assertRaisesRegex(RuntimeError, "forced migration failure"):
-                    open_ledger_db(path)
+                    open_ledger_db(path, apply_migrations=True)
             finally:
                 ledger_db_module._MIGRATIONS[13] = original
 
@@ -335,9 +335,9 @@ class LedgerDbTests(unittest.TestCase):
             self.assertEqual(version, 12)
             self.assertNotIn("aeat_invoice_type", columns)
 
-            with open_ledger_db(path) as db:
+            with open_ledger_db(path, apply_migrations=True) as db:
                 self.assertEqual(
-                    db.connection.execute("PRAGMA user_version").fetchone()[0], 17
+                    db.connection.execute("PRAGMA user_version").fetchone()[0], 18
                 )
 
     def test_schema_14_ddl_rolls_back_atomically_on_failure(self) -> None:
@@ -365,7 +365,7 @@ class LedgerDbTests(unittest.TestCase):
             ledger_db_module._MIGRATIONS[14] = fail_after_first_ddl
             try:
                 with self.assertRaisesRegex(RuntimeError, "forced migration failure"):
-                    open_ledger_db(path)
+                    open_ledger_db(path, apply_migrations=True)
             finally:
                 ledger_db_module._MIGRATIONS[14] = original
 
@@ -381,9 +381,9 @@ class LedgerDbTests(unittest.TestCase):
             self.assertEqual(version, 13)
             self.assertIsNone(table)
 
-            with open_ledger_db(path) as db:
+            with open_ledger_db(path, apply_migrations=True) as db:
                 self.assertEqual(
-                    db.connection.execute("PRAGMA user_version").fetchone()[0], 17
+                    db.connection.execute("PRAGMA user_version").fetchone()[0], 18
                 )
 
     def test_schema_15_ddl_rolls_back_atomically_on_failure(self) -> None:
@@ -411,7 +411,7 @@ class LedgerDbTests(unittest.TestCase):
             ledger_db_module._MIGRATIONS[15] = fail_after_first_ddl
             try:
                 with self.assertRaisesRegex(RuntimeError, "forced migration failure"):
-                    open_ledger_db(path)
+                    open_ledger_db(path, apply_migrations=True)
             finally:
                 ledger_db_module._MIGRATIONS[15] = original
 
@@ -427,9 +427,9 @@ class LedgerDbTests(unittest.TestCase):
             self.assertEqual(version, 14)
             self.assertIsNone(table)
 
-            with open_ledger_db(path) as db:
+            with open_ledger_db(path, apply_migrations=True) as db:
                 self.assertEqual(
-                    db.connection.execute("PRAGMA user_version").fetchone()[0], 17
+                    db.connection.execute("PRAGMA user_version").fetchone()[0], 18
                 )
 
     def test_schema_16_ddl_rolls_back_atomically_on_failure(self) -> None:
@@ -456,7 +456,7 @@ class LedgerDbTests(unittest.TestCase):
             ledger_db_module._MIGRATIONS[16] = fail_after_first_ddl
             try:
                 with self.assertRaisesRegex(RuntimeError, "forced migration failure"):
-                    open_ledger_db(path)
+                    open_ledger_db(path, apply_migrations=True)
             finally:
                 ledger_db_module._MIGRATIONS[16] = original
 
@@ -479,9 +479,9 @@ class LedgerDbTests(unittest.TestCase):
             self.assertNotIn("legal_form", columns)
             self.assertIsNone(table)
 
-            with open_ledger_db(path) as db:
+            with open_ledger_db(path, apply_migrations=True) as db:
                 self.assertEqual(
-                    db.connection.execute("PRAGMA user_version").fetchone()[0], 17
+                    db.connection.execute("PRAGMA user_version").fetchone()[0], 18
                 )
 
     def test_schema_17_migrates_fx_rates_source_reference_as_nullable(self) -> None:
@@ -516,9 +516,9 @@ class LedgerDbTests(unittest.TestCase):
             finally:
                 connection.close()
 
-            with open_ledger_db(path) as db:
+            with open_ledger_db(path, apply_migrations=True) as db:
                 self.assertEqual(
-                    db.connection.execute("PRAGMA user_version").fetchone()[0], 17
+                    db.connection.execute("PRAGMA user_version").fetchone()[0], 18
                 )
                 row = db.connection.execute(
                     "SELECT source_reference FROM fx_rates WHERE fx_rate_id = ?",
@@ -552,7 +552,7 @@ class LedgerDbTests(unittest.TestCase):
             ledger_db_module._MIGRATIONS[17] = fail_after_first_ddl
             try:
                 with self.assertRaisesRegex(RuntimeError, "forced migration failure"):
-                    open_ledger_db(path)
+                    open_ledger_db(path, apply_migrations=True)
             finally:
                 ledger_db_module._MIGRATIONS[17] = original
 
@@ -567,9 +567,9 @@ class LedgerDbTests(unittest.TestCase):
             self.assertEqual(version, 16)
             self.assertNotIn("source_reference", columns)
 
-            with open_ledger_db(path) as db:
+            with open_ledger_db(path, apply_migrations=True) as db:
                 self.assertEqual(
-                    db.connection.execute("PRAGMA user_version").fetchone()[0], 17
+                    db.connection.execute("PRAGMA user_version").fetchone()[0], 18
                 )
 
     def test_counterparty_identity_is_source_backed_versioned_and_singular(self) -> None:
@@ -698,7 +698,7 @@ class LedgerDbTests(unittest.TestCase):
     def test_counterparty_identity_concurrent_first_insert_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "ledger.sqlite3"
-            with open_ledger_db(path) as db:
+            with initialize(path) as db:
                 supplier = db.upsert_counterparty(
                     external_key="concurrent-supplier",
                     display_name="Concurrent Supplier",
@@ -754,7 +754,7 @@ class LedgerDbTests(unittest.TestCase):
             ledger_db_module._MIGRATIONS[10] = fail_after_first_ddl
             try:
                 with self.assertRaisesRegex(RuntimeError, "forced migration failure"):
-                    open_ledger_db(path)
+                    open_ledger_db(path, apply_migrations=True)
             finally:
                 ledger_db_module._MIGRATIONS[10] = original
 
@@ -774,8 +774,8 @@ class LedgerDbTests(unittest.TestCase):
             self.assertIsNone(table)
             self.assertNotIn("business_activity_id", transaction_columns)
 
-            with open_ledger_db(path) as db:
-                self.assertEqual(db.connection.execute("PRAGMA user_version").fetchone()[0], 17)
+            with open_ledger_db(path, apply_migrations=True) as db:
+                self.assertEqual(db.connection.execute("PRAGMA user_version").fetchone()[0], 18)
 
     def test_schema_11_ddl_rolls_back_atomically_on_failure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -799,7 +799,7 @@ class LedgerDbTests(unittest.TestCase):
             ledger_db_module._MIGRATIONS[11] = fail_after_first_ddl
             try:
                 with self.assertRaisesRegex(RuntimeError, "forced migration failure"):
-                    open_ledger_db(path)
+                    open_ledger_db(path, apply_migrations=True)
             finally:
                 ledger_db_module._MIGRATIONS[11] = original
 
@@ -814,8 +814,8 @@ class LedgerDbTests(unittest.TestCase):
             self.assertEqual(version, 10)
             self.assertNotIn("aeat_asset_identifier", columns)
 
-            with open_ledger_db(path) as db:
-                self.assertEqual(db.connection.execute("PRAGMA user_version").fetchone()[0], 17)
+            with open_ledger_db(path, apply_migrations=True) as db:
+                self.assertEqual(db.connection.execute("PRAGMA user_version").fetchone()[0], 18)
 
     def test_business_activity_is_versioned_and_auto_assigned_when_unambiguous(self) -> None:
         with self._database() as db:

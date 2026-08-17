@@ -1,0 +1,14 @@
+{
+  "backend_key": "google_primary_rw",
+  "display_name": "Google Drive primary",
+  "driver_key": "google_drive",
+  "provider_key": "google",
+  "access_mode": "read_write",
+  "config": {
+    "schema_version": 1,
+    "root_folder_id": "replace-with-user-owned-drive-folder-id"
+  },
+  "credential_ref": "file:/absolute/private/path/google-oauth-token.json",
+  "read_priority": 10,
+  "enabled": true
+}

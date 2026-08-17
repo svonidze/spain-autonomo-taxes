@@ -70,6 +70,9 @@ from .sheet_intake import (
     write_intake_writeback_csv,
 )
 from .sheet_sync import SheetRow, diff_sheet_rows
+from .storage_migration import StorageMigrationError, migrate_legacy_storage
+from .storage_reconcile import StorageReconcileError, reconcile_backend
+from .storage_service import register_local_source_replica
 from .tax_engine import (
     CalculationBlocked,
     CalculationResult,
@@ -820,6 +823,39 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     backup_restore.add_argument("--from", dest="source", type=Path, required=True)
     backup_restore.set_defaults(_operational_handler=_cmd_backup_restore)
 
+    storage = subparsers.add_parser(
+        "storage",
+        help="Migrate and inspect provider-neutral document storage metadata",
+    )
+    storage_sub = storage.add_subparsers(dest="storage_command", required=True)
+    storage_migrate = storage_sub.add_parser(
+        "migrate",
+        help="Backfill files, attachments, and physical replicas from legacy document paths",
+    )
+    _db_arg(storage_migrate)
+    storage_migrate.add_argument("--startup", action="store_true")
+    storage_migrate.add_argument("--require-complete", action="store_true")
+    storage_migrate.add_argument("--batch-size", type=int, default=25)
+    storage_migrate.add_argument("--local-root", type=Path)
+    storage_migrate.add_argument("--drive-mount-root", type=Path)
+    storage_migrate.add_argument("--snapshot-out", type=Path)
+    storage_migrate.set_defaults(_operational_handler=_cmd_storage_migrate)
+    storage_reconcile = storage_sub.add_parser(
+        "reconcile",
+        help="Create verified missing physical replicas for a configured backend",
+    )
+    _db_arg(storage_reconcile)
+    storage_reconcile.add_argument("--backend", required=True)
+    storage_reconcile.add_argument("--limit", type=int, default=0)
+    storage_reconcile.set_defaults(_operational_handler=_cmd_storage_reconcile)
+    storage_backend = storage_sub.add_parser(
+        "backend-upsert",
+        help="Register a non-secret storage backend configuration",
+    )
+    _db_arg(storage_backend)
+    storage_backend.add_argument("--input", type=Path, required=True)
+    storage_backend.set_defaults(_operational_handler=_cmd_storage_backend_upsert)
+
     bank = subparsers.add_parser("bank", help="Import and reconcile bank payments")
     bank_sub = bank.add_subparsers(dest="bank_command", required=True)
     bank_import = bank_sub.add_parser("import-revolut")
@@ -1482,6 +1518,15 @@ def _ingest_document(args: argparse.Namespace) -> dict[str, Any]:
             drive_file_id=args.drive_file_id,
             mime_type=result.mime_type,
             expected_row_version=document["row_version"],
+        )
+        # Keep the legacy path during the rollout, while registering the same
+        # immutable bytes in the provider-neutral storage catalogue.
+        register_local_source_replica(
+            db,
+            document_id=str(document["document_id"]),
+            source_path=archived_path,
+            media_type=result.mime_type,
+            storage_root=args.archive_root or archived_path.parent,
         )
         if is_new_document and result.needs_review:
             db.add_validation_issue(
@@ -3618,7 +3663,8 @@ def _cmd_backup_create(args: argparse.Namespace) -> int:
 
 def _cmd_backup_restore(args: argparse.Namespace) -> int:
     args.db.parent.mkdir(parents=True, exist_ok=True)
-    with open_ledger_db(args.db) as db:
+    opener = open_ledger_db if args.db.exists() else initialize
+    with opener(args.db) as db:
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
         safety_backup = args.db.with_name(
             f"{args.db.stem}.pre-restore-{timestamp}{args.db.suffix or '.sqlite'}"
@@ -3634,6 +3680,44 @@ def _cmd_backup_restore(args: argparse.Namespace) -> int:
                 "counts": db.table_counts(),
             }
         )
+    return 0
+
+
+def _cmd_storage_migrate(args: argparse.Namespace) -> int:
+    private_paths = getattr(args, "_private_paths", None)
+    local_root = args.local_root or (
+        private_paths.root if private_paths is not None else args.db.parent
+    )
+    try:
+        result = migrate_legacy_storage(
+            database=args.db,
+            local_root=local_root,
+            drive_mount_root=args.drive_mount_root,
+            batch_size=args.batch_size,
+            require_complete=args.require_complete,
+            snapshot_path=args.snapshot_out,
+        )
+    except StorageMigrationError as exc:
+        raise SystemExit(str(exc)) from exc
+    _emit(result.as_dict())
+    return 0
+
+
+def _cmd_storage_reconcile(args: argparse.Namespace) -> int:
+    with open_ledger_db(args.db) as db:
+        try:
+            result = reconcile_backend(db, backend_key=args.backend, limit=args.limit)
+        except StorageReconcileError as exc:
+            raise SystemExit(str(exc)) from exc
+    _emit(result)
+    return 2 if result["failed"] else 0
+
+
+def _cmd_storage_backend_upsert(args: argparse.Namespace) -> int:
+    payload = _load_json_object(args.input)
+    with open_ledger_db(args.db) as db:
+        row = db.upsert_storage_backend(**payload)
+    _emit(row)
     return 0
 
 
