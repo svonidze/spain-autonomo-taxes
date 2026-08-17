@@ -23,7 +23,9 @@ In the `spain-autonomo-taxes` bucket:
 3. Create service account `autonomo-backup` and assign `storage.uploader` on
    this bucket only.
 4. Create one static access key for that service account and save its ID and
-   secret only in the server rclone config with mode `0600`.
+   secret only in the server rclone config with mode `0600`. Configure the
+   raw S3 remote with `no_check_bucket = true`: `storage.uploader` intentionally
+   cannot call the bucket-creation check that rclone performs by default.
 5. Configure three rclone `crypt` remotes, each rooted at exactly one raw S3
    prefix: `backups/daily/`, `backups/monthly/`, and `data/evidence/`.
 6. Configure Object Storage lifecycle: daily 35 days, monthly 400 days,
