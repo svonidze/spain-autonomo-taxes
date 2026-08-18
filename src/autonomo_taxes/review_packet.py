@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import hashlib
 import json
 from pathlib import Path
 import sqlite3
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from .fx_policy import ALLOWED_PRODUCTION_SOURCES, XOLO_RECORDED_PRODUCTION_THROUGH
 from .ledger_db import LedgerDB, VALID_LIFECYCLE_TRANSITIONS
@@ -101,6 +101,17 @@ ISSUE_REQUIREMENT_STEP_CODES = {
     "counterparty_tax_profile_review": {"confirm_counterparty_tax_profile"},
     "transaction_tax_review": set(),
 }
+# FX sources that may be chosen through the guided confirmation flow. ECB
+# rates are re-verified server-side; settlement rates must carry a documented
+# reference. Other sources stay manual-only.
+CONFIRM_FX_SOURCES = {"ecb", "actual_settlement"}
+FX_SUGGESTION_STATUSES = ("existing", "exact", "prior", "unavailable")
+FX_SOURCE_LABELS = {
+    "ecb": "ECB / Banco de España reference rate",
+    "banco_de_espana": "Banco de España reference rate",
+    "xolo_recorded": "Recorded in Xolo",
+    "actual_settlement": "Documented settlement rate",
+}
 
 
 class ReviewPacketError(ValueError):
@@ -119,7 +130,12 @@ def prepare_review_packet(db: LedgerDB, review_id: str) -> dict[str, Any]:
     return packet
 
 
-def prepare_review_work_item(db: LedgerDB, review_id: str) -> dict[str, Any]:
+def prepare_review_work_item(
+    db: LedgerDB,
+    review_id: str,
+    *,
+    fx_suggestion: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     packet = prepare_review_packet(db, review_id)
     requirement_step_codes, unsupported_reasons = _derive_requirement_step_codes(packet)
     return {
@@ -132,6 +148,130 @@ def prepare_review_work_item(db: LedgerDB, review_id: str) -> dict[str, Any]:
         ],
         "supported": not unsupported_reasons,
         "unsupported_reasons": unsupported_reasons,
+        "fx_suggestion": fx_suggestion,
+        "guidance": _build_guidance(packet, fx_suggestion),
+    }
+
+
+def build_fx_suggestion(
+    state: Mapping[str, Any],
+    *,
+    provenance: Mapping[str, Any] | None = None,
+    ecb_result: Any = None,
+    ecb_error: str | None = None,
+) -> dict[str, Any] | None:
+    """Project the FX suggestion for a work item without touching the DB.
+
+    ``ecb_result`` is the service lookup (``status`` + ``observation``
+    attributes) when the caller fetched one; ``ecb_error`` explains a failed
+    or missing lookup. An already-linked rate is surfaced as ``existing``.
+    """
+
+    transaction = state["transaction"]
+    original_currency = str(
+        transaction["original_currency"] or transaction["currency"] or "EUR"
+    ).upper()
+    if original_currency == "EUR":
+        return None
+    transaction_date = date.fromisoformat(str(transaction["transaction_date"])[:10])
+    base: dict[str, Any] = {
+        "currency": original_currency,
+        "transaction_date": transaction_date.isoformat(),
+        "rate_date": None,
+        "eur_per_unit": None,
+        "units_per_eur": None,
+        "rate_source": None,
+        "source_reference": None,
+        "source_label": FX_SOURCE_LABELS.get("ecb"),
+        "raw_observation": None,
+        "raw_observation_hash": None,
+        "provenance": dict(provenance) if provenance else None,
+        "amount_eur": None,
+        "note": None,
+    }
+    if transaction["fx_rate_id"] is not None:
+        fx = state.get("fx")
+        if fx is not None:
+            base["status"] = "existing"
+            base["rate_date"] = str(fx["rate_date"])[:10]
+            base["eur_per_unit"] = str(fx["rate"])
+            base["rate_source"] = fx["rate_source"]
+            base["source_reference"] = fx.get("source_reference")
+            base["source_label"] = FX_SOURCE_LABELS.get(fx["rate_source"], fx["rate_source"])
+            if transaction["amount_eur_minor"] is not None:
+                base["amount_eur"] = _minor_to_eur_text(transaction["amount_eur_minor"])
+            return base
+    if ecb_result is not None:
+        observation = ecb_result.observation
+        base["status"] = str(ecb_result.status)
+        base["rate_date"] = observation.rate_date.isoformat()
+        base["eur_per_unit"] = format(observation.eur_per_unit, "f")
+        base["units_per_eur"] = format(observation.units_per_eur, "f")
+        base["rate_source"] = "ecb"
+        base["source_reference"] = observation.source_url
+        base["raw_observation"] = observation.raw_observation
+        base["raw_observation_hash"] = observation.raw_observation_hash
+        original_minor = transaction["amount_original_minor"]
+        if original_minor is not None:
+            base["amount_eur"] = _minor_to_eur_text(
+                int(
+                    (Decimal(int(original_minor)) * Decimal(observation.eur_per_unit)).quantize(
+                        Decimal("1"), rounding=ROUND_HALF_UP
+                    )
+                )
+            )
+        if str(ecb_result.status) != "exact":
+            base["note"] = "prior_business_day"
+        return base
+    base["status"] = "unavailable"
+    base["note"] = ecb_error or "manual_settlement_required"
+    return base
+
+
+def confirm_review_packet(
+    db: LedgerDB,
+    packet: Mapping[str, Any],
+    fx_spec: Mapping[str, Any] | None = None,
+    *,
+    ecb_verify: Callable[[str, date], Decimal] | None = None,
+) -> dict[str, Any]:
+    """Confirm a guided review: FX and decision commit in one transaction.
+
+    The snapshot is verified against the live state, the chosen FX (when
+    present) is validated — ECB rates against a fresh official lookup, 
+    settlement rates against their documented reference — and applied, the
+    packet is rebuilt with the new state, the full decision is validated and
+    applied. Any failure rolls back both the FX and the decision.
+    """
+
+    _validate_packet_shape(packet)
+    if fx_spec is not None:
+        _validate_fx_spec_shape(fx_spec)
+    connection = db.connection
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        live_packet = _build_packet(db, str(packet["review_id"]))
+        _validate_snapshot(packet, live_packet)
+        _verify_archived_document(db, live_packet["state"])
+        if fx_spec is not None:
+            _apply_confirmed_fx(
+                db, live_packet["state"], fx_spec, ecb_verify=ecb_verify
+            )
+            live_packet = _build_packet(db, str(packet["review_id"]))
+        decision = _validate_decision(packet["decision"], live_packet["state"])
+        result = _apply_decision(db, live_packet["state"], decision)
+        connection.commit()
+    except Exception:
+        if connection.in_transaction:
+            connection.rollback()
+        raise
+    return {
+        "review_id": packet["review_id"],
+        "dry_run": False,
+        "outcome": decision["outcome"],
+        "posted": False,
+        "fx_applied": fx_spec is not None,
+        **result,
     }
 
 
@@ -179,7 +319,7 @@ def classify_review_packet_failure(message: str) -> tuple[str, int]:
         return "unknown_review", 404
     if message.startswith("Review packet is stale") or message.startswith(
         "Review packet state was edited"
-    ):
+    ) or message.startswith("Concurrent update prevented"):
         return "stale_snapshot", 409
     if message.startswith("Terminal ") or message.startswith("Invalid ") or (
         message.startswith("Period ") and message.endswith(" is not open")
@@ -187,6 +327,10 @@ def classify_review_packet_failure(message: str) -> tuple[str, int]:
         return "review_conflict", 409
     if message.startswith("Guided review requires exactly one invoice_review tax treatment"):
         return "unsupported_work_item", 409
+    if message.startswith("ECB rate verification failed"):
+        return "ecb_verification_failed", 409
+    if message.startswith("FX confirmation") or message.startswith("FX rate"):
+        return "fx_invalid", 400
     return "review_packet_invalid", 400
 
 
@@ -1020,6 +1164,280 @@ def _validate_issue_resolutions(value: Any, issues: list[dict[str, Any]]) -> lis
     if seen != expected_ids:
         raise ReviewPacketError("issue_resolutions must retain every issue from the packet")
     return result
+
+
+def _validate_fx_spec_shape(fx_spec: Mapping[str, Any]) -> None:
+    expected = {
+        "rate_date",
+        "rate",
+        "rate_source",
+        "source_reference",
+        "raw_observation",
+        "supersedes_rate_id",
+    }
+    allowed = expected | {"raw_observation_hash"}
+    missing = sorted(expected - set(fx_spec))
+    extra = sorted(set(fx_spec) - allowed)
+    if missing or extra:
+        details = []
+        if missing:
+            details.append("missing=" + ",".join(missing))
+        if extra:
+            details.append("extra=" + ",".join(extra))
+        raise ReviewPacketError("Invalid FX confirmation fields: " + "; ".join(details))
+
+
+def _apply_confirmed_fx(
+    db: LedgerDB,
+    state: Mapping[str, Any],
+    fx_spec: Mapping[str, Any],
+    *,
+    ecb_verify: Callable[[str, date], Decimal] | None = None,
+) -> None:
+    """Validate and apply the chosen FX inside the caller's transaction."""
+
+    transaction = state["transaction"]
+    original_currency = str(
+        transaction["original_currency"] or transaction["currency"] or "EUR"
+    ).upper()
+    if original_currency == "EUR":
+        raise ReviewPacketError("EUR transactions do not require FX confirmation")
+    rate_source = str(fx_spec["rate_source"]).strip()
+    if rate_source not in CONFIRM_FX_SOURCES:
+        raise ReviewPacketError(
+            "FX confirmation requires rate_source 'ecb' or 'actual_settlement'"
+        )
+    try:
+        rate = Decimal(str(fx_spec["rate"]).strip())
+    except (InvalidOperation, ValueError) as exc:
+        raise ReviewPacketError("FX rate must be a decimal number") from exc
+    if not rate.is_finite() or rate <= 0:
+        raise ReviewPacketError("FX rate must be positive")
+    try:
+        rate_date = date.fromisoformat(str(fx_spec["rate_date"])[:10])
+    except ValueError as exc:
+        raise ReviewPacketError("FX rate_date must be an ISO date") from exc
+    source_reference = str(fx_spec["source_reference"] or "").strip()
+    if not source_reference:
+        raise ReviewPacketError(
+            "FX confirmation requires a documented source reference"
+        )
+    raw_observation = str(fx_spec["raw_observation"] or "").strip()
+    if not raw_observation:
+        raise ReviewPacketError("FX confirmation requires the raw observation")
+    provided_hash = str(fx_spec.get("raw_observation_hash") or "").strip()
+    if provided_hash and provided_hash.lower() != hashlib.sha256(
+        raw_observation.encode("utf-8")
+    ).hexdigest():
+        raise ReviewPacketError(
+            "raw_observation_hash does not match raw_observation"
+        )
+    supersedes_rate_id = fx_spec.get("supersedes_rate_id")
+    if supersedes_rate_id is not None and not str(supersedes_rate_id).strip():
+        raise ReviewPacketError("supersedes_rate_id must be a rate ID or null")
+
+    transaction_date = date.fromisoformat(str(transaction["transaction_date"])[:10])
+    if rate_source != "actual_settlement" and rate_date > transaction_date:
+        raise ReviewPacketError("FX rate cannot be dated after the transaction")
+
+    if rate_source == "ecb":
+        if ecb_verify is None:
+            raise ReviewPacketError(
+                "ECB rate verification is not available on this server"
+            )
+        try:
+            verified = ecb_verify(original_currency, rate_date)
+        except ReviewPacketError:
+            raise
+        except Exception as exc:  # noqa: PERF203 - defensive boundary
+            raise ReviewPacketError(
+                f"ECB rate verification failed: {exc}"
+            ) from exc
+        if verified is None:
+            raise ReviewPacketError(
+                "ECB rate verification failed: no official observation for "
+                f"{rate_date.isoformat()} {original_currency}"
+            )
+        if Decimal(str(verified)) != rate:
+            raise ReviewPacketError(
+                "ECB rate verification failed: the official rate does not match "
+                "the submitted rate"
+            )
+
+    if transaction["amount_original_minor"] is None:
+        raise ReviewPacketError(
+            "Foreign-currency transaction is missing its original amount"
+        )
+    db._apply_review_fx_rate(
+        transaction["transaction_id"],
+        expected_row_version=int(transaction["row_version"]),
+        rate_date=rate_date.isoformat(),
+        rate=format(rate, "f"),
+        rate_source=rate_source,
+        source_reference=source_reference,
+        provenance={
+            "raw_observation": raw_observation,
+            "supersedes_rate_id": (
+                str(supersedes_rate_id).strip() if supersedes_rate_id else None
+            ),
+        },
+    )
+
+
+def _minor_to_eur_text(value: int) -> str:
+    return f"{value // 100}.{value % 100:02d}"
+
+
+def _build_guidance(
+    packet: Mapping[str, Any],
+    fx_suggestion: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Describe the guided flow: profiles, questions, and prefilled values.
+
+    No tax rules are added here; the questions mirror the packet's existing
+    required decisions so ambiguous IVA/AEAT calls stay manual.
+    """
+
+    state = packet["state"]
+    transaction = state["transaction"]
+    decision = packet["decision"]
+    treatment = decision.get("tax_treatment") or {}
+    entry_type = transaction["entry_type"]
+    original_currency = str(
+        transaction["original_currency"] or transaction["currency"] or "EUR"
+    ).upper()
+    issues = state.get("issues") or []
+    counterparty = state.get("counterparty") or {}
+
+    def _filled(value: Any) -> bool:
+        return value not in (None, "", {})
+
+    questions: list[dict[str, Any]] = []
+
+    def add_question(
+        question_id: str,
+        decision_path: str,
+        kind: str,
+        required_for: list[str],
+        *,
+        auto_filled: bool = False,
+        source: str | None = None,
+    ) -> None:
+        questions.append(
+            {
+                "id": question_id,
+                "decision_path": decision_path,
+                "kind": kind,
+                "required_for": required_for,
+                "auto_filled": auto_filled,
+                "source": source,
+            }
+        )
+
+    add_question(
+        "business_purpose",
+        "decision.business_purpose",
+        "text",
+        ["approve"],
+        auto_filled=_filled(decision.get("business_purpose")),
+        source="intake" if _filled(decision.get("business_purpose")) else None,
+    )
+    if entry_type == "expense":
+        add_question(
+            "asset_decision",
+            "decision.asset_decision",
+            "choice",
+            ["approve"],
+            auto_filled=_filled(decision.get("asset_decision")),
+        )
+        add_question(
+            "deductible_irpf_minor",
+            "decision.tax_treatment.deductible_irpf_minor",
+            "number",
+            ["approve"],
+            auto_filled=_filled(treatment.get("deductible_irpf_minor")),
+            source="extraction" if _filled(treatment.get("deductible_irpf_minor")) else None,
+        )
+    add_question("tax_code", "decision.tax_treatment.tax_code", "choice", ["approve"])
+    if original_currency != "EUR":
+        add_question(
+            "fx_rate",
+            "fx",
+            "fx",
+            ["approve"],
+            auto_filled=bool(
+                fx_suggestion
+                and fx_suggestion.get("status") in {"existing", "exact", "prior"}
+            ),
+            source="ecb" if fx_suggestion and fx_suggestion.get("status") in {"exact", "prior"} else None,
+        )
+    add_question("document_valid", "decision.document_valid", "boolean", ["approve", "reject"])
+    add_question("reason", "decision.reason", "text", ["approve", "reject"])
+    for index, issue in enumerate(issues):
+        add_question(
+            f"issue_{index}",
+            f"decision.issue_resolutions.{index}",
+            "issue",
+            ["approve"],
+            source="issue",
+        )
+    if counterparty and str(counterparty.get("country_code") or "") in {"", "ZZ"}:
+        add_question(
+            "counterparty_country",
+            "decision.counterparty_changes.country_code",
+            "text",
+            ["approve"],
+        )
+
+    return {
+        "decision_profiles": [
+            {
+                "code": "approve",
+                "label_key": "review.outcomeApprove",
+                "required_questions": [
+                    question["id"]
+                    for question in questions
+                    if "approve" in question["required_for"]
+                ],
+            },
+            {
+                "code": "reject",
+                "label_key": "review.outcomeReject",
+                "required_questions": ["reason", "document_valid"],
+            },
+        ],
+        "questions": questions,
+        "auto_filled": {
+            "business_purpose": decision.get("business_purpose"),
+            "asset_decision": decision.get("asset_decision"),
+            "deductible_irpf_minor": treatment.get("deductible_irpf_minor"),
+        },
+        "hidden_technical_fields": [
+            "decision.tax_treatment.aeat_invoice_type",
+            "decision.tax_treatment.aeat_operation_key",
+            "decision.tax_treatment.aeat_operation_qualification",
+            "decision.tax_treatment.aeat_exemption_code",
+            "decision.tax_treatment.aeat_reverse_charge",
+            "decision.tax_treatment.aeat_expense_concept",
+            "decision.tax_treatment.rate_basis_points",
+            "decision.tax_treatment.taxable_base_minor",
+            "decision.tax_treatment.vat_minor",
+            "decision.tax_treatment.deductible_vat_minor",
+            "decision.tax_treatment.withholding_minor",
+            "decision.tax_treatment.include_modelo130",
+            "decision.tax_treatment.include_modelo303",
+            "decision.tax_treatment.include_modelo347",
+            "decision.tax_treatment.rule_version_id",
+            "decision.tax_treatment.notes",
+        ],
+        # Issue types the UI may close automatically once every covering
+        # question is answered with a confirmed value. Everything else stays
+        # an explicit user resolution.
+        "issue_coverage": {
+            "transaction_tax_review": ["business_purpose", "tax_code"],
+            "counterparty_tax_profile_review": ["counterparty_country"],
+        },
+    }
 
 
 def _validate_fx(state: Mapping[str, Any]) -> None:
