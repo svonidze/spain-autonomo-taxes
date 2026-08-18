@@ -275,6 +275,53 @@ const messages = {
     "documents.type": "Тип",
     "issues.none": "Открытых вопросов нет",
     "issues.sourceDetails": "Исходные сведения",
+    "routes.unknownTitle": "Страница не найдена",
+    "routes.unknownHint": "Такого раздела нет. Откройте обзор, чтобы продолжить.",
+    "routes.backToDashboard": "К обзору",
+    "review.factsTitle": "Факты счёта",
+    "review.questionsTitle": "Что нужно от вас",
+    "review.confirmAction": "Подтвердить проверку",
+    "review.confirmHint": "Проверка применяется одной операцией: курс (если нужен) и решение по счёту.",
+    "review.confirmSuccess": "Проверка подтверждена, решение применено.",
+    "review.rejectAction": "Отклонить счёт",
+    "review.rejectTitle": "Отклонение счёта",
+    "review.rejectLead": "Отклонение — отдельное действие: укажите валидность документа и причину.",
+    "review.rejectConfirm": "Подтвердить отклонение",
+    "review.rejectSuccess": "Счёт отклонён.",
+    "review.rejectDocumentRequired": "Для отклонения нужно явно указать, валиден ли документ.",
+    "review.rejectReasonRequired": "Для отклонения нужна причина.",
+    "review.fxSuggestionLabel": "Справочный курс ECB / Banco de España",
+    "review.fxExactRate": "Курс на {date}",
+    "review.fxPriorRate": "Курс предыдущего рабочего дня, {date}",
+    "review.fxUseManual": "Документированный settlement-курс",
+    "review.fxExisting": "Курс уже применён к счёту",
+    "review.fxUnavailable": "Справочный курс недоступен",
+    "review.fxUnavailableHint": "Справочного курса на эту дату нет. Укажите документированный settlement-курс со ссылкой на документ.",
+    "review.fxSettlementRate": "Settlement-курс (EUR за {currency})",
+    "review.fxSettlementReference": "Ссылка на settlement-документ",
+    "review.fxSettlementDate": "Дата settlement",
+    "review.fxAmount": "Сумма в EUR",
+    "review.fxNeeded": "Курс не выбран",
+    "review.fxChoiceNote": "Справочный курс — не фактический банковский курс.",
+    "review.autoFilledTitle": "Заполнено автоматически",
+    "review.autoFilledIntake": "из приёма документа",
+    "review.autoFilledExtraction": "из извлечённых значений",
+    "review.autoFilledDefault": "значение по умолчанию",
+    "review.issueAutoResolveHint": "Закроется автоматически: подтверждены ответы {labels}.",
+    "review.irpfPreview": "≈ {amount} EUR",
+    "review.technicalDetails": "Технические поля AEAT и центы",
+    "review.errorGeneral": "Не удалось применить решение. Проверьте подсвеченные поля.",
+    "taxCodeLabels.domestic_output": "Доход в Испании (облагаемый)",
+    "taxCodeLabels.domestic_output_zero": "Доход в Испании (нулевая ставка)",
+    "taxCodeLabels.eu_goods_income": "Доход: товары в ЕС",
+    "taxCodeLabels.eu_service_income": "Доход: услуги в ЕС",
+    "taxCodeLabels.export": "Экспорт",
+    "taxCodeLabels.outside_scope": "Вне обложения",
+    "taxCodeLabels.domestic_input": "Расход в Испании",
+    "taxCodeLabels.reverse_charge": "Обратное начисление IVA",
+    "taxCodeLabels.withholding_service": "Удержание IRPF: услуги",
+    "taxCodeLabels.withholding_rent": "Удержание IRPF: аренда",
+    "taxCodeLabels.unknown": "Код не определён",
   },
   en: {
     "app.title": "Autónomo accounting",
@@ -535,6 +582,53 @@ const messages = {
     "documents.type": "Type",
     "issues.none": "No open issues",
     "issues.sourceDetails": "Source details",
+    "routes.unknownTitle": "Page not found",
+    "routes.unknownHint": "This section does not exist. Open the overview to continue.",
+    "routes.backToDashboard": "Back to overview",
+    "review.factsTitle": "Invoice facts",
+    "review.questionsTitle": "What we need from you",
+    "review.confirmAction": "Confirm review",
+    "review.confirmHint": "The review is applied in one step: the FX rate (when needed) and the invoice decision.",
+    "review.confirmSuccess": "Review confirmed, decision applied.",
+    "review.rejectAction": "Reject invoice",
+    "review.rejectTitle": "Reject invoice",
+    "review.rejectLead": "Rejection is a separate action: state whether the document is valid and why.",
+    "review.rejectConfirm": "Confirm rejection",
+    "review.rejectSuccess": "Invoice rejected.",
+    "review.rejectDocumentRequired": "A rejection needs an explicit document-valid decision.",
+    "review.rejectReasonRequired": "A rejection needs a reason.",
+    "review.fxSuggestionLabel": "ECB / Banco de España reference rate",
+    "review.fxExactRate": "Rate for {date}",
+    "review.fxPriorRate": "Previous business day rate, {date}",
+    "review.fxUseManual": "Documented settlement rate",
+    "review.fxExisting": "A rate is already applied to this invoice",
+    "review.fxUnavailable": "Reference rate unavailable",
+    "review.fxUnavailableHint": "No reference rate for this date. Provide a documented settlement rate with a document reference.",
+    "review.fxSettlementRate": "Settlement rate (EUR per {currency})",
+    "review.fxSettlementReference": "Settlement document reference",
+    "review.fxSettlementDate": "Settlement date",
+    "review.fxAmount": "EUR amount",
+    "review.fxNeeded": "No FX rate selected",
+    "review.fxChoiceNote": "The reference rate is not an actual bank settlement rate.",
+    "review.autoFilledTitle": "Filled in automatically",
+    "review.autoFilledIntake": "from document intake",
+    "review.autoFilledExtraction": "from extracted values",
+    "review.autoFilledDefault": "default value",
+    "review.issueAutoResolveHint": "Will close automatically: {labels} are confirmed.",
+    "review.irpfPreview": "≈ {amount} EUR",
+    "review.technicalDetails": "Technical AEAT and cents fields",
+    "review.errorGeneral": "The decision could not be applied. Check the highlighted fields.",
+    "taxCodeLabels.domestic_output": "Income in Spain (taxable)",
+    "taxCodeLabels.domestic_output_zero": "Income in Spain (zero rate)",
+    "taxCodeLabels.eu_goods_income": "Income: EU goods",
+    "taxCodeLabels.eu_service_income": "Income: EU services",
+    "taxCodeLabels.export": "Export",
+    "taxCodeLabels.outside_scope": "Outside scope",
+    "taxCodeLabels.domestic_input": "Expense in Spain",
+    "taxCodeLabels.reverse_charge": "VAT reverse charge",
+    "taxCodeLabels.withholding_service": "IRPF withholding: services",
+    "taxCodeLabels.withholding_rent": "IRPF withholding: rent",
+    "taxCodeLabels.unknown": "Code not set",
   },
 };
 
@@ -745,6 +839,8 @@ const state = {
     validationResult: null,
     error: "",
     busy: false,
+    fxChoice: null,
+    confirmError: null,
   },
   posting: {
     preview: null,
@@ -798,6 +894,103 @@ function isFutureDateValue(value, today = todayIso()) {
 
 function reviewIdFromTransaction(transactionId) {
   return `transaction:${transactionId}`;
+}
+
+/* ----------------------------- routing ------------------------------ */
+
+const ROUTE_VIEWS = {
+  "/dashboard": "dashboard",
+  "/income": "income",
+  "/expenses": "expenses",
+  "/review": "review",
+  "/assets": "assets",
+  "/taxes": "taxes",
+  "/contacts": "contacts",
+};
+const REVIEW_DETAIL_RE = /^\/review\/([0-9a-fA-F-]{32,36})$/;
+const PERIOD_ROUTE_PATHS = new Set(["/dashboard", "/income", "/expenses", "/review"]);
+
+function parseRoute(pathname) {
+  const path = String(pathname || "/").split("?")[0].split("#")[0];
+  const normalized = path === "" ? "/" : path;
+  const detail = REVIEW_DETAIL_RE.exec(normalized);
+  if (detail) return {view: "review", reviewId: detail[1]};
+  if (ROUTE_VIEWS[normalized]) return {view: ROUTE_VIEWS[normalized], reviewId: null};
+  return null;
+}
+
+function routePathFor(view, reviewId = null) {
+  if (view === "review" && reviewId) return `/review/${encodeURIComponent(reviewId)}`;
+  if (view === "review") return "/review";
+  return `/${view}`;
+}
+
+function buildRouteUrl(view, {period = state.period, reviewId = null} = {}) {
+  const path = routePathFor(view, reviewId);
+  if (!PERIOD_ROUTE_PATHS.has(path) || !period) return path;
+  return `${path}?period=${encodeURIComponent(period)}`;
+}
+
+function routePeriodFromQuery(search) {
+  let value = "";
+  try {
+    value = new URLSearchParams(String(search || "")).get("period") || "";
+  } catch {
+    return null;
+  }
+  const text = String(value || "").trim().toUpperCase();
+  if (!text) return null;
+  const known = (state.bootstrap?.periods || []).map((row) => row.period_key);
+  return known.includes(text) ? text : null;
+}
+
+function unknownRoutePanel() {
+  return `
+    <div class="empty-state">
+      <strong>${escapeHtml(t("routes.unknownTitle"))}</strong>
+      <p>${escapeHtml(t("routes.unknownHint"))}</p>
+      <a class="primary-button" href="/dashboard" data-spa>${escapeHtml(t("routes.backToDashboard"))}</a>
+    </div>`;
+}
+
+function selectedReviewTransactionId() {
+  const reviewId = state.review.selectedReviewId || "";
+  return reviewId.startsWith("transaction:") ? reviewId.slice("transaction:".length) : "";
+}
+
+function applyRouteFromLocation() {
+  if (!state.bootstrap) return false;
+  const route = parseRoute(window.location.pathname);
+  if (!route) {
+    app.innerHTML = unknownRoutePanel();
+    return false;
+  }
+  if (PERIOD_ROUTE_PATHS.has(routePathFor(route.view, route.reviewId))) {
+    const period = routePeriodFromQuery(window.location.search);
+    if (period && period !== state.period) {
+      state.period = period;
+      if (periodSelect) periodSelect.value = period;
+    }
+  }
+  if (route.view !== "review") {
+    state.review.selectedReviewId = null;
+    state.review.workItem = null;
+    state.review.fxChoice = null;
+    state.review.confirmError = null;
+  } else if (route.reviewId) {
+    state.review.selectedReviewId = `transaction:${route.reviewId}`;
+  }
+  state.view = route.view;
+  applyViewState();
+  void renderCurrentView();
+  return true;
+}
+
+function navigateToRoute(view, {reviewId = null, replace = false} = {}) {
+  const url = buildRouteUrl(view, {reviewId});
+  if (replace) window.history.replaceState(null, "", url);
+  else window.history.pushState(null, "", url);
+  applyRouteFromLocation();
 }
 
 function deepClone(value) {
@@ -1053,22 +1246,6 @@ function updateReviewDecision(path, value) {
   state.review.validationResult = null;
   state.review.error = "";
   persistReviewDraft(state.review.workItem.packet);
-}
-
-function markReviewValidationPending() {
-  const primaryButton = document.querySelector("#review-primary-button");
-  if (primaryButton) primaryButton.textContent = t("review.primaryValidate");
-  const resultStack = document.querySelector(".review-result-stack");
-  const alert = resultStack?.querySelector(".review-alert");
-  if (alert) {
-    alert.className = "review-alert info";
-    alert.innerHTML = `
-      <strong>${escapeHtml(t("review.validationPending"))}</strong>
-      <p>${escapeHtml(t("review.validationPending"))}</p>`;
-  }
-  resultStack?.querySelector(".review-preview")?.remove();
-  const status = resultStack?.closest(".review-panel")?.querySelector(".panel-header small");
-  if (status) status.textContent = t("review.validationPending");
 }
 
 function currentReviewPacket() {
@@ -1478,7 +1655,10 @@ async function init() {
       .join("");
     periodSelect.value = state.period;
     newEntryButton.disabled = !state.bootstrap.intake_enabled;
-    await renderCurrentView();
+    if (window.location.pathname === "/" || window.location.pathname === "") {
+      window.history.replaceState(null, "", buildRouteUrl("dashboard"));
+    }
+    applyRouteFromLocation();
   } catch (error) {
     app.innerHTML = errorState(error);
   }
@@ -1550,13 +1730,8 @@ async function renderDashboard(renderGeneration = currentRenderGeneration) {
       </section>
     </div>
   `;
-  document.querySelector("#dashboard-ready-banner")?.addEventListener("click", async () => {
-    state.view = "review";
-    document.querySelectorAll(".nav-item").forEach((item) => {
-      item.classList.toggle("active", item.dataset.view === "review");
-    });
-    pageTitle.textContent = t("titles.review");
-    await renderCurrentView();
+  document.querySelector("#dashboard-ready-banner")?.addEventListener("click", () => {
+    navigateToRoute("review");
   });
 }
 
@@ -1618,6 +1793,8 @@ async function fetchReviewWorkItem(reviewId, options = {}) {
   state.review.validationDirty = true;
   state.review.validationResult = null;
   state.review.error = "";
+  state.review.fxChoice = initialFxChoice(state.review.workItem.fx_suggestion);
+  state.review.confirmError = null;
   persistReviewDraft(mergedPacket, {factsOnly: options.factsOnly});
 }
 
@@ -1695,19 +1872,6 @@ function renderReviewOverview() {
       </section>
     </div>
   `;
-  document.querySelectorAll("[data-open-review-id]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      state.review.selectedReviewId = button.dataset.openReviewId;
-      app.innerHTML = `<div class="loading-state">${escapeHtml(t("common.loading"))}</div>`;
-      try {
-        await fetchReviewWorkItem(state.review.selectedReviewId);
-        renderReviewWorkspace();
-      } catch (error) {
-        state.review.selectedReviewId = null;
-        app.innerHTML = errorState(error);
-      }
-    });
-  });
 }
 
 function reviewTransactionTable(rows) {
@@ -1737,7 +1901,7 @@ function reviewTransactionTable(rows) {
                 <td class="amount">${row.amount_eur ? eur(row.amount_eur) : `${escapeHtml(row.amount_original || "—")} ${escapeHtml(row.currency || "")}`}</td>
                 <td class="table-actions">
                   ${row.document_id ? `<a class="text-button" href="/api/document/${encodeURIComponent(row.document_id)}/content" target="_blank" rel="noreferrer">${escapeHtml(t("review.documentLink"))}</a>` : ""}
-                  ${canOpenWorkspace ? `<button type="button" class="secondary-button compact-button" data-open-review-id="${escapeHtml(reviewId)}">${escapeHtml(t("review.openWorkspace"))}</button>` : ""}
+                  ${canOpenWorkspace ? `<a class="secondary-button compact-button" href="${escapeHtml(buildRouteUrl("review", {reviewId}))}" data-spa data-open-review-id="${escapeHtml(reviewId)}">${escapeHtml(t("review.openWorkspace"))}</a>` : ""}
                 </td>
               </tr>`;
           }).join("") || emptyRow(6)}
@@ -1821,6 +1985,258 @@ function renderReviewIssueResolution(issue, index, resolution) {
     </article>`;
 }
 
+/* -------------------------- Guided review --------------------------- */
+
+function taxCodeLabel(code) {
+  const value = String(code || "").trim();
+  if (!value) return "";
+  const key = `taxCodeLabels.${value}`;
+  const label = messages[state.locale]?.[key] || messages.ru[key];
+  return label ? label : value;
+}
+
+function taxCodeSelectOptions(values, selectedValue, includeBlank = true) {
+  const options = [];
+  if (includeBlank) options.push(`<option value=""></option>`);
+  values.forEach((value) => {
+    options.push(`<option value="${escapeHtml(value)}"${value === selectedValue ? " selected" : ""}>${escapeHtml(taxCodeLabel(value))}</option>`);
+  });
+  return options.join("");
+}
+
+function questionAnswerMap(decision, reviewState, fxChoice) {
+  const text = (value) => String(value || "").trim();
+  const counterparty = reviewState?.counterparty || {};
+  return {
+    business_purpose: Boolean(text(decision?.business_purpose)),
+    tax_code: Boolean(decision?.tax_treatment?.tax_code),
+    deductible_irpf_minor: decision?.tax_treatment?.deductible_irpf_minor != null,
+    asset_decision: Boolean(decision?.asset_decision),
+    counterparty_country: Boolean(text(decision?.counterparty_changes?.country_code)) ||
+      (Boolean(counterparty.country_code) && counterparty.country_code !== "ZZ"),
+    fx_rate: Boolean(fxChoice),
+    reason: Boolean(text(decision?.reason)),
+    document_valid: decision?.document_valid === true || decision?.document_valid === false,
+  };
+}
+
+function autoResolveCoveredIssues(packet, coverage = {}, answered = {}) {
+  const decision = packet?.decision;
+  if (!decision || !Array.isArray(decision.issue_resolutions)) return decision;
+  const issues = packet?.state?.issues || [];
+  decision.issue_resolutions.forEach((resolution, index) => {
+    if (!resolution) return;
+    const issue = issues[index];
+    const covering = coverage?.[issue?.issue_code];
+    if (!Array.isArray(covering) || covering.length === 0) return;
+    if (covering.every((questionId) => Boolean(answered[questionId]))) {
+      resolution.action = "resolve";
+      if (!resolution.reason) {
+        resolution.reason = t("review.issueAutoResolveHint", {labels: covering.length});
+      }
+    }
+  });
+  return decision;
+}
+
+function mapConfirmErrorToQuestion(message) {
+  const text = String(message || "").toLowerCase();
+  if (text.includes("business_purpose") || text.includes("business purpose")) return "business_purpose";
+  if (text.includes("tax_code") || text.includes("tax code")) return "tax_code";
+  if (text.includes("deductible_irpf")) return "deductible_irpf_minor";
+  if (text.includes("counterparty") || text.includes("country")) return "counterparty_country";
+  if (text.includes("document_valid") || text.includes("document valid")) return "document_valid";
+  if (text.includes("asset")) return "asset_decision";
+  if (text.includes("fx") || text.includes("rate") || text.includes("eur")) return "fx_rate";
+  if (text.includes("issue")) return "issues";
+  if (text.includes("reason")) return "reason";
+  return "general";
+}
+
+function inlineErrorFor(questionId) {
+  const error = state.review.confirmError;
+  if (!error || error.target !== questionId) return "";
+  return `<p class="review-inline-error" role="alert">${escapeHtml(error.message)}</p>`;
+}
+
+function buildConfirmFxSpec(fxChoice, suggestion) {
+  if (!fxChoice) return null;
+  if (fxChoice.mode === "ecb" && suggestion) {
+    return {
+      rate_date: suggestion.rate_date,
+      rate: suggestion.eur_per_unit,
+      rate_source: "ecb",
+      source_reference: suggestion.source_reference,
+      raw_observation: suggestion.raw_observation,
+      raw_observation_hash: suggestion.raw_observation_hash || null,
+      supersedes_rate_id: null,
+    };
+  }
+  const rate = String(fxChoice.rate || "").trim();
+  const rateDate = String(fxChoice.rateDate || "").trim();
+  const sourceReference = String(fxChoice.sourceReference || "").trim();
+  if (!rate || !rateDate || !sourceReference) return null;
+  const rawObservation = JSON.stringify({
+    kind: "documented_settlement",
+    rate,
+    rate_date: rateDate,
+    source_reference: sourceReference,
+  });
+  return {
+    rate_date: rateDate,
+    rate,
+    rate_source: "actual_settlement",
+    source_reference: sourceReference,
+    raw_observation: rawObservation,
+    raw_observation_hash: null,
+    supersedes_rate_id: null,
+  };
+}
+
+function fxChoiceNeeded(transaction) {
+  if (!transaction) return false;
+  const currency = String(transaction.original_currency || transaction.currency || "EUR").toUpperCase();
+  return currency !== "EUR" && !transaction.fx_rate_id;
+}
+
+function initialFxChoice(suggestion) {
+  if (!suggestion) return null;
+  if (suggestion.status === "exact" || suggestion.status === "prior") return {mode: "ecb"};
+  return null;
+}
+
+function renderAutoFilledChips(guidance) {
+  const filled = guidance?.auto_filled || {};
+  const chips = [];
+  if (filled.business_purpose) {
+    chips.push({label: t("fields.businessPurpose"), value: String(filled.business_purpose), source: t("review.autoFilledIntake")});
+  }
+  if (filled.deductible_irpf_minor != null) {
+    chips.push({label: t("fields.deductibleIrpfMinor"), value: eur(Number(filled.deductible_irpf_minor) / 100), source: t("review.autoFilledExtraction")});
+  }
+  if (filled.asset_decision) {
+    const label = {
+      current_expense: t("review.assetCurrentExpense"),
+      asset: t("review.assetAsset"),
+      not_applicable: t("review.assetNotApplicable"),
+    }[filled.asset_decision];
+    if (label) chips.push({label: t("review.assetDecision"), value: label, source: t("review.autoFilledDefault")});
+  }
+  if (!chips.length) return "";
+  return `
+    <div class="review-autofilled">
+      <span class="review-autofilled-title">${escapeHtml(t("review.autoFilledTitle"))}</span>
+      ${chips.map((chip) => `
+        <span class="review-autofilled-chip" title="${escapeHtml(chip.source)}">
+          <strong>${escapeHtml(chip.label)}:</strong> ${escapeHtml(chip.value)}
+          <small>${escapeHtml(chip.source)}</small>
+        </span>`).join("")}
+    </div>`;
+}
+
+function renderSettlementInputs(suggestion, fxChoice) {
+  const currency = suggestion?.currency || "USD";
+  const choice = fxChoice && fxChoice.mode === "settlement" ? fxChoice : {};
+  return `
+    <div class="form-grid compact-grid fx-settlement-grid">
+      <label>
+        <span>${escapeHtml(t("review.fxSettlementRate", {currency}))}</span>
+        <input type="number" id="review-fx-settlement-rate" min="0" step="0.00000001" inputmode="decimal" value="${escapeHtml(choice.rate || "")}">
+      </label>
+      <label>
+        <span>${escapeHtml(t("review.fxSettlementDate"))}</span>
+        <input type="date" id="review-fx-settlement-date" value="${escapeHtml(choice.rateDate || suggestion?.transaction_date || todayIso())}">
+      </label>
+      <label class="full-span">
+        <span>${escapeHtml(t("review.fxSettlementReference"))}</span>
+        <input type="text" id="review-fx-settlement-reference" value="${escapeHtml(choice.sourceReference || "")}">
+      </label>
+    </div>`;
+}
+
+function renderFxCard(suggestion, fxChoice) {
+  if (suggestion.status === "existing") {
+    return `
+      <article class="review-card fx-card fx-card-existing">
+        <h3>${escapeHtml(t("review.fx"))}</h3>
+        <p class="fx-card-status success">${escapeHtml(t("review.fxExisting"))}</p>
+        <dl class="review-facts-list">
+          <div><dt>${escapeHtml(t("fields.fxRateDate"))}</dt><dd>${formatDate(suggestion.rate_date)}</dd></div>
+          <div><dt>${escapeHtml(t("fields.fxRate"))}</dt><dd>1 ${escapeHtml(suggestion.currency)} = ${escapeHtml(suggestion.eur_per_unit)} EUR</dd></div>
+          <div><dt>${escapeHtml(t("fields.fxRateSource"))}</dt><dd>${escapeHtml(suggestion.source_label || suggestion.rate_source || "")}</dd></div>
+          ${suggestion.amount_eur ? `<div><dt>${escapeHtml(t("review.fxAmount"))}</dt><dd>${escapeHtml(suggestion.amount_eur)} EUR</dd></div>` : ""}
+        </dl>
+      </article>`;
+  }
+  const manualActive = Boolean(fxChoice && fxChoice.mode === "settlement");
+  if (suggestion.status === "exact" || suggestion.status === "prior") {
+    return `
+      <article class="review-card fx-card ${manualActive ? "fx-card-manual" : "fx-card-suggested"}">
+        <h3>${escapeHtml(t("review.fx"))}</h3>
+        <p class="muted-copy">${escapeHtml(t("review.fxSuggestionLabel"))}</p>
+        <label class="fx-choice ${manualActive ? "" : "active"}">
+          <input type="radio" name="fx-choice" value="ecb" ${manualActive ? "" : "checked"}>
+          <span>
+            <strong>${escapeHtml(t(suggestion.status === "exact" ? "review.fxExactRate" : "review.fxPriorRate", {date: formatDate(suggestion.rate_date)}))}</strong>
+            <small>1 ${escapeHtml(suggestion.currency)} = ${escapeHtml(suggestion.eur_per_unit)} EUR${suggestion.amount_eur ? ` · ${escapeHtml(t("review.fxAmount"))} ${escapeHtml(suggestion.amount_eur)} EUR` : ""}</small>
+          </span>
+        </label>
+        <label class="fx-choice ${manualActive ? "active" : ""}">
+          <input type="radio" name="fx-choice" value="settlement" ${manualActive ? "checked" : ""}>
+          <span><strong>${escapeHtml(t("review.fxUseManual"))}</strong></span>
+        </label>
+        ${manualActive ? renderSettlementInputs(suggestion, fxChoice) : ""}
+        <p class="muted-copy fx-choice-note">${escapeHtml(t("review.fxChoiceNote"))}</p>
+        ${inlineErrorFor("fx_rate")}
+      </article>`;
+  }
+  const hint = suggestion.note && suggestion.note !== "manual_settlement_required"
+    ? String(suggestion.note)
+    : t("review.fxUnavailableHint");
+  return `
+    <article class="review-card fx-card fx-card-unavailable">
+      <h3>${escapeHtml(t("review.fx"))}</h3>
+      <p class="fx-card-status warning">${escapeHtml(t("review.fxUnavailable"))}</p>
+      <p class="muted-copy">${escapeHtml(hint)}</p>
+      ${renderSettlementInputs(suggestion, fxChoice)}
+      ${inlineErrorFor("fx_rate")}
+    </article>`;
+}
+
+function renderGuidedIssueCard(issue, index, resolution, guidance) {
+  const action = resolution?.action || "";
+  const reason = resolution?.reason || "";
+  const covering = guidance?.issue_coverage?.[issue.issue_code];
+  const answered = questionAnswerMap(
+    state.review.workItem?.packet?.decision || {},
+    state.review.workItem?.packet?.state || {},
+    state.review.fxChoice,
+  );
+  const autoClosable = Array.isArray(covering) && covering.length > 0 &&
+    covering.every((questionId) => Boolean(answered[questionId]));
+  return `
+    <article class="review-issue-card ${action === "resolve" ? "resolved" : ""} ${autoClosable ? "auto-closable" : ""}">
+      <header>
+        <strong>${escapeHtml(issueMessage(issue.issue_code))}</strong>
+        <span>${escapeHtml(action === "resolve" ? t("review.issueResolved") : t("review.issueOpen"))}</span>
+      </header>
+      <p>${escapeHtml(issue.message || "")}</p>
+      ${autoClosable ? `<p class="review-auto-close-hint">${escapeHtml(t("review.issueAutoResolveHint", {labels: covering.length}))}</p>` : ""}
+      <label>
+        <span>${escapeHtml(t("fields.reviewAction"))}</span>
+        <select data-decision-path="issue_resolutions.${index}.action" data-value-type="nullable-string">
+          <option value=""${action === "" ? " selected" : ""}></option>
+          <option value="resolve"${action === "resolve" ? " selected" : ""}>${escapeHtml(t("review.actionResolve"))}</option>
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml(t("fields.reviewReason"))}</span>
+        <textarea rows="2" data-decision-path="issue_resolutions.${index}.reason">${escapeHtml(reason)}</textarea>
+      </label>
+      ${inlineErrorFor("issues")}
+    </article>`;
+}
+
 function renderReviewWorkspace() {
   const workItem = state.review.workItem;
   if (!workItem?.packet) {
@@ -1834,20 +2250,29 @@ function renderReviewWorkspace() {
   const documentState = packetState.document || {};
   const counterparty = packetState.counterparty || {};
   const issues = packetState.issues || [];
-  const fx = packetState.fx || {};
+  const fxSuggestion = workItem.fx_suggestion || null;
+  const guidance = workItem.guidance || null;
   const evaluation = evaluateWorkItemPosting(workItem);
   const disabledWorkspace = evaluation.category === "later" || evaluation.category === "blocked";
-  const validationMessage = state.review.validationResult
-    ? t("review.validationPassed")
-    : t("review.validationPending");
+  const fxChoice = state.review.fxChoice;
   const sourceHref = documentState.document_id
     ? `/api/document/${encodeURIComponent(documentState.document_id)}/content`
     : "";
+  const needsFx = fxChoiceNeeded(transaction) && fxSuggestion && fxSuggestion.status !== "existing";
+  const originalAmount = transaction.amount_original_minor != null
+    ? `${new Intl.NumberFormat(intlLocale(), {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(transaction.amount_original_minor / 100)} ${escapeHtml(transaction.original_currency || transaction.currency || "")}`
+    : "—";
+  const irpfValue = decision.tax_treatment?.deductible_irpf_minor;
+  const irpfPreview = irpfValue != null
+    ? `<small class="review-irpf-preview">${escapeHtml(t("review.irpfPreview", {amount: eur(Number(irpfValue) / 100)}))}</small>`
+    : "";
+  const counterpartyCountryNeeded = Boolean(counterparty) &&
+    ["", "ZZ"].includes(String(counterparty.country_code || ""));
 
   app.innerHTML = `
     <div class="review-workspace">
       <div class="review-workspace-header">
-        <button type="button" class="secondary-button" id="review-back-button">${escapeHtml(t("review.workspaceBack"))}</button>
+        <a class="secondary-button review-back-link" href="${escapeHtml(buildRouteUrl("review"))}" data-spa>${escapeHtml(t("review.workspaceBack"))}</a>
         <div class="review-workspace-title">
           <h2>${escapeHtml(counterparty.display_name || documentState.document_number || t("review.workspaceTitle"))}</h2>
           <p>${escapeHtml(documentState.document_number ? t("review.invoiceLabel", {number: documentState.document_number}) : t("review.workspaceTitle"))}</p>
@@ -1867,267 +2292,214 @@ function renderReviewWorkspace() {
           <strong>${escapeHtml(t("review.summaryLater"))}</strong>
           <p>${escapeHtml(t("review.future", {date: formatDate(evaluation.availableOn)}))}</p>
         </div>` : ""}
-      ${state.review.error ? `<div class="review-alert error" role="alert">${escapeHtml(state.review.error)}</div>` : ""}
+      ${state.review.confirmError?.target === "general" ? `
+        <div class="review-alert error" role="alert">${escapeHtml(state.review.confirmError.message)}</div>` : ""}
       <form id="review-form" class="review-form">
         <section class="panel review-panel">
-          <header class="panel-header"><h2>${escapeHtml(t("review.facts"))}</h2><small>${escapeHtml(t("review.requirements"))}</small></header>
-          <div class="review-facts-grid">
-            <article class="review-card">
-              <h3>${escapeHtml(t("review.requirements"))}</h3>
-              ${renderReviewRequirements(workItem.requirements)}
-            </article>
-            <article class="review-card">
-              <h3>${escapeHtml(t("review.counterpartyFacts"))}</h3>
-              <p class="muted-copy">${escapeHtml(t("review.counterpartyFactsHint"))}</p>
-              <div class="form-grid compact-grid">
-                <label>
-                  <span>${escapeHtml(t("fields.counterpartyCountry"))}</span>
-                  <input type="text" value="${escapeHtml(decision.counterparty_changes.country_code ?? counterparty.country_code ?? "")}" data-decision-path="counterparty_changes.country_code">
-                </label>
-                <label>
-                  <span>${escapeHtml(t("fields.taxId"))}</span>
-                  <input type="text" value="${escapeHtml(decision.counterparty_changes.tax_id ?? counterparty.tax_id ?? "")}" data-decision-path="counterparty_changes.tax_id">
-                </label>
-                <label>
-                  <span>${escapeHtml(t("fields.vatId"))}</span>
-                  <input type="text" value="${escapeHtml(decision.counterparty_changes.vat_id ?? counterparty.vat_id ?? "")}" data-decision-path="counterparty_changes.vat_id">
-                </label>
-                <label>
-                  <span>${escapeHtml(t("fields.roiStatus"))}</span>
-                  <select data-decision-path="counterparty_changes.roi_status">
-                    ${reviewSelectOptions(Object.keys(roiStatusLabels), decision.counterparty_changes.roi_status ?? counterparty.roi_status ?? "unknown")}
-                  </select>
-                </label>
-                <label>
-                  <span>${escapeHtml(t("fields.legalForm"))}</span>
-                  <select data-decision-path="counterparty_changes.legal_form">
-                    ${reviewSelectOptions(Object.keys(legalFormLabels), decision.counterparty_changes.legal_form ?? counterparty.legal_form ?? "unknown")}
-                  </select>
-                </label>
-                <label class="checkbox-label">
-                  <input type="checkbox" ${Boolean(decision.counterparty_changes.professional_supplier ?? counterparty.professional_supplier) ? "checked" : ""} data-decision-path="counterparty_changes.professional_supplier" data-value-type="boolean">
-                  <span>${escapeHtml(t("fields.professionalSupplier"))}</span>
-                </label>
-                <label class="checkbox-label">
-                  <input type="checkbox" ${Boolean(decision.counterparty_changes.retention_expected ?? counterparty.retention_expected) ? "checked" : ""} data-decision-path="counterparty_changes.retention_expected" data-value-type="boolean">
-                  <span>${escapeHtml(t("fields.retentionExpected"))}</span>
-                </label>
-              </div>
-            </article>
-            <article class="review-card">
-              <h3>${escapeHtml(t("review.workspaceTitle"))}</h3>
-              <dl class="review-facts-list">
-                <div><dt>${escapeHtml(t("fields.transactionDate"))}</dt><dd>${formatDate(transaction.transaction_date)}</dd></div>
-                <div><dt>${escapeHtml(t("fields.bookingDate"))}</dt><dd>${formatDate(transaction.booking_date)}</dd></div>
-                <div><dt>${escapeHtml(t("fields.currency"))}</dt><dd>${escapeHtml(transaction.currency || documentState.currency || "EUR")}</dd></div>
-                <div><dt>${escapeHtml(t("fields.amount"))}</dt><dd>${transaction.amount_eur_minor != null ? eur(transaction.amount_eur_minor / 100) : transaction.amount_minor != null ? `${escapeHtml(new Intl.NumberFormat(intlLocale(), {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(transaction.amount_minor / 100))} ${escapeHtml(transaction.currency || "")}` : "—"}</dd></div>
-                <div><dt>${escapeHtml(t("fields.number"))}</dt><dd>${escapeHtml(documentState.document_number || "—")}</dd></div>
-                <div><dt>${escapeHtml(t("fields.issuedOn"))}</dt><dd>${formatDate(documentState.issued_on)}</dd></div>
-              </dl>
-              ${sourceHref ? `<a class="text-button" href="${escapeHtml(sourceHref)}" target="_blank" rel="noreferrer">${escapeHtml(t("review.documentLink"))}</a>` : ""}
-            </article>
-            ${(transaction.original_currency && transaction.original_currency !== "EUR") || fx.rate ? `
-              <article class="review-card">
-                <h3>${escapeHtml(t("review.fx"))}</h3>
-                <p class="muted-copy">${escapeHtml(t("review.fxHint"))}</p>
-                <div class="form-grid compact-grid">
-                  <label>
-                    <span>${escapeHtml(t("fields.fxRateDate"))}</span>
-                    <input type="date" id="review-fx-rate-date" value="${escapeHtml(fx.rate_date || transaction.transaction_date || todayIso())}">
-                  </label>
-                  <label>
-                    <span>${escapeHtml(t("fields.fxRate"))}</span>
-                    <input type="number" id="review-fx-rate" min="0" step="0.000001" inputmode="decimal" value="${escapeHtml(fx.rate || "")}">
-                  </label>
-                  <label>
-                    <span>${escapeHtml(t("fields.fxRateSource"))}</span>
-                    <select id="review-fx-source">
-                      ${reviewSelectOptions(packet.allowed_values?.production_fx_source || [], fx.rate_source || "", true)}
-                    </select>
-                  </label>
-                  <label class="full-span">
-                    <span>${escapeHtml(t("fields.fxSourceReference"))}</span>
-                    <input type="text" id="review-fx-reference" value="${escapeHtml(fx.source_reference || "")}">
-                  </label>
-                </div>
-                <button type="button" class="secondary-button" id="review-fx-apply">${escapeHtml(t("review.fxApply"))}</button>
-              </article>` : ""}
+          <header class="panel-header"><h2>${escapeHtml(t("review.factsTitle"))}</h2><small>${escapeHtml(state.period)}</small></header>
+          <div class="review-facts-summary">
+            <dl class="review-facts-list">
+              <div><dt>${escapeHtml(t("fields.transactionDate"))}</dt><dd>${formatDate(transaction.transaction_date)}</dd></div>
+              <div><dt>${escapeHtml(t("transactions.counterpartyDocument"))}</dt><dd>${escapeHtml(counterparty.display_name || "—")} · ${escapeHtml(documentState.document_number || "—")}</dd></div>
+              <div><dt>${escapeHtml(t("fields.currency"))}</dt><dd>${escapeHtml(transaction.original_currency || transaction.currency || documentState.currency || "EUR")}</dd></div>
+              <div><dt>${escapeHtml(t("fields.amount"))}</dt><dd>${escapeHtml(originalAmount)}${transaction.amount_eur_minor != null ? ` → ${escapeHtml(eur(transaction.amount_eur_minor / 100))}` : ""}</dd></div>
+              <div><dt>${escapeHtml(t("fields.issuedOn"))}</dt><dd>${formatDate(documentState.issued_on)}</dd></div>
+            </dl>
+            ${renderAutoFilledChips(guidance)}
+            ${sourceHref ? `<a class="text-button" href="${escapeHtml(sourceHref)}" target="_blank" rel="noreferrer">${escapeHtml(t("review.documentLink"))}</a>` : ""}
           </div>
         </section>
 
         <section class="panel review-panel">
-          <header class="panel-header"><h2>${escapeHtml(t("review.taxDecision"))}</h2><small>${escapeHtml(transaction.entry_type || "invoice")}</small></header>
-          <div class="form-grid review-form-grid">
-            <label>
-              <span>${escapeHtml(t("fields.outcome"))}</span>
-              <select data-decision-path="outcome">
-                <option value=""></option>
-                <option value="approve"${decision.outcome === "approve" ? " selected" : ""}>${escapeHtml(t("review.outcomeApprove"))}</option>
-                <option value="reject"${decision.outcome === "reject" ? " selected" : ""}>${escapeHtml(t("review.outcomeReject"))}</option>
-              </select>
-            </label>
-            <label>
-              <span>${escapeHtml(t("fields.documentValid"))}</span>
-              <select data-decision-path="document_valid" data-value-type="boolean">
-                <option value=""></option>
-                <option value="true"${decision.document_valid === true ? " selected" : ""}>${escapeHtml(t("common.yes"))}</option>
-                <option value="false"${decision.document_valid === false ? " selected" : ""}>${escapeHtml(t("common.no"))}</option>
-              </select>
+          <header class="panel-header"><h2>${escapeHtml(t("review.questionsTitle"))}</h2><small>${escapeHtml(transaction.entry_type || "invoice")}</small></header>
+          <div class="review-guided-grid">
+            <label class="review-guided-field">
+              <span>${escapeHtml(t("fields.businessPurpose"))}</span>
+              <textarea rows="2" data-decision-path="business_purpose">${escapeHtml(decision.business_purpose || "")}</textarea>
+              ${inlineErrorFor("business_purpose")}
             </label>
             ${transaction.entry_type === "expense" ? `
-              <label>
+              <label class="review-guided-field">
                 <span>${escapeHtml(t("review.assetDecision"))}</span>
                 <select data-decision-path="asset_decision">
                   <option value=""></option>
                   <option value="current_expense"${decision.asset_decision === "current_expense" ? " selected" : ""}>${escapeHtml(t("review.assetCurrentExpense"))}</option>
                   <option value="asset"${decision.asset_decision === "asset" ? " selected" : ""}>${escapeHtml(t("review.assetAsset"))}</option>
                 </select>
-              </label>` : `
-              <label>
-                <span>${escapeHtml(t("review.assetDecision"))}</span>
-                <input type="text" value="${escapeHtml(t("review.assetNotApplicable"))}" disabled>
-              </label>`}
-            <label class="full-span">
-              <span>${escapeHtml(t("fields.reason"))}</span>
-              <textarea rows="3" data-decision-path="reason">${escapeHtml(decision.reason || "")}</textarea>
-            </label>
-            <label class="full-span">
-              <span>${escapeHtml(t("fields.businessPurpose"))}</span>
-              <textarea rows="3" data-decision-path="business_purpose">${escapeHtml(decision.business_purpose || "")}</textarea>
-            </label>
-            <label>
+                ${inlineErrorFor("asset_decision")}
+              </label>` : ""}
+            ${transaction.entry_type === "expense" ? `
+              <label class="review-guided-field">
+                <span>${escapeHtml(t("fields.deductibleIrpfMinor"))} ${irpfPreview}</span>
+                <input type="number" inputmode="numeric" data-decision-path="tax_treatment.deductible_irpf_minor" data-value-type="integer" value="${escapeHtml(decision.tax_treatment?.deductible_irpf_minor ?? "")}">
+                ${inlineErrorFor("deductible_irpf_minor")}
+              </label>` : ""}
+            <label class="review-guided-field">
               <span>${escapeHtml(t("fields.taxCode"))}</span>
               <select data-decision-path="tax_treatment.tax_code">
-                ${reviewSelectOptions(packet.allowed_values?.tax_code || Array.from(KNOWN_REVIEW_TAX_CODES), decision.tax_treatment.tax_code || "", true)}
+                ${taxCodeSelectOptions(packet.allowed_values?.tax_code || Array.from(KNOWN_REVIEW_TAX_CODES), decision.tax_treatment?.tax_code || "")}
               </select>
+              ${inlineErrorFor("tax_code")}
             </label>
-            <label>
-              <span>${escapeHtml(t("fields.taxableBaseMinor"))}</span>
-              <input type="number" inputmode="numeric" data-decision-path="tax_treatment.taxable_base_minor" data-value-type="integer" value="${escapeHtml(decision.tax_treatment.taxable_base_minor ?? "")}">
-            </label>
-            <label>
-              <span>${escapeHtml(t("fields.vatMinor"))}</span>
-              <input type="number" inputmode="numeric" data-decision-path="tax_treatment.vat_minor" data-value-type="integer" value="${escapeHtml(decision.tax_treatment.vat_minor ?? "")}">
-            </label>
-            <label>
-              <span>${escapeHtml(t("fields.deductibleIrpfMinor"))}</span>
-              <input type="number" inputmode="numeric" data-decision-path="tax_treatment.deductible_irpf_minor" data-value-type="integer" value="${escapeHtml(decision.tax_treatment.deductible_irpf_minor ?? "")}">
-            </label>
-            <label>
-              <span>${escapeHtml(t("fields.deductibleVatMinor"))}</span>
-              <input type="number" inputmode="numeric" data-decision-path="tax_treatment.deductible_vat_minor" data-value-type="integer" value="${escapeHtml(decision.tax_treatment.deductible_vat_minor ?? "")}">
-            </label>
-            <label>
-              <span>${escapeHtml(t("fields.withholdingMinor"))}</span>
-              <input type="number" inputmode="numeric" data-decision-path="tax_treatment.withholding_minor" data-value-type="integer" value="${escapeHtml(decision.tax_treatment.withholding_minor ?? "")}">
-            </label>
-            <label>
-              <span>${escapeHtml(t("fields.deductibleRatio"))}</span>
-              <input type="number" min="0" max="1" step="0.01" inputmode="decimal" data-decision-path="tax_treatment.deductible_ratio" data-value-type="number" value="${escapeHtml(decision.tax_treatment.deductible_ratio ?? "")}">
-            </label>
-            <label class="checkbox-label">
-              <input type="checkbox" ${Boolean(decision.tax_treatment.include_modelo130) ? "checked" : ""} data-decision-path="tax_treatment.include_modelo130" data-value-type="boolean">
-              <span>${escapeHtml(t("fields.includeModelo130"))}</span>
-            </label>
-            <label class="checkbox-label">
-              <input type="checkbox" ${Boolean(decision.tax_treatment.include_modelo303) ? "checked" : ""} data-decision-path="tax_treatment.include_modelo303" data-value-type="boolean">
-              <span>${escapeHtml(t("fields.includeModelo303"))}</span>
-            </label>
-            <label class="checkbox-label">
-              <input type="checkbox" ${Boolean(decision.tax_treatment.include_modelo347) ? "checked" : ""} data-decision-path="tax_treatment.include_modelo347" data-value-type="boolean">
-              <span>${escapeHtml(t("fields.includeModelo347"))}</span>
-            </label>
-            <label class="full-span">
-              <span>${escapeHtml(t("fields.notes"))}</span>
-              <textarea rows="3" data-decision-path="tax_treatment.notes">${escapeHtml(decision.tax_treatment.notes || "")}</textarea>
+            ${counterpartyCountryNeeded ? `
+              <label class="review-guided-field">
+                <span>${escapeHtml(t("fields.counterpartyCountry"))}</span>
+                <input type="text" data-decision-path="counterparty_changes.country_code" value="${escapeHtml(decision.counterparty_changes?.country_code || counterparty.country_code || "")}">
+                ${inlineErrorFor("counterparty_country")}
+              </label>` : ""}
+            <label class="review-guided-field full-span">
+              <span>${escapeHtml(t("fields.reason"))}</span>
+              <textarea rows="2" data-decision-path="reason">${escapeHtml(decision.reason || "")}</textarea>
+              ${inlineErrorFor("reason")}
             </label>
           </div>
+          ${fxSuggestion ? renderFxCard(fxSuggestion, fxChoice) : ""}
+          ${needsFx && !fxChoice ? `<p class="review-inline-error fx-needed" role="alert">${escapeHtml(t("review.fxNeeded"))}</p>` : ""}
+          ${issues.length ? `
+            <div class="review-issues-grid">
+              ${issues.map((issue, index) => renderGuidedIssueCard(issue, index, decision.issue_resolutions?.[index], guidance)).join("")}
+            </div>` : ""}
           <details class="review-technical-details">
             <summary>${escapeHtml(t("review.technicalDetails"))}</summary>
             <div class="form-grid compact-grid">
               <label>
                 <span>${escapeHtml(t("fields.invoiceType"))}</span>
                 <select data-decision-path="tax_treatment.aeat_invoice_type">
-                  ${reviewSelectOptions(packet.allowed_values?.aeat_invoice_type || [], decision.tax_treatment.aeat_invoice_type || "", true)}
+                  ${reviewSelectOptions(packet.allowed_values?.aeat_invoice_type || [], decision.tax_treatment?.aeat_invoice_type || "", true)}
                 </select>
               </label>
               <label>
                 <span>${escapeHtml(t("fields.operationKey"))}</span>
-                <input type="text" data-decision-path="tax_treatment.aeat_operation_key" value="${escapeHtml(decision.tax_treatment.aeat_operation_key || "")}">
+                <input type="text" data-decision-path="tax_treatment.aeat_operation_key" value="${escapeHtml(decision.tax_treatment?.aeat_operation_key || "")}">
               </label>
               <label>
                 <span>${escapeHtml(t("fields.operationQualification"))}</span>
-                <select data-decision-path="tax_treatment.aeat_operation_qualification">
-                  ${reviewSelectOptions(packet.allowed_values?.aeat_operation_qualification || [], decision.tax_treatment.aeat_operation_qualification || "", true)}
+                <select data-decision-path="tax_treatment.aeat_operation_qualification" data-value-type="nullable-string">
+                  ${reviewSelectOptions(packet.allowed_values?.aeat_operation_qualification || [], decision.tax_treatment?.aeat_operation_qualification || "", true)}
                 </select>
               </label>
               <label>
                 <span>${escapeHtml(t("fields.exemptionCode"))}</span>
                 <select data-decision-path="tax_treatment.aeat_exemption_code" data-value-type="nullable-string">
-                  ${reviewSelectOptions(packet.allowed_values?.aeat_exemption_code || [], decision.tax_treatment.aeat_exemption_code || "", true)}
+                  ${reviewSelectOptions(packet.allowed_values?.aeat_exemption_code || [], decision.tax_treatment?.aeat_exemption_code || "", true)}
                 </select>
               </label>
               <label>
                 <span>${escapeHtml(t("fields.reverseCharge"))}</span>
                 <select data-decision-path="tax_treatment.aeat_reverse_charge" data-value-type="nullable-boolean">
-                  <option value=""${decision.tax_treatment.aeat_reverse_charge == null ? " selected" : ""}></option>
-                  <option value="true"${decision.tax_treatment.aeat_reverse_charge === true ? " selected" : ""}>${escapeHtml(t("common.yes"))}</option>
-                  <option value="false"${decision.tax_treatment.aeat_reverse_charge === false ? " selected" : ""}>${escapeHtml(t("common.no"))}</option>
+                  <option value=""${decision.tax_treatment?.aeat_reverse_charge == null ? " selected" : ""}></option>
+                  <option value="true"${decision.tax_treatment?.aeat_reverse_charge === true ? " selected" : ""}>${escapeHtml(t("common.yes"))}</option>
+                  <option value="false"${decision.tax_treatment?.aeat_reverse_charge === false ? " selected" : ""}>${escapeHtml(t("common.no"))}</option>
                 </select>
               </label>
               <label>
                 <span>${escapeHtml(t("fields.expenseConcept"))}</span>
-                <input type="text" data-decision-path="tax_treatment.aeat_expense_concept" data-value-type="nullable-string" value="${escapeHtml(decision.tax_treatment.aeat_expense_concept || "")}">
+                <input type="text" data-decision-path="tax_treatment.aeat_expense_concept" data-value-type="nullable-string" value="${escapeHtml(decision.tax_treatment?.aeat_expense_concept || "")}">
+              </label>
+              <label>
+                <span>${escapeHtml(t("fields.taxableBaseMinor"))}</span>
+                <input type="number" inputmode="numeric" data-decision-path="tax_treatment.taxable_base_minor" data-value-type="integer" value="${escapeHtml(decision.tax_treatment?.taxable_base_minor ?? "")}">
+              </label>
+              <label>
+                <span>${escapeHtml(t("fields.vatMinor"))}</span>
+                <input type="number" inputmode="numeric" data-decision-path="tax_treatment.vat_minor" data-value-type="integer" value="${escapeHtml(decision.tax_treatment?.vat_minor ?? "")}">
+              </label>
+              <label>
+                <span>${escapeHtml(t("fields.deductibleVatMinor"))}</span>
+                <input type="number" inputmode="numeric" data-decision-path="tax_treatment.deductible_vat_minor" data-value-type="integer" value="${escapeHtml(decision.tax_treatment?.deductible_vat_minor ?? "")}">
+              </label>
+              <label>
+                <span>${escapeHtml(t("fields.withholdingMinor"))}</span>
+                <input type="number" inputmode="numeric" data-decision-path="tax_treatment.withholding_minor" data-value-type="integer" value="${escapeHtml(decision.tax_treatment?.withholding_minor ?? "")}">
+              </label>
+              <label>
+                <span>${escapeHtml(t("fields.deductibleRatio"))}</span>
+                <input type="number" min="0" max="1" step="0.01" inputmode="decimal" data-decision-path="tax_treatment.deductible_ratio" data-value-type="number" value="${escapeHtml(decision.tax_treatment?.deductible_ratio ?? "")}">
               </label>
               <label>
                 <span>${escapeHtml(t("fields.rateBasisPoints"))}</span>
-                <input type="number" min="0" inputmode="numeric" data-decision-path="tax_treatment.rate_basis_points" data-value-type="integer" value="${escapeHtml(decision.tax_treatment.rate_basis_points ?? "")}">
+                <input type="number" min="0" inputmode="numeric" data-decision-path="tax_treatment.rate_basis_points" data-value-type="integer" value="${escapeHtml(decision.tax_treatment?.rate_basis_points ?? "")}">
               </label>
-              <label>
-                <span>${escapeHtml(t("fields.ruleVersion"))}</span>
-                <input type="text" data-decision-path="tax_treatment.rule_version_id" data-value-type="nullable-string" value="${escapeHtml(decision.tax_treatment.rule_version_id || "")}">
+              <label class="checkbox-label">
+                <input type="checkbox" ${Boolean(decision.tax_treatment?.include_modelo130) ? "checked" : ""} data-decision-path="tax_treatment.include_modelo130" data-value-type="boolean">
+                <span>${escapeHtml(t("fields.includeModelo130"))}</span>
               </label>
+              <label class="checkbox-label">
+                <input type="checkbox" ${Boolean(decision.tax_treatment?.include_modelo303) ? "checked" : ""} data-decision-path="tax_treatment.include_modelo303" data-value-type="boolean">
+                <span>${escapeHtml(t("fields.includeModelo303"))}</span>
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" ${Boolean(decision.tax_treatment?.include_modelo347) ? "checked" : ""} data-decision-path="tax_treatment.include_modelo347" data-value-type="boolean">
+                <span>${escapeHtml(t("fields.includeModelo347"))}</span>
+              </label>
+              <label class="full-span">
+                <span>${escapeHtml(t("fields.notes"))}</span>
+                <textarea rows="2" data-decision-path="tax_treatment.notes">${escapeHtml(decision.tax_treatment?.notes || "")}</textarea>
+              </label>
+              ${counterparty ? `
+                <label>
+                  <span>${escapeHtml(t("fields.taxId"))}</span>
+                  <input type="text" data-decision-path="counterparty_changes.tax_id" data-value-type="nullable-string" value="${escapeHtml(decision.counterparty_changes?.tax_id ?? counterparty.tax_id ?? "")}">
+                </label>
+                <label>
+                  <span>${escapeHtml(t("fields.vatId"))}</span>
+                  <input type="text" data-decision-path="counterparty_changes.vat_id" data-value-type="nullable-string" value="${escapeHtml(decision.counterparty_changes?.vat_id ?? counterparty.vat_id ?? "")}">
+                </label>
+                <label>
+                  <span>${escapeHtml(t("fields.roiStatus"))}</span>
+                  <select data-decision-path="counterparty_changes.roi_status" data-value-type="nullable-string">
+                    ${reviewSelectOptions(Object.keys(roiStatusLabels), decision.counterparty_changes?.roi_status ?? counterparty.roi_status ?? "unknown")}
+                  </select>
+                </label>
+                <label>
+                  <span>${escapeHtml(t("fields.legalForm"))}</span>
+                  <select data-decision-path="counterparty_changes.legal_form" data-value-type="nullable-string">
+                    ${reviewSelectOptions(Object.keys(legalFormLabels), decision.counterparty_changes?.legal_form ?? counterparty.legal_form ?? "unknown")}
+                  </select>
+                </label>` : ""}
             </div>
           </details>
-          ${issues.length ? `
-            <div class="review-issues-grid">
-              ${issues.map((issue, index) => renderReviewIssueResolution(issue, index, decision.issue_resolutions?.[index])).join("")}
-            </div>` : ""}
         </section>
 
         <section class="panel review-panel">
-          <header class="panel-header"><h2>${escapeHtml(t("review.result"))}</h2><small aria-live="polite">${escapeHtml(validationMessage)}</small></header>
-          <div class="review-result-stack">
-            <div class="review-alert ${state.review.validationResult ? "success" : "info"}">
-              <strong>${escapeHtml(state.review.validationResult ? t("review.validationPassed") : t("review.validationPending"))}</strong>
-              <p>${escapeHtml(state.review.validationResult ? t("review.validationPreview") : t("review.validationPending"))}</p>
+          <header class="panel-header"><h2>${escapeHtml(t("review.result"))}</h2><small>${escapeHtml(t("review.confirmHint"))}</small></header>
+          <details class="review-reject-panel">
+            <summary>${escapeHtml(t("review.rejectAction"))}</summary>
+            <div class="review-reject-body">
+              <p class="muted-copy">${escapeHtml(t("review.rejectLead"))}</p>
+              <label>
+                <span>${escapeHtml(t("fields.documentValid"))}</span>
+                <select id="review-reject-document-valid">
+                  <option value=""></option>
+                  <option value="true">${escapeHtml(t("common.yes"))}</option>
+                  <option value="false">${escapeHtml(t("common.no"))}</option>
+                </select>
+              </label>
+              <label>
+                <span>${escapeHtml(t("fields.reason"))}</span>
+                <textarea rows="2" id="review-reject-reason">${escapeHtml(decision.reason || "")}</textarea>
+              </label>
+              ${inlineErrorFor("reject")}
+              <div class="review-reject-actions">
+                <button type="button" class="danger-button" id="review-reject-button">${escapeHtml(t("review.rejectConfirm"))}</button>
+              </div>
             </div>
-            ${state.review.validationResult ? `<pre class="review-preview">${escapeHtml(JSON.stringify(state.review.validationResult, null, 2))}</pre>` : ""}
-            <div class="review-actions">
-              <button type="button" class="secondary-button" id="review-refresh-button">${escapeHtml(t("common.refresh"))}</button>
-              <button type="submit" class="primary-button" id="review-primary-button"${disabledWorkspace ? " disabled" : ""}>${escapeHtml(state.review.validationDirty ? t("review.primaryValidate") : (decision.outcome === "reject" ? t("review.primaryReject") : t("review.primaryApprove")))}</button>
-            </div>
+          </details>
+          <div class="review-actions">
+            <button type="button" class="secondary-button" id="review-refresh-button">${escapeHtml(t("common.refresh"))}</button>
+            <button type="submit" class="primary-button" id="review-primary-button"${disabledWorkspace ? " disabled" : ""}>${escapeHtml(t("review.confirmAction"))}</button>
           </div>
         </section>
       </form>
     </div>
   `;
 
-  document.querySelector("#review-back-button")?.addEventListener("click", () => {
-    state.review.selectedReviewId = null;
-    state.review.workItem = null;
-    state.review.validationDirty = true;
-    state.review.validationResult = null;
-    state.review.error = "";
-    renderReviewOverview();
-  });
-
   document.querySelector("#review-refresh-button")?.addEventListener("click", async () => {
     try {
       await fetchReviewWorkItem(packet.review_id, {factsOnly: true});
       renderReviewWorkspace();
     } catch (error) {
-      state.review.error = error.message;
+      state.review.confirmError = {message: error.message, target: "general"};
       renderReviewWorkspace();
     }
   });
@@ -2136,85 +2508,137 @@ function renderReviewWorkspace() {
     const eventName = element.tagName === "SELECT" || element.type === "checkbox" ? "change" : "input";
     element.addEventListener(eventName, () => {
       updateReviewDecision(element.dataset.decisionPath, readDecisionFieldValue(element));
-      if (element.dataset.decisionPath === "outcome" && element.value === "reject") {
-        updateReviewDecision("document_valid", true);
-        const documentValid = document.querySelector('[data-decision-path="document_valid"]');
-        if (documentValid) documentValid.value = "true";
-      }
-      markReviewValidationPending();
+      state.review.confirmError = null;
     });
   });
 
-  document.querySelector("#review-fx-apply")?.addEventListener("click", async () => {
-    const rateDate = document.querySelector("#review-fx-rate-date")?.value || "";
-    const rate = document.querySelector("#review-fx-rate")?.value || "";
-    const rateSource = document.querySelector("#review-fx-source")?.value || "";
-    const sourceReference = document.querySelector("#review-fx-reference")?.value || "";
-    try {
-      const refreshed = await fetchJSON("/api/review/apply-fx", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          review_id: packet.review_id,
-          rate_date: rateDate,
-          rate,
-          rate_source: rateSource,
-          source_reference: sourceReference,
-          expected_row_version: transaction.row_version,
-        }),
-      });
-      const nextPacket = deepClone(refreshed.packet || refreshed);
-      const draft = loadReviewDraft(currentReviewTransactionId());
-      state.review.workItem = {
-        ...state.review.workItem,
-        ...refreshed,
-        packet: mergeReviewDecisionFromDraft(nextPacket, draft, "facts"),
-        requirements: (refreshed.requirements || state.review.workItem.requirements || []).map(normalizeReviewRequirement),
-      };
-      state.review.validationDirty = true;
-      state.review.validationResult = null;
-      state.review.error = "";
-      persistReviewDraft(state.review.workItem.packet, {factsOnly: true});
-      showToast(t("review.fxApplied"));
+  document.querySelectorAll("input[name='fx-choice']").forEach((radio) => {
+    radio.addEventListener("change", () => {
+      const suggestion = state.review.workItem?.fx_suggestion;
+      state.review.fxChoice = radio.value === "settlement"
+        ? {mode: "settlement", rate: "", rateDate: suggestion?.transaction_date || todayIso(), sourceReference: ""}
+        : initialFxChoice(suggestion);
+      state.review.confirmError = null;
       renderReviewWorkspace();
-    } catch (error) {
-      state.review.error = error.message;
-      renderReviewWorkspace();
-    }
+    });
+  });
+
+  const syncSettlementInputs = () => {
+    const rateEl = document.querySelector("#review-fx-settlement-rate");
+    const dateEl = document.querySelector("#review-fx-settlement-date");
+    const refEl = document.querySelector("#review-fx-settlement-reference");
+    if (!rateEl || !dateEl || !refEl) return;
+    state.review.fxChoice = {
+      mode: "settlement",
+      rate: rateEl.value.trim(),
+      rateDate: dateEl.value,
+      sourceReference: refEl.value.trim(),
+    };
+    state.review.confirmError = null;
+  };
+  document.querySelector("#review-fx-settlement-rate")?.addEventListener("input", syncSettlementInputs);
+  document.querySelector("#review-fx-settlement-date")?.addEventListener("input", syncSettlementInputs);
+  document.querySelector("#review-fx-settlement-reference")?.addEventListener("input", syncSettlementInputs);
+
+  document.querySelector("#review-reject-button")?.addEventListener("click", () => {
+    void submitReviewReject();
   });
 
   document.querySelector("#review-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const currentPacket = currentReviewPacket();
-    if (!currentPacket) return;
-    try {
-      const endpoint = state.review.validationDirty ? "/api/review/validate" : "/api/review/apply";
-      const result = await fetchJSON(endpoint, {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({packet: currentPacket}),
-      });
-      if (state.review.validationDirty) {
-        state.review.validationDirty = false;
-        state.review.validationResult = result;
-        state.review.error = "";
-        persistReviewDraft(currentPacket);
-        renderReviewWorkspace();
-        return;
-      }
-      clearReviewDraft(currentReviewTransactionId());
-      showToast(t("review.applySuccess"));
-      state.review.selectedReviewId = null;
-      state.review.workItem = null;
-      state.review.validationDirty = true;
-      state.review.validationResult = null;
-      state.review.error = "";
-      await renderReview();
-    } catch (error) {
-      state.review.error = error.message;
-      renderReviewWorkspace();
-    }
+    await submitReviewConfirm();
   });
+}
+
+async function submitReviewConfirm() {
+  const packet = currentReviewPacket();
+  if (!packet || state.review.busy) return;
+  const workItem = state.review.workItem;
+  const transaction = packet.state?.transaction || {};
+  const suggestion = workItem?.fx_suggestion || null;
+  if (fxChoiceNeeded(transaction)) {
+    const fxSpec = buildConfirmFxSpec(state.review.fxChoice, suggestion);
+    if (!fxSpec) {
+      state.review.confirmError = {message: t("review.fxNeeded"), target: "fx_rate"};
+      renderReviewWorkspace();
+      return;
+    }
+  }
+  const decision = packet.decision;
+  decision.outcome = "approve";
+  decision.document_valid = true;
+  if (decision.counterparty_changes == null) decision.counterparty_changes = {};
+  autoResolveCoveredIssues(
+    packet,
+    workItem?.guidance?.issue_coverage || {},
+    questionAnswerMap(decision, packet.state, state.review.fxChoice),
+  );
+  const fxSpec = fxChoiceNeeded(transaction) ? buildConfirmFxSpec(state.review.fxChoice, suggestion) : null;
+  state.review.busy = true;
+  state.review.confirmError = null;
+  try {
+    await fetchJSON("/api/review/confirm", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({packet, fx: fxSpec}),
+    });
+    clearReviewDraft(currentReviewTransactionId());
+    showToast(t("review.confirmSuccess"));
+    state.review.selectedReviewId = null;
+    state.review.workItem = null;
+    state.review.fxChoice = null;
+    state.review.busy = false;
+    navigateToRoute("review");
+    await renderReview();
+  } catch (error) {
+    state.review.confirmError = {message: error.message, target: mapConfirmErrorToQuestion(error.message)};
+    state.review.busy = false;
+    renderReviewWorkspace();
+  }
+}
+
+async function submitReviewReject() {
+  const packet = currentReviewPacket();
+  if (!packet || state.review.busy) return;
+  const documentValidRaw = document.querySelector("#review-reject-document-valid")?.value || "";
+  const reasonRaw = (document.querySelector("#review-reject-reason")?.value || "").trim();
+  if (documentValidRaw !== "true" && documentValidRaw !== "false") {
+    state.review.confirmError = {message: t("review.rejectDocumentRequired"), target: "reject"};
+    renderReviewWorkspace();
+    return;
+  }
+  if (!reasonRaw) {
+    state.review.confirmError = {message: t("review.rejectReasonRequired"), target: "reject"};
+    renderReviewWorkspace();
+    return;
+  }
+  const decision = packet.decision;
+  decision.outcome = "reject";
+  decision.document_valid = documentValidRaw === "true";
+  decision.reason = reasonRaw;
+  decision.counterparty_changes = {};
+  decision.tax_treatment = {...(decision.tax_treatment || {}), tax_code: null};
+  state.review.busy = true;
+  state.review.confirmError = null;
+  try {
+    await fetchJSON("/api/review/confirm", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({packet, fx: null}),
+    });
+    clearReviewDraft(currentReviewTransactionId());
+    showToast(t("review.rejectSuccess"));
+    state.review.selectedReviewId = null;
+    state.review.workItem = null;
+    state.review.fxChoice = null;
+    state.review.busy = false;
+    navigateToRoute("review");
+    await renderReview();
+  } catch (error) {
+    state.review.confirmError = {message: error.message, target: "reject"};
+    state.review.busy = false;
+    renderReviewWorkspace();
+  }
 }
 
 async function renderAssets() {
@@ -2321,17 +2745,6 @@ async function refreshDashboard() {
     refreshButton.disabled = false;
     refreshButton.textContent = "↻";
   }
-}
-
-function navigateToView(view) {
-  if (!view) return;
-  if (view === state.view) {
-    applyViewState();
-    return;
-  }
-  state.view = view;
-  applyViewState();
-  void renderCurrentView();
 }
 
 async function requestDashboardRefresh({showSuccessToast = true} = {}) {
@@ -3079,6 +3492,9 @@ function applyViewState() {
     button.classList.toggle("active", button.dataset.view === state.view);
   });
   pageTitle.textContent = t(`titles.${state.view}`);
+  if (periodSelect) {
+    periodSelect.disabled = state.view === "review" && Boolean(state.review.selectedReviewId);
+  }
 }
 
 if (typeof globalThis !== "undefined") {
@@ -3113,6 +3529,14 @@ if (typeof globalThis !== "undefined") {
     postingItemMap,
     normalizePostingResult,
     buildPostReadyItems,
+    parseRoute,
+    routePathFor,
+    buildRouteUrl,
+    autoResolveCoveredIssues,
+    mapConfirmErrorToQuestion,
+    buildConfirmFxSpec,
+    questionAnswerMap,
+    fxChoiceNeeded,
   };
 }
 
@@ -3123,27 +3547,23 @@ if (hasDOM) {
     });
   });
 
-  document.querySelectorAll(".nav-item").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.view = button.dataset.view;
-      if (state.view !== "review") {
-        state.review.selectedReviewId = null;
-        state.review.workItem = null;
-        state.review.validationDirty = true;
-        state.review.validationResult = null;
-        state.review.error = "";
-      }
-      document.querySelectorAll(".nav-item").forEach((item) => {
-        item.classList.toggle("active", item === button);
-      });
-      pageTitle.textContent = t(`titles.${state.view}`);
-      renderCurrentView();
-    });
+  document.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element)) return;
+    const link = event.target.closest("a[data-spa]");
+    if (!link) return;
+    const route = parseRoute(link.getAttribute("href") || "/");
+    if (!route) return;
+    event.preventDefault();
+    navigateToRoute(route.view, {reviewId: route.reviewId});
+  });
+
+  window.addEventListener("popstate", () => {
+    applyRouteFromLocation();
   });
 
   periodSelect.addEventListener("change", () => {
     state.period = periodSelect.value;
-    renderCurrentView();
+    navigateToRoute(state.view, {replace: true});
   });
 
   newEntryButton.addEventListener("click", () => {
@@ -3194,7 +3614,7 @@ if (hasDOM) {
     if (!(event.target instanceof Element)) return;
     const viewButton = event.target.closest("[data-nav-view]");
     if (viewButton) {
-      navigateToView(viewButton.dataset.navView);
+      navigateToRoute(viewButton.dataset.navView);
       return;
     }
     const postingButton = event.target.closest("[data-posting-action]");
