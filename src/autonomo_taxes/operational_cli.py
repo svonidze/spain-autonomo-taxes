@@ -1796,6 +1796,7 @@ def _cmd_expense_record(args: argparse.Namespace) -> int:
         counterparty_identity_kind=args.counterparty_identity_kind,
         counterparty_identifier=args.counterparty_identifier,
         business_activity_id=args.business_activity_id,
+        storage_root=args.archive_root,
     )
 
     with open_ledger_db(args.db) as db:
