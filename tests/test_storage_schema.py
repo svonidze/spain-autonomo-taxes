@@ -42,7 +42,10 @@ def test_schema_18_requires_an_explicit_writable_migration(tmp_path: Path) -> No
         connection.close()
 
     with LedgerDB.open(path, apply_migrations=True) as db:
-        assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 18
+        assert (
+            db.connection.execute("PRAGMA user_version").fetchone()[0]
+            == ledger_db_module.LATEST_SCHEMA_VERSION
+        )
         assert set(db.table_counts()).issuperset(
             {"files", "document_attachments", "storage_backends", "file_replicas"}
         )

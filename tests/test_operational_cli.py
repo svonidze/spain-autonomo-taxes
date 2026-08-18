@@ -11,7 +11,13 @@ import pytest
 
 from autonomo_taxes.cli import main
 from autonomo_taxes.intake import IntakeResult
-from autonomo_taxes.ledger_db import LedgerDB, LedgerDbError, LifecycleError, initialize
+from autonomo_taxes.ledger_db import (
+    LATEST_SCHEMA_VERSION,
+    LedgerDB,
+    LedgerDbError,
+    LifecycleError,
+    initialize,
+)
 from autonomo_taxes.parsers import LedgerEntry
 from autonomo_taxes.tax_engine import CalculationBlocked
 
@@ -21,7 +27,7 @@ def test_db_init_and_status(tmp_path: Path, capsys) -> None:
 
     assert main(["db", "init", "--db", str(database)]) == 0
     initialized = json.loads(capsys.readouterr().out)
-    assert initialized["schema_version"] == 18
+    assert initialized["schema_version"] == LATEST_SCHEMA_VERSION
 
     assert main(["db", "status", "--db", str(database)]) == 0
     status = json.loads(capsys.readouterr().out)
