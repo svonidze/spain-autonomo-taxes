@@ -1272,7 +1272,7 @@ class LedgerDB:
             return existing
         timestamp = _utc_now()
         new_id = file_id or _new_id()
-        with self.connection:
+        with _write_scope(self.connection):
             self.connection.execute(
                 """
                 INSERT INTO files (file_id, content_sha256, byte_size, media_type, created_at)
@@ -1310,7 +1310,7 @@ class LedgerDB:
         timestamp = _utc_now()
         if existing is None:
             new_id = storage_backend_id or _new_id()
-            with self.connection:
+            with _write_scope(self.connection):
                 self.connection.execute(
                     """
                     INSERT INTO storage_backends (
@@ -1328,7 +1328,7 @@ class LedgerDB:
                 "SELECT * FROM storage_backends WHERE storage_backend_id = ?", (new_id,)
             )
 
-        with self.connection:
+        with _write_scope(self.connection):
             self.connection.execute(
                 """
                 UPDATE storage_backends
@@ -1373,7 +1373,7 @@ class LedgerDB:
             return existing
         new_id = document_attachment_id or _new_id()
         timestamp = _utc_now()
-        with self.connection:
+        with _write_scope(self.connection):
             self.connection.execute(
                 """
                 INSERT INTO document_attachments (
@@ -1421,7 +1421,7 @@ class LedgerDB:
             (file_id, storage_backend_id),
         )
         timestamp = _utc_now()
-        with self.connection:
+        with _write_scope(self.connection):
             if is_primary:
                 self.connection.execute(
                     "UPDATE file_replicas SET is_primary = 0, row_version = row_version + 1, updated_at = ? "

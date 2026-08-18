@@ -93,6 +93,22 @@ def test_social_security_cli_creates_reviewed_unposted_g45_expense(
         assert treatment["include_modelo130"] == 1
         assert treatment["include_modelo303"] == 0
         assert "Business purpose:" in treatment["notes"]
+        attachment = db.connection.execute(
+            """
+            SELECT da.attachment_role, f.content_sha256, fr.provider_locator
+            FROM document_attachments da
+            JOIN files f ON f.file_id = da.file_id
+            JOIN file_replicas fr ON fr.file_id = f.file_id
+            WHERE da.document_id = ?
+            """,
+            (output["document_id"],),
+        ).fetchone()
+        assert attachment["attachment_role"] == "source"
+        assert attachment["content_sha256"] == sha256(
+            (tmp_path / "Evidence" / "2026-Q3" / "social_security_evidence" / output["archive_file"])
+            .read_bytes()
+        ).hexdigest()
+        assert attachment["provider_locator"].startswith("2026-Q3/")
 
     assert main(["review", "list", "--db", str(database), "--period", "2026-Q3", "--ready-to-post"]) == 0
     queue = json.loads(capsys.readouterr().out)

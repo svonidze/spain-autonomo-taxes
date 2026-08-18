@@ -12,6 +12,7 @@ import uuid
 
 from .ledger_db import LedgerDB
 from .money import cents
+from .storage_service import register_local_source_replica
 
 
 @dataclass(frozen=True)
@@ -78,6 +79,7 @@ class NonInvoiceExpenseInput:
     counterparty_identity_kind: str | None = None
     counterparty_identifier: str | None = None
     business_activity_id: str | None = None
+    storage_root: Path | None = None
 
 
 class NonInvoiceExpenseError(ValueError):
@@ -95,7 +97,12 @@ def record_non_invoice_expense(
     connection = database.connection
     connection.execute("BEGIN IMMEDIATE")
     try:
-        result = _record(connection, normalized, verify_archive=not dry_run)
+        result = _record(
+            database,
+            normalized,
+            verify_archive=not dry_run,
+            register_replica=not dry_run,
+        )
         if dry_run:
             connection.rollback()
             result["status"] = "dry_run"
@@ -109,11 +116,13 @@ def record_non_invoice_expense(
 
 
 def _record(
-    connection: sqlite3.Connection,
+    database: LedgerDB,
     request: NonInvoiceExpenseInput,
     *,
     verify_archive: bool,
+    register_replica: bool,
 ) -> dict[str, Any]:
+    connection = database.connection
     preset = PRESETS[request.kind]
     period_key = request.period_key or quarter_key(request.transaction_date)
     expected_period = quarter_key(request.transaction_date)
@@ -277,6 +286,14 @@ def _record(
             now,
         ),
     )
+    if register_replica:
+        register_local_source_replica(
+            database,
+            document_id=document_id,
+            source_path=request.archived_path,
+            media_type=request.evidence_mime_type,
+            storage_root=request.storage_root or request.archived_path.parent,
+        )
     gross_minor = _minor(request.gross_eur)
     connection.execute(
         """
@@ -422,6 +439,7 @@ def _normalize_request(request: NonInvoiceExpenseInput) -> NonInvoiceExpenseInpu
         business_activity_id=(
             request.business_activity_id.strip() if request.business_activity_id else None
         ),
+        storage_root=request.storage_root.resolve() if request.storage_root else None,
     )
 
 
