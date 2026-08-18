@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import json
 import mimetypes
 from pathlib import Path
 import sqlite3
-from typing import Any
+from typing import Any, Iterable, Mapping
 
 from .ledger_db import LATEST_SCHEMA_VERSION, LedgerDB
-from .storage_adapters import sha256_file
+from .storage_adapters import GoogleDriveStorageAdapter, StorageAdapterError, sha256_file
 
 
 class StorageMigrationError(RuntimeError):
@@ -30,6 +31,26 @@ class StorageMigrationResult:
             "unresolved": self.unresolved,
             "schema_version": self.schema_version,
             "pending": self.pending,
+        }
+
+
+@dataclass(frozen=True)
+class DriveArchiveAdoptionResult:
+    """Outcome of attaching catalogue files to pre-existing Drive originals."""
+
+    backend_key: str
+    adopted: int
+    already_adopted: int
+    retired_managed: int
+    dry_run: bool
+
+    def as_dict(self) -> dict[str, int | str | bool]:
+        return {
+            "backend_key": self.backend_key,
+            "adopted": self.adopted,
+            "already_adopted": self.already_adopted,
+            "retired_managed": self.retired_managed,
+            "dry_run": self.dry_run,
         }
 
 
@@ -202,6 +223,179 @@ def migrate_legacy_storage(
             schema_version=raw_schema_version(db_path),
             pending=pending,
         )
+
+
+def adopt_google_drive_originals(
+    db: LedgerDB,
+    *,
+    backend_key: str,
+    records: Iterable[Mapping[str, Any]],
+    dry_run: bool = False,
+    adapter: GoogleDriveStorageAdapter | None = None,
+    retire_backend_keys: Iterable[str] = (),
+) -> DriveArchiveAdoptionResult:
+    """Atomically adopt verified pre-existing Google Drive files.
+
+    Each record must include ``content_sha256`` (or ``digest``) and
+    ``drive_file_id``.  Optional ``archive_path``, ``web_url`` and
+    ``display_name`` become non-secret replica metadata.  The function first
+    verifies every remote object; only then does it write the database, so a
+    bad mapping cannot partially promote the archive.
+
+    The returned shape is deliberately CLI-friendly: callers can parse a JSON
+    list of records, run ``dry_run=True``, then apply the exact same list.
+    Existing replicas are retired only from explicitly named legacy managed
+    backends: a Drive file ID alone does not distinguish a managed duplicate
+    from an intentionally retained Google copy.
+    """
+    from .storage_reconcile import adapter_for_backend
+
+    backend_row = db.connection.execute(
+        "SELECT * FROM storage_backends WHERE backend_key = ? AND enabled = 1",
+        (backend_key,),
+    ).fetchone()
+    if backend_row is None:
+        raise StorageMigrationError(f"Unknown or disabled storage backend: {backend_key}")
+    backend = dict(backend_row)
+    if str(backend["driver_key"]) != "google_drive":
+        raise StorageMigrationError("Drive archive adoption requires a google_drive backend")
+    resolved_adapter = adapter or adapter_for_backend(backend)
+    if not isinstance(resolved_adapter, GoogleDriveStorageAdapter):
+        raise StorageMigrationError("Drive archive adoption requires a Google Drive adapter")
+
+    prepared: list[tuple[dict[str, Any], dict[str, Any], Any]] = []
+    seen_digests: set[str] = set()
+    for record in records:
+        digest = str(record.get("content_sha256") or record.get("digest") or "").lower()
+        locator = str(
+            record.get("drive_file_id")
+            or record.get("google_file_id")
+            or record.get("provider_locator")
+            or ""
+        )
+        if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+            raise StorageMigrationError("Each Drive adoption record requires a SHA-256 content_sha256")
+        if not locator:
+            raise StorageMigrationError("Each Drive adoption record requires drive_file_id")
+        if digest in seen_digests:
+            raise StorageMigrationError(f"Drive adoption mapping duplicates content SHA-256: {digest}")
+        seen_digests.add(digest)
+        file_row = db.connection.execute(
+            "SELECT * FROM files WHERE content_sha256 = ?", (digest,)
+        ).fetchone()
+        if file_row is None:
+            raise StorageMigrationError(f"Drive adoption digest is not in the catalogue: {digest}")
+        try:
+            remote = resolved_adapter.verify(locator, digest)
+            if not resolved_adapter.is_within_root(locator, remote):
+                raise StorageAdapterError("Google Drive object is outside the configured archive root")
+        except StorageAdapterError as exc:
+            raise StorageMigrationError(f"Drive archive verification failed for {locator}") from exc
+        if remote.size_bytes != int(file_row["byte_size"]):
+            raise StorageMigrationError(f"Drive archive size does not match catalogue for {locator}")
+        prepared.append((dict(record), dict(file_row), remote))
+
+    existing_rows = {
+        str(row["file_id"]): row
+        for row in db.connection.execute(
+            "SELECT * FROM file_replicas WHERE storage_backend_id = ?",
+            (backend["storage_backend_id"],),
+        ).fetchall()
+    }
+    already_adopted = sum(
+        1
+        for _, file_row, remote in prepared
+        if (existing := existing_rows.get(str(file_row["file_id"]))) is not None
+        and str(existing["provider_locator"]) == remote.locator
+        and existing["replica_status"] == "available"
+    )
+    adopted = len(prepared) - already_adopted
+    file_ids = [str(file_row["file_id"]) for _, file_row, _ in prepared]
+    retirement_backends = {
+        str(value).strip() for value in retire_backend_keys if str(value).strip()
+    }
+    retirement_backends.discard(backend_key)
+    retired_candidates: list[Any] = []
+    if file_ids and retirement_backends:
+        placeholders = ",".join("?" for _ in file_ids)
+        backend_placeholders = ",".join("?" for _ in retirement_backends)
+        retired_candidates = db.connection.execute(
+            f"""
+            SELECT fr.* FROM file_replicas fr
+            JOIN storage_backends sb ON sb.storage_backend_id = fr.storage_backend_id
+            WHERE fr.file_id IN ({placeholders})
+              AND sb.backend_key IN ({backend_placeholders})
+              AND fr.replica_status != 'retired'
+            """,
+            (*file_ids, *sorted(retirement_backends)),
+        ).fetchall()
+    if dry_run:
+        return DriveArchiveAdoptionResult(
+            backend_key=backend_key,
+            adopted=adopted,
+            already_adopted=already_adopted,
+            retired_managed=len(retired_candidates),
+            dry_run=True,
+        )
+
+    timestamp = _utc_now()
+    # All remote verification completed above.  Keep the subsequent catalogue
+    # writes in one SQLite transaction so primary pointers cannot be split.
+    if db.connection.in_transaction:
+        raise StorageMigrationError("Drive archive adoption requires its own write transaction")
+    with db.connection:
+        # Start the transaction before calling LedgerDB write helpers.  Those
+        # helpers intentionally join an active transaction, but would commit
+        # independently if this BEGIN were deferred until the first write.
+        db.connection.execute("BEGIN IMMEDIATE")
+        for record, file_row, remote in prepared:
+            metadata = dict(remote.metadata)
+            metadata.update(
+                {
+                    "archive_path": str(record.get("archive_path") or ""),
+                    "original_name": str(record.get("display_name") or metadata.get("name") or ""),
+                    "content_sha256": str(file_row["content_sha256"]),
+                    "adopted_existing_drive_archive": True,
+                }
+            )
+            db.register_file_replica(
+                file_id=str(file_row["file_id"]),
+                storage_backend_id=str(backend["storage_backend_id"]),
+                provider_locator=remote.locator,
+                provider_version=remote.version,
+                replica_status="available",
+                is_primary=True,
+                web_url=str(
+                    record.get("web_url")
+                    or remote.web_url
+                    or ("https://" + "drive.google.com/open?id=" + remote.locator)
+                ),
+                provider_metadata=metadata,
+                last_verified_at=timestamp,
+            )
+        for row in retired_candidates:
+            try:
+                metadata = dict(json.loads(str(row["provider_metadata_json"])))
+            except (TypeError, ValueError):
+                metadata = {}
+            metadata["retired_reason"] = "duplicate_of_existing_drive_archive"
+            metadata["retired_at"] = timestamp
+            db.connection.execute(
+                """
+                UPDATE file_replicas
+                SET replica_status = 'retired', is_primary = 0,
+                    provider_metadata_json = ?, row_version = row_version + 1, updated_at = ?
+                WHERE file_replica_id = ?
+                """,
+                (json.dumps(metadata, sort_keys=True, separators=(",", ":")), timestamp, row["file_replica_id"]),
+            )
+    return DriveArchiveAdoptionResult(
+        backend_key=backend_key,
+        adopted=adopted,
+        already_adopted=already_adopted,
+        retired_managed=len(retired_candidates),
+        dry_run=False,
+    )
 
 
 def _has_source_attachment(db: LedgerDB, document_id: str) -> bool:

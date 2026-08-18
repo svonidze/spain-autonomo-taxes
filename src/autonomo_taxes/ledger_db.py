@@ -1476,6 +1476,92 @@ class LedgerDB:
                 )
         return self._fetch_one("SELECT * FROM file_replicas WHERE file_replica_id = ?", (new_id,))
 
+    def promote_file_replica(
+        self,
+        file_replica_id: str,
+        *,
+        expected_row_version: int | None = None,
+    ) -> dict[str, Any]:
+        """Atomically make one already-verified physical copy the file's primary copy.
+
+        Primary selection belongs to a concrete replica, not to a storage backend name.
+        The selected replica must still be available and carry a verification timestamp.
+        """
+        replica = self._fetch_one(
+            "SELECT * FROM file_replicas WHERE file_replica_id = ?", (file_replica_id,)
+        )
+        self._check_row_version(replica, expected_row_version)
+        if replica["replica_status"] != "available" or not replica["last_verified_at"]:
+            raise LedgerDbError("Only an available, verified replica may be promoted")
+
+        timestamp = _utc_now()
+        with _write_scope(self.connection):
+            self.connection.execute(
+                """
+                UPDATE file_replicas
+                SET is_primary = 0, row_version = row_version + 1, updated_at = ?
+                WHERE file_id = ? AND is_primary = 1 AND file_replica_id != ?
+                """,
+                (timestamp, replica["file_id"], file_replica_id),
+            )
+            self.connection.execute(
+                """
+                UPDATE file_replicas
+                SET is_primary = 1, row_version = row_version + 1, updated_at = ?
+                WHERE file_replica_id = ?
+                """,
+                (timestamp, file_replica_id),
+            )
+        return self._fetch_one(
+            "SELECT * FROM file_replicas WHERE file_replica_id = ?", (file_replica_id,)
+        )
+
+    def retire_file_replica(
+        self,
+        file_replica_id: str,
+        *,
+        retirement_reason: str,
+        expected_row_version: int | None = None,
+    ) -> dict[str, Any]:
+        """Retire a non-primary copy while preserving its provenance for audit.
+
+        A caller must promote another verified copy before retiring a primary one.  This
+        prevents a cleanup operation from silently removing the file's selected copy.
+        """
+        reason = retirement_reason.strip()
+        if not reason:
+            raise ValueError("retirement_reason must not be empty")
+        replica = self._fetch_one(
+            "SELECT * FROM file_replicas WHERE file_replica_id = ?", (file_replica_id,)
+        )
+        self._check_row_version(replica, expected_row_version)
+        if replica["is_primary"]:
+            raise LedgerDbError("Promote another verified replica before retiring a primary replica")
+
+        try:
+            metadata = json.loads(replica["provider_metadata_json"])
+        except (TypeError, ValueError) as exc:
+            raise LedgerDbError("Replica metadata is not valid JSON") from exc
+        if not isinstance(metadata, dict):
+            raise LedgerDbError("Replica metadata must be a JSON object")
+        metadata["retirement_reason"] = reason
+        metadata["retired_at"] = _utc_now()
+        metadata_json = _storage_config_json(metadata)
+        timestamp = _utc_now()
+        with _write_scope(self.connection):
+            self.connection.execute(
+                """
+                UPDATE file_replicas
+                SET replica_status = 'retired', is_primary = 0,
+                    provider_metadata_json = ?, row_version = row_version + 1, updated_at = ?
+                WHERE file_replica_id = ?
+                """,
+                (metadata_json, timestamp, file_replica_id),
+            )
+        return self._fetch_one(
+            "SELECT * FROM file_replicas WHERE file_replica_id = ?", (file_replica_id,)
+        )
+
     def transition_document(
         self,
         document_id: str,

@@ -1,0 +1,15 @@
+{
+  "backend_key": "google_archive_ro",
+  "display_name": "Existing Google Drive archive",
+  "driver_key": "google_drive",
+  "provider_key": "google",
+  "access_mode": "read_only",
+  "config": {
+    "schema_version": 1,
+    "root_folder_id": "replace-with-shared-archive-folder-id",
+    "credential_mode": "service_account"
+  },
+  "credential_ref": "file:/absolute/private/path/google-drive-reader-service-account.json",
+  "read_priority": 20,
+  "enabled": true
+}

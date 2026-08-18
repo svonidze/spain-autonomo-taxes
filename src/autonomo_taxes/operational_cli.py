@@ -70,7 +70,12 @@ from .sheet_intake import (
     write_intake_writeback_csv,
 )
 from .sheet_sync import SheetRow, diff_sheet_rows
-from .storage_migration import StorageMigrationError, migrate_legacy_storage
+from .storage_migration import (
+    StorageMigrationError,
+    adopt_google_drive_originals,
+    migrate_legacy_storage,
+)
+from .storage_cleanup_preflight import check_cleanup_preflight
 from .storage_reconcile import StorageReconcileError, reconcile_backend
 from .storage_service import register_local_source_replica
 from .tax_engine import (
@@ -855,6 +860,37 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     _db_arg(storage_backend)
     storage_backend.add_argument("--input", type=Path, required=True)
     storage_backend.set_defaults(_operational_handler=_cmd_storage_backend_upsert)
+    storage_adopt_drive = storage_sub.add_parser(
+        "adopt-google-archive",
+        help="Verify and adopt pre-existing Google Drive originals as file replicas",
+    )
+    _db_arg(storage_adopt_drive)
+    storage_adopt_drive.add_argument("--backend", default="google_archive_ro")
+    storage_adopt_drive.add_argument(
+        "--records",
+        type=Path,
+        required=True,
+        help="JSON array of content_sha256, drive_file_id and optional archive metadata",
+    )
+    storage_adopt_drive.add_argument("--dry-run", action="store_true")
+    storage_adopt_drive.add_argument(
+        "--retire-backend",
+        action="append",
+        default=[],
+        help="Legacy managed backend whose replicas may be retired after adoption",
+    )
+    storage_adopt_drive.set_defaults(_operational_handler=_cmd_storage_adopt_google_archive)
+    storage_cleanup_preflight = storage_sub.add_parser(
+        "cleanup-preflight",
+        help="Read-only safety gate before retiring duplicate managed Drive objects",
+    )
+    _db_arg(storage_cleanup_preflight)
+    storage_cleanup_preflight.add_argument("--archive-backend", required=True)
+    storage_cleanup_preflight.add_argument("--yandex-backend", required=True)
+    storage_cleanup_preflight.add_argument("--managed-backend", required=True)
+    storage_cleanup_preflight.add_argument("--backup-restore-proof", type=Path, required=True)
+    storage_cleanup_preflight.add_argument("--max-proof-age-hours", type=int, default=36)
+    storage_cleanup_preflight.set_defaults(_operational_handler=_cmd_storage_cleanup_preflight)
 
     bank = subparsers.add_parser("bank", help="Import and reconcile bank payments")
     bank_sub = bank.add_subparsers(dest="bank_command", required=True)
@@ -3720,6 +3756,37 @@ def _cmd_storage_backend_upsert(args: argparse.Namespace) -> int:
         row = db.upsert_storage_backend(**payload)
     _emit(row)
     return 0
+
+
+def _cmd_storage_adopt_google_archive(args: argparse.Namespace) -> int:
+    records = _load_json_array(args.records)
+    with open_ledger_db(args.db) as db:
+        try:
+            result = adopt_google_drive_originals(
+                db,
+                backend_key=args.backend,
+                records=records,
+                dry_run=args.dry_run,
+                retire_backend_keys=args.retire_backend,
+            )
+        except StorageMigrationError as exc:
+            raise SystemExit(str(exc)) from exc
+    _emit(result.as_dict())
+    return 0
+
+
+def _cmd_storage_cleanup_preflight(args: argparse.Namespace) -> int:
+    with open_ledger_db(args.db, read_only=True) as db:
+        result = check_cleanup_preflight(
+            db,
+            archive_backend_key=args.archive_backend,
+            yandex_backend_key=args.yandex_backend,
+            managed_backend_key=args.managed_backend,
+            backup_restore_proof=args.backup_restore_proof,
+            max_proof_age_hours=args.max_proof_age_hours,
+        )
+    _emit(result.as_dict())
+    return 0 if result.passed else 2
 
 
 def _cmd_bank_import_revolut(args: argparse.Namespace) -> int:
@@ -6818,6 +6885,18 @@ def _load_json_object(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"Expected a JSON object in {label}")
     return payload
+
+
+def _load_json_array(path: Path) -> list[dict[str, Any]]:
+    if str(path) == "-":
+        payload = json.loads(sys.stdin.read())
+        label = "<stdin>"
+    else:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        label = str(path)
+    if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
+        raise ValueError(f"Expected a JSON array of objects in {label}")
+    return [dict(item) for item in payload]
 
 
 def _json_payload_hash(payload: dict[str, Any]) -> str:
