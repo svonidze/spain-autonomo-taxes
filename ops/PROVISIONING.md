@@ -67,6 +67,8 @@ AUTONOMO_PRIVATE_ROOT=/home/agent/.local/share/spain-autonomo-taxes
 AUTONOMO_RELEASE_ROOT=/home/agent/apps/spain-autonomo-taxes
 AUTONOMO_OPS_ROOT=/home/agent/.local/lib/autonomo-ops
 AUTONOMO_DEPLOY_REPOSITORY=/home/agent/apps/spain-autonomo-taxes/repository
+# Default transport ref. A deployment always still requires an exact 40-character SHA.
+AUTONOMO_DEPLOY_REF=master
 AUTONOMO_HEALTHCHECK_URL=https://ubuntu-16gb-nbg1-2.tail6c29f3.ts.net
 AUTONOMO_RCLONE_CONFIG=/absolute/private/rclone.conf
 AUTONOMO_RCLONE_REMOTE=yandex-daily-crypt:

@@ -19,13 +19,16 @@ git -C "$source_repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
   || die "AUTONOMO_DEPLOY_REPOSITORY must be a Git checkout: $source_repo"
 root="$(release_root)"
 target="$(release_path "$sha")"
+release_ref="${AUTONOMO_DEPLOY_REF:-master}"
+[[ "$release_ref" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ && "$release_ref" != *..* ]] \
+  || die "AUTONOMO_DEPLOY_REF must be a safe remote branch or ref name"
 mkdir -p "$root/releases"
 "$script_dir/preflight.sh"
 
-git -C "$source_repo" fetch --quiet origin master
+git -C "$source_repo" fetch --quiet origin "$release_ref"
 git -C "$source_repo" cat-file -e "$sha^{commit}"
-git -C "$source_repo" merge-base --is-ancestor "$sha" origin/master \
-  || die "release SHA is not reachable from origin/master: $sha"
+git -C "$source_repo" merge-base --is-ancestor "$sha" FETCH_HEAD \
+  || die "release SHA is not reachable from fetched origin/$release_ref: $sha"
 if [[ ! -d "$target" ]]; then
   git -C "$source_repo" worktree add --detach "$target" "$sha"
   printf '%s\n' "$sha" > "$target/.release-sha"
