@@ -33,6 +33,7 @@ try:
 except Exception:  # pragma: no cover - dependency guard
     yaml = None
 
+from .fx_reference import FXReferenceError, fetch_eur_rate
 from .ledger_db import LedgerDbError, open as open_ledger_db
 from .legacy_paths import LegacyPathResolver
 from .posting import build_posting_preview
@@ -43,8 +44,11 @@ from .private_paths import (
 )
 from .review_packet import (
     ReviewPacketError,
+    build_fx_suggestion,
     classify_review_packet_failure,
+    confirm_review_packet,
     packet_json,
+    prepare_review_packet,
     prepare_review_work_item,
 )
 from .storage_service import resolve_verified_filesystem_replica
@@ -53,6 +57,25 @@ from .storage_migration import StorageMigrationError, assert_storage_startup_rea
 
 QUARTER_RE = re.compile(r"^\d{4}-Q[1-4]$")
 UUID_RE = re.compile(r"^[0-9a-fA-F-]{32,36}$")
+SPA_TOP_LEVEL_ROUTES = {
+    "/dashboard",
+    "/income",
+    "/expenses",
+    "/review",
+    "/assets",
+    "/taxes",
+    "/contacts",
+}
+
+
+def _is_spa_route(path: str) -> bool:
+    if path in SPA_TOP_LEVEL_ROUTES:
+        return True
+    if path.startswith("/review/"):
+        return UUID_RE.fullmatch(path[len("/review/"):]) is not None
+    return False
+
+
 UPLOAD_KINDS = {"expense_invoice", "income_invoice"}
 UPLOAD_SUFFIXES = {
     ".bmp",
@@ -741,9 +764,57 @@ class LocalAccountingApp:
     def review_work_item(self, review_id: str) -> dict[str, Any]:
         try:
             with open_ledger_db(self.config.database, read_only=True) as db:
-                return prepare_review_work_item(db, review_id)
+                packet = prepare_review_packet(db, review_id)
+                fx_suggestion = self._fx_suggestion_for(db, packet)
+                return prepare_review_work_item(db, review_id, fx_suggestion=fx_suggestion)
         except ReviewPacketError as exc:
             raise self._review_api_error(exc) from exc
+
+    def review_confirm(
+        self,
+        packet: Mapping[str, Any],
+        fx: Mapping[str, Any] | None,
+    ) -> dict[str, Any]:
+        self._ensure_supported_review_packet(packet)
+        try:
+            with open_ledger_db(self.config.database) as db:
+                return confirm_review_packet(db, packet, fx, ecb_verify=self._ecb_verify)
+        except ReviewPacketError as exc:
+            raise self._review_api_error(exc) from exc
+
+    def _fx_suggestion_for(
+        self, db: Any, packet: Mapping[str, Any]
+    ) -> dict[str, Any] | None:
+        state = packet["state"]
+        transaction = state["transaction"]
+        original_currency = str(
+            transaction["original_currency"] or transaction["currency"] or "EUR"
+        ).upper()
+        if original_currency == "EUR":
+            return None
+        if transaction["fx_rate_id"]:
+            provenance = db.fx_provenance_for_rate(str(transaction["fx_rate_id"]))
+            return build_fx_suggestion(state, provenance=provenance)
+        transaction_date = date.fromisoformat(str(transaction["transaction_date"])[:10])
+        try:
+            ecb_result = fetch_eur_rate(original_currency, transaction_date)
+            ecb_error: str | None = None
+        except FXReferenceError as exc:
+            ecb_result = None
+            ecb_error = str(exc)
+        return build_fx_suggestion(state, ecb_result=ecb_result, ecb_error=ecb_error)
+
+    def _ecb_verify(self, currency: str, rate_date: date) -> Decimal | None:
+        """Re-verify a submitted official rate against a fresh ECB lookup.
+
+        Returns the official EUR-per-unit rate when the exact requested date
+        is published; ``None`` when the date itself has no observation.
+        """
+
+        result = fetch_eur_rate(currency, rate_date)
+        if result.status != "exact":
+            return None
+        return result.observation.eur_per_unit
 
     def review_validate(self, packet: Mapping[str, Any]) -> dict[str, Any]:
         self._ensure_supported_review_packet(packet)
@@ -1253,6 +1324,11 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             if parsed.path == "/favicon.ico":
                 self.send_error(HTTPStatus.NOT_FOUND)
                 return
+            if _is_spa_route(parsed.path):
+                # SPA routes serve the app shell plus the session cookie so a
+                # deep link opens directly; everything else keeps the 404.
+                self._serve_static("index.html", set_cookie=True, principal=principal)
+                return
             self._require_session(principal)
             query = parse_qs(parsed.query)
             if parsed.path == "/api/bootstrap":
@@ -1354,6 +1430,26 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                 self._send_json(self.server.app.review_apply(self._read_review_packet()))
             elif parsed.path == "/api/review/apply-fx":
                 self._send_json(self.server.app.review_apply_fx(self._read_fx_review()))
+            elif parsed.path == "/api/review/confirm":
+                self._require_same_origin()
+                self._require_json_content_type()
+                payload = self._read_json(max_bytes=MAX_REVIEW_PACKET_BYTES)
+                _exact_object_fields(payload, {"packet", "fx"}, "confirm request")
+                packet = payload["packet"]
+                if not isinstance(packet, Mapping):
+                    raise LocalWebApiError(
+                        HTTPStatus.BAD_REQUEST,
+                        "review_packet_invalid",
+                        "packet must be a JSON object",
+                    )
+                fx = payload["fx"]
+                if fx is not None and not isinstance(fx, Mapping):
+                    raise LocalWebApiError(
+                        HTTPStatus.BAD_REQUEST,
+                        "fx_invalid",
+                        "fx must be null or a JSON object",
+                    )
+                self._send_json(self.server.app.review_confirm(dict(packet), fx))
             elif parsed.path == "/api/review/post-ready":
                 self._require_same_origin()
                 self._require_json_content_type()
