@@ -74,11 +74,27 @@
       <input type="hidden" name="kind" id="intake-kind" value="expense_invoice">
       <input type="hidden" name="period" id="intake-period">
 
+      <fieldset class="segmented-control intake-source-control" id="intake-source-control" aria-label="Источник документа" data-i18n-aria="intake.sourceAria">
+        <button type="button" data-intake-source="upload" class="active" data-i18n="intake.sourceUpload">Загрузить файл</button>
+        <button type="button" data-intake-source="google_drive" data-i18n="intake.sourceGoogleDrive">Google Drive URL</button>
+      </fieldset>
+
       <label class="file-drop" id="file-drop">
         <input type="file" name="file" id="intake-file" required accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.webp,.csv,.txt">
         <strong id="file-label">Выберите счет поставщика или перетащите файл</strong>
         <span data-i18n="intake.fileFormats">PDF, изображение, CSV или TXT до 30 MB</span>
       </label>
+      <div id="google-folder-controls" class="intake-folder-controls" hidden>
+        <button type="button" id="choose-google-folder" class="secondary-button" data-i18n="intake.chooseGoogleFolder">Выбрать папку Google Drive</button>
+        <span id="google-folder-selection" aria-live="polite"></span>
+      </div>
+
+      <label id="google-drive-url-field" hidden>
+        <span data-i18n="intake.googleDriveUrl">Ссылка на файл Google Drive</span>
+        <input type="url" name="drive_url" id="google-drive-url" inputmode="url" autocomplete="url" placeholder="drive.google.com/file/d/..." data-i18n-placeholder="intake.googleDrivePlaceholder">
+        <small data-i18n="intake.googleDriveHint">Файл останется в вашем архиве; будет сохранена ссылка на оригинал.</small>
+      </label>
+      <p id="google-picker-hint" class="intake-notice" hidden data-i18n="intake.googlePickerHint">Google Picker будет доступен после настройки узкого доступа drive.file.</p>
 
       <div class="form-grid">
         <label>

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import sqlite3
 
 import pytest
 
 from autonomo_taxes import ledger_db as ledger_db_module
-from autonomo_taxes.ledger_db import LedgerDB, SchemaVersionError
+from autonomo_taxes.ledger_db import LedgerDB, LedgerDbError, SchemaVersionError
 
 
 def _schema_17_database(path: Path) -> None:
@@ -148,6 +149,102 @@ def test_storage_constraints_enforce_one_source_and_one_primary(tmp_path: Path) 
             "SELECT is_primary FROM file_replicas WHERE storage_backend_id = ?",
             (drive["storage_backend_id"],),
         )["is_primary"] == 0
+
+
+def test_verified_replica_can_be_promoted_and_duplicate_retired_without_document_mutation(
+    tmp_path: Path,
+) -> None:
+    with LedgerDB.initialize(tmp_path / "ledger.sqlite3") as db:
+        document = _document(db)
+        initial_document_version = document["row_version"]
+        content = db.upsert_file(
+            content_sha256="5" * 64, byte_size=5, media_type="application/pdf"
+        )
+        managed_backend = db.upsert_storage_backend(
+            backend_key="legacy_drive_archive",
+            display_name="Legacy Drive archive",
+            driver_key="google_drive",
+            provider_key="google",
+            access_mode="read_only",
+        )
+        original_backend = db.upsert_storage_backend(
+            backend_key="existing_drive_archive",
+            display_name="Existing Drive archive",
+            driver_key="google_drive",
+            provider_key="google",
+            access_mode="read_only",
+        )
+        db.attach_file_to_document(
+            document_id=str(document["document_id"]),
+            file_id=str(content["file_id"]),
+            attachment_role="source",
+        )
+        managed = db.register_file_replica(
+            file_id=str(content["file_id"]),
+            storage_backend_id=str(managed_backend["storage_backend_id"]),
+            provider_locator="managed-sha256-object",
+            is_primary=True,
+            last_verified_at="2026-08-17T12:00:00Z",
+        )
+        original = db.register_file_replica(
+            file_id=str(content["file_id"]),
+            storage_backend_id=str(original_backend["storage_backend_id"]),
+            provider_locator="existing-drive-file-id",
+            web_url="https://" + "drive.google.com/open?id=existing-drive-file-id",
+            provider_metadata={"archive_relative_path": "2026/expense/invoice.pdf"},
+            last_verified_at="2026-08-17T12:01:00Z",
+        )
+
+        promoted = db.promote_file_replica(str(original["file_replica_id"]))
+        retired = db.retire_file_replica(
+            str(managed["file_replica_id"]),
+            retirement_reason="duplicate_of_existing_drive_archive",
+        )
+
+        assert promoted["is_primary"] == 1
+        assert retired["replica_status"] == "retired"
+        assert retired["is_primary"] == 0
+        assert json.loads(retired["provider_metadata_json"])["retirement_reason"] == (
+            "duplicate_of_existing_drive_archive"
+        )
+        assert db._fetch_one(
+            "SELECT row_version FROM documents WHERE document_id = ?",
+            (document["document_id"],),
+        )["row_version"] == initial_document_version
+
+
+def test_only_verified_non_primary_replicas_can_be_promoted_or_retired(tmp_path: Path) -> None:
+    with LedgerDB.initialize(tmp_path / "ledger.sqlite3") as db:
+        content = db.upsert_file(
+            content_sha256="6" * 64, byte_size=6, media_type="application/pdf"
+        )
+        backend = db.upsert_storage_backend(
+            backend_key="provider_independent_backend",
+            display_name="Any provider",
+            driver_key="filesystem",
+            provider_key="local",
+            access_mode="read_write",
+        )
+        unavailable = db.register_file_replica(
+            file_id=str(content["file_id"]),
+            storage_backend_id=str(backend["storage_backend_id"]),
+            provider_locator="unverified-object",
+            replica_status="missing",
+        )
+        with pytest.raises(LedgerDbError, match="available, verified"):
+            db.promote_file_replica(str(unavailable["file_replica_id"]))
+
+        primary = db.register_file_replica(
+            file_id=str(content["file_id"]),
+            storage_backend_id=str(backend["storage_backend_id"]),
+            provider_locator="verified-object",
+            is_primary=True,
+            last_verified_at="2026-08-17T12:00:00Z",
+        )
+        with pytest.raises(LedgerDbError, match="Promote another verified"):
+            db.retire_file_replica(
+                str(primary["file_replica_id"]), retirement_reason="obsolete"
+            )
 
 
 def test_storage_metadata_rejects_embedded_credentials_and_unverified_primary(tmp_path: Path) -> None:

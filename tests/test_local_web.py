@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import errno
 import hashlib
 from http.client import HTTPConnection
@@ -9,7 +10,9 @@ import re
 import shutil
 import socket
 import subprocess
+import sys
 import threading
+import types
 
 import pytest
 
@@ -25,7 +28,12 @@ from autonomo_taxes.local_web import (
     _host_header_parts,
     _review_summary,
     _store_upload,
+    normalize_google_drive_url,
 )
+
+
+DRIVE_URL = "https://" + "drive.google.com"
+DOCS_URL = "https://" + "docs.google.com"
 
 
 def _run_web_ui_node_json(script: str) -> object:
@@ -200,6 +208,130 @@ def test_dashboard_and_transaction_views_use_sqlite_source_of_truth(
     }
     assert expenses[0]["deductible_vat_eur"] == "21.00"
     assert expenses[0]["lifecycle_status"] == "approved"
+
+
+@pytest.mark.parametrize(
+    ("source", "expected_id"),
+    [
+        (f"{DRIVE_URL}/file/d/abcDef_012-345678/view?usp=drive_link", "abcDef_012-345678"),
+        (f"{DRIVE_URL}/open?id=abcDef_012-345678", "abcDef_012-345678"),
+        (f"{DRIVE_URL}/uc?id=abcDef_012-345678&export=download", "abcDef_012-345678"),
+        (f"{DOCS_URL}/spreadsheets/d/abcDef_012-345678/edit#gid=0", "abcDef_012-345678"),
+    ],
+)
+def test_google_drive_url_is_canonicalized_without_retaining_query_data(
+    source: str, expected_id: str
+) -> None:
+    canonical, file_id = normalize_google_drive_url(source)
+
+    assert file_id == expected_id
+    assert canonical == f"{DRIVE_URL}/open?id={expected_id}"
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "http://" + "drive.google.com/file/d/abcDef_012-345678/view",
+        f"{DRIVE_URL}/file/d/short/view",
+        "https://example.test/file/d/abcDef_012-345678/view",
+        "https://" + "drive.google.com" + "@" + "evil.test/file/d/abcDef_012-345678/view",
+        f"{DRIVE_URL}/open?id=abcDef_012-345678&id=another_012345",
+    ],
+)
+def test_google_drive_url_rejects_non_file_or_untrusted_origins(source: str) -> None:
+    with pytest.raises(LocalWebError, match="Google Drive URL is invalid"):
+        normalize_google_drive_url(source)
+
+
+def test_google_drive_intake_delegates_only_a_canonical_url(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _config(tmp_path)
+    _database(config)
+    calls: list[dict[str, object]] = []
+
+    def fake_import(**kwargs: object) -> dict[str, object]:
+        calls.append(kwargs)
+        return {"status": "accepted_for_review", "period": "2026-Q3", "system_marker": "doc-1"}
+
+    module = types.ModuleType("autonomo_taxes.storage_import")
+    module.ingest_google_drive_url = fake_import  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "autonomo_taxes.storage_import", module)
+
+    result = LocalAccountingApp(config).ingest_google_drive_url(
+        fields={"period": "2026-Q3", "kind": "expense_invoice"},
+        drive_url=f"{DRIVE_URL}/file/d/abcDef_012-345678/view?resourcekey=resource_key_123",
+    )
+
+    assert result["system_marker"] == "doc-1"
+    assert calls == [{
+        "config": config,
+        "fields": {"period": "2026-Q3", "kind": "expense_invoice"},
+        "drive_url": f"{DRIVE_URL}/open?id=abcDef_012-345678&resourcekey=resource_key_123",
+        "file_id": "abcDef_012-345678",
+    }]
+
+
+def test_google_picker_config_uses_only_the_enabled_oauth_backend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = replace(
+        _config(
+            tmp_path,
+            trusted_proxy_mode="tailscale_serve",
+            allowed_tailscale_logins=("agent-login",),
+        ),
+        google_picker_developer_key="restricted-browser-key",
+    )
+    _database(config)
+    token_file = tmp_path / "oauth-token.json"
+    token_file.write_text("{}", encoding="utf-8")
+    with LedgerDB.open(config.database) as db:
+        db.upsert_storage_backend(
+            backend_key="google_user_oauth",
+            display_name="Google user OAuth",
+            driver_key="google_drive",
+            provider_key="google",
+            access_mode="read_write",
+            config={"root_folder_id": "folder-123456789", "credential_mode": "oauth"},
+            credential_ref=f"file:{token_file}",
+        )
+        db.upsert_storage_backend(
+            backend_key="google_archive_reader",
+            display_name="Google archive reader",
+            driver_key="google_drive",
+            provider_key="google",
+            access_mode="read_only",
+            config={"root_folder_id": "folder-987654321", "credential_mode": "service_account"},
+            credential_ref="file:/missing-service-account.json",
+        )
+
+    calls: list[tuple[Path, str]] = []
+    monkeypatch.setattr(
+        local_web,
+        "_google_picker_token",
+        lambda path, key: calls.append((path, key)) or {
+            "enabled": True,
+            "developer_key": key,
+            "access" + "_token": "ephemeral-token",
+        },
+    )
+
+    result = LocalAccountingApp(config).google_picker_config()
+
+    assert result == {
+        "enabled": True,
+        "developer_key": "restricted-browser-key",
+        "access" + "_token": "ephemeral-token",
+    }
+    assert calls == [(token_file, "restricted-browser-key")]
+
+
+def test_google_picker_is_disabled_without_tailscale_proxy(tmp_path: Path) -> None:
+    config = replace(_config(tmp_path), google_picker_developer_key="restricted-browser-key")
+    _database(config)
+
+    assert LocalAccountingApp(config).google_picker_config() == {"enabled": False}
 
 
 def test_dashboard_rejects_unknown_or_malformed_quarter(tmp_path: Path) -> None:

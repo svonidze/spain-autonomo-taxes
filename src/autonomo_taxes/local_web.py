@@ -26,7 +26,7 @@ import subprocess
 import sys
 import threading
 from typing import Any, Iterable, Mapping
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 try:
     import yaml
@@ -34,7 +34,7 @@ except Exception:  # pragma: no cover - dependency guard
     yaml = None
 
 from .fx_reference import FXReferenceError, fetch_eur_rate
-from .ledger_db import LedgerDbError, open as open_ledger_db
+from .ledger_db import LedgerDB, LedgerDbError, open as open_ledger_db
 from .legacy_paths import LegacyPathResolver
 from .posting import build_posting_preview
 from .private_paths import (
@@ -51,7 +51,7 @@ from .review_packet import (
     prepare_review_packet,
     prepare_review_work_item,
 )
-from .storage_service import resolve_verified_filesystem_replica
+from .storage_service import resolve_verified_filesystem_replica, resolve_verified_replica
 from .storage_migration import StorageMigrationError, assert_storage_startup_ready
 
 
@@ -77,6 +77,18 @@ def _is_spa_route(path: str) -> bool:
 
 
 UPLOAD_KINDS = {"expense_invoice", "income_invoice"}
+INTAKE_FIELD_NAMES = {
+    "period",
+    "kind",
+    "issued_on",
+    "document_number",
+    "counterparty_name",
+    "gross",
+    "taxable_base",
+    "vat",
+    "currency",
+}
+GOOGLE_DRIVE_FILE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{10,256}$")
 UPLOAD_SUFFIXES = {
     ".bmp",
     ".csv",
@@ -91,6 +103,7 @@ UPLOAD_SUFFIXES = {
 }
 MAX_UPLOAD_BYTES = 30 * 1024 * 1024
 MAX_REVIEW_PACKET_BYTES = 64 * 1024
+MAX_GOOGLE_DRIVE_URL_BYTES = 2048
 _SO_EXCLUSIVEADDRUSE = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
 TAX_FORM_KEYS = {
     "130": "modelo130",
@@ -156,6 +169,7 @@ class LocalWebConfig:
     allowed_tailscale_logins: tuple[str, ...] = ()
     read_only_document_roots: tuple[Path, ...] = ()
     legacy_path_map_file: Path | None = None
+    google_picker_developer_key: str | None = None
 
 
 def load_config(
@@ -203,6 +217,9 @@ def load_config(
         )
     )
     legacy_path_map = _configured_path(values.get("legacy_path_map_file"), private_config)
+    google_picker_developer_key = _configured_google_picker_developer_key(
+        values.get("google_picker_developer_key")
+    )
 
     resolved_database = (
         database
@@ -237,6 +254,7 @@ def load_config(
         allowed_tailscale_logins=allowed_tailscale_logins,
         read_only_document_roots=read_only_document_roots,
         legacy_path_map_file=legacy_path_map.resolve() if legacy_path_map else None,
+        google_picker_developer_key=google_picker_developer_key,
     )
 
 
@@ -692,6 +710,7 @@ class LocalAccountingApp:
         fields: Mapping[str, str],
         filename: str,
         content: bytes,
+        google_folder_id: str | None = None,
     ) -> dict[str, Any]:
         if self.config.inbox_root is None or self.config.archive_root is None:
             raise LocalWebError(
@@ -749,6 +768,18 @@ class LocalAccountingApp:
             if value:
                 command.extend((option, value))
         result = self._run_cli(command)
+        if google_folder_id:
+            document_id = str(result.get("document_id") or "")
+            if not document_id:
+                raise LocalWebApiError(
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                    "storage_sync_failed",
+                    "Document intake did not return an id for cloud archival",
+                )
+            self._sync_upload_to_selected_google_folder(
+                document_id=document_id,
+                google_folder_id=google_folder_id,
+            )
         return {
             "status": "accepted_for_review",
             "period": period,
@@ -760,6 +791,137 @@ class LocalAccountingApp:
             "review_requirements": result.get("review_requirements", []),
             "system_marker": result.get("document_id"),
         }
+
+    def _sync_upload_to_selected_google_folder(
+        self,
+        *,
+        document_id: str,
+        google_folder_id: str,
+    ) -> None:
+        """Create verified Google and Yandex copies for an explicitly chosen folder."""
+        from .storage_reconcile import reconcile_file_to_backend
+
+        try:
+            with LedgerDB.open(self.config.database) as db:
+                file_row = db.connection.execute(
+                    """
+                    SELECT da.file_id
+                    FROM document_attachments da
+                    WHERE da.document_id = ? AND da.attachment_role = 'source'
+                    ORDER BY da.created_at, da.document_attachment_id
+                    LIMIT 1
+                    """,
+                    (document_id,),
+                ).fetchone()
+                writer = db.connection.execute(
+                    """
+                    SELECT backend_key
+                    FROM storage_backends
+                    WHERE enabled = 1
+                      AND driver_key = 'google_drive'
+                      AND access_mode = 'read_write'
+                      AND json_extract(config_json, '$.credential_mode') = 'oauth'
+                    ORDER BY read_priority, backend_key
+                    LIMIT 1
+                    """
+                ).fetchone()
+                if file_row is None or writer is None:
+                    raise RuntimeError("Google Drive writer is not configured")
+                file_id = str(file_row["file_id"])
+                google = reconcile_file_to_backend(
+                    db,
+                    backend_key=str(writer["backend_key"]),
+                    file_id=file_id,
+                    google_folder_id=google_folder_id,
+                    document_id=document_id,
+                )
+                yandex = reconcile_file_to_backend(
+                    db,
+                    backend_key="yandex_evidence",
+                    file_id=file_id,
+                    document_id=document_id,
+                )
+                if int(google.get("failed", 0)) or int(yandex.get("failed", 0)):
+                    raise RuntimeError("Verified cloud replica could not be created")
+        except Exception as exc:
+            raise LocalWebApiError(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                "storage_sync_failed",
+                "Document was accepted locally but cloud archival is not verified",
+            ) from exc
+
+    def google_picker_config(self) -> dict[str, Any]:
+        """Return browser-only Picker credentials for the authenticated tailnet UI.
+
+        Refresh credentials remain server-side.  The access token is deliberately
+        fetched only on demand and never stored in the database or browser
+        storage.
+        """
+        developer_key = self.config.google_picker_developer_key
+        if not self.uses_trusted_proxy or not developer_key:
+            return {"enabled": False}
+        try:
+            with closing(self._connect()) as connection:
+                rows = connection.execute(
+                    """
+                    SELECT config_json, credential_ref
+                    FROM storage_backends
+                    WHERE enabled = 1
+                      AND driver_key = 'google_drive'
+                      AND access_mode = 'read_write'
+                    ORDER BY read_priority, backend_key
+                    """
+                ).fetchall()
+            for row in rows:
+                config = json.loads(str(row["config_json"]))
+                if not isinstance(config, Mapping) or config.get("credential_mode", "oauth") != "oauth":
+                    continue
+                credential_ref = str(row["credential_ref"] or "")
+                if not credential_ref.startswith("file:"):
+                    continue
+                token_file = Path(credential_ref.removeprefix("file:"))
+                if not token_file.is_file() or token_file.is_symlink():
+                    continue
+                return _google_picker_token(token_file, developer_key)
+        except (OSError, sqlite3.Error, json.JSONDecodeError, ValueError):
+            pass
+        return {"enabled": False}
+
+    def ingest_google_drive_url(
+        self,
+        *,
+        fields: Mapping[str, str],
+        drive_url: str,
+    ) -> dict[str, Any]:
+        """Ingest an existing Drive file without creating another Drive copy.
+
+        The provider integration owns download, checksum verification, archival
+        metadata, and replica registration.  Keeping the web boundary limited
+        to a canonical file ID prevents arbitrary remote fetches from the
+        private web service.
+        """
+        normalized_url, file_id = normalize_google_drive_url(drive_url)
+        normalized_fields = _validated_intake_fields(fields)
+        try:
+            from .storage_import import ingest_google_drive_url as import_google_drive_url
+
+            result = import_google_drive_url(
+                config=self.config,
+                fields=normalized_fields,
+                drive_url=normalized_url,
+                file_id=file_id,
+            )
+        except ImportError as exc:  # pragma: no cover - incomplete deployment guard
+            raise LocalWebError("Google Drive intake is not configured") from exc
+        except LocalWebError:
+            raise
+        except Exception as exc:
+            # The provider may include remote URLs or credential context in its
+            # exception.  Never reflect either back through the web API.
+            raise LocalWebError("Google Drive file could not be imported") from exc
+        if not isinstance(result, Mapping):
+            raise LocalWebError("Google Drive intake returned an invalid result")
+        return dict(result)
 
     def review_work_item(self, review_id: str) -> dict[str, Any]:
         try:
@@ -879,6 +1041,14 @@ class LocalAccountingApp:
             _is_relative_to(replica.path, root.resolve()) for root in allowed_roots
         ):
             return replica.path, replica.media_type
+        with closing(self._connect()) as connection:
+            remote_replica = resolve_verified_replica(
+                connection,
+                document_id=document_id,
+                cache_root=self.config.cache_root / "storage",
+            )
+        if remote_replica is not None:
+            return remote_replica.path, remote_replica.media_type
         if row is None or not row["source_path"]:
             raise FileNotFoundError("Document source is unavailable")
         path = self.resolve_document_path(str(row["source_path"]))
@@ -1333,6 +1503,8 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             query = parse_qs(parsed.query)
             if parsed.path == "/api/bootstrap":
                 self._send_json(self.server.app.bootstrap())
+            elif parsed.path == "/api/google-picker/config":
+                self._send_json(self.server.app.google_picker_config())
             elif parsed.path == "/api/dashboard":
                 self._send_json(
                     self.server.app.dashboard(_single_query(query, "period"))
@@ -1416,11 +1588,34 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                 )
             elif parsed.path == "/api/intake":
                 fields, filename, content = self._read_multipart()
+                google_folder_id = _optional_google_folder_id(
+                    fields.pop("google_folder_id", None)
+                )
                 self._send_json(
                     self.server.app.ingest_upload(
                         fields=fields,
                         filename=filename,
                         content=content,
+                        google_folder_id=google_folder_id,
+                    ),
+                    status=HTTPStatus.CREATED,
+                )
+            elif parsed.path == "/api/intake/google-drive":
+                self._require_same_origin()
+                self._require_json_content_type()
+                payload = self._read_json(max_bytes=MAX_REVIEW_PACKET_BYTES)
+                _exact_object_fields(payload, {"fields", "drive_url"}, "Google Drive intake request")
+                fields = payload["fields"]
+                if not isinstance(fields, Mapping):
+                    raise LocalWebApiError(
+                        HTTPStatus.BAD_REQUEST,
+                        "invalid_request",
+                        "fields must be a JSON object",
+                    )
+                self._send_json(
+                    self.server.app.ingest_google_drive_url(
+                        fields=_validated_intake_fields(fields),
+                        drive_url=str(payload["drive_url"]),
                     ),
                     status=HTTPStatus.CREATED,
                 )
@@ -1761,12 +1956,25 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header(
-            "Content-Security-Policy",
-            "default-src 'self'; img-src 'self' data:; "
-            "style-src 'self'; script-src 'self'; connect-src 'self'; "
-            "object-src 'none'; frame-ancestors 'none'; base-uri 'none'",
-        )
+        picker_csp = ""
+        if self.server.app.config.google_picker_developer_key:
+            picker_csp = (
+                " https://apis.google.com; frame-src https://drive.google.com "
+                "https://docs.google.com; connect-src 'self' https://www.googleapis.com;"
+            )
+        if picker_csp:
+            policy = (
+                "default-src 'self'; img-src 'self' data:; style-src 'self'; "
+                "script-src 'self'" + picker_csp +
+                " object-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+            )
+        else:
+            policy = (
+                "default-src 'self'; img-src 'self' data:; "
+                "style-src 'self'; script-src 'self'; connect-src 'self'; "
+                "object-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+            )
+        self.send_header("Content-Security-Policy", policy)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1853,6 +2061,14 @@ def _configured_proxy_mode(value: Any) -> str | None:
     return mode
 
 
+def _configured_google_picker_developer_key(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise LocalWebError("google_picker_developer_key must be a non-empty string")
+    return value.strip()
+
+
 def _configured_string_list(value: Any, *, field_name: str) -> tuple[str, ...]:
     if value in (None, ""):
         return ()
@@ -1877,6 +2093,40 @@ def _configured_path(value: Any, config_file: Path | None) -> Path | None:
     if config_file is None:
         return path.resolve()
     return resolve_config_path(path, config_file=config_file)
+
+
+def _optional_google_folder_id(value: str | None) -> str | None:
+    if value is None or not str(value).strip():
+        return None
+    folder_id = str(value).strip()
+    if not GOOGLE_DRIVE_FILE_ID_RE.fullmatch(folder_id):
+        raise LocalWebError("Google Drive folder selection is invalid")
+    return folder_id
+
+
+def _google_picker_token(token_file: Path, developer_key: str) -> dict[str, Any]:
+    """Refresh a user OAuth credential without exposing its refresh token."""
+    try:
+        from google.auth.transport.requests import Request
+        from google.oauth2.credentials import Credentials
+
+        credentials = Credentials.from_authorized_user_file(
+            str(token_file),
+            scopes=["https://www.googleapis.com/auth/drive.file"],
+        )
+        if credentials.expired and credentials.refresh_token:
+            credentials.refresh(Request())
+            token_file.write_text(credentials.to_json(), encoding="utf-8")
+            token_file.chmod(0o600)
+        if not credentials.valid or not credentials.token:
+            return {"enabled": False}
+    except Exception:
+        return {"enabled": False}
+    return {
+        "enabled": True,
+        "developer_key": developer_key,
+        "access_token": str(credentials.token),
+    }
 
 
 def _coerce_session_secret(value: str | bytes | None) -> bytes:
@@ -2548,6 +2798,78 @@ def _exact_object_fields(
         "invalid_request",
         f"Invalid {label} (" + "; ".join(details) + ")",
     )
+
+
+def normalize_google_drive_url(value: str) -> tuple[str, str]:
+    """Return a canonical Drive open URL and its file ID.
+
+    This deliberately accepts only documented Drive/Docs file URL shapes.  It
+    rejects arbitrary HTTPS URLs so the intake endpoint cannot become an SSRF
+    proxy or persist a URL containing an access token.
+    """
+    raw = str(value).strip()
+    if not raw or len(raw.encode("utf-8")) > MAX_GOOGLE_DRIVE_URL_BYTES:
+        raise LocalWebError("Google Drive URL is invalid")
+    parsed = urlparse(raw)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or parsed.username or parsed.password or parsed.port:
+        raise LocalWebError("Google Drive URL is invalid")
+    file_id: str | None = None
+    path_parts = [part for part in parsed.path.split("/") if part]
+    if host == "drive.google.com":
+        if len(path_parts) >= 3 and path_parts[:2] == ["file", "d"]:
+            file_id = path_parts[2]
+        elif path_parts and path_parts[0] in {"open", "uc"}:
+            values = parse_qs(parsed.query, keep_blank_values=True)
+            ids = values.get("id", [])
+            if len(ids) == 1:
+                file_id = ids[0]
+    elif host == "docs.google.com":
+        if len(path_parts) >= 3 and path_parts[0] in {
+            "document",
+            "spreadsheets",
+            "presentation",
+            "drawings",
+        } and path_parts[1] == "d":
+            file_id = path_parts[2]
+    if not file_id or not GOOGLE_DRIVE_FILE_ID_RE.fullmatch(file_id):
+        raise LocalWebError("Google Drive URL is invalid")
+    resource_keys = parse_qs(parsed.query, keep_blank_values=True).get("resourcekey", [])
+    if len(resource_keys) > 1 or (
+        resource_keys and not GOOGLE_DRIVE_FILE_ID_RE.fullmatch(resource_keys[0])
+    ):
+        raise LocalWebError("Google Drive URL is invalid")
+    query = {"id": file_id}
+    if resource_keys:
+        query["resourcekey"] = resource_keys[0]
+    return ("https://" + "drive.google.com/open?" + urlencode(query), file_id)
+
+
+def _validated_intake_fields(value: Mapping[str, Any]) -> dict[str, str]:
+    unexpected = set(value) - INTAKE_FIELD_NAMES
+    if unexpected:
+        raise LocalWebError("Google Drive intake fields are invalid")
+    fields: dict[str, str] = {}
+    for name, raw in value.items():
+        if not isinstance(name, str) or not isinstance(raw, str):
+            raise LocalWebError("Google Drive intake fields are invalid")
+        if len(raw) > 4096:
+            raise LocalWebError("Google Drive intake fields are invalid")
+        fields[name] = raw
+    # Apply the same non-provider validation as local uploads before calling
+    # the importer, so both intake modes enforce identical business limits.
+    period = _validate_period(fields.get("period", ""))
+    kind = fields.get("kind", "")
+    if kind not in UPLOAD_KINDS:
+        raise LocalWebError("kind must be expense_invoice or income_invoice")
+    issued_on = fields.get("issued_on", "").strip()
+    if issued_on:
+        parsed_date = date.fromisoformat(issued_on)
+        if _quarter_key(parsed_date) != period:
+            raise LocalWebError(
+                f"Invoice date belongs to {_quarter_key(parsed_date)}, not {period}"
+            )
+    return fields
 
 
 def _cli_error_detail(stderr: str, stdout: str) -> str:

@@ -8,6 +8,9 @@ legacy_path_map_file: "<private-root>/legacy-path-map.json"
 trusted_proxy_mode: "tailscale_serve"
 allowed_tailscale_logins:
   - "<tailscale-login>"
+# Optional browser API key for the Google Picker. Restrict it to the private
+# Tailscale HTTPS origin in Google Cloud; never commit a real key.
+# google_picker_developer_key: "<restricted-browser-api-key>"
 drive_backup_dir: "<private-root>/backups"
 drive_evidence_dir: "<private-root>/evidence"
 review_export_dir: "<private-root>/review-exports"

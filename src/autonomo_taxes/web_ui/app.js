@@ -51,6 +51,17 @@ const messages = {
     "intake.expenseFile": "Выберите счет поставщика или перетащите файл",
     "intake.incomeFile": "Выберите выставленный счет или перетащите файл",
     "intake.fileFormats": "PDF, изображение, CSV или TXT до 30 MB",
+    "intake.sourceAria": "Источник документа",
+    "intake.sourceUpload": "Загрузить файл",
+    "intake.sourceGoogleDrive": "Google Drive URL",
+    "intake.googleDriveUrl": "Ссылка на файл Google Drive",
+    "intake.googleDrivePlaceholder": "drive.google.com/file/d/...",
+    "intake.googleDriveHint": "Файл останется в вашем архиве; будет сохранена ссылка на оригинал.",
+    "intake.googlePickerHint": "Google Picker будет доступен после настройки узкого доступа drive.file.",
+    "intake.googleDriveInvalid": "Введите ссылку на файл Google Drive.",
+    "intake.chooseGoogleFolder": "Выбрать папку Google Drive",
+    "intake.googleFolderSelected": "Папка: {name}",
+    "intake.googlePickerUnavailable": "Выбор папки Google Drive пока не настроен.",
     "intake.accept": "Принять в систему",
     "intake.selectFile": "Выберите файл.",
     "intake.processing": "Извлечение и запись…",
@@ -358,6 +369,17 @@ const messages = {
     "intake.expenseFile": "Choose a supplier invoice or drop a file",
     "intake.incomeFile": "Choose an issued invoice or drop a file",
     "intake.fileFormats": "PDF, image, CSV, or TXT up to 30 MB",
+    "intake.sourceAria": "Document source",
+    "intake.sourceUpload": "Upload file",
+    "intake.sourceGoogleDrive": "Google Drive URL",
+    "intake.googleDriveUrl": "Google Drive file link",
+    "intake.googleDrivePlaceholder": "drive.google.com/file/d/...",
+    "intake.googleDriveHint": "The file stays in your archive; the original link is recorded.",
+    "intake.googlePickerHint": "Google Picker will be available after narrow drive.file access is configured.",
+    "intake.googleDriveInvalid": "Enter a Google Drive file link.",
+    "intake.chooseGoogleFolder": "Choose Google Drive folder",
+    "intake.googleFolderSelected": "Folder: {name}",
+    "intake.googlePickerUnavailable": "Google Drive folder selection is not configured yet.",
     "intake.accept": "Add to system",
     "intake.selectFile": "Choose a file.",
     "intake.processing": "Extracting and recording…",
@@ -826,6 +848,9 @@ const state = {
   period: null,
   view: "dashboard",
   intakeKind: "expense_invoice",
+  intakeSource: "upload",
+  googlePicker: null,
+  googleFolder: null,
   copyTargetPeriodKey: null,
   copyTargetIsCurrentQuarter: false,
   locale: loadLocale(),
@@ -867,6 +892,12 @@ const intakePeriod = hasDOM ? document.querySelector("#intake-period") : null;
 const intakeFile = hasDOM ? document.querySelector("#intake-file") : null;
 const fileLabel = hasDOM ? document.querySelector("#file-label") : null;
 const fileDrop = hasDOM ? document.querySelector("#file-drop") : null;
+const googleDriveUrl = hasDOM ? document.querySelector("#google-drive-url") : null;
+const googleDriveUrlField = hasDOM ? document.querySelector("#google-drive-url-field") : null;
+const googlePickerHint = hasDOM ? document.querySelector("#google-picker-hint") : null;
+const googleFolderControls = hasDOM ? document.querySelector("#google-folder-controls") : null;
+const chooseGoogleFolder = hasDOM ? document.querySelector("#choose-google-folder") : null;
+const googleFolderSelection = hasDOM ? document.querySelector("#google-folder-selection") : null;
 const intakeNotice = hasDOM ? document.querySelector("#intake-notice") : null;
 const intakeStatus = hasDOM ? document.querySelector("#intake-status") : null;
 const submitIntake = hasDOM ? document.querySelector("#submit-intake") : null;
@@ -3280,7 +3311,10 @@ function copyTransactionAction(transactionId, targetPeriodKey = state.copyTarget
 
 function openIntake(kind, {targetPeriodKey = state.period, prefill = null, noticeLines = []} = {}) {
   intakeForm.reset();
+  state.googleFolder = null;
+  renderGoogleFolderSelection();
   setIntakeKind(kind);
+  setIntakeSource("upload");
   intakePeriod.value = targetPeriodKey;
   document.querySelector("#intake-period-label").textContent = targetPeriodKey;
   intakeStatus.textContent = "";
@@ -3292,11 +3326,14 @@ function openIntake(kind, {targetPeriodKey = state.period, prefill = null, notic
   formElements.gross.value = prefill?.gross || "";
   setIntakeNotice(noticeLines);
   updateFilePrompt();
+  void refreshGooglePickerAvailability();
   if (!dialog.open) dialog.showModal();
 }
 
 function closeIntake() {
   if (dialog.open) dialog.close();
+  state.googleFolder = null;
+  renderGoogleFolderSelection();
 }
 
 function setIntakeKind(kind) {
@@ -3307,10 +3344,121 @@ function setIntakeKind(kind) {
   });
   document.querySelector("#counterparty-label").textContent =
     kind === "income_invoice" ? t("fields.client") : t("fields.supplier");
-  if (!intakeFile.files[0]) updateFilePrompt();
+  if (state.intakeSource === "upload" && !intakeFile.files[0]) updateFilePrompt();
   document.querySelectorAll(".expense-only").forEach((element) => {
     element.hidden = kind === "income_invoice";
   });
+}
+
+function setIntakeSource(source) {
+  state.intakeSource = source === "google_drive" ? "google_drive" : "upload";
+  const usingGoogleDrive = state.intakeSource === "google_drive";
+  intakeFile.required = !usingGoogleDrive;
+  intakeFile.disabled = usingGoogleDrive;
+  fileDrop.hidden = usingGoogleDrive;
+  googleDriveUrlField.hidden = !usingGoogleDrive;
+  googleDriveUrl.required = usingGoogleDrive;
+  googleDriveUrl.disabled = !usingGoogleDrive;
+  googlePickerHint.hidden = !usingGoogleDrive;
+  googleFolderControls.hidden = usingGoogleDrive || !state.googlePicker?.enabled;
+  document.querySelectorAll("[data-intake-source]").forEach((button) => {
+    const active = button.dataset.intakeSource === state.intakeSource;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+  if (usingGoogleDrive) {
+    googleDriveUrl.focus();
+  } else if (!intakeFile.files[0]) {
+    updateFilePrompt();
+  }
+}
+
+function renderGoogleFolderSelection() {
+  if (!googleFolderSelection) return;
+  googleFolderSelection.textContent = state.googleFolder
+    ? t("intake.googleFolderSelected", {name: state.googleFolder.name})
+    : "";
+}
+
+async function refreshGooglePickerAvailability() {
+  try {
+    const config = await fetchJSON("/api/google-picker/config");
+    state.googlePicker = {enabled: Boolean(config?.enabled)};
+  } catch (_) {
+    state.googlePicker = {enabled: false};
+  }
+  googleFolderControls.hidden = state.intakeSource !== "upload" || !state.googlePicker.enabled;
+}
+
+function loadGooglePickerApi() {
+  if (window.google?.picker) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-google-picker-api]');
+    if (existing) {
+      existing.addEventListener("load", () => window.gapi.load("picker", resolve), {once: true});
+      existing.addEventListener("error", reject, {once: true});
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://apis.google.com/js/api.js";
+    script.async = true;
+    script.dataset.googlePickerApi = "true";
+    script.addEventListener("load", () => window.gapi.load("picker", resolve), {once: true});
+    script.addEventListener("error", () => reject(new Error("Google Picker failed to load")), {once: true});
+    document.head.append(script);
+  });
+}
+
+async function openGoogleFolderPicker() {
+  chooseGoogleFolder.disabled = true;
+  try {
+    const config = await fetchJSON("/api/google-picker/config");
+    if (!config?.enabled || !config.developer_key || !config.access_token) {
+      throw new Error(t("intake.googlePickerUnavailable"));
+    }
+    await loadGooglePickerApi();
+    const view = new window.google.picker.DocsView(window.google.picker.ViewId.FOLDERS)
+      .setSelectFolderEnabled(true)
+      .setMode(window.google.picker.DocsViewMode.LIST);
+    const picker = new window.google.picker.PickerBuilder()
+      .addView(view)
+      .setOAuthToken(config.access_token)
+      .setDeveloperKey(config.developer_key)
+      .setOrigin(window.location.origin)
+      .setCallback((data) => {
+        if (data.action !== window.google.picker.Action.PICKED) return;
+        const selected = data[window.google.picker.Response.DOCUMENTS]?.[0];
+        const id = selected?.[window.google.picker.Document.ID];
+        const name = selected?.[window.google.picker.Document.NAME];
+        if (!/^[A-Za-z0-9_-]{10,256}$/.test(String(id || ""))) return;
+        state.googleFolder = {id: String(id), name: String(name || id)};
+        renderGoogleFolderSelection();
+      })
+      .build();
+    picker.setVisible(true);
+  } catch (error) {
+    intakeStatus.textContent = error.message || t("intake.googlePickerUnavailable");
+  } finally {
+    chooseGoogleFolder.disabled = false;
+  }
+}
+
+function isGoogleDriveUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    if (url.protocol !== "https:" || url.username || url.password || url.port) return false;
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (url.hostname === "drive.google.com") {
+      return (parts[0] === "file" && parts[1] === "d" && /^[A-Za-z0-9_-]{10,256}$/.test(parts[2] || ""))
+        || (["open", "uc"].includes(parts[0]) && /^[A-Za-z0-9_-]{10,256}$/.test(url.searchParams.get("id") || ""));
+    }
+    return url.hostname === "docs.google.com"
+      && ["document", "spreadsheets", "presentation", "drawings"].includes(parts[0])
+      && parts[1] === "d"
+      && /^[A-Za-z0-9_-]{10,256}$/.test(parts[2] || "");
+  } catch (_) {
+    return false;
+  }
 }
 
 function updateFilePrompt() {
@@ -3537,6 +3685,7 @@ if (typeof globalThis !== "undefined") {
     buildConfirmFxSpec,
     questionAnswerMap,
     fxChoiceNeeded,
+    isGoogleDriveUrl,
   };
 }
 
@@ -3576,12 +3725,21 @@ if (hasDOM) {
   document.querySelector("#cancel-dialog").addEventListener("click", closeIntake);
   document.querySelector("#close-posting-dialog").addEventListener("click", closePostingConfirmDialog);
   document.querySelector("#cancel-posting-dialog").addEventListener("click", closePostingConfirmDialog);
+  chooseGoogleFolder.addEventListener("click", () => {
+    void openGoogleFolderPicker();
+  });
   confirmPostingButton.addEventListener("click", () => {
     void submitPostingReady();
   });
 
   document.querySelectorAll(".segmented-control button").forEach((button) => {
-    button.addEventListener("click", () => setIntakeKind(button.dataset.kind));
+    if (button.dataset.kind) {
+      button.addEventListener("click", () => setIntakeKind(button.dataset.kind));
+    }
+  });
+
+  document.querySelectorAll("[data-intake-source]").forEach((button) => {
+    button.addEventListener("click", () => setIntakeSource(button.dataset.intakeSource));
   });
 
   intakeFile.addEventListener("change", () => {
@@ -3652,16 +3810,44 @@ if (hasDOM) {
 
   intakeForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    if (!intakeFile.files[0]) {
+    if (state.intakeSource === "upload" && !intakeFile.files[0]) {
       intakeStatus.textContent = t("intake.selectFile");
+      return;
+    }
+    if (state.intakeSource === "google_drive" && !isGoogleDriveUrl(googleDriveUrl.value)) {
+      intakeStatus.textContent = t("intake.googleDriveInvalid");
+      googleDriveUrl.focus();
       return;
     }
     submitIntake.disabled = true;
     intakeStatus.textContent = t("intake.processing");
     try {
-      const result = await fetchJSON("/api/intake", {
-        method: "POST",
-        body: new FormData(intakeForm),
+      const request = state.intakeSource === "google_drive"
+        ? {
+          url: "/api/intake/google-drive",
+          options: {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify((() => {
+              const fields = Object.fromEntries(new FormData(intakeForm).entries());
+              delete fields.drive_url;
+              return {fields, drive_url: googleDriveUrl.value.trim()};
+            })()),
+          },
+        }
+        : {
+          url: "/api/intake",
+          options: {
+            method: "POST",
+            body: (() => {
+              const formData = new FormData(intakeForm);
+              if (state.googleFolder?.id) formData.set("google_folder_id", state.googleFolder.id);
+              return formData;
+            })(),
+          },
+        };
+      const result = await fetchJSON(request.url, {
+        ...request.options,
         fallbackMessage: t("intake.failed"),
       });
       intakeStatus.textContent = t("intake.accepted", {
