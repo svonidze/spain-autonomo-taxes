@@ -65,7 +65,7 @@ class LedgerDbTests(unittest.TestCase):
 
             with open_ledger_db(path, apply_migrations=True) as db:
                 version = db.connection.execute("PRAGMA user_version").fetchone()[0]
-                self.assertEqual(version, 18)
+                self.assertEqual(version, ledger_db_module.LATEST_SCHEMA_VERSION)
 
                 tables = {
                     row[0]
@@ -154,7 +154,7 @@ class LedgerDbTests(unittest.TestCase):
                     "SELECT * FROM payments WHERE payment_id = 'legacy-payment'"
                 ).fetchone()
 
-                self.assertEqual(version, 18)
+                self.assertEqual(version, ledger_db_module.LATEST_SCHEMA_VERSION)
                 self.assertEqual(len(issues), 1)
                 self.assertEqual(
                     issues[0]["dedupe_key"],
@@ -205,7 +205,7 @@ class LedgerDbTests(unittest.TestCase):
             self.assertNotIn("source_system", columns)
 
             with open_ledger_db(path, apply_migrations=True) as db:
-                self.assertEqual(db.connection.execute("PRAGMA user_version").fetchone()[0], 18)
+                self.assertEqual(db.connection.execute("PRAGMA user_version").fetchone()[0], ledger_db_module.LATEST_SCHEMA_VERSION)
 
     def test_schema_9_ddl_rolls_back_atomically_on_failure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -247,7 +247,7 @@ class LedgerDbTests(unittest.TestCase):
             self.assertIsNone(table)
 
             with open_ledger_db(path, apply_migrations=True) as db:
-                self.assertEqual(db.connection.execute("PRAGMA user_version").fetchone()[0], 18)
+                self.assertEqual(db.connection.execute("PRAGMA user_version").fetchone()[0], ledger_db_module.LATEST_SCHEMA_VERSION)
 
     def test_schema_12_ddl_rolls_back_atomically_on_failure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -291,7 +291,7 @@ class LedgerDbTests(unittest.TestCase):
             self.assertIsNone(table)
 
             with open_ledger_db(path, apply_migrations=True) as db:
-                self.assertEqual(db.connection.execute("PRAGMA user_version").fetchone()[0], 18)
+                self.assertEqual(db.connection.execute("PRAGMA user_version").fetchone()[0], ledger_db_module.LATEST_SCHEMA_VERSION)
 
     def test_schema_13_ddl_rolls_back_atomically_on_failure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -337,7 +337,8 @@ class LedgerDbTests(unittest.TestCase):
 
             with open_ledger_db(path, apply_migrations=True) as db:
                 self.assertEqual(
-                    db.connection.execute("PRAGMA user_version").fetchone()[0], 18
+                    db.connection.execute("PRAGMA user_version").fetchone()[0],
+                    ledger_db_module.LATEST_SCHEMA_VERSION,
                 )
 
     def test_schema_14_ddl_rolls_back_atomically_on_failure(self) -> None:
@@ -383,7 +384,8 @@ class LedgerDbTests(unittest.TestCase):
 
             with open_ledger_db(path, apply_migrations=True) as db:
                 self.assertEqual(
-                    db.connection.execute("PRAGMA user_version").fetchone()[0], 18
+                    db.connection.execute("PRAGMA user_version").fetchone()[0],
+                    ledger_db_module.LATEST_SCHEMA_VERSION,
                 )
 
     def test_schema_15_ddl_rolls_back_atomically_on_failure(self) -> None:
@@ -429,7 +431,8 @@ class LedgerDbTests(unittest.TestCase):
 
             with open_ledger_db(path, apply_migrations=True) as db:
                 self.assertEqual(
-                    db.connection.execute("PRAGMA user_version").fetchone()[0], 18
+                    db.connection.execute("PRAGMA user_version").fetchone()[0],
+                    ledger_db_module.LATEST_SCHEMA_VERSION,
                 )
 
     def test_schema_16_ddl_rolls_back_atomically_on_failure(self) -> None:
@@ -481,7 +484,8 @@ class LedgerDbTests(unittest.TestCase):
 
             with open_ledger_db(path, apply_migrations=True) as db:
                 self.assertEqual(
-                    db.connection.execute("PRAGMA user_version").fetchone()[0], 18
+                    db.connection.execute("PRAGMA user_version").fetchone()[0],
+                    ledger_db_module.LATEST_SCHEMA_VERSION,
                 )
 
     def test_schema_17_migrates_fx_rates_source_reference_as_nullable(self) -> None:
@@ -518,7 +522,8 @@ class LedgerDbTests(unittest.TestCase):
 
             with open_ledger_db(path, apply_migrations=True) as db:
                 self.assertEqual(
-                    db.connection.execute("PRAGMA user_version").fetchone()[0], 18
+                    db.connection.execute("PRAGMA user_version").fetchone()[0],
+                    ledger_db_module.LATEST_SCHEMA_VERSION,
                 )
                 row = db.connection.execute(
                     "SELECT source_reference FROM fx_rates WHERE fx_rate_id = ?",
@@ -569,7 +574,8 @@ class LedgerDbTests(unittest.TestCase):
 
             with open_ledger_db(path, apply_migrations=True) as db:
                 self.assertEqual(
-                    db.connection.execute("PRAGMA user_version").fetchone()[0], 18
+                    db.connection.execute("PRAGMA user_version").fetchone()[0],
+                    ledger_db_module.LATEST_SCHEMA_VERSION,
                 )
 
     def test_counterparty_identity_is_source_backed_versioned_and_singular(self) -> None:
@@ -775,7 +781,7 @@ class LedgerDbTests(unittest.TestCase):
             self.assertNotIn("business_activity_id", transaction_columns)
 
             with open_ledger_db(path, apply_migrations=True) as db:
-                self.assertEqual(db.connection.execute("PRAGMA user_version").fetchone()[0], 18)
+                self.assertEqual(db.connection.execute("PRAGMA user_version").fetchone()[0], ledger_db_module.LATEST_SCHEMA_VERSION)
 
     def test_schema_11_ddl_rolls_back_atomically_on_failure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -815,7 +821,7 @@ class LedgerDbTests(unittest.TestCase):
             self.assertNotIn("aeat_asset_identifier", columns)
 
             with open_ledger_db(path, apply_migrations=True) as db:
-                self.assertEqual(db.connection.execute("PRAGMA user_version").fetchone()[0], 18)
+                self.assertEqual(db.connection.execute("PRAGMA user_version").fetchone()[0], ledger_db_module.LATEST_SCHEMA_VERSION)
 
     def test_business_activity_is_versioned_and_auto_assigned_when_unambiguous(self) -> None:
         with self._database() as db:

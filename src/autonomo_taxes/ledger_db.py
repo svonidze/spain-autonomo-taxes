@@ -24,7 +24,21 @@ from .outgoing_invoices import (
 from .tax_rules import ALL_FORM_CODES
 
 
-LATEST_SCHEMA_VERSION = 18
+LATEST_SCHEMA_VERSION = 19
+
+# Migrations that rebuild a table referenced by a foreign key. They must
+# run with foreign-key enforcement temporarily disabled, and that pragma
+# only takes effect outside a transaction.
+FK_REBUILD_MIGRATIONS = frozenset({19})
+
+# Immutable provenance kinds for fx_rates rows (schema v19).
+FX_PROVENANCE_KINDS = {
+    "ecb": "official",
+    "banco_de_espana": "official",
+    "xolo_recorded": "recorded",
+    "actual_settlement": "documented_settlement",
+    "target_derived": "derived",
+}
 
 ACTIVE_LIFECYCLE_STATUSES = (
     "received",
@@ -2550,64 +2564,87 @@ class LedgerDB:
         source_hash: str,
         source_reference: str | None = None,
         rule_version_id: str | None = None,
+        provenance: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         normalized_reference = _normalize_source_reference(source_reference)
         canonical_rate = _canonical_decimal_text(rate)
-        existing = self._fetch_optional(
-            """
-            SELECT * FROM fx_rates
-            WHERE rate_date = ? AND base_currency = ? AND quote_currency = ? AND rate_source = ?
-            """,
-            (rate_date, base_currency, quote_currency, rate_source),
-        )
-        if existing is not None:
-            existing_rate = _canonical_decimal_text(str(existing["rate"]))
-            existing_reference = _normalize_source_reference(existing["source_reference"])
-            if existing_rate != canonical_rate:
-                raise FxRateConflictError(
-                    "Conflicting FX rate for "
-                    f"{rate_date} {base_currency}/{quote_currency} {rate_source}"
-                )
-            if (
-                existing_reference is not None
-                and normalized_reference is not None
-                and existing_reference != normalized_reference
-            ):
-                raise FxRateConflictError(
-                    "Conflicting FX source_reference for "
-                    f"{rate_date} {base_currency}/{quote_currency} {rate_source}"
-                )
-            needs_reference_backfill = (
-                existing_reference is None and normalized_reference is not None
+        if rate_source == "actual_settlement":
+            # Schema v19 lets different documented settlements coexist for the
+            # same date/currency; only a fully identical record is reused.
+            existing = self._fetch_optional(
+                """
+                SELECT * FROM fx_rates
+                WHERE rate_date = ? AND base_currency = ? AND quote_currency = ?
+                    AND rate_source = ? AND rate = ?
+                    AND COALESCE(source_reference, '') = ?
+                """,
+                (
+                    rate_date,
+                    base_currency,
+                    quote_currency,
+                    rate_source,
+                    canonical_rate,
+                    normalized_reference or "",
+                ),
             )
-            needs_rule_backfill = (
-                existing["rule_version_id"] is None and rule_version_id is not None
-            )
-            if not needs_reference_backfill and not needs_rule_backfill:
+            if existing is not None:
                 return existing
-            timestamp = _utc_now()
-            with _write_scope(self.connection):
-                self.connection.execute(
-                    """
-                    UPDATE fx_rates
-                    SET source_reference = COALESCE(source_reference, ?),
-                        source_hash = ?,
-                        rule_version_id = COALESCE(rule_version_id, ?),
-                        updated_at = ?
-                    WHERE fx_rate_id = ?
-                    """,
-                    (
-                        normalized_reference,
-                        source_hash,
-                        rule_version_id,
-                        timestamp,
-                        existing["fx_rate_id"],
-                    ),
-                )
-            return self._fetch_one(
-                "SELECT * FROM fx_rates WHERE fx_rate_id = ?",
-                (existing["fx_rate_id"],),
+        else:
+            existing = self._fetch_optional(
+                """
+                SELECT * FROM fx_rates
+                WHERE rate_date = ? AND base_currency = ? AND quote_currency = ? AND rate_source = ?
+                """,
+                (rate_date, base_currency, quote_currency, rate_source),
             )
+            if existing is not None:
+                existing_rate = _canonical_decimal_text(str(existing["rate"]))
+                existing_reference = _normalize_source_reference(existing["source_reference"])
+                if existing_rate != canonical_rate:
+                    raise FxRateConflictError(
+                        "Conflicting FX rate for "
+                        f"{rate_date} {base_currency}/{quote_currency} {rate_source}"
+                    )
+                if (
+                    existing_reference is not None
+                    and normalized_reference is not None
+                    and existing_reference != normalized_reference
+                ):
+                    raise FxRateConflictError(
+                        "Conflicting FX source_reference for "
+                        f"{rate_date} {base_currency}/{quote_currency} {rate_source}"
+                    )
+                needs_reference_backfill = (
+                    existing_reference is None and normalized_reference is not None
+                )
+                needs_rule_backfill = (
+                    existing["rule_version_id"] is None and rule_version_id is not None
+                )
+                if not needs_reference_backfill and not needs_rule_backfill:
+                    return existing
+                timestamp = _utc_now()
+                with _write_scope(self.connection):
+                    self.connection.execute(
+                        """
+                        UPDATE fx_rates
+                        SET source_reference = COALESCE(source_reference, ?),
+                            source_hash = ?,
+                            rule_version_id = COALESCE(rule_version_id, ?),
+                            updated_at = ?
+                        WHERE fx_rate_id = ?
+                        """,
+                        (
+                            normalized_reference,
+                            source_hash,
+                            rule_version_id,
+                            timestamp,
+                            existing["fx_rate_id"],
+                        ),
+                    )
+                return self._fetch_one(
+                    "SELECT * FROM fx_rates WHERE fx_rate_id = ?",
+                    (existing["fx_rate_id"],),
+                )
         timestamp = _utc_now()
         rate_id = _new_id()
         with _write_scope(self.connection):
@@ -2632,7 +2669,70 @@ class LedgerDB:
                     rule_version_id,
                 ),
             )
+            self._insert_fx_provenance(
+                fx_rate_id=rate_id,
+                rate_source=rate_source,
+                primary_source_reference=normalized_reference,
+                raw_observation=_fx_raw_observation(
+                    provenance,
+                    rate_date=rate_date,
+                    base_currency=base_currency,
+                    quote_currency=quote_currency,
+                    rate=canonical_rate,
+                    rate_source=rate_source,
+                    source_reference=normalized_reference,
+                ),
+                supersedes_rate_id=(provenance or {}).get("supersedes_rate_id"),
+            )
         return self._fetch_one("SELECT * FROM fx_rates WHERE fx_rate_id = ?", (rate_id,))
+
+    def _insert_fx_provenance(
+        self,
+        *,
+        fx_rate_id: str,
+        rate_source: str,
+        primary_source_reference: str | None,
+        raw_observation: str,
+        supersedes_rate_id: str | None = None,
+    ) -> None:
+        raw_text = str(raw_observation or "").strip()
+        if not raw_text:
+            raise ValueError("FX provenance requires a raw observation")
+        if supersedes_rate_id:
+            supersedes = self._fetch_one(
+                "SELECT fx_provenance_id FROM fx_provenance WHERE fx_rate_id = ?",
+                (str(supersedes_rate_id),),
+            )
+            supersedes_provenance_id = str(supersedes["fx_provenance_id"])
+            provenance_kind = "manual_adjustment"
+        else:
+            supersedes_provenance_id = None
+            provenance_kind = FX_PROVENANCE_KINDS.get(str(rate_source), "manual_adjustment")
+        self.connection.execute(
+            """
+            INSERT INTO fx_provenance (
+                fx_provenance_id, fx_rate_id, provenance_kind, primary_source_reference,
+                raw_observation, raw_observation_hash, supersedes_provenance_id, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                _new_id(),
+                fx_rate_id,
+                provenance_kind,
+                primary_source_reference,
+                raw_text,
+                hashlib.sha256(raw_text.encode("utf-8")).hexdigest(),
+                supersedes_provenance_id,
+                _utc_now(),
+            ),
+        )
+
+    def fx_provenance_for_rate(self, fx_rate_id: str) -> dict[str, Any] | None:
+        row = self._fetch_optional(
+            "SELECT * FROM fx_provenance WHERE fx_rate_id = ?",
+            (fx_rate_id,),
+        )
+        return dict(row) if row is not None else None
 
     def review_transaction_fx_rate(
         self,
@@ -2644,7 +2744,44 @@ class LedgerDB:
         rate_source: str,
         source_reference: str,
         rule_version_id: str | None = None,
+        provenance: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
+        normalized_reference = _normalize_source_reference(source_reference)
+        if normalized_reference is None:
+            raise ValueError("FX review requires a nonblank source_reference")
+        self.connection.execute("BEGIN IMMEDIATE")
+        try:
+            result = self._apply_review_fx_rate(
+                transaction_id,
+                expected_row_version=expected_row_version,
+                rate_date=rate_date,
+                rate=rate,
+                rate_source=rate_source,
+                source_reference=normalized_reference,
+                rule_version_id=rule_version_id,
+                provenance=provenance,
+            )
+        except Exception:
+            self.connection.rollback()
+            raise
+        else:
+            self.connection.commit()
+        return result
+
+    def _apply_review_fx_rate(
+        self,
+        transaction_id: str,
+        *,
+        expected_row_version: int,
+        rate_date: str,
+        rate: str,
+        rate_source: str,
+        source_reference: str | None,
+        rule_version_id: str | None = None,
+        provenance: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Apply a reviewed FX rate inside the caller's transaction scope."""
+
         normalized_reference = _normalize_source_reference(source_reference)
         if normalized_reference is None:
             raise ValueError("FX review requires a nonblank source_reference")
@@ -2654,100 +2791,94 @@ class LedgerDB:
             raise ValueError("FX rate must be positive")
         parsed_rate_date = date.fromisoformat(rate_date)
         normalized_source = rate_source.strip()
-        self.connection.execute("BEGIN IMMEDIATE")
-        try:
-            transaction = self._fetch_one(
-                """
-                SELECT t.*, p.period_key, p.status AS period_status
-                FROM transactions t
-                JOIN periods p ON p.period_id = t.period_id
-                WHERE t.transaction_id = ?
-                """,
-                (transaction_id,),
+        transaction = self._fetch_one(
+            """
+            SELECT t.*, p.period_key, p.status AS period_status
+            FROM transactions t
+            JOIN periods p ON p.period_id = t.period_id
+            WHERE t.transaction_id = ?
+            """,
+            (transaction_id,),
+        )
+        self._check_row_version(transaction, expected_row_version)
+        if transaction["lifecycle_status"] not in {
+            "received",
+            "extracted",
+            "needs_review",
+            "approved",
+        }:
+            raise LifecycleError(
+                "FX cannot change transaction in "
+                f"lifecycle_status={transaction['lifecycle_status']}"
             )
-            self._check_row_version(transaction, expected_row_version)
-            if transaction["lifecycle_status"] not in {
-                "received",
-                "extracted",
-                "needs_review",
-                "approved",
-            }:
-                raise LifecycleError(
-                    "FX cannot change transaction in "
-                    f"lifecycle_status={transaction['lifecycle_status']}"
-                )
-            if transaction["period_status"] != "open":
-                raise ClosedPeriodError(
-                    f"Period {transaction['period_key']} is immutable after close"
-                )
-            original_currency = str(
-                transaction.get("original_currency") or transaction["currency"]
-            ).upper()
-            if original_currency == "EUR":
-                raise ValueError("EUR transactions do not require FX review")
-            if normalized_source not in ALLOWED_PRODUCTION_SOURCES:
-                raise ValueError(
-                    f"FX source {normalized_source!r} is not allowed in production"
-                )
-            transaction_date = date.fromisoformat(str(transaction["transaction_date"])[:10])
-            if (
-                normalized_source == "xolo_recorded"
-                and transaction_date > XOLO_RECORDED_PRODUCTION_THROUGH
-            ):
-                raise ValueError(
-                    "FX source 'xolo_recorded' is not allowed after "
-                    f"{XOLO_RECORDED_PRODUCTION_THROUGH.isoformat()}"
-                )
-            original_minor = transaction["amount_original_minor"]
-            if original_minor is None:
-                raise ValueError("Transaction is missing amount_original_minor")
-            fx_source_hash = _stable_hash(
-                {
-                    "rate_date": parsed_rate_date.isoformat(),
-                    "base_currency": original_currency,
-                    "quote_currency": "EUR",
-                    "rate": canonical_rate,
-                    "rate_source": normalized_source,
-                    "source_reference": normalized_reference,
-                    "rule_version_id": rule_version_id,
-                }
+        if transaction["period_status"] != "open":
+            raise ClosedPeriodError(
+                f"Period {transaction['period_key']} is immutable after close"
             )
-            fx_rate = self.add_fx_rate(
-                rate_date=parsed_rate_date.isoformat(),
-                base_currency=original_currency,
-                quote_currency="EUR",
-                rate=canonical_rate,
-                rate_source=normalized_source,
-                source_reference=normalized_reference,
-                source_hash=fx_source_hash,
-                rule_version_id=rule_version_id,
+        original_currency = str(
+            transaction.get("original_currency") or transaction["currency"]
+        ).upper()
+        if original_currency == "EUR":
+            raise ValueError("EUR transactions do not require FX review")
+        if normalized_source not in ALLOWED_PRODUCTION_SOURCES:
+            raise ValueError(
+                f"FX source {normalized_source!r} is not allowed in production"
             )
-            eur_minor = int(
-                (Decimal(original_minor) * rate_decimal).quantize(
-                    Decimal("1"),
-                    rounding=ROUND_HALF_UP,
-                )
+        transaction_date = date.fromisoformat(str(transaction["transaction_date"])[:10])
+        if (
+            normalized_source == "xolo_recorded"
+            and transaction_date > XOLO_RECORDED_PRODUCTION_THROUGH
+        ):
+            raise ValueError(
+                "FX source 'xolo_recorded' is not allowed after "
+                f"{XOLO_RECORDED_PRODUCTION_THROUGH.isoformat()}"
             )
-            timestamp = _utc_now()
-            self.connection.execute(
-                """
-                UPDATE transactions
-                SET amount_eur_minor = ?, fx_rate_id = ?, row_version = ?, updated_at = ?
-                WHERE transaction_id = ?
-                """,
-                (
-                    eur_minor,
-                    fx_rate["fx_rate_id"],
-                    transaction["row_version"] + 1,
-                    timestamp,
-                    transaction_id,
-                ),
+        original_minor = transaction["amount_original_minor"]
+        if original_minor is None:
+            raise ValueError("Transaction is missing amount_original_minor")
+        fx_source_hash = _stable_hash(
+            {
+                "rate_date": parsed_rate_date.isoformat(),
+                "base_currency": original_currency,
+                "quote_currency": "EUR",
+                "rate": canonical_rate,
+                "rate_source": normalized_source,
+                "source_reference": normalized_reference,
+                "rule_version_id": rule_version_id,
+            }
+        )
+        fx_rate = self.add_fx_rate(
+            rate_date=parsed_rate_date.isoformat(),
+            base_currency=original_currency,
+            quote_currency="EUR",
+            rate=canonical_rate,
+            rate_source=normalized_source,
+            source_reference=normalized_reference,
+            source_hash=fx_source_hash,
+            rule_version_id=rule_version_id,
+            provenance=provenance,
+        )
+        eur_minor = int(
+            (Decimal(original_minor) * rate_decimal).quantize(
+                Decimal("1"),
+                rounding=ROUND_HALF_UP,
             )
-        except Exception:
-            self.connection.rollback()
-            raise
-        else:
-            self.connection.commit()
+        )
+        timestamp = _utc_now()
+        self.connection.execute(
+            """
+            UPDATE transactions
+            SET amount_eur_minor = ?, fx_rate_id = ?, row_version = ?, updated_at = ?
+            WHERE transaction_id = ?
+            """,
+            (
+                eur_minor,
+                fx_rate["fx_rate_id"],
+                transaction["row_version"] + 1,
+                timestamp,
+                transaction_id,
+            ),
+        )
         return self._fetch_one(
             "SELECT * FROM transactions WHERE transaction_id = ?",
             (transaction_id,),
@@ -5194,6 +5325,9 @@ class LedgerDB:
                     migration(self.connection)
                     self.connection.execute(f"PRAGMA user_version = {version}")
                 continue
+            if version in FK_REBUILD_MIGRATIONS:
+                self._run_fk_rebuild_migration(migration, version)
+                continue
             self.connection.execute("BEGIN IMMEDIATE")
             try:
                 migration(self.connection)
@@ -5203,6 +5337,31 @@ class LedgerDB:
                 raise
             else:
                 self.connection.commit()
+
+    def _run_fk_rebuild_migration(self, migration, version: int) -> None:
+        """Run one migration that must drop a foreign-key parent table.
+
+        ``PRAGMA foreign_keys`` is a no-op inside a transaction, so the
+        enforcement is disabled before the transaction starts and restored
+        afterwards; the DDL itself stays atomic inside the transaction.
+        """
+
+        self.connection.execute("PRAGMA foreign_keys = OFF")
+        try:
+            self.connection.execute("BEGIN IMMEDIATE")
+        except sqlite3.OperationalError:
+            self.connection.execute("PRAGMA foreign_keys = ON")
+            raise
+        try:
+            migration(self.connection)
+            self.connection.execute(f"PRAGMA user_version = {version}")
+        except Exception:
+            self.connection.rollback()
+            raise
+        else:
+            self.connection.commit()
+        finally:
+            self.connection.execute("PRAGMA foreign_keys = ON")
 
     def _find_counterparty(
         self,
@@ -5414,6 +5573,36 @@ def _canonical_decimal_text(value: str | Decimal) -> str:
 def _normalize_source_reference(value: str | None) -> str | None:
     normalized = (value or "").strip()
     return normalized or None
+
+
+def _fx_raw_observation(
+    provenance: Mapping[str, Any] | None,
+    *,
+    rate_date: str,
+    base_currency: str,
+    quote_currency: str,
+    rate: str,
+    rate_source: str,
+    source_reference: str | None,
+) -> str:
+    """Return the caller-supplied raw observation or a deterministic fallback."""
+
+    if provenance:
+        supplied = str(provenance.get("raw_observation") or "").strip()
+        if supplied:
+            return supplied
+    return json.dumps(
+        {
+            "base_currency": base_currency,
+            "quote_currency": quote_currency,
+            "rate": rate,
+            "rate_date": rate_date,
+            "rate_source": rate_source,
+            "source_reference": source_reference,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
 
 
 def _validate_counterparty_legal_form(value: str) -> None:
@@ -6490,6 +6679,48 @@ def _migration_17(connection: sqlite3.Connection) -> None:
     connection.execute("ALTER TABLE fx_rates ADD COLUMN source_reference TEXT")
 
 
+def _backfill_fx_provenance(connection: sqlite3.Connection) -> None:
+    """Give every pre-existing rate row its immutable provenance record."""
+
+    rows = connection.execute(
+        """
+        SELECT fx_rate_id, rate_date, base_currency, quote_currency, rate,
+            rate_source, source_reference, created_at
+        FROM fx_rates
+        """
+    ).fetchall()
+    for row in rows:
+        raw = json.dumps(
+            {
+                "base_currency": row["base_currency"],
+                "quote_currency": row["quote_currency"],
+                "rate": row["rate"],
+                "rate_date": row["rate_date"],
+                "rate_source": row["rate_source"],
+                "source_reference": row["source_reference"],
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        connection.execute(
+            """
+            INSERT INTO fx_provenance (
+                fx_provenance_id, fx_rate_id, provenance_kind, primary_source_reference,
+                raw_observation, raw_observation_hash, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                _new_id(),
+                row["fx_rate_id"],
+                FX_PROVENANCE_KINDS.get(str(row["rate_source"]), "manual_adjustment"),
+                row["source_reference"],
+                raw,
+                hashlib.sha256(raw.encode("utf-8")).hexdigest(),
+                row["created_at"],
+            ),
+        )
+
+
 def _migration_18(connection: sqlite3.Connection) -> None:
     """Add provider-neutral storage metadata without modifying business documents."""
     statements = (
@@ -6570,6 +6801,74 @@ def _migration_18(connection: sqlite3.Connection) -> None:
         connection.execute(statement)
 
 
+def _migration_19(connection: sqlite3.Connection) -> None:
+    """Release immutable FX provenance (schema v19).
+
+    Official and recorded rates stay unique per date/currency/source, while
+    different documented settlements may now coexist. Every rate row gets
+    exactly one immutable provenance record with its primary source,
+    raw observation hash, and optional superseded-rate link.
+    """
+    statements = (
+        """
+        CREATE TABLE fx_rates_v19 (
+            fx_rate_id TEXT PRIMARY KEY,
+            rate_date TEXT NOT NULL,
+            base_currency TEXT NOT NULL,
+            quote_currency TEXT NOT NULL,
+            rate TEXT NOT NULL,
+            rate_source TEXT NOT NULL,
+            source_hash TEXT NOT NULL,
+            row_version INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            source_reference TEXT,
+            rule_version_id TEXT REFERENCES rule_versions(rule_version_id)
+        )
+        """,
+        """
+        INSERT INTO fx_rates_v19 (
+            fx_rate_id, rate_date, base_currency, quote_currency, rate, rate_source,
+            source_hash, row_version, created_at, updated_at, source_reference, rule_version_id
+        )
+        SELECT fx_rate_id, rate_date, base_currency, quote_currency, rate, rate_source,
+            source_hash, row_version, created_at, updated_at, source_reference, rule_version_id
+        FROM fx_rates
+        """,
+        "DROP TABLE fx_rates",
+        "ALTER TABLE fx_rates_v19 RENAME TO fx_rates",
+        """
+        CREATE INDEX fx_rates_lookup_idx
+            ON fx_rates(rate_date, base_currency, quote_currency, rate_source)
+        """,
+        """
+        CREATE UNIQUE INDEX fx_rates_official_rate_unique
+            ON fx_rates(rate_date, base_currency, quote_currency, rate_source)
+        WHERE rate_source IN ('ecb', 'banco_de_espana', 'xolo_recorded')
+        """,
+        """
+        CREATE TABLE fx_provenance (
+            fx_provenance_id TEXT PRIMARY KEY,
+            fx_rate_id TEXT NOT NULL REFERENCES fx_rates(fx_rate_id),
+            provenance_kind TEXT NOT NULL CHECK (provenance_kind IN (
+                'official', 'recorded', 'documented_settlement', 'manual_adjustment', 'derived'
+            )),
+            primary_source_reference TEXT,
+            raw_observation TEXT NOT NULL,
+            raw_observation_hash TEXT NOT NULL
+                CHECK (length(raw_observation_hash) = 64 AND raw_observation_hash NOT GLOB '*[^0-9a-f]*'),
+            supersedes_provenance_id TEXT REFERENCES fx_provenance(fx_provenance_id),
+            created_at TEXT NOT NULL
+        )
+        """,
+        "CREATE UNIQUE INDEX fx_provenance_one_per_rate ON fx_provenance(fx_rate_id)",
+        "CREATE INDEX fx_provenance_supersedes_idx ON fx_provenance(supersedes_provenance_id)",
+    )
+    for statement in statements:
+        connection.execute(statement)
+    _backfill_fx_provenance(connection)
+
+
 _MIGRATIONS = {
     1: _migration_1,
     2: _migration_2,
@@ -6589,4 +6888,5 @@ _MIGRATIONS = {
     16: _migration_16,
     17: _migration_17,
     18: _migration_18,
+    19: _migration_19,
 }
