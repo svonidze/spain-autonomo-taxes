@@ -111,6 +111,7 @@ button {
   border: 0;
   border-radius: 5px;
   text-align: left;
+  text-decoration: none;
 }
 
 .nav-item > span[aria-hidden="true"] {
@@ -1502,5 +1503,240 @@ textarea:focus {
 
   .primary-button {
     min-width: 38px;
+  }
+}
+
+/* ------------------------------ Guided review ------------------------------ */
+
+.review-back-link {
+  text-decoration: none;
+}
+
+.danger-button {
+  min-height: 38px;
+  padding: 0 16px;
+  color: #fff;
+  background: var(--danger);
+  border: 0;
+  border-radius: var(--radius);
+  font-weight: 600;
+}
+
+.danger-button:hover {
+  background: #a33535;
+}
+
+.review-facts-summary {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.review-autofilled {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--accent-soft);
+  border: 1px solid rgba(17, 134, 111, 0.22);
+  border-radius: 10px;
+}
+
+.review-autofilled-title {
+  margin-right: 4px;
+  color: var(--accent-dark);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.review-autofilled-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 10px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid rgba(17, 134, 111, 0.2);
+  border-radius: 999px;
+  font-size: 0.8rem;
+}
+
+.review-autofilled-chip small {
+  color: var(--muted);
+}
+
+.review-guided-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.review-guided-field {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.review-guided-field.full-span {
+  grid-column: 1 / -1;
+}
+
+.review-guided-field > span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.review-irpf-preview {
+  color: var(--accent-dark);
+  font-weight: 600;
+}
+
+.review-inline-error {
+  margin: 8px 0 0;
+  color: var(--danger);
+  font-size: 0.82rem;
+}
+
+.review-inline-error.fx-needed {
+  padding: 0 2px;
+}
+
+.review-issues-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.review-issue-card.auto-closable {
+  border-color: rgba(17, 134, 111, 0.4);
+  background: var(--accent-soft);
+}
+
+.review-auto-close-hint {
+  margin: 0 0 10px;
+  color: var(--accent-dark);
+  font-size: 0.8rem;
+}
+
+.fx-card {
+  margin-top: 16px;
+}
+
+.fx-card-existing {
+  border-color: rgba(17, 134, 111, 0.35);
+}
+
+.fx-card-suggested {
+  border-color: rgba(17, 134, 111, 0.35);
+}
+
+.fx-card-manual {
+  border-color: rgba(178, 106, 18, 0.4);
+}
+
+.fx-card-unavailable {
+  border-color: rgba(178, 106, 18, 0.4);
+}
+
+.fx-card-status {
+  margin: 0 0 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.fx-card-status.success {
+  color: var(--accent-dark);
+}
+
+.fx-card-status.warning {
+  color: var(--warning);
+}
+
+.fx-choice {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.fx-choice + .fx-choice {
+  margin-top: 8px;
+}
+
+.fx-choice.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.fx-choice small {
+  color: var(--muted);
+}
+
+.fx-choice-note {
+  margin: 10px 0 0;
+}
+
+.fx-settlement-grid {
+  margin-top: 10px;
+}
+
+.review-technical-details {
+  margin-top: 16px;
+  padding: 0;
+}
+
+.review-technical-details summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.review-technical-details[open] summary {
+  margin-bottom: 12px;
+}
+
+.review-reject-panel {
+  margin-bottom: 16px;
+  padding: 4px 0;
+}
+
+.review-reject-panel summary {
+  cursor: pointer;
+  color: var(--danger);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.review-reject-body {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  margin-top: 10px;
+  padding: 14px;
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.review-reject-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .review-guided-grid,
+  .review-issues-grid {
+    grid-template-columns: 1fr;
   }
 }
