@@ -21,6 +21,51 @@ def _schema_17_database(path: Path) -> None:
         connection.close()
 
 
+def _schema_18_database_with_linked_fx(path: Path) -> None:
+    connection = sqlite3.connect(path)
+    try:
+        for version in range(1, 19):
+            ledger_db_module._MIGRATIONS[version](connection)
+            connection.execute(f"PRAGMA user_version = {version}")
+        timestamp = "2026-08-20T00:00:00Z"
+        connection.execute(
+            """
+            INSERT INTO periods (
+                period_id, period_key, period_type, starts_on, ends_on, status,
+                source_hash, created_at, updated_at
+            ) VALUES ('period-1', '2026-Q3', 'quarter', '2026-07-01', '2026-09-30',
+                'open', ?, ?, ?)
+            """,
+            ("1" * 64, timestamp, timestamp),
+        )
+        connection.execute(
+            """
+            INSERT INTO fx_rates (
+                fx_rate_id, rate_date, base_currency, quote_currency, rate,
+                rate_source, source_hash, created_at, updated_at, source_reference
+            ) VALUES ('fx-1', '2026-08-17', 'USD', 'EUR', '0.8625', 'ecb',
+                ?, ?, ?, 'ECB data API')
+            """,
+            ("2" * 64, timestamp, timestamp),
+        )
+        connection.execute(
+            """
+            INSERT INTO transactions (
+                transaction_id, period_id, transaction_date, booking_date, entry_type,
+                description, amount_minor, currency, direction, lifecycle_status,
+                source_hash, created_at, updated_at, amount_original_minor,
+                original_currency, amount_eur_minor, fx_rate_id
+            ) VALUES ('transaction-1', 'period-1', '2026-08-17', '2026-08-17',
+                'income', 'Existing USD invoice', 8625, 'EUR', 'credit', 'approved',
+                ?, ?, ?, 10000, 'USD', 8625, 'fx-1')
+            """,
+            ("3" * 64, timestamp, timestamp),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def _document(db: LedgerDB) -> dict[str, object]:
     return db.upsert_document(
         document_type="expense_invoice",
@@ -50,6 +95,36 @@ def test_schema_18_requires_an_explicit_writable_migration(tmp_path: Path) -> No
         assert set(db.table_counts()).issuperset(
             {"files", "document_attachments", "storage_backends", "file_replicas"}
         )
+
+
+def test_schema_19_preserves_linked_fx_and_backfills_provenance(tmp_path: Path) -> None:
+    path = tmp_path / "ledger.sqlite3"
+    _schema_18_database_with_linked_fx(path)
+
+    with LedgerDB.open(path, apply_migrations=True) as db:
+        assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 19
+        transaction = db.connection.execute(
+            "SELECT fx_rate_id, amount_eur_minor FROM transactions "
+            "WHERE transaction_id = 'transaction-1'"
+        ).fetchone()
+        assert dict(transaction) == {"fx_rate_id": "fx-1", "amount_eur_minor": 8625}
+        rate = db.connection.execute(
+            "SELECT rate_source, source_reference FROM fx_rates WHERE fx_rate_id = 'fx-1'"
+        ).fetchone()
+        assert dict(rate) == {
+            "rate_source": "ecb",
+            "source_reference": "ECB data API",
+        }
+        provenance = db.connection.execute(
+            "SELECT provenance_kind, primary_source_reference "
+            "FROM fx_provenance WHERE fx_rate_id = 'fx-1'"
+        ).fetchone()
+        assert dict(provenance) == {
+            "provenance_kind": "official",
+            "primary_source_reference": "ECB data API",
+        }
+        assert db.connection.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert db.connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 
 
 def test_file_content_can_be_attached_without_mutating_document_row_version(tmp_path: Path) -> None:
