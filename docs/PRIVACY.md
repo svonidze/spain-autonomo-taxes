@@ -7,10 +7,11 @@ The repository contains implementation, synthetic tests, public reference config
 | Material | Storage | Git |
 |---|---|---|
 | Source code and synthetic fixtures | repository | allowed |
-| Local configuration and database | private root | prohibited |
+| Local configuration and database | private root | plaintext prohibited; approved SOPS ciphertext only in the dedicated private secrets repository |
 | Invoices, receipts, tax forms, exports, and generated reports | private root or encrypted archive | prohibited |
 | Browser profiles, cookies, storage state, and login logs | private root under `browser/` | prohibited |
-| API tokens and encryption identities | OS credential store or password manager | prohibited |
+| API tokens | private root after SOPS materialization | plaintext prohibited; approved SOPS ciphertext only in the dedicated private secrets repository |
+| age identities and Git deploy keys | server credential directory or password manager | prohibited in every Git repository |
 
 The private-root resolver uses this precedence:
 
@@ -25,7 +26,9 @@ Canonical config wins as a whole; configurations are not merged across roots. Th
 
 Use client-side authenticated encryption such as `age` for private-data and forensic Git backups. Keep at least two independently stored ciphertext copies and verify each by restoring it to an isolated directory. Store the private decryption identity outside the repository, preferably in a password manager.
 
-Do not use a private Git repository as a secret store. Git history is durable, clones are hard to revoke, and repository access often grants more capability than secret consumers need.
+The only approved Git exception is `svonidze/spain-autonomo-taxes-secrets`: it may contain SOPS-encrypted runtime configuration whose data key is wrapped for both the server age recipient and an offline recovery recipient. It must never contain plaintext secrets, age identities, SSH private keys, accounting data, source documents, or decrypted generations. The code repository remains entirely outside this exception.
+
+The secrets repository is a ciphertext distribution and recovery layer, not an authorization boundary or a replacement for credential rotation. Git history is durable, filenames and commit metadata remain visible, and anyone holding a historical age identity may decrypt every historical revision addressed to it. If an identity is compromised, rotate the underlying provider credentials as well as the SOPS data keys.
 
 ## Adding code or fixtures
 
