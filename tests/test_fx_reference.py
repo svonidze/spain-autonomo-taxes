@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 import inspect
-import json
 from datetime import date, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -32,11 +34,33 @@ def _isolated_cache() -> None:
 
 
 def _ecb_body(days: dict[str, str], currency: str = "USD") -> bytes:
-    observations = {day: [{"value": value}] for day, value in sorted(days.items())}
-    payload = {
-        "dataSets": {"EXR": {"observations": observations}},
-    }
-    return json.dumps(payload).encode("utf-8")
+    output = io.StringIO(newline="")
+    fieldnames = (
+        "KEY",
+        "FREQ",
+        "CURRENCY",
+        "CURRENCY_DENOM",
+        "EXR_TYPE",
+        "EXR_SUFFIX",
+        "TIME_PERIOD",
+        "OBS_VALUE",
+    )
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+    for day, value in sorted(days.items()):
+        writer.writerow(
+            {
+                "KEY": f"EXR.D.{currency}.EUR.SP00.A",
+                "FREQ": "D",
+                "CURRENCY": currency,
+                "CURRENCY_DENOM": "EUR",
+                "EXR_TYPE": "SP00",
+                "EXR_SUFFIX": "A",
+                "TIME_PERIOD": day,
+                "OBS_VALUE": value,
+            }
+        )
+    return output.getvalue().encode("utf-8")
 
 
 def _getter(body: bytes, calls: list[str], status: int = 200):
@@ -64,6 +88,16 @@ def test_exact_date_rate_is_inverted_to_eur_per_unit() -> None:
     ).hexdigest()
     assert len(calls) == 1
     assert "EXR/D.USD.EUR.SP00.A" in calls[0]
+    assert "format=csvdata" in calls[0]
+
+
+def test_recorded_ecb_csv_contract_is_parsed() -> None:
+    fixture = Path(__file__).parent / "fixtures" / "ecb_exr_usd_sample.csv"
+    observations = parse_ecb_response(fixture.read_text(encoding="utf-8"), currency="USD")
+    assert observations == {
+        date(2026, 8, 14): Decimal("1.1567"),
+        date(2026, 8, 17): Decimal("1.1593"),
+    }
 
 
 def test_fallback_uses_newest_observation_within_seven_days() -> None:
@@ -95,22 +129,14 @@ def test_observation_older_than_seven_days_is_unavailable() -> None:
     as_of = date(2026, 7, 6)
     observed = as_of - timedelta(days=8)
     with pytest.raises(FXRateUnavailableError, match="fallback window"):
-        fetch_eur_rate(
-            "USD",
-            as_of,
-            http_get=_getter(_ecb_body({observed.isoformat(): "1.1000"}), []),
-        )
+        select_observation({observed: Decimal("1.1000")}, as_of)
 
 
 def test_only_later_observations_are_rejected() -> None:
     as_of = date(2026, 7, 6)
     later = as_of + timedelta(days=1)
     with pytest.raises(FXRateUnavailableError):
-        fetch_eur_rate(
-            "USD",
-            as_of,
-            http_get=_getter(_ecb_body({later.isoformat(): "1.1000"}), []),
-        )
+        select_observation({later: Decimal("1.1000")}, as_of)
 
 
 @pytest.mark.parametrize(
@@ -145,17 +171,14 @@ def test_transport_failure_is_unavailable() -> None:
 @pytest.mark.parametrize(
     "body",
     [
-        b"not json",
-        b"[1, 2]",
-        b"{}",
-        b'{"dataSets": {}}',
-        b'{"dataSets": {"EXR": {}}}',
-        b'{"dataSets": {"EXR": {"observations": {}}}}',
-        b'{"dataSets": {"EXR": {"observations": {"2026-07-01": []}}}}',
-        b'{"dataSets": {"EXR": {"observations": {"2026-07-01": [{}]}}}}',
-        b'{"dataSets": {"EXR": {"observations": {"2026-07-01": [{"value": "NaN"}]}}}}',
-        b'{"dataSets": {"EXR": {"observations": {"2026-07-01": [{"value": "-1"}]}}}}',
-        b'{"dataSets": {"EXR": {"observations": {"2026/07/01": [{"value": "1"}]}}}}',
+        b"not csv",
+        b"",
+        b"KEY,FREQ\nEXR.D.USD.EUR.SP00.A,D\n",
+        _ecb_body({}),
+        _ecb_body({"2026-07-01": "NaN"}),
+        _ecb_body({"2026-07-01": "-1"}),
+        _ecb_body({"2026/07/01": "1"}),
+        _ecb_body({"2026-07-01": "1"}, currency="GBP"),
     ],
 )
 def test_malformed_response_is_rejected(body: bytes) -> None:
@@ -165,9 +188,31 @@ def test_malformed_response_is_rejected(body: bytes) -> None:
 
 def test_parse_ecb_response_requires_matching_currency() -> None:
     with pytest.raises(FXUnsupportedCurrencyError):
-        parse_ecb_response(
-            json.dumps({"dataSets": {"EXR": {"observations": {}}}}),
-            currency="XXX",
+        parse_ecb_response(_ecb_body({}).decode("utf-8"), currency="XXX")
+
+
+def test_duplicate_observation_is_rejected() -> None:
+    first = _ecb_body({"2026-07-01": "1.1000"}).decode("utf-8")
+    duplicate_row = first.splitlines()[1]
+    with pytest.raises(FXMalformedResponseError, match="duplicate observation"):
+        parse_ecb_response(first + duplicate_row + "\n", currency="USD")
+
+
+def test_utf8_bom_is_accepted() -> None:
+    body = "\ufeff" + _ecb_body({"2026-07-01": "1.1000"}).decode("utf-8")
+    assert parse_ecb_response(body, currency="USD") == {
+        date(2026, 7, 1): Decimal("1.1000")
+    }
+
+
+def test_observation_outside_requested_window_is_rejected() -> None:
+    as_of = date(2026, 7, 6)
+    outside = as_of - timedelta(days=8)
+    with pytest.raises(FXMalformedResponseError, match="outside the requested window"):
+        fetch_eur_rate(
+            "USD",
+            as_of,
+            http_get=_getter(_ecb_body({outside.isoformat(): "1.1000"}), []),
         )
 
 
