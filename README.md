@@ -43,7 +43,7 @@ These paths and file types are prohibited from Git:
 - SQLite databases, source documents, exports, archives, logs, private keys, and environment files;
 - real names, identity or tax numbers, addresses, contact details, financial records, Drive links, and credentials.
 
-Keep private configuration and runtime data in the private root. Back it up with client-side encryption and store the encryption identity in a password manager. A second Git repository for secrets is not recommended because it creates another clonable history and access-control surface.
+Keep private configuration and runtime data in the private root. Production runtime secrets may use the approved SOPS + age workflow described in [ops/README.md](ops/README.md): only SOPS ciphertext is committed to the dedicated private `spain-autonomo-taxes-secrets` repository, while age identities and SSH deploy keys remain outside every Git repository. Plaintext secrets, environment files, credentials, and operational data remain prohibited in this code repository.
 
 For a one-time migration from an older worktree-local layout:
 
