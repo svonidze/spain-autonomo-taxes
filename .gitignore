@@ -22,6 +22,8 @@ dist/
 tmp/
 *.egg-info/
 .env*
+ops-bootstrap.env
+runtime.env
 
 # Private inputs and generated tax artifacts must never enter Git.
 data/

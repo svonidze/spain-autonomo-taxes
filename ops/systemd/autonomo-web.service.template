@@ -7,11 +7,12 @@ StartLimitBurst=2
 
 [Service]
 Type=simple
-EnvironmentFile=%h/.config/autonomo-tax/runtime.env
+EnvironmentFile=@SECRET_CONFIG_ROOT@/generations/@SECRET_SHA@/runtime.env
 @MIGRATION_ENV@
 WorkingDirectory=@RELEASE_ROOT@/releases/@SHA@
 @MIGRATION_PRE@
-ExecStart=@RELEASE_ROOT@/releases/@SHA@/.venv/bin/autonomo-web --project-root @RELEASE_ROOT@/releases/@SHA@ --host 127.0.0.1 --port 8765
+@BACKEND_PRE@
+ExecStart=@RELEASE_ROOT@/releases/@SHA@/.venv/bin/autonomo-web --project-root @RELEASE_ROOT@/releases/@SHA@ --config @SECRET_CONFIG_ROOT@/generations/@SECRET_SHA@/config.yaml --host 127.0.0.1 --port 8765
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=yes

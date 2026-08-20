@@ -17,6 +17,7 @@ from autonomo_taxes.ledger_db import (
     LedgerDbError,
     LifecycleError,
     initialize,
+    open as open_ledger_db,
 )
 from autonomo_taxes.parsers import LedgerEntry
 from autonomo_taxes.tax_engine import CalculationBlocked
@@ -70,6 +71,79 @@ def test_storage_backend_upsert_uses_non_secret_configuration(tmp_path: Path, ca
     )
     row = json.loads(capsys.readouterr().out)
     assert row["backend_key"] == "local_test"
+
+
+def test_storage_backends_apply_is_atomic(tmp_path: Path, capsys) -> None:
+    database = tmp_path / "ledger.sqlite"
+    assert main(["db", "init", "--db", str(database)]) == 0
+    capsys.readouterr()
+    payload = tmp_path / "backends.json"
+    valid = {
+        "backend_key": "local_test",
+        "display_name": "Local test",
+        "driver_key": "filesystem",
+        "provider_key": "local",
+        "access_mode": "read_write",
+        "config": {"schema_version": 1, "root": str(tmp_path / "root")},
+        "credential_ref": None,
+    }
+    invalid = {
+        **valid,
+        "backend_key": "invalid_access",
+        "access_mode": "administrator",
+    }
+    payload.write_text(json.dumps({"backends": [valid, invalid]}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="access_mode"):
+        main(
+            [
+                "storage",
+                "backends-apply",
+                "--db",
+                str(database),
+                "--input",
+                str(payload),
+            ]
+        )
+
+    with open_ledger_db(database) as ledger:
+        assert ledger.connection.execute("SELECT COUNT(*) FROM storage_backends").fetchone()[0] == 0
+
+    payload.write_text(json.dumps({"backends": [valid]}), encoding="utf-8")
+    assert (
+        main(
+            [
+                "storage",
+                "backends-apply",
+                "--db",
+                str(database),
+                "--input",
+                str(payload),
+            ]
+        )
+        == 0
+    )
+    result = json.loads(capsys.readouterr().out)
+    assert result == {"applied": 1, "backend_keys": ["local_test"]}
+    assert (
+        main(
+            [
+                "storage",
+                "backends-apply",
+                "--db",
+                str(database),
+                "--input",
+                str(payload),
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    with open_ledger_db(database) as ledger:
+        row_version = ledger.connection.execute(
+            "SELECT row_version FROM storage_backends WHERE backend_key = 'local_test'"
+        ).fetchone()[0]
+    assert row_version == 1
 
 
 def test_backup_restore_creates_missing_target_parent(tmp_path: Path, capsys) -> None:

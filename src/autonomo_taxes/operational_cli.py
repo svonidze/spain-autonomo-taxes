@@ -860,6 +860,13 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     _db_arg(storage_backend)
     storage_backend.add_argument("--input", type=Path, required=True)
     storage_backend.set_defaults(_operational_handler=_cmd_storage_backend_upsert)
+    storage_backends = storage_sub.add_parser(
+        "backends-apply",
+        help="Transactionally apply an authoritative list of storage backends",
+    )
+    _db_arg(storage_backends)
+    storage_backends.add_argument("--input", type=Path, required=True)
+    storage_backends.set_defaults(_operational_handler=_cmd_storage_backends_apply)
     storage_adopt_drive = storage_sub.add_parser(
         "adopt-google-archive",
         help="Verify and adopt pre-existing Google Drive originals as file replicas",
@@ -3755,6 +3762,29 @@ def _cmd_storage_backend_upsert(args: argparse.Namespace) -> int:
     with open_ledger_db(args.db) as db:
         row = db.upsert_storage_backend(**payload)
     _emit(row)
+    return 0
+
+
+def _cmd_storage_backends_apply(args: argparse.Namespace) -> int:
+    document = json.loads(args.input.read_text(encoding="utf-8"))
+    payload = document.get("backends") if isinstance(document, dict) else document
+    if not isinstance(payload, list) or not payload:
+        raise ValueError("storage backends input must contain a non-empty JSON array")
+    if not all(isinstance(item, dict) for item in payload):
+        raise ValueError("every storage backend entry must be a JSON object")
+    backend_keys = [str(item.get("backend_key") or "") for item in payload]
+    if any(not key for key in backend_keys) or len(set(backend_keys)) != len(backend_keys):
+        raise ValueError("storage backend keys must be non-empty and unique")
+    with open_ledger_db(args.db) as db:
+        db.connection.execute("BEGIN IMMEDIATE")
+        try:
+            rows = [db.upsert_storage_backend(**item) for item in payload]
+        except Exception:
+            db.connection.rollback()
+            raise
+        else:
+            db.connection.commit()
+    _emit({"applied": len(rows), "backend_keys": [row["backend_key"] for row in rows]})
     return 0
 
 
