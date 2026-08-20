@@ -1342,6 +1342,18 @@ class LedgerDB:
                 "SELECT * FROM storage_backends WHERE storage_backend_id = ?", (new_id,)
             )
 
+        if (
+            existing["display_name"] == display_name
+            and existing["driver_key"] == driver_key
+            and existing["provider_key"] == provider_key
+            and existing["access_mode"] == access_mode
+            and existing["config_json"] == config_json
+            and existing["credential_ref"] == credential_ref
+            and existing["read_priority"] == read_priority
+            and existing["enabled"] == int(enabled)
+        ):
+            return existing
+
         with _write_scope(self.connection):
             self.connection.execute(
                 """
