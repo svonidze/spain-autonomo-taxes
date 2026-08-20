@@ -14,10 +14,12 @@ published, so a small process-lifetime cache is safe.
 
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 import hashlib
+import io
 import json
 import threading
 from typing import Callable, Mapping
@@ -154,7 +156,11 @@ def validate_currency(currency: object) -> str:
 def build_rate_url(currency: str, start_period: date, end_period: date) -> str:
     normalized = validate_currency(currency)
     query = urllib.parse.urlencode(
-        {"startPeriod": start_period.isoformat(), "endPeriod": end_period.isoformat()}
+        {
+            "startPeriod": start_period.isoformat(),
+            "endPeriod": end_period.isoformat(),
+            "format": "csvdata",
+        }
     )
     return f"{ECB_RATE_SERVICE_URL}/EXR/D.{normalized}.EUR.SP00.A?{query}"
 
@@ -172,53 +178,72 @@ def invert_to_eur_per_unit(units_per_eur: Decimal) -> Decimal:
 
 
 def parse_ecb_response(body: str, *, currency: str) -> dict[date, Decimal]:
-    """Validate an ECB data-API response and return ``{date: units_per_eur}``.
+    """Validate an ECB CSV response and return ``{date: units_per_eur}``.
 
     Every structural deviation raises an ``FXReferenceError`` so a tampered
     or unrelated response can never be treated as an official rate.
     """
 
     normalized = validate_currency(currency)
-    try:
-        payload = json.loads(body)
-    except json.JSONDecodeError as exc:
-        raise FXMalformedResponseError("ECB response is not valid JSON") from exc
-    if not isinstance(payload, dict):
-        raise FXMalformedResponseError("ECB response must be a JSON object")
-    data_sets = payload.get("dataSets")
-    if not isinstance(data_sets, dict) or "EXR" not in data_sets:
-        raise FXMalformedResponseError("ECB response is missing the EXR data set")
-    data_set = data_sets["EXR"]
-    if not isinstance(data_set, dict):
-        raise FXMalformedResponseError("ECB data set must be an object")
-    observations_raw = data_set.get("observations")
-    if not isinstance(observations_raw, dict):
-        raise FXMalformedResponseError("ECB observations are missing")
-    if not observations_raw:
-        raise FXRateUnavailableError("ECB returned no observations for the window")
-    if len(observations_raw) > MAX_OBSERVATION_COUNT:
-        raise FXMalformedResponseError("ECB observation count exceeds the limit")
+    expected_key = f"EXR.D.{normalized}.EUR.SP00.A"
+    required_columns = {
+        "KEY",
+        "FREQ",
+        "CURRENCY",
+        "CURRENCY_DENOM",
+        "EXR_TYPE",
+        "EXR_SUFFIX",
+        "TIME_PERIOD",
+        "OBS_VALUE",
+    }
+    reader = csv.DictReader(io.StringIO(body.lstrip("\ufeff"), newline=""))
+    fieldnames = reader.fieldnames
+    if not fieldnames:
+        raise FXMalformedResponseError("ECB CSV response is missing its header")
+    if len(fieldnames) != len(set(fieldnames)):
+        raise FXMalformedResponseError("ECB CSV response contains duplicate columns")
+    missing_columns = sorted(required_columns - set(fieldnames))
+    if missing_columns:
+        raise FXMalformedResponseError(
+            "ECB CSV response is missing columns: " + ", ".join(missing_columns)
+        )
     observations: dict[date, Decimal] = {}
-    for key, values in observations_raw.items():
+    for row_number, row in enumerate(reader, start=2):
+        if len(observations) >= MAX_OBSERVATION_COUNT:
+            raise FXMalformedResponseError("ECB observation count exceeds the limit")
+        if row.get(None):
+            raise FXMalformedResponseError(
+                f"ECB CSV row {row_number} contains unexpected columns"
+            )
+        expected_dimensions = {
+            "KEY": expected_key,
+            "FREQ": "D",
+            "CURRENCY": normalized,
+            "CURRENCY_DENOM": "EUR",
+            "EXR_TYPE": "SP00",
+            "EXR_SUFFIX": "A",
+        }
+        for column, expected in expected_dimensions.items():
+            actual = str(row.get(column) or "").strip()
+            if actual != expected:
+                raise FXMalformedResponseError(
+                    f"ECB CSV row {row_number} has unexpected {column}: {actual!r}"
+                )
+        key = str(row.get("TIME_PERIOD") or "").strip()
         try:
-            observation_date = _parse_observation_date(str(key))
+            observation_date = _parse_observation_date(key)
         except (TypeError, ValueError) as exc:
             raise FXMalformedResponseError(
-                f"ECB observation date is invalid: {key!r}"
+                f"ECB CSV row {row_number} has invalid TIME_PERIOD: {key!r}"
             ) from exc
-        if not isinstance(values, list) or not values:
+        if observation_date in observations:
             raise FXMalformedResponseError(
-                f"ECB observation {key!r} must be a non-empty list"
+                f"ECB CSV response contains duplicate observation {key!r}"
             )
-        first = values[0]
-        if not isinstance(first, dict) or "value" not in first:
+        value = str(row.get("OBS_VALUE") or "").strip()
+        if not value:
             raise FXMalformedResponseError(
-                f"ECB observation {key!r} must contain a value"
-            )
-        value = first["value"]
-        if not isinstance(value, str):
-            raise FXMalformedResponseError(
-                f"ECB observation {key!r} value must be a decimal string"
+                f"ECB CSV row {row_number} has an empty OBS_VALUE"
             )
         try:
             rate = Decimal(value)
@@ -231,6 +256,8 @@ def parse_ecb_response(body: str, *, currency: str) -> dict[date, Decimal]:
                 f"ECB observation {key!r} must be a positive finite rate"
             )
         observations[observation_date] = rate
+    if not observations:
+        raise FXRateUnavailableError("ECB returned no observations for the window")
     return observations
 
 
@@ -243,7 +270,7 @@ def _parse_observation_date(value: str) -> date:
 def _default_http_get(url: str) -> tuple[int, bytes]:
     request = urllib.request.Request(
         url,
-        headers={"Accept": "application/json", "User-Agent": "autonomo-tax/0.1"},
+        headers={"Accept": "text/csv", "User-Agent": "autonomo-tax/0.1"},
     )
     try:
         with urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT_SECONDS) as response:
@@ -308,10 +335,15 @@ def fetch_eur_rate(
     if status != 200:
         raise FXRateUnavailableError(f"ECB reference service returned HTTP {status}")
     try:
-        text = body.decode("utf-8") if isinstance(body, bytes) else str(body)
+        text = body.decode("utf-8-sig") if isinstance(body, bytes) else str(body)
     except UnicodeDecodeError as exc:
         raise FXMalformedResponseError("ECB response is not valid UTF-8") from exc
     observations = parse_ecb_response(text, currency=normalized)
+    outside_window = [day for day in observations if day < start or day > as_of]
+    if outside_window:
+        raise FXMalformedResponseError(
+            "ECB response contains an observation outside the requested window"
+        )
     status_name, rate_date, units_per_eur = select_observation(observations, as_of)
     raw_observation = json.dumps(
         {

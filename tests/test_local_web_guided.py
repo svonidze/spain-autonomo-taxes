@@ -15,6 +15,8 @@ from autonomo_taxes.fx_reference import (
     ECBRateObservation,
     ECBRateResult,
     FXRateUnavailableError,
+    clear_cache,
+    fetch_eur_rate,
 )
 from autonomo_taxes.ledger_db import LedgerDB, open as open_ledger_db
 from autonomo_taxes.local_web import (
@@ -43,13 +45,17 @@ def _config(tmp_path: Path) -> LocalWebConfig:
     )
 
 
-def _usd_invoice_fixture(config: LocalWebConfig) -> dict[str, object]:
+def _usd_invoice_fixture(
+    config: LocalWebConfig,
+    *,
+    transaction_date: date | None = None,
+) -> dict[str, object]:
     database = config.database
     source = config.project_root / "private" / "supplier-invoice.pdf"
     source.parent.mkdir(parents=True, exist_ok=True)
     source.write_bytes(b"immutable invoice fixture")
     digest = hashlib.sha256(source.read_bytes()).hexdigest()
-    tax_date = date.today().isoformat()
+    tax_date = (transaction_date or date.today()).isoformat()
     period = f"{date.fromisoformat(tax_date).year}-Q{((date.fromisoformat(tax_date).month - 1) // 3) + 1}"
     with LedgerDB.initialize(database) as db:
         counterparty = db.upsert_counterparty(
@@ -339,6 +345,43 @@ def test_work_item_exposes_fx_suggestion_statuses(
     assert existing["fx_suggestion"]["provenance"]["provenance_kind"] == (
         "documented_settlement"
     )
+
+
+def test_work_item_uses_the_recorded_ecb_csv_contract(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _config(tmp_path)
+    requested_date = date(2026, 8, 17)
+    fixture = _usd_invoice_fixture(config, transaction_date=requested_date)
+    csv_payload = (
+        Path(__file__).parent / "fixtures" / "ecb_exr_usd_sample.csv"
+    ).read_bytes()
+    clear_cache()
+
+    def ecb_lookup(currency: str, as_of: date) -> ECBRateResult:
+        assert currency == "USD"
+        assert as_of == requested_date
+        return fetch_eur_rate(
+            currency,
+            as_of,
+            http_get=lambda _url: (200, csv_payload),
+        )
+
+    server = _Server(config, monkeypatch, ecb=ecb_lookup)
+    try:
+        status, _headers, body = server.request(
+            "GET", f"/api/review/work-item?review_id={fixture['review_id']}"
+        )
+        assert status == 200
+        work_item = json.loads(body)
+        assert work_item["fx_suggestion"]["status"] == "exact"
+        assert work_item["fx_suggestion"]["rate_date"] == "2026-08-17"
+        assert work_item["fx_suggestion"]["eur_per_unit"] == str(
+            Decimal(1) / Decimal("1.1593")
+        )
+    finally:
+        server.close()
+        clear_cache()
 
 
 def test_confirm_endpoint_applies_verified_fx_and_decision(
