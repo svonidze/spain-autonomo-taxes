@@ -44,7 +44,7 @@ load_runtime_env() {
   while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line%$'\r'}"
     [[ -z "$line" || "$line" == \#* ]] && continue
-    [[ "$line" =~ ^(AUTONOMO_[A-Z0-9_]+)=(.*)$ ]] \
+    [[ "$line" =~ ^(AUTONOMO_[A-Z0-9_]+|TZ|LANG|LC_ALL|PYTHONUTF8|PATH)=(.*)$ ]] \
       || die "invalid runtime environment assignment in $path"
     key="${BASH_REMATCH[1]}"
     value="${BASH_REMATCH[2]}"
