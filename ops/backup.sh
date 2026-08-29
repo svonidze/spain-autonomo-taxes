@@ -3,8 +3,10 @@
 set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "$script_dir/lib.sh"
-require_command python3; with_lock
-root="$(release_root)"; data="$(private_root)"; sha="$(current_release_sha)"
+require_command python3
+load_runtime_env
+with_lock
+data="$(private_root)"; sha="$(current_release_sha)"
 release="$(release_path "$sha")"
 tool="$script_dir/backup_private_root.py"
 [[ -f "$tool" ]] || die "control-plane private-root backup tool missing: $tool"

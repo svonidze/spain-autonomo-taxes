@@ -12,9 +12,9 @@ import pytest
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-CONFIG_SYNC = PROJECT_ROOT / "ops" / "config-sync.sh"
-PREFLIGHT = PROJECT_ROOT / "ops" / "preflight.sh"
-OPS_LIB = PROJECT_ROOT / "ops" / "lib.sh"
+CONFIG_SYNC = PROJECT_ROOT / "ops" / "sops" / "config-sync.sh"
+PREFLIGHT = PROJECT_ROOT / "ops" / "sops" / "preflight.sh"
+OPS_LIB = PROJECT_ROOT / "ops" / "sops" / "lib.sh"
 SERVER_RECIPIENT = "age1serverrecipient000000000000000000000000000000000000000000"
 RECOVERY_RECIPIENT = "age1recoveryrecipient000000000000000000000000000000000000000"
 
@@ -298,9 +298,9 @@ def test_deployment_metadata_binds_application_and_secret_revisions(tmp_path: Pa
 
 
 def test_ops_scripts_prepare_secrets_before_stopping_services() -> None:
-    deploy = (PROJECT_ROOT / "ops" / "deploy.sh").read_text(encoding="utf-8")
-    rollback = (PROJECT_ROOT / "ops" / "rollback.sh").read_text(encoding="utf-8")
-    restore = (PROJECT_ROOT / "ops" / "restore.sh").read_text(encoding="utf-8")
+    deploy = (PROJECT_ROOT / "ops" / "sops" / "deploy.sh").read_text(encoding="utf-8")
+    rollback = (PROJECT_ROOT / "ops" / "sops" / "rollback.sh").read_text(encoding="utf-8")
+    restore = (PROJECT_ROOT / "ops" / "sops" / "restore.sh").read_text(encoding="utf-8")
 
     assert deploy.index('config-sync.sh" --stage-only') < deploy.index("systemctl --user stop")
     assert rollback.index('config-sync.sh" --stage-only') < rollback.index("systemctl --user stop")

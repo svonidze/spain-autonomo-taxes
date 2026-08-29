@@ -15,53 +15,54 @@ fi
   exit 2
 }
 backup="$2"; [[ -f "$backup" ]] || die "backup does not exist: $backup"
-require_command python3
-load_bootstrap_env
-require_private_file "$(bootstrap_env_path)" "ops bootstrap environment"
-require_command systemctl; with_lock
+require_command python3; require_command systemctl
+load_runtime_env
+with_lock
 data="$(private_root)"; require_absolute_directory "$data"
 python3 - "$backup" <<'PY'
-import sqlite3, sys
+import sqlite3
+import sys
 with sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True) as db:
-    if db.execute("PRAGMA integrity_check").fetchone()[0] != "ok": raise SystemExit("backup integrity_check failed")
-    if db.execute("PRAGMA foreign_key_check").fetchone() is not None: raise SystemExit("backup foreign_key_check failed")
+    if db.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+        raise SystemExit("backup integrity_check failed")
+    if db.execute("PRAGMA foreign_key_check").fetchone() is not None:
+        raise SystemExit("backup foreign_key_check failed")
 PY
 sha="$(current_release_sha)"
-secret_sha="$(release_secret_config_sha "$sha")"
-unit="$(current_deployment_unit)"
-previous_secret="$(current_secret_config_sha 2>/dev/null || true)"
-"$script_dir/config-sync.sh" --stage-only "$secret_sha"
-"$script_dir/preflight.sh" "$secret_sha"
+unit="autonomo-web-$sha.service"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 preserved="$data/autonomo.sqlite.before-restore-$stamp"
 failed_restore="$data/autonomo.sqlite.failed-restore-$stamp"
-systemctl --user stop "$unit"
-if ! activate_secret_config "$secret_sha"; then
-  systemctl --user start "$unit" || true
-  die "restore secret config activation failed; service was restarted without changing the database"
-fi
-[[ ! -e "$data/autonomo.sqlite" ]] || mv "$data/autonomo.sqlite" "$preserved"
-install -m 600 "$backup" "$data/autonomo.sqlite"
+
 restore_previous() {
   systemctl --user stop "$unit" >/dev/null 2>&1 || true
   if [[ -f "$data/autonomo.sqlite" ]]; then mv "$data/autonomo.sqlite" "$failed_restore"; fi
   if [[ -f "$preserved" ]]; then mv "$preserved" "$data/autonomo.sqlite"; fi
-  restore_secret_config "$previous_secret" >/dev/null 2>&1 || true
-  systemctl --user start "$unit" || true
+  systemctl --user start "$unit" >/dev/null 2>&1 || true
 }
+
+systemctl --user stop "$unit"
+if [[ -e "$data/autonomo.sqlite" ]]; then
+  if ! mv "$data/autonomo.sqlite" "$preserved"; then
+    systemctl --user start "$unit" >/dev/null 2>&1 || true
+    die "live database could not be preserved; service was restarted"
+  fi
+fi
+if ! install -m 600 "$backup" "$data/autonomo.sqlite"; then
+  restore_previous
+  die "backup could not be installed; previous database was restored"
+fi
 if ! systemctl --user start "$unit"; then
   restore_previous
-  die "restored database did not start; previous database and config were restored"
+  die "restored database did not start; previous database was restored"
 fi
 if ! systemctl --user is-active --quiet "$unit"; then
-  systemctl --user stop "$unit" >/dev/null 2>&1 || true
   restore_previous
-  die "restored database service is not active; previous database and config were restored"
+  die "restored database service is not active; previous database was restored"
 fi
 if [[ -n "${AUTONOMO_HEALTHCHECK_URL:-}" ]] \
   && ! "$(release_path "$sha")/.venv/bin/python" "$script_dir/healthcheck.py" "$AUTONOMO_HEALTHCHECK_URL"; then
-  systemctl --user stop "$unit" >/dev/null 2>&1 || true
   restore_previous
-  die "restored database failed the external health check; previous database and config were restored"
+  die "restored database failed the external health check; previous database was restored"
 fi
-printf 'restored=%s\n' "$backup"
+printf 'restored=%s\npreserved=%s\n' "$backup" "$preserved"
