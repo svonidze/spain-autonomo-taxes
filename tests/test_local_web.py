@@ -282,6 +282,7 @@ def test_google_picker_config_uses_only_the_enabled_oauth_backend(
             allowed_tailscale_logins=("agent-login",),
         ),
         google_picker_developer_key="restricted-browser-key",
+        google_picker_app_id="123456789012",
     )
     _database(config)
     token_file = tmp_path / "oauth-token.json"
@@ -306,13 +307,14 @@ def test_google_picker_config_uses_only_the_enabled_oauth_backend(
             credential_ref="file:/missing-service-account.json",
         )
 
-    calls: list[tuple[Path, str]] = []
+    calls: list[tuple[Path, str, str]] = []
     monkeypatch.setattr(
         local_web,
         "_google_picker_token",
-        lambda path, key: calls.append((path, key)) or {
+        lambda path, key, app_id: calls.append((path, key, app_id)) or {
             "enabled": True,
             "developer_key": key,
+            "app_id": app_id,
             "access" + "_token": "ephemeral-token",
         },
     )
@@ -322,16 +324,64 @@ def test_google_picker_config_uses_only_the_enabled_oauth_backend(
     assert result == {
         "enabled": True,
         "developer_key": "restricted-browser-key",
+        "app_id": "123456789012",
         "access" + "_token": "ephemeral-token",
     }
-    assert calls == [(token_file, "restricted-browser-key")]
+    assert calls == [(token_file, "restricted-browser-key", "123456789012")]
 
 
 def test_google_picker_is_disabled_without_tailscale_proxy(tmp_path: Path) -> None:
-    config = replace(_config(tmp_path), google_picker_developer_key="restricted-browser-key")
+    config = replace(
+        _config(tmp_path),
+        google_picker_developer_key="restricted-browser-key",
+        google_picker_app_id="123456789012",
+    )
     _database(config)
 
     assert LocalAccountingApp(config).google_picker_config() == {"enabled": False}
+
+
+@pytest.mark.parametrize(
+    ("picker_lines", "message"),
+    [
+        (
+            'google_picker_developer_key: "restricted-browser-key"\n',
+            "must be configured together",
+        ),
+        (
+            'google_picker_app_id: "123456789012"\n',
+            "must be configured together",
+        ),
+        (
+            'google_picker_developer_key: "restricted-browser-key"\n'
+            'google_picker_app_id: "project-name"\n',
+            "must be a Google Cloud project number",
+        ),
+    ],
+)
+def test_google_picker_key_and_app_id_are_validated_together(
+    tmp_path: Path,
+    picker_lines: str,
+    message: str,
+) -> None:
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(picker_lines, encoding="utf-8")
+
+    with pytest.raises(LocalWebError, match=message):
+        local_web.load_config(tmp_path, config_path=config_file)
+
+
+def test_google_picker_builder_uses_cloud_project_app_id() -> None:
+    javascript = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "autonomo_taxes"
+        / "web_ui"
+        / "app.js"
+    ).read_text(encoding="utf-8")
+
+    assert ".setDeveloperKey(config.developer_key)" in javascript
+    assert ".setAppId(config.app_id)" in javascript
 
 
 def test_dashboard_rejects_unknown_or_malformed_quarter(tmp_path: Path) -> None:

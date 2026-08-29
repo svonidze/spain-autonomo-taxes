@@ -170,6 +170,7 @@ class LocalWebConfig:
     read_only_document_roots: tuple[Path, ...] = ()
     legacy_path_map_file: Path | None = None
     google_picker_developer_key: str | None = None
+    google_picker_app_id: str | None = None
 
 
 def load_config(
@@ -220,6 +221,13 @@ def load_config(
     google_picker_developer_key = _configured_google_picker_developer_key(
         values.get("google_picker_developer_key")
     )
+    google_picker_app_id = _configured_google_picker_app_id(
+        values.get("google_picker_app_id")
+    )
+    if bool(google_picker_developer_key) != bool(google_picker_app_id):
+        raise LocalWebError(
+            "google_picker_developer_key and google_picker_app_id must be configured together"
+        )
 
     resolved_database = (
         database
@@ -255,6 +263,7 @@ def load_config(
         read_only_document_roots=read_only_document_roots,
         legacy_path_map_file=legacy_path_map.resolve() if legacy_path_map else None,
         google_picker_developer_key=google_picker_developer_key,
+        google_picker_app_id=google_picker_app_id,
     )
 
 
@@ -858,7 +867,8 @@ class LocalAccountingApp:
         storage.
         """
         developer_key = self.config.google_picker_developer_key
-        if not self.uses_trusted_proxy or not developer_key:
+        app_id = self.config.google_picker_app_id
+        if not self.uses_trusted_proxy or not developer_key or not app_id:
             return {"enabled": False}
         try:
             with closing(self._connect()) as connection:
@@ -882,7 +892,7 @@ class LocalAccountingApp:
                 token_file = Path(credential_ref.removeprefix("file:"))
                 if not token_file.is_file() or token_file.is_symlink():
                     continue
-                return _google_picker_token(token_file, developer_key)
+                return _google_picker_token(token_file, developer_key, app_id)
         except (OSError, sqlite3.Error, json.JSONDecodeError, ValueError):
             pass
         return {"enabled": False}
@@ -2069,6 +2079,15 @@ def _configured_google_picker_developer_key(value: Any) -> str | None:
     return value.strip()
 
 
+def _configured_google_picker_app_id(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    app_id = str(value).strip()
+    if not re.fullmatch(r"[0-9]{6,20}", app_id):
+        raise LocalWebError("google_picker_app_id must be a Google Cloud project number")
+    return app_id
+
+
 def _configured_string_list(value: Any, *, field_name: str) -> tuple[str, ...]:
     if value in (None, ""):
         return ()
@@ -2104,7 +2123,11 @@ def _optional_google_folder_id(value: str | None) -> str | None:
     return folder_id
 
 
-def _google_picker_token(token_file: Path, developer_key: str) -> dict[str, Any]:
+def _google_picker_token(
+    token_file: Path,
+    developer_key: str,
+    app_id: str,
+) -> dict[str, Any]:
     """Refresh a user OAuth credential without exposing its refresh token."""
     try:
         from google.auth.transport.requests import Request
@@ -2125,6 +2148,7 @@ def _google_picker_token(token_file: Path, developer_key: str) -> dict[str, Any]
     return {
         "enabled": True,
         "developer_key": developer_key,
+        "app_id": app_id,
         "access_token": str(credentials.token),
     }
 
