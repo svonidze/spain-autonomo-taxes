@@ -3413,7 +3413,7 @@ async function openGoogleFolderPicker() {
   chooseGoogleFolder.disabled = true;
   try {
     const config = await fetchJSON("/api/google-picker/config");
-    if (!config?.enabled || !config.developer_key || !config.access_token) {
+    if (!config?.enabled || !config.developer_key || !config.app_id || !config.access_token) {
       throw new Error(t("intake.googlePickerUnavailable"));
     }
     await loadGooglePickerApi();
@@ -3424,6 +3424,7 @@ async function openGoogleFolderPicker() {
       .addView(view)
       .setOAuthToken(config.access_token)
       .setDeveloperKey(config.developer_key)
+      .setAppId(config.app_id)
       .setOrigin(window.location.origin)
       .setCallback((data) => {
         if (data.action !== window.google.picker.Action.PICKED) return;
