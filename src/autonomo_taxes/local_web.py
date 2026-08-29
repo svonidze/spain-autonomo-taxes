@@ -1965,9 +1965,16 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
     def _security_headers(self) -> None:
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
-        self.send_header("Referrer-Policy", "no-referrer")
+        picker_enabled = bool(
+            self.server.app.config.google_picker_developer_key
+            and self.server.app.config.google_picker_app_id
+        )
+        self.send_header(
+            "Referrer-Policy",
+            "strict-origin-when-cross-origin" if picker_enabled else "no-referrer",
+        )
         picker_csp = ""
-        if self.server.app.config.google_picker_developer_key:
+        if picker_enabled:
             picker_csp = (
                 " https://apis.google.com; frame-src https://drive.google.com "
                 "https://docs.google.com; connect-src 'self' https://www.googleapis.com;"

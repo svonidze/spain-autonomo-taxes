@@ -1836,6 +1836,7 @@ def test_http_interface_sets_local_session_and_protects_api(tmp_path: Path) -> N
         assert "autonomo_session=test-token" in cookie
         assert "__Host-autonomo_session" not in cookie
         assert "Secure" not in cookie
+        assert response.getheader("Referrer-Policy") == "no-referrer"
 
         connection.request(
             "GET",
@@ -1889,6 +1890,48 @@ def test_http_interface_sets_local_session_and_protects_api(tmp_path: Path) -> N
         assert missing_post.status == 404
         assert missing_post.getheader("Content-Type").startswith("application/json")
         assert missing_post_body == {"error": "Unknown API endpoint"}
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_picker_security_headers_send_only_the_tailnet_origin(tmp_path: Path) -> None:
+    config = replace(
+        _config(
+            tmp_path,
+            trusted_proxy_mode="tailscale_serve",
+            allowed_tailscale_logins=("agent-login",),
+        ),
+        google_picker_developer_key="restricted-browser-key",
+        google_picker_app_id="344327133225",
+    )
+    _database(config)
+    app = LocalAccountingApp(
+        config,
+        session_token="test-token",
+        principal_session_secret="secret-key",
+    )
+    server = LocalAccountingServer(("127.0.0.1", 0), app)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        connection = HTTPConnection("127.0.0.1", server.server_address[1], timeout=5)
+        connection.request(
+            "GET",
+            "/",
+            headers={
+                "Host": "ubuntu-16gb-nbg1-2.tail6c29f3.ts.net",
+                "Tailscale-User-Login": "agent-login",
+                "X-Forwarded-Proto": "https",
+            },
+        )
+        response = connection.getresponse()
+        response.read()
+
+        assert response.status == 200
+        assert response.getheader("Referrer-Policy") == "strict-origin-when-cross-origin"
+        assert "https://apis.google.com" in response.getheader("Content-Security-Policy")
     finally:
         server.shutdown()
         server.server_close()
