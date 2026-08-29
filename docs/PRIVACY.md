@@ -10,7 +10,7 @@ The repository contains implementation, synthetic tests, public reference config
 | Local configuration and database | private root | plaintext prohibited; approved SOPS ciphertext only in the dedicated private secrets repository |
 | Invoices, receipts, tax forms, exports, and generated reports | private root or encrypted archive | prohibited |
 | Browser profiles, cookies, storage state, and login logs | private root under `browser/` | prohibited |
-| API tokens | private root after SOPS materialization | plaintext prohibited; approved SOPS ciphertext only in the dedicated private secrets repository |
+| API tokens | private root, optionally materialized by SOPS | plaintext prohibited; approved SOPS ciphertext only in the dedicated private secrets repository |
 | age identities and Git deploy keys | server credential directory or password manager | prohibited in every Git repository |
 
 The private-root resolver uses this precedence:
