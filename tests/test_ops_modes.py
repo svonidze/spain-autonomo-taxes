@@ -78,7 +78,11 @@ def test_default_preflight_passes_without_sops_or_bootstrap_file(tmp_path: Path)
     (private_root / "autonomo.sqlite").chmod(0o600)
     runtime_env.write_text(
         f"AUTONOMO_PRIVATE_ROOT={private_root}\n"
-        f"AUTONOMO_RELEASE_ROOT={release_root}\n",
+        f"AUTONOMO_RELEASE_ROOT={release_root}\n"
+        "TZ=UTC\n"
+        "LANG=C.UTF-8\n"
+        "PYTHONUTF8=1\n"
+        "PATH=/usr/bin:/bin\n",
         encoding="utf-8",
     )
     runtime_env.chmod(0o600)

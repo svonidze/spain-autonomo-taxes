@@ -20,9 +20,10 @@ loginctl enable-linger "$USER"
 ```
 
 Default ops scripts load this `0600` file themselves with a strict non-shell
-parser. Use plain `AUTONOMO_NAME=value` assignments without quotes or spaces
-around `=`. Non-empty one-shot environment overrides, such as a migration flag
-or temporary deploy ref, take precedence over the file.
+parser. Use plain `NAME=value` assignments without quotes or spaces around `=`.
+The parser accepts `AUTONOMO_*` plus `TZ`, `LANG`, `LC_ALL`, `PYTHONUTF8`, and
+`PATH`; it never evaluates shell syntax. Non-empty one-shot environment
+overrides, such as a migration flag or temporary deploy ref, take precedence.
 
 The installer copies the control-plane scripts and private-root backup tool into
 `AUTONOMO_OPS_ROOT`, so the first deployed code release does not need to contain
