@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path, PurePosixPath
 import shutil
 import tarfile
@@ -17,10 +18,22 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def restore_backup(*, archive: Path, manifest: Path, target_root: Path) -> Path:
+def restore_backup(
+    *,
+    archive: Path,
+    manifest: Path,
+    target_root: Path,
+    private_root: Path | None = None,
+) -> Path:
     source = archive.expanduser().resolve(strict=True)
     manifest_path = manifest.expanduser().resolve(strict=True)
     target = target_root.expanduser().resolve()
+    if private_root is not None:
+        root = private_root.expanduser().resolve()
+        if target == root or root in target.parents:
+            raise ValueError("Restore target must not be inside the private root")
+        if target in root.parents:
+            raise ValueError("Restore target must not contain the private root")
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     if payload.get("archive") != source.name:
         raise ValueError("Manifest archive name does not match requested archive")
@@ -66,15 +79,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--target-root", type=Path, required=True)
+    parser.add_argument("--private-root", type=Path, default=None)
     return parser
 
 
 def main(argv: Iterable[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    private_root = args.private_root
+    if private_root is None:
+        configured = os.environ.get("AUTONOMO_PRIVATE_ROOT")
+        private_root = Path(configured) if configured else None
     target = restore_backup(
         archive=args.archive,
         manifest=args.manifest,
         target_root=args.target_root,
+        private_root=private_root,
     )
     print(f"restored_root={target}")
     return 0

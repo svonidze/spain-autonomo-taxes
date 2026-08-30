@@ -6,8 +6,16 @@ source "$script_dir/lib.sh"
 if [[ $# -eq 4 && "$1" == "--yes-restore-archive" ]]; then
   archive="$2"; manifest="$3"; target_root="$4"
   [[ -f "$archive" && -f "$manifest" ]] || die "archive and manifest must exist"
-  python3 "$script_dir/restore_private_root.py" \
-    --archive "$archive" --manifest "$manifest" --target-root "$target_root"
+  # A drill on a live host must not unpack into the private root: the backup
+  # perimeter is a three-entry deny list, so anything left there is archived and
+  # uploaded every night from then on. A bare recovery host has no runtime
+  # environment yet, so load it only when it exists.
+  if [[ -f "$(runtime_env_path)" ]]; then load_runtime_env; fi
+  restore_args=(--archive "$archive" --manifest "$manifest" --target-root "$target_root")
+  if [[ -n "${AUTONOMO_PRIVATE_ROOT:-}" ]]; then
+    restore_args+=(--private-root "$AUTONOMO_PRIVATE_ROOT")
+  fi
+  python3 "$script_dir/restore_private_root.py" "${restore_args[@]}"
   exit 0
 fi
 [[ $# -eq 2 && "$1" == "--yes-restore" ]] || {
