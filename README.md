@@ -43,7 +43,7 @@ These paths and file types are prohibited from Git:
 - SQLite databases, source documents, exports, archives, logs, private keys, and environment files;
 - real names, identity or tax numbers, addresses, contact details, financial records, Drive links, and credentials.
 
-Keep private configuration and runtime data in the private root. Production runtime secrets may use the approved SOPS + age workflow described in [ops/README.md](ops/README.md): only SOPS ciphertext is committed to the dedicated private `spain-autonomo-taxes-secrets` repository, while age identities and SSH deploy keys remain outside every Git repository. Plaintext secrets, environment files, credentials, and operational data remain prohibited in this code repository.
+Keep private configuration and runtime data in the private root. The default deployment uses private server files. Production runtime secrets may optionally use the [SOPS + age control plane](ops/sops/README.md): only SOPS ciphertext is committed to the dedicated private `spain-autonomo-taxes-secrets` repository, while age identities and SSH deploy keys remain outside every Git repository. Plaintext secrets, environment files, credentials, and operational data remain prohibited in this code repository.
 
 For a one-time migration from an older worktree-local layout:
 
@@ -54,6 +54,18 @@ python scripts/migrate_private_root.py `
 ```
 
 The migration copies files, verifies SHA-256 hashes, and transactionally rewrites supported SQLite evidence paths. It does not delete the source data.
+
+## Operating and recovering the service
+
+- [Operations](ops/README.md): safe diagnostics, exact-SHA deployment, migration, rollback, and backup scheduling.
+- [Provisioning](ops/PROVISIONING.md): Google originals versus new uploads, optional Picker, OAuth renewal, and Yandex configuration.
+- [Disaster recovery](docs/DISASTER_RECOVERY.md): backup coverage, isolated restore drill, five failure scenarios, and separately marked production cutover.
+- [Optional SOPS](ops/sops/README.md): encrypted configuration bootstrap, paired application/config deployment, and identity recovery.
+
+Private-root backups do not automatically include credentials stored elsewhere,
+such as `~/.config`. Verify their independent recovery copy before relying on a
+server-loss recovery plan. Documents under `docs/plans/` describe future work;
+they do not establish that a feature or recovery procedure is implemented.
 
 ## Privacy checks
 
