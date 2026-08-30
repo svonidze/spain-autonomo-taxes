@@ -82,6 +82,39 @@ current_release_sha() {
   printf '%s\n' "${BASH_REMATCH[1]}"
 }
 
+# Record one operational state marker as JSON under the backup directory. That
+# directory is excluded from the archive perimeter, so markers never inflate the
+# nightly upload. Values arrive as key=value arguments and are never evaluated.
+record_state() {
+  local name="$1"; shift
+  local root="${AUTONOMO_PRIVATE_ROOT:-}"
+  [[ -n "$root" && -d "$root" ]] || return 0
+  python3 - "$root/backups" "$name" "$@" <<'RECORD_STATE'
+import json
+import os
+import sys
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+directory = Path(sys.argv[1])
+name = sys.argv[2]
+payload = {"recorded_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+for item in sys.argv[3:]:
+    key, separator, value = item.partition("=")
+    if not separator:
+        raise SystemExit(f"state field must be key=value: {item}")
+    payload[key] = value
+directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+handle, temporary = tempfile.mkstemp(dir=directory, prefix=".state-")
+with os.fdopen(handle, "w", encoding="utf-8") as stream:
+    json.dump(payload, stream, sort_keys=True, indent=2)
+    stream.write("\n")
+os.chmod(temporary, 0o600)
+os.replace(temporary, directory / name)
+RECORD_STATE
+}
+
 with_lock() {
   local root lock
   root="$(release_root)"

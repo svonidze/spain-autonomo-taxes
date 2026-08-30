@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 import tarfile
 
+import pytest
+
 from autonomo_taxes.ledger_db import initialize
 
 
@@ -65,3 +67,78 @@ def test_private_root_backup_includes_evidence_and_verified_sqlite_snapshot(tmp_
         target_root=tmp_path / "restored",
     )
     assert (restored / "evidence" / "2026-Q3" / "invoice.pdf").read_bytes() == b"invoice"
+
+
+def _archive_pair(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """Build one real backup pair and return it with its private root."""
+    private_root = tmp_path / "private"
+    private_root.mkdir()
+    database = private_root / "autonomo.sqlite"
+    with initialize(database):
+        pass
+    archive, manifest = _module().create_backup(
+        private_root=private_root,
+        database=database,
+        output_dir=tmp_path / "out",
+        keep=3,
+    )
+    return private_root, archive, manifest
+
+
+@pytest.mark.parametrize("relative", ["restore-drill", "nested/restore-drill", "."])
+def test_restore_refuses_a_target_inside_the_private_root(tmp_path: Path, relative: str) -> None:
+    private_root, archive, manifest = _archive_pair(tmp_path)
+
+    with pytest.raises(ValueError, match="must not be inside the private root"):
+        _restore_module().restore_backup(
+            archive=archive,
+            manifest=manifest,
+            target_root=private_root / relative,
+            private_root=private_root,
+        )
+
+    assert not (private_root / "config.yaml").exists()
+
+
+def test_restore_refuses_a_target_that_would_contain_the_private_root(tmp_path: Path) -> None:
+    private_root, archive, manifest = _archive_pair(tmp_path)
+
+    with pytest.raises(ValueError, match="must not contain the private root"):
+        _restore_module().restore_backup(
+            archive=archive,
+            manifest=manifest,
+            target_root=private_root.parent,
+            private_root=private_root,
+        )
+
+
+def test_restore_allows_a_target_outside_the_private_root(tmp_path: Path) -> None:
+    private_root, archive, manifest = _archive_pair(tmp_path)
+
+    restored = _restore_module().restore_backup(
+        archive=archive,
+        manifest=manifest,
+        target_root=tmp_path / "drill",
+        private_root=private_root,
+    )
+
+    assert (restored / "autonomo.sqlite").is_file()
+
+
+def test_restore_cli_reads_the_private_root_from_the_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    private_root, archive, manifest = _archive_pair(tmp_path)
+    monkeypatch.setenv("AUTONOMO_PRIVATE_ROOT", str(private_root))
+
+    with pytest.raises(ValueError, match="must not be inside the private root"):
+        _restore_module().main(
+            [
+                "--archive",
+                str(archive),
+                "--manifest",
+                str(manifest),
+                "--target-root",
+                str(private_root / "restore-drill"),
+            ]
+        )

@@ -59,3 +59,12 @@ if [[ -n "${AUTONOMO_RECONCILE_BACKENDS:-}" ]]; then
     "$release/.venv/bin/autonomo-tax" storage reconcile --db "$data/autonomo.sqlite" --backend "$backend"
   done
 fi
+
+# set -e means this line is reached only when every step above succeeded, so the
+# marker records a genuinely complete backup. It lives under backups/, which the
+# archive perimeter excludes, and gives preflight and any operator one file to
+# read instead of reconstructing the outcome from the journal.
+record_state "last-backup-$backup_class.json" \
+  "class=$backup_class" \
+  "archive=$(basename "$backup_file")" \
+  "offsite=$([[ -n "$remote" ]] && printf yes || printf no)"
