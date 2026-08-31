@@ -464,7 +464,7 @@ async function main() {
       review: {selectedReviewId: null}, posting: {staleRefresh: null},
     },
     currentRenderGeneration: 30,
-    refreshButton: {disabled: false, textContent: "↻"},
+    refreshButton: {disabled: false, textContent: "↻", classList: {add: () => {}, remove: () => {}}},
     requestDashboardRefresh: () => new Promise((resolve) => { resolveRefresh = resolve; }),
     renderCurrentView: async () => { renders += 1; },
     showToast: () => { toasts += 1; },
