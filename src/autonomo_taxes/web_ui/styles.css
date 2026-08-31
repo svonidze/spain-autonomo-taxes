@@ -680,26 +680,6 @@ tbody tr:hover td {
   background: var(--accent-soft);
 }
 
-.badge.needs_review,
-.badge.approved,
-.badge.unknown,
-.badge.due {
-  color: #7d4c0d;
-  background: var(--warning-soft);
-}
-
-.badge.blocking,
-.badge.error {
-  color: #8d2e2e;
-  background: var(--danger-soft);
-}
-
-.badge.not_due,
-.badge.waived {
-  color: #3c668d;
-  background: var(--info-soft);
-}
-
 .issues-list {
   margin: 0;
   padding: 0;

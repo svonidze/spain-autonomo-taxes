@@ -33,8 +33,18 @@ function extractFunction(source, name) {
 
 const context = vm.createContext({
   t: (key) => key,
+  statusLabel: (value) => `label:${value}`,
 });
-for (const name of ["escapeHtml", "emptyRow", "errorState", "uiLoadingSkeleton"]) {
+const tonesMatch = appSource.match(/const REVIEW_CATEGORY_TONES = \{[^}]+\};/);
+if (!tonesMatch) throw new Error("Could not find REVIEW_CATEGORY_TONES in app.js");
+vm.runInContext(tonesMatch[0], context);
+for (const name of [
+  "escapeHtml",
+  "emptyRow",
+  "errorState",
+  "uiLoadingSkeleton",
+  "reviewCategoryBadge",
+]) {
   vm.runInContext(extractFunction(appSource, name), context);
 }
 
@@ -84,6 +94,26 @@ for (const name of ["escapeHtml", "emptyRow", "errorState", "uiLoadingSkeleton"]
   const fallback = vm.runInContext("emptyRow(7)", context);
   assert.ok(fallback.includes('colspan="7"'));
   assert.ok(fallback.includes("common.noRecords"));
+}
+
+// The review posting-readiness chip always carries a localized label and a
+// tone class; unexpected categories degrade to the neutral tone with the
+// generic status label instead of leaking a raw token.
+{
+  const ready = vm.runInContext('reviewCategoryBadge("ready")', context);
+  assert.ok(ready.includes("status-positive"));
+  assert.ok(ready.includes("review.category.ready"));
+  const later = vm.runInContext('reviewCategoryBadge("later")', context);
+  assert.ok(later.includes("status-pending"));
+  assert.ok(later.includes("review.category.later"));
+  const blocked = vm.runInContext('reviewCategoryBadge("blocked")', context);
+  assert.ok(blocked.includes("status-attention"));
+  const unknown = vm.runInContext('reviewCategoryBadge("mystery")', context);
+  assert.ok(unknown.includes("status-neutral"));
+  assert.ok(unknown.includes("label:mystery"));
+  const missing = vm.runInContext("reviewCategoryBadge(undefined)", context);
+  assert.ok(missing.includes("status-neutral"));
+  assert.ok(missing.includes("label:unknown"));
 }
 
 console.log(JSON.stringify({ok: true}));

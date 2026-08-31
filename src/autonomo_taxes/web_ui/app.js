@@ -232,7 +232,6 @@ const messages = {
     "transactions.amount": "Сумма",
     "transactions.irpfDeduction": "Вычет IRPF",
     "transactions.noCounterparty": "Без контрагента",
-    "transactions.actionNeeded": "требует решения",
     "transactions.emptyIncome": "Доходов в этом периоде пока нет. Нажмите «Добавить», чтобы принять счёт.",
     "transactions.noMatches": "По запросу ничего не найдено.",
     "review.queueEmpty": "Очередь проверки пуста — всё проверено.",
@@ -242,6 +241,10 @@ const messages = {
     "review.summary": "Очередь проведения",
     "review.summaryReady": "Можно провести сейчас",
     "review.summaryNeedsReview": "Нужно проверить",
+    "review.category.ready": "можно провести",
+    "review.category.later": "провести позже",
+    "review.category.blocked": "проведение заблокировано",
+    "review.category.needs_review": "нужна проверка",
     "review.summaryLater": "Можно будет провести позже",
     "review.summaryBlocked": "Блокировки после проверки",
     "review.workspaceBack": "К списку операций",
@@ -721,7 +724,6 @@ const messages = {
     "transactions.amount": "Amount",
     "transactions.irpfDeduction": "IRPF deduction",
     "transactions.noCounterparty": "No counterparty",
-    "transactions.actionNeeded": "action needed",
     "transactions.emptyIncome": "No income in this period yet. Click “Add” to accept an invoice.",
     "transactions.noMatches": "Nothing matches your search.",
     "review.queueEmpty": "The review queue is empty — everything is reviewed.",
@@ -731,6 +733,10 @@ const messages = {
     "review.summary": "Posting queue",
     "review.summaryReady": "Can post now",
     "review.summaryNeedsReview": "Needs review",
+    "review.category.ready": "can post",
+    "review.category.later": "post later",
+    "review.category.blocked": "posting blocked",
+    "review.category.needs_review": "needs review",
     "review.summaryLater": "Can post later",
     "review.summaryBlocked": "Blocked after review",
     "review.workspaceBack": "Back to transactions",
@@ -1670,11 +1676,6 @@ function formatReviewRowPostingStatus(row, today = todayIso()) {
   return row.ui_context?.state === "needs_review" ? t("review.needsReview") : t("review.postingBlocked");
 }
 
-function issueBadge(row) {
-  if (!row?.open_issue_count) return "";
-  return badge(t("transactions.actionNeeded"), "blocking");
-}
-
 function readDecisionFieldValue(element) {
   const type = element.dataset.valueType || "string";
   if (element.type === "checkbox") return Boolean(element.checked);
@@ -2009,6 +2010,21 @@ function badge(value, forcedClass) {
   const text = String(value ?? "unknown");
   const className = forcedClass || text.replace(/[^a-z0-9_-]/gi, "_");
   return `<span class="badge ${escapeHtml(className)}">${escapeHtml(statusLabel(text))}</span>`;
+}
+
+const REVIEW_CATEGORY_TONES = {
+  ready: "status-positive",
+  later: "status-pending",
+  blocked: "status-attention",
+  needs_review: "status-pending",
+};
+
+function reviewCategoryBadge(category) {
+  const tone = REVIEW_CATEGORY_TONES[category];
+  const label = tone
+    ? t(`review.category.${category}`)
+    : statusLabel(String(category || "unknown"));
+  return `<span class="badge ${tone || "status-neutral"}">${escapeHtml(label)}</span>`;
 }
 
 function metric(label, value, detail, className = "") {
@@ -3559,7 +3575,7 @@ function renderReviewWorkspace() {
           <p>${escapeHtml(documentState.document_number ? t("review.invoiceLabel", {number: documentState.document_number}) : t("review.workspaceTitle"))}</p>
         </div>
         <div class="review-workspace-status">
-          ${badge(evaluation.category === "blocked" ? "blocking" : evaluation.category)}
+          ${reviewCategoryBadge(evaluation.category)}
           <strong>${escapeHtml(postingStatusLabelForWorkItem(workItem))}</strong>
         </div>
       </div>
