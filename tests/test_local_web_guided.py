@@ -206,6 +206,7 @@ def _approve_packet(packet: dict[str, object]) -> None:
                 "aeat_operation_qualification": "S1",
                 "aeat_exemption_code": None,
                 "aeat_reverse_charge": False,
+                "vat_investment_good": False,
                 "aeat_expense_concept": "G03",
                 "rate_basis_points": 2100,
                 "deductible_ratio": 1.0,

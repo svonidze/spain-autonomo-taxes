@@ -7,6 +7,7 @@ from typing import Iterable
 
 from .modelo130 import Modelo130Result, calculate_modelo130
 from .money import cents
+from .vat_classification import LEGACY_VAT_CLASSIFICATION_WARNING, is_vat_investment_good
 
 
 ZERO = Decimal("0.00")
@@ -82,12 +83,14 @@ class TaxRow:
     include_modelo347: bool = False
     withholding_type: str = ""
     asset_id: str = ""
+    vat_investment_good: bool | None = None
 
     def __post_init__(self) -> None:
         if self.kind not in {"income", "expense", "adjustment"}:
             raise ValueError(f"Unsupported transaction kind: {self.kind}")
         if not self.transaction_id:
             raise ValueError("transaction_id is required")
+        is_vat_investment_good(self.vat_investment_good, legacy_asset=bool(self.asset_id), tax_code=self.tax_code)
 
 
 @dataclass(frozen=True)
@@ -359,6 +362,9 @@ def calculate_modelo303_rows(
         "Casillas follow the cited AEAT 2026 general-regime structure; year-specific rule review remains required.",
         "Casilla 71 includes the explicit prior-period compensation balance; deferred import VAT, regional allocation, and rectification adjustments remain unsupported.",
     )
+    deductible_inputs = domestic_deductible + other_reverse_input + import_deductible + intracommunity_input
+    if any(row.vat_investment_good is None for row in deductible_inputs):
+        warnings += (LEGACY_VAT_CLASSIFICATION_WARNING,)
     return CalculationResult("303", f"{year}-Q{quarter}", values, lineage, warnings)
 
 
@@ -527,7 +533,9 @@ def calculate_modelo390(
         warnings=(
             "Casillas 84/85/86/95/97/662 follow the cited AEAT annual settlement rules and preserve the sequential Modelo 303 compensation chain.",
             "The output covers the common general-regime categories modeled by the ledger; special regimes, prorrata, rectifications, regional allocation, and rare statistical boxes still require explicit review before filing.",
-        ),
+        ) + ((LEGACY_VAT_CLASSIFICATION_WARNING,) if any(
+            LEGACY_VAT_CLASSIFICATION_WARNING in report.warnings for report in reports
+        ) else ()),
     )
 
 
@@ -705,7 +713,8 @@ def _split_current_and_assets(rows: Iterable[TaxRow]) -> tuple[list[TaxRow], lis
     current: list[TaxRow] = []
     assets: list[TaxRow] = []
     for row in rows:
-        (assets if row.asset_id else current).append(row)
+        investment = is_vat_investment_good(row.vat_investment_good, legacy_asset=bool(row.asset_id))
+        (assets if investment else current).append(row)
     return current, assets
 
 

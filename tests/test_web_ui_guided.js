@@ -74,6 +74,7 @@ const context = {
   "mapConfirmErrorToQuestion",
   "buildConfirmFxSpec",
   "questionAnswerMap",
+  "readDecisionFieldValue",
   "fxChoiceNeeded",
   "initialFxChoice",
 ].forEach((name) => {
@@ -205,3 +206,11 @@ assert.equal(context.initialFxChoice({status: "unavailable"}), null);
 assert.equal(context.initialFxChoice(null), null);
 
 console.log("guided web ui checks OK");
+
+// False is an explicit reviewed IVA choice; blank remains unknown.
+assert.equal(context.readDecisionFieldValue({dataset: {valueType: "nullable-boolean"}, value: "false", type: "select-one"}), false);
+assert.equal(context.readDecisionFieldValue({dataset: {valueType: "nullable-boolean"}, value: "", type: "select-one"}), null);
+assert.equal(context.questionAnswerMap({tax_treatment: {vat_investment_good: false}}, null, {}).vat_investment_good, true);
+assert.equal(context.questionAnswerMap({tax_treatment: {vat_investment_good: null}}, null, {}).vat_investment_good, false);
+assert.equal(context.mapConfirmErrorToQuestion("Expense review requires an explicit vat_investment_good boolean"), "vat_investment_good");
+assert.ok(source.includes('data-decision-path="tax_treatment.vat_investment_good" data-value-type="nullable-boolean"'));

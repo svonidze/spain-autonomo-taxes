@@ -131,3 +131,29 @@ will do it. For example: "The details are saved. The entry still needs internal
 confirmation of its accounting treatment; the operator will review it next."
 "Posted in the application; nothing submitted to AEAT" describes a different,
 completed step. Neither statement implies approval by a tax authority.
+
+## IRPF assets and IVA investment goods
+
+Expense review requires a separate **IVA purchase classification** choice.
+`vat_investment_good=false` means a current purchase for IVA; `true` means an
+IVA investment good. Neither choice establishes business use or the deductible
+percentage. Confirm those facts and amounts independently.
+
+An asset amortized for IRPF need not be an IVA investment good. In particular,
+the IVA definition excludes goods valued below EUR 3,005.06. See
+[AEAT's investment goods definition](https://sede.agenciatributaria.gob.es/Sede/ayuda/manuales-videos-folletos/manuales-practicos/manual-iva-2025/capitulo-05-deducciones-devoluciones/deducciones/regularizacion-deducciones-bienes-inversion/concepto-bienes-inversion.html).
+Do not remove the IRPF asset link to change IVA boxes, or deduct an acquisition
+again as a current IRPF expense when its cost is recognized through amortization.
+
+New expense approvals require an explicit boolean in the review packet. Empty
+legacy values stay null: existing calculations retain their previous asset-link
+classification and report an unreviewed-classification warning. This fallback
+is compatibility behavior, not tax approval. The warning is carried into the
+annual IVA summary and AEAT book projection. Migration does not reclassify old
+records or rewrite saved snapshots; stale packets must be prepared again.
+
+Reviewed classification controls the current/investment input categories in
+Modelo 303 and the corresponding Modelo 390 totals, plus `bien_inversion` in
+the expense book. The IRPF asset and its amortization remain in the unified
+asset register independently. The read-only expense card shows the saved choice
+or that the IVA classification has not been reviewed.
