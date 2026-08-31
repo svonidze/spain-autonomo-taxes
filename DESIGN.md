@@ -117,6 +117,8 @@ not an empty state.
 - The tax reserve bullet reports `not_checked` when no explicit available-cash
   figure exists (`cash_check.py` receives `available_eur=None`); available
   cash is never inferred from payment rows.
-- `app.js` contains a historical duplicated declaration block (`t`,
-  `intlLocale`, …). All chart logic lives in `charts.js` and uniquely named
-  `build*Spec` helpers; the duplicate block is out of scope here.
+- `app.js` historically carried a duplicated declaration block (`t`,
+  `intlLocale`, …); it has been removed, and
+  `test_web_ui_helpers_declared_exactly_once` keeps each of those helpers
+  declared exactly once. All chart logic lives in `charts.js` and uniquely
+  named `build*Spec` helpers.
