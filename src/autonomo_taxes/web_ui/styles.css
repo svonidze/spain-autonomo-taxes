@@ -2122,7 +2122,7 @@ textarea:focus {
 .charts-panel {
   display: grid;
   gap: 18px;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
   margin-top: 18px;
 }
 
@@ -2148,6 +2148,10 @@ textarea:focus {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
+}
+
+.panel .chart-figure {
+  border: 0;
 }
 
 .chart-figure figcaption {
@@ -2230,12 +2234,12 @@ textarea:focus {
 
 .chart-axis-text {
   fill: var(--muted);
-  font-size: 10.5px;
+  font-size: 12px;
 }
 
 .chart-value-text {
   fill: var(--text);
-  font-size: 10.5px;
+  font-size: 12px;
 }
 
 .chart-legend {

@@ -40,6 +40,12 @@
     return Math.round(value * 100) / 100;
   }
 
+  function sceneWidth(spec) {
+    const requested = Number(spec && spec.width);
+    if (!Number.isFinite(requested) || requested <= 0) return VIEW_WIDTH;
+    return Math.min(Math.max(Math.round(requested), 280), 1600);
+  }
+
   function isValue(value) {
     return typeof value === "number" && Number.isFinite(value);
   }
@@ -118,10 +124,11 @@
       values: (entry.values || []).slice(0, buckets.length),
     }));
     const hasData = series.some((entry) => entry.values.some(isValue));
+    const viewWidth = sceneWidth(spec);
     const scene = {
       chartId: String(spec.chartId),
       kind: "cartesian",
-      viewBox: {width: VIEW_WIDTH, height: CARTESIAN_HEIGHT},
+      viewBox: {width: viewWidth, height: CARTESIAN_HEIGHT},
       buckets,
       series,
       legend: series.map((entry) => ({
@@ -167,7 +174,7 @@
     const plotTop = MARGIN.top;
     const plotBottom = CARTESIAN_HEIGHT - MARGIN.bottom;
     const plotLeft = MARGIN.left;
-    const plotRight = VIEW_WIDTH - MARGIN.right;
+    const plotRight = viewWidth - MARGIN.right;
     const yScale = scaleFactory(minValue, maxValue, plotBottom, plotTop);
     const bandWidth = (plotRight - plotLeft) / buckets.length;
     const columnWidth = round2(
@@ -186,13 +193,16 @@
     scene.baselineX1 = plotLeft;
     scene.baselineX2 = plotRight;
 
+    const labelStep = bandWidth >= 34 ? 1 : Math.max(1, Math.ceil(34 / bandWidth));
     buckets.forEach((bucket, index) => {
       const bandStart = plotLeft + bandWidth * index;
-      scene.bucketLabels.push({
-        x: round2(bandStart + bandWidth / 2),
-        y: plotBottom + 16,
-        label: String(bucket),
-      });
+      if (index % labelStep === 0) {
+        scene.bucketLabels.push({
+          x: round2(bandStart + bandWidth / 2),
+          y: plotBottom + 16,
+          label: String(bucket),
+        });
+      }
       stackOrder.forEach((stack, stackIndex) => {
         let positiveBase = 0;
         let negativeBase = 0;
@@ -295,10 +305,11 @@
       row.segments.reduce((sum, segment) => sum + (isValue(segment.value) ? Math.max(segment.value, 0) : 0), 0)
     );
     const height = MARGIN.top + rows.length * ROW_HEIGHT + 24;
+    const viewWidth = sceneWidth(spec);
     const scene = {
       chartId: String(spec.chartId),
       kind: "horizontal-bars",
-      viewBox: {width: VIEW_WIDTH, height},
+      viewBox: {width: viewWidth, height},
       rows,
       legend,
       hatchTones: [],
@@ -308,9 +319,9 @@
       empty: rows.length === 0 || !rows.some((row) => row.segments.some((segment) => isValue(segment.value))),
     };
     if (scene.empty) return scene;
-    const labelWidth = 150;
+    const labelWidth = Math.min(150, Math.max(90, Math.round(viewWidth * 0.28)));
     const plotLeft = labelWidth + 8;
-    const plotRight = VIEW_WIDTH - MARGIN.right - 64;
+    const plotRight = viewWidth - MARGIN.right - 64;
     const maxTotal = Math.max(...totals, 1);
     const xScale = scaleFactory(0, maxTotal, plotLeft, plotRight);
     rows.forEach((row, index) => {
@@ -359,10 +370,11 @@
     const values = ranges
       .map((range) => range.value)
       .concat(measureValue === null ? [] : [measureValue]);
+    const viewWidth = sceneWidth(spec);
     const scene = {
       chartId: String(spec.chartId),
       kind: "bullet",
-      viewBox: {width: VIEW_WIDTH, height: BULLET_HEIGHT},
+      viewBox: {width: viewWidth, height: BULLET_HEIGHT},
       legend: ranges
         .map((range) => ({
           key: range.key,
@@ -384,7 +396,7 @@
     };
     if (scene.empty) return scene;
     const plotLeft = MARGIN.left;
-    const plotRight = VIEW_WIDTH - MARGIN.right;
+    const plotRight = viewWidth - MARGIN.right;
     const maxValue = Math.max(...values) * 1.05 || 1;
     const xScale = scaleFactory(0, maxValue, plotLeft, plotRight);
     const bandTop = 18;
