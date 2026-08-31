@@ -59,7 +59,7 @@ def test_anthropic_coauthor_trailer_is_allowed_in_commit_messages() -> None:
     assert findings == []
     assert (
         hashlib.sha256(service_email.encode()).hexdigest()
-        in privacy_guard.ALLOWED_SYNTHETIC_VALUE_SHA256
+        in privacy_guard.ALLOWED_PUBLIC_BOT_EMAIL_SHA256
     )
 
 
@@ -70,6 +70,42 @@ def test_other_coauthor_trailer_emails_remain_findings() -> None:
     findings = privacy_guard.scan_content(message, "commit-message:0123456789ab")
 
     assert [finding.category for finding in findings] == ["email-address"]
+
+
+def test_only_the_exact_approved_public_bot_email_is_allowed() -> None:
+    public_bot = "noreply@anthropic.com"
+    assert privacy_guard.scan_content(public_bot.encode(), "sample.txt") == []
+    # Negative specimens must not become literal rejected addresses in Git.
+    for other_email in (
+        "private.person" + "@example.net",
+        "private.person" + "@anthropic.com",
+        "noreply+other" + "@anthropic.com",
+        "noreply" + "@anthropic.com.example.net",
+        "NOREPLY" + "@anthropic.com",
+    ):
+        findings = privacy_guard.scan_content(other_email.encode(), "sample.txt")
+        assert [finding.category for finding in findings] == ["email-address"]
+        assert findings[0].fingerprint == hashlib.sha256(other_email.encode()).hexdigest()
+        assert other_email not in repr(findings)
+
+
+def test_public_bot_email_does_not_bypass_credential_rules() -> None:
+    field = "pass" + "word"
+    specimen = field + '="' + "noreply@anthropic.com" + '"'
+    findings = privacy_guard.scan_content(specimen.encode(), "sample.txt")
+    assert [finding.category for finding in findings] == ["credential-literal"]
+
+
+def test_history_accepts_public_bot_attribution_without_rewriting_commits(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "tracked.txt").write_text("safe", encoding="utf-8")
+    _git(repo, "add", "tracked.txt")
+    _git(repo, "commit", "-m", "Synthetic change\n\nCo-authored-by: Assistant <noreply@anthropic.com>")
+    head = _git_output(repo, "rev-parse", "HEAD")
+
+    assert privacy_guard.scan_history(repo, "HEAD") == []
+    assert _git_output(repo, "rev-parse", "HEAD") == head
 
 
 def test_path_rules_do_not_allow_a_fixture_directory_bypass() -> None:

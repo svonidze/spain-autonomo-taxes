@@ -84,13 +84,15 @@ ALLOWED_SYNTHETIC_VALUE_SHA256 = frozenset(
         "b1ec61e341a488d3b65e3f59e4e6415c33354f2475dd9a80f05d8ce2a22c2977",
         "cd4d2a0e38a205e5cc3581e09f149ca1a30af3057e9dd6a6671ae351fcfdc24e",
         "faa296d58b7dcae9eec26d1991a5e3cc322ea91f0e668c0a720642817d7b0469",
-        # Anthropic no-reply service address from Co-Authored-By commit
-        # trailers: a public tool identity, not personal data. The digest is
-        # pinned to the exact address by tests/test_privacy_guard.py.
-        "cd29c5ac348a026a3ec5286890908fffb5bf6ab77f20672171be323a70c95026",
     }
 )
 ALLOWED_BINARY_SHA256: frozenset[str] = frozenset()
+
+# Approved Anthropic no-reply address used for commit co-author attribution.
+# Exact match only, and only for email findings (never credentials/other fields).
+ALLOWED_PUBLIC_BOT_EMAIL_SHA256 = frozenset(
+    {"cd29c5ac348a026a3ec5286890908fffb5bf6ab77f20672171be323a70c95026"}
+)
 
 
 @dataclass(frozen=True, order=True)
@@ -233,6 +235,8 @@ def scan_content(data: bytes, location: str, *, max_bytes: int = DEFAULT_MAX_BYT
                 value = match.group(spec.value_group) if spec.value_group else match.group(0)
                 fingerprint = _sha256(value)
                 if fingerprint in ALLOWED_SYNTHETIC_VALUE_SHA256:
+                    continue
+                if spec.category == "email-address" and fingerprint in ALLOWED_PUBLIC_BOT_EMAIL_SHA256:
                     continue
                 findings.add(Finding(spec.category, safe_location, line_number, fingerprint))
     return sorted(findings)
