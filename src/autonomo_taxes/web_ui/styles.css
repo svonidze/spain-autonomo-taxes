@@ -1302,6 +1302,60 @@ tbody tr:hover td {
   gap: 18px;
 }
 
+.review-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.review-tabs [role="tab"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  margin-bottom: -1px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--radius) var(--radius) 0 0;
+  font-weight: 600;
+}
+
+.review-tabs [role="tab"]:hover {
+  color: var(--text);
+  background: var(--surface-muted);
+}
+
+.review-tabs [role="tab"][aria-selected="true"] {
+  color: var(--accent-dark);
+  background: var(--surface);
+  border-color: var(--line);
+  border-bottom: 2px solid var(--accent);
+}
+
+.review-tabs [role="tab"]:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.tab-count {
+  min-width: 20px;
+  padding: 1px 6px;
+  color: var(--text);
+  background: var(--surface-muted);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+.review-tabs [role="tab"][aria-selected="true"] .tab-count {
+  color: #07573f;
+  background: var(--accent-soft);
+}
+
 .review-summary-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

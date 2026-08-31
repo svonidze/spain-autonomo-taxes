@@ -245,6 +245,10 @@ const messages = {
     "review.category.later": "провести позже",
     "review.category.blocked": "проведение заблокировано",
     "review.category.needs_review": "нужна проверка",
+    "reviewTabs.aria": "Разделы проверки",
+    "reviewTabs.queue": "Очередь",
+    "reviewTabs.posting": "Проведение",
+    "reviewTabs.documents": "Документы и вопросы",
     "review.summaryLater": "Можно будет провести позже",
     "review.summaryBlocked": "Блокировки после проверки",
     "review.workspaceBack": "К списку операций",
@@ -737,6 +741,10 @@ const messages = {
     "review.category.later": "post later",
     "review.category.blocked": "posting blocked",
     "review.category.needs_review": "needs review",
+    "reviewTabs.aria": "Review sections",
+    "reviewTabs.queue": "Queue",
+    "reviewTabs.posting": "Posting",
+    "reviewTabs.documents": "Documents and issues",
     "review.summaryLater": "Can post later",
     "review.summaryBlocked": "Blocked after review",
     "review.workspaceBack": "Back to transactions",
@@ -1215,6 +1223,7 @@ const state = {
     rows: [],
     issues: [],
     documents: [],
+    activeTab: "queue",
     selectedReviewId: null,
     workItem: null,
     validationDirty: true,
@@ -1324,12 +1333,14 @@ function routePathFor(view, reviewId = null) {
   return `/${view}`;
 }
 
-function buildRouteUrl(view, {period = state.period, reviewId = null, transactionId = null, counterpartyId = null, contactPeriod = "", returnTo = null, q = ""} = {}) {
+function buildRouteUrl(view, {period = state.period, reviewId = null, transactionId = null, counterpartyId = null, contactPeriod = "", returnTo = null, q = "", tab = null} = {}) {
   if (view === "contact-detail") return contactUrl(counterpartyId || reviewId, contactPeriod);
   const path = routePathFor(view, transactionId || reviewId);
   const query = new URLSearchParams();
   if ((PERIOD_ROUTE_PATHS.has(`/${view}`) || view === "expense-detail") && period) query.set("period", period);
   if (view === "expenses" && q) query.set("q", q);
+  const reviewTab = view === "review" && !reviewId ? (tab || state.review?.activeTab) : null;
+  if (reviewTab && reviewTab !== "queue") query.set("tab", reviewTab);
   if (returnTo && (view === "expense-detail" || (view === "review" && reviewId))) query.set("returnTo", returnTo);
   return query.size ? `${path}?${query}` : path;
 }
@@ -1388,6 +1399,13 @@ function routePeriodFromQuery(search) {
   if (!text) return null;
   const known = (state.bootstrap?.periods || []).map((row) => row.period_key);
   return known.includes(text) ? text : null;
+}
+
+const REVIEW_TABS = ["queue", "posting", "documents"];
+
+function reviewTabFromQuery(query) {
+  const value = String(query.get("tab") || "").trim().toLowerCase();
+  return REVIEW_TABS.includes(value) ? value : "queue";
 }
 
 function unknownRoutePanel() {
@@ -1461,6 +1479,13 @@ function applyRouteFromLocation() {
     state.period = routePeriodFromQuery(window.location.search)
       || state.period || state.bootstrap.default_period;
     if (state.period) query.set("period", state.period);
+  }
+  if (route.view === "review" && !route.reviewId) {
+    state.review.activeTab = reviewTabFromQuery(query);
+    if (state.review.activeTab === "queue") query.delete("tab");
+    else query.set("tab", state.review.activeTab);
+  } else {
+    query.delete("tab");
   }
   const search = query.toString() ? `?${query}` : "";
   if (search !== window.location.search) {
@@ -1839,7 +1864,7 @@ function showApprovedActivityBanner(summary) {
         <strong>${escapeHtml(t("dashboard.postingBannerTitle", {count: summary.approvedCount}))}</strong>
         <p>${escapeHtml(t("dashboard.approvedNotPosted"))}</p>
       </div>
-      <button type="button" class="secondary-button" data-nav-view="review">${escapeHtml(t("dashboard.postingBannerCta"))}</button>
+      <button type="button" class="secondary-button" data-nav-view="review" data-nav-tab="posting">${escapeHtml(t("dashboard.postingBannerCta"))}</button>
     </div>`;
 }
 
@@ -3079,14 +3104,28 @@ async function loadReviewWorkspace(reviewId, {factsOnly = false} = {}) {
   }
 }
 
-function renderReviewOverview() {
-  const summary = summarizeReviewRows(state.review.rows);
-  const preview = currentPostingPreview() || normalizePostingPreview({period: state.period});
-  const reviewDocuments = state.review.documents.filter((item) =>
-    ["received", "extracted", "needs_review"].includes(item.lifecycle_status)
-  );
-  app.innerHTML = `
-    <div class="section-stack review-shell">
+function reviewTabBar(counts) {
+  return `<div class="review-tabs" role="tablist" aria-label="${escapeHtml(t("reviewTabs.aria"))}">${REVIEW_TABS.map((tabId) => `
+      <button type="button" role="tab" id="review-tab-${tabId}" aria-selected="${state.review.activeTab === tabId}" aria-controls="review-tabpanel" tabindex="${state.review.activeTab === tabId ? "0" : "-1"}" data-review-tab="${tabId}">${escapeHtml(t(`reviewTabs.${tabId}`))}${counts[tabId] ? `<span class="tab-count">${counts[tabId]}</span>` : ""}</button>`).join("")}
+  </div>`;
+}
+
+function wireReviewTabFocus() {
+  const tablist = document.querySelector(".review-tabs");
+  if (!tablist) return;
+  tablist.addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    const tabs = [...tablist.querySelectorAll("[data-review-tab]")];
+    const index = tabs.indexOf(document.activeElement);
+    if (index === -1) return;
+    event.preventDefault();
+    const step = event.key === "ArrowRight" ? 1 : tabs.length - 1;
+    tabs[(index + step) % tabs.length].focus();
+  });
+}
+
+function reviewQueuePanel(summary) {
+  return `
       <section class="panel review-summary-panel">
         <header class="panel-header"><h2>${escapeHtml(t("review.summary"))}</h2><small>${escapeHtml(state.period)}</small></header>
         <div class="review-summary-grid">
@@ -3109,8 +3148,16 @@ function renderReviewOverview() {
         </div>
       </section>
       <section class="panel">
-        <div class="chart-slot" id="chart-review-aging"></div>
+        <header class="panel-header"><h2>${escapeHtml(t("review.transactions"))}</h2><small>${state.review.rows.length}</small></header>
+        ${reviewTransactionTable(state.review.rows)}
       </section>
+      <section class="panel">
+        <div class="chart-slot" id="chart-review-aging"></div>
+      </section>`;
+}
+
+function reviewPostingPanel(preview) {
+  return `
       <section class="panel">
         <header class="panel-header"><h2>${escapeHtml(t("review.postingTitle"))}</h2><small>${escapeHtml(state.period)}</small></header>
         <div class="posting-panel">
@@ -3141,11 +3188,11 @@ function renderReviewOverview() {
           ${renderPostingQueueSection(t("review.postingBatchBlocked"), preview.blocked)}
           ${renderPostingResultSection()}
         </div>
-      </section>
-      <section class="panel">
-        <header class="panel-header"><h2>${escapeHtml(t("review.transactions"))}</h2><small>${state.review.rows.length}</small></header>
-        ${reviewTransactionTable(state.review.rows)}
-      </section>
+      </section>`;
+}
+
+function reviewDocumentsPanel(reviewDocuments) {
+  return `
       <section class="panel">
         <header class="panel-header"><h2>${escapeHtml(t("review.documents"))}</h2><small>${reviewDocuments.length}</small></header>
         ${documentTable(reviewDocuments)}
@@ -3153,14 +3200,38 @@ function renderReviewOverview() {
       <section class="panel">
         <header class="panel-header"><h2>${escapeHtml(t("review.openIssues"))}</h2><small>${state.review.issues.length}</small></header>
         ${issuesList(state.review.issues)}
-      </section>
+      </section>`;
+}
+
+function renderReviewOverview() {
+  const summary = summarizeReviewRows(state.review.rows);
+  const preview = currentPostingPreview() || normalizePostingPreview({period: state.period});
+  const reviewDocuments = state.review.documents.filter((item) =>
+    ["received", "extracted", "needs_review"].includes(item.lifecycle_status)
+  );
+  if (!REVIEW_TABS.includes(state.review.activeTab)) state.review.activeTab = "queue";
+  const activeTab = state.review.activeTab;
+  const panels = {
+    queue: () => reviewQueuePanel(summary),
+    posting: () => reviewPostingPanel(preview),
+    documents: () => reviewDocumentsPanel(reviewDocuments),
+  };
+  app.innerHTML = `
+    <div class="section-stack review-shell">
+      ${reviewTabBar({queue: summary.needsReview, posting: preview.summary.readyCount, documents: state.review.issues.length})}
+      <div class="section-stack" id="review-tabpanel" role="tabpanel" aria-labelledby="review-tab-${activeTab}">
+        ${panels[activeTab]()}
+      </div>
     </div>
   `;
-  mountViewAnalyticsChart(
-    "chart-review-aging",
-    buildReviewAgingSpec,
-    AutonomoCharts.renderHorizontalBars
-  );
+  wireReviewTabFocus();
+  if (activeTab === "queue") {
+    mountViewAnalyticsChart(
+      "chart-review-aging",
+      buildReviewAgingSpec,
+      AutonomoCharts.renderHorizontalBars
+    );
+  }
 }
 
 function reviewTransactionTable(rows) {
@@ -5424,7 +5495,12 @@ if (hasDOM) {
     }
     const viewButton = event.target.closest("[data-nav-view]");
     if (viewButton) {
-      navigateToRoute(viewButton.dataset.navView);
+      navigateToRoute(viewButton.dataset.navView, viewButton.dataset.navTab ? {tab: viewButton.dataset.navTab} : {});
+      return;
+    }
+    const reviewTabButton = event.target.closest("[data-review-tab]");
+    if (reviewTabButton) {
+      navigateToRoute("review", {tab: reviewTabButton.dataset.reviewTab});
       return;
     }
     const postingButton = event.target.closest("[data-posting-action]");
