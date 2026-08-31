@@ -339,6 +339,81 @@ button:focus-visible {
   color: var(--muted);
 }
 
+.empty-state.state-error {
+  align-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 24px;
+  color: #7d3535;
+  background: var(--danger-soft);
+  border: 1px solid #e4b6b6;
+  border-radius: var(--radius);
+}
+
+.empty-state.state-error p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.empty-state.state-error details {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.empty-state.state-error summary {
+  cursor: pointer;
+}
+
+.loading-state.state-loading {
+  align-content: center;
+  justify-items: center;
+  gap: 14px;
+}
+
+.loading-state.state-loading p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.skeleton-panel {
+  display: grid;
+  gap: 12px;
+  width: min(560px, 86%);
+}
+
+.skeleton-line {
+  height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--surface-muted) 25%, #e2e8e5 40%, var(--surface-muted) 60%);
+  background-size: 300% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+.skeleton-line:nth-child(2) {
+  width: 78%;
+}
+
+.skeleton-line:nth-child(3) {
+  width: 56%;
+}
+
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+
+  to {
+    background-position: 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line,
+  .chart-slot:empty {
+    animation: none;
+  }
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(150px, 1fr));
@@ -1965,6 +2040,15 @@ textarea:focus {
 
 .chart-slot {
   min-width: 0;
+}
+
+.chart-slot:empty {
+  min-height: 180px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(90deg, transparent 25%, var(--surface-muted) 40%, transparent 60%);
+  background-size: 300% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
 }
 
 .chart-figure {

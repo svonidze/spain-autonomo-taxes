@@ -265,6 +265,7 @@ async function main() {
     t: (key) => key,
     renderExpenseDetail: async () => { throw new Error("old request failed"); },
     errorState: (error) => `error:${error.message}`,
+    uiLoadingSkeleton: () => "loading",
   });
   vm.runInNewContext("renderExpenseDetail = async () => { app.innerHTML = 'newer page remains'; currentRenderGeneration = 5; throw new Error('old request failed'); };", rejected);
   await rejected.renderCurrentView();
