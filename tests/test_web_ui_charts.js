@@ -380,6 +380,7 @@ const builderContext = {
   t: (key) => key,
   eur: (value) => String(value),
   intlLocale: () => "en",
+  statusLabel: (value) => `status:${value}`,
 };
 vm.createContext(builderContext);
 [
@@ -394,6 +395,11 @@ vm.createContext(builderContext);
   "buildIvaPositionSpec",
   "buildReserveSpec",
   "buildCumulativeNetSpec",
+  "buildYearComparisonSpec",
+  "buildExpenseStructureSpec",
+  "buildReviewAgingSpec",
+  "buildCounterpartySpec",
+  "buildAmortizationSpec",
 ].forEach((name) => vm.runInContext(extractFunction(appSource, name), builderContext));
 
 function analyticsFixture(overrides) {
@@ -454,7 +460,44 @@ function analyticsFixture(overrides) {
           recommended_reserve_minor: 36391,
           available_minor: null,
         },
-        review_aging: {counts: {received: [0, 0, 0, 0]}},
+        review_aging: {
+          buckets: ["0-7", "8-30", "31-90", "90+"],
+          counts: {received: [0, 0, 0, 0]},
+        },
+        ytd_comparison: {
+          through_month: 8,
+          current_year: {
+            year: 2026,
+            taxable_income_minor: 80000,
+            deductible_expense_minor: 20000,
+            net_minor: 60000,
+          },
+          previous_year: {
+            year: 2025,
+            taxable_income_minor: null,
+            deductible_expense_minor: null,
+            net_minor: null,
+          },
+        },
+        expense_structure: {
+          buckets: [
+            {concept: "G45", gross_minor: 30000, deductible_minor: 20000, non_deductible_minor: 10000},
+            {concept: "unclassified", gross_minor: 5000, deductible_minor: 0, non_deductible_minor: 5000},
+          ],
+        },
+        counterparty_concentration: {
+          top: [
+            {counterparty_id: "cp-1", name: "Client One", income_minor: 90000},
+          ],
+          other_minor: 15000,
+        },
+        amortization: {
+          includes: "include_in_books_only",
+          points: [
+            {period_key: "2026-Q1", total_minor: 6500, assets: []},
+            {period_key: "2026-Q2", total_minor: 6500, assets: []},
+          ],
+        },
       },
     },
     overrides
@@ -507,6 +550,69 @@ function analyticsFixture(overrides) {
   assert.strictEqual(spec.series[0].pattern, "dashed");
   assert.strictEqual(spec.series[1].pattern, "solid");
   assert.strictEqual(spec.series[0].tone, spec.series[1].tone);
+}
+
+// Year comparison keeps null previous-year values as gaps, previous year hatched.
+{
+  const spec = builderContext.buildYearComparisonSpec(analyticsFixture());
+  assert.strictEqual(spec.series[0].pattern, "hatched");
+  assert.deepStrictEqual(plain(spec.series[0].values), [null, null, null]);
+  assert.deepStrictEqual(plain(spec.series[1].values), [80000, 20000, 60000]);
+  assert.ok(spec.series[0].label.includes("2025"));
+}
+
+// Expense structure keeps API order and translates the unclassified bucket.
+{
+  const spec = builderContext.buildExpenseStructureSpec(analyticsFixture());
+  assert.deepStrictEqual(
+    plain(spec.rows.map((row) => row.label)),
+    ["G45", "charts.expenses.unclassified"]
+  );
+  assert.strictEqual(spec.rows[0].segments[1].pattern, "hatched");
+  const scene = AutonomoCharts.buildHorizontalBarsScene(spec);
+  assert.strictEqual(scene.empty, false);
+}
+
+// Review aging: an empty queue collapses to the empty state; counts are not money.
+{
+  const emptySpec = builderContext.buildReviewAgingSpec(analyticsFixture());
+  assert.strictEqual(emptySpec.rows.length, 0);
+  const busy = builderContext.buildReviewAgingSpec(
+    analyticsFixture({
+      datasets: Object.assign({}, analyticsFixture().datasets, {
+        review_aging: {
+          buckets: ["0-7", "8-30", "31-90", "90+"],
+          counts: {
+            received: [1, 0, 0, 0],
+            approved_unposted: [0, 0, 2, 0],
+          },
+        },
+      }),
+    })
+  );
+  assert.strictEqual(busy.rows.length, 4);
+  assert.strictEqual(busy.formatValue(7), "7");
+  const overdue = busy.rows[2].segments.find(
+    (segment) => segment.key === "approved_unposted"
+  );
+  assert.strictEqual(overdue.value, 2);
+  assert.strictEqual(overdue.tone, "danger");
+}
+
+// Counterparties: the long tail folds into a hatched "other" row.
+{
+  const spec = builderContext.buildCounterpartySpec(analyticsFixture());
+  assert.strictEqual(spec.rows.length, 2);
+  assert.strictEqual(spec.rows[1].key, "other");
+  assert.strictEqual(spec.rows[1].segments[0].pattern, "hatched");
+}
+
+// Amortization: quarter totals with the include-in-books note.
+{
+  const spec = builderContext.buildAmortizationSpec(analyticsFixture());
+  assert.strictEqual(spec.note, "charts.amortization.note");
+  assert.deepStrictEqual(plain(spec.buckets), ["2026-Q1", "2026-Q2"]);
+  assert.deepStrictEqual(plain(spec.series[0].values), [6500, 6500]);
 }
 
 // Empty-state taxonomy: FX gaps beat the generic message; review queue is named.

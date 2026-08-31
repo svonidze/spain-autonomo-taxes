@@ -371,6 +371,37 @@ const messages = {
     "charts.cumulative.aria": "Накопленный чистый результат до трудно обосновываемых расходов",
     "charts.cumulative.actual": "Факт",
     "charts.cumulative.projected": "С учётом одобренного",
+    "charts.yoy.title": "Год к году (по текущий месяц)",
+    "charts.yoy.aria": "Сравнение дохода, вычетов и результата с прошлым годом",
+    "charts.yoy.currentYear": "Текущий год",
+    "charts.yoy.previousYear": "Прошлый год",
+    "charts.yoy.income": "Доход",
+    "charts.yoy.deductible": "Вычеты",
+    "charts.yoy.net": "Результат",
+    "charts.yoy.empty": "Недостаточно данных для сравнения",
+    "charts.expenses.title": "Структура расходов по концептам AEAT",
+    "charts.expenses.aria": "Расходы по концептам AEAT: вычитаемая и невычитаемая части",
+    "charts.expenses.concept": "Концепт",
+    "charts.expenses.deductible": "Вычитаемая часть",
+    "charts.expenses.nonDeductible": "Невычитаемая часть",
+    "charts.expenses.unclassified": "Без концепта",
+    "charts.expenses.empty": "Расходы за период не найдены",
+    "charts.aging.title": "Очередь разбора по срокам",
+    "charts.aging.aria": "Число операций в очереди по возрасту и статусу",
+    "charts.aging.bucketLabel": "Дней в очереди",
+    "charts.aging.approvedOverdue": "Одобрено, не проведено",
+    "charts.aging.empty": "Очередь разбора пуста",
+    "charts.counterparties.title": "Крупнейшие клиенты",
+    "charts.counterparties.aria": "Доход по крупнейшим контрагентам",
+    "charts.counterparties.income": "Доход",
+    "charts.counterparties.other": "Прочие",
+    "charts.counterparties.noname": "Без контрагента",
+    "charts.counterparties.empty": "Доходы за период не найдены",
+    "charts.amortization.title": "Амортизация по кварталам",
+    "charts.amortization.aria": "Начисления амортизации по кварталам",
+    "charts.amortization.perQuarter": "Амортизация за квартал",
+    "charts.amortization.note": "Учтены только строки, включённые в книги",
+    "charts.amortization.empty": "Начислений амортизации нет",
   },
   en: {
     "app.title": "Autónomo accounting",
@@ -727,6 +758,37 @@ const messages = {
     "charts.cumulative.aria": "Cumulative net result before difficult-to-justify expenses",
     "charts.cumulative.actual": "Actual",
     "charts.cumulative.projected": "Including approved",
+    "charts.yoy.title": "Year over year (through this month)",
+    "charts.yoy.aria": "Income, deductibles and result compared with the previous year",
+    "charts.yoy.currentYear": "Current year",
+    "charts.yoy.previousYear": "Previous year",
+    "charts.yoy.income": "Income",
+    "charts.yoy.deductible": "Deductibles",
+    "charts.yoy.net": "Result",
+    "charts.yoy.empty": "Not enough data for a comparison",
+    "charts.expenses.title": "Expense structure by AEAT concept",
+    "charts.expenses.aria": "Expenses by AEAT concept: deductible and non-deductible parts",
+    "charts.expenses.concept": "Concept",
+    "charts.expenses.deductible": "Deductible part",
+    "charts.expenses.nonDeductible": "Non-deductible part",
+    "charts.expenses.unclassified": "No concept",
+    "charts.expenses.empty": "No expenses found for the period",
+    "charts.aging.title": "Review queue by age",
+    "charts.aging.aria": "Queued transactions by age bucket and status",
+    "charts.aging.bucketLabel": "Days in queue",
+    "charts.aging.approvedOverdue": "Approved, not posted",
+    "charts.aging.empty": "The review queue is empty",
+    "charts.counterparties.title": "Top customers",
+    "charts.counterparties.aria": "Income by largest counterparties",
+    "charts.counterparties.income": "Income",
+    "charts.counterparties.other": "Other",
+    "charts.counterparties.noname": "No counterparty",
+    "charts.counterparties.empty": "No income found for the period",
+    "charts.amortization.title": "Amortization by quarter",
+    "charts.amortization.aria": "Amortization charges by quarter",
+    "charts.amortization.perQuarter": "Amortization per quarter",
+    "charts.amortization.note": "Only rows included in the books are counted",
+    "charts.amortization.empty": "No amortization charges",
   },
 };
 
@@ -1902,6 +1964,154 @@ function buildCumulativeNetSpec(analytics) {
   return spec;
 }
 
+function buildYearComparisonSpec(analytics) {
+  const comparison = analytics.datasets.ytd_comparison;
+  const spec = chartSpecBase(
+    "ytd-comparison",
+    "charts.yoy.title",
+    "charts.yoy.aria",
+    t("charts.yoy.empty")
+  );
+  spec.bucketLabel = "";
+  spec.buckets = [
+    t("charts.yoy.income"),
+    t("charts.yoy.deductible"),
+    t("charts.yoy.net"),
+  ];
+  const previous = comparison.previous_year;
+  const current = comparison.current_year;
+  spec.series = [
+    {key: "previous", label: `${t("charts.yoy.previousYear")} (${previous.year})`, kind: "bar", stack: "previous", tone: "warning", pattern: "hatched", values: [previous.taxable_income_minor, previous.deductible_expense_minor, previous.net_minor]},
+    {key: "current", label: `${t("charts.yoy.currentYear")} (${current.year})`, kind: "bar", stack: "current", tone: "accent", pattern: "solid", values: [current.taxable_income_minor, current.deductible_expense_minor, current.net_minor]},
+  ];
+  return spec;
+}
+
+function buildExpenseStructureSpec(analytics) {
+  const buckets = analytics.datasets.expense_structure.buckets || [];
+  const spec = chartSpecBase(
+    "expense-structure",
+    "charts.expenses.title",
+    "charts.expenses.aria",
+    transactionsEmptyMessage(analytics)
+  );
+  spec.bucketLabel = t("charts.expenses.concept");
+  spec.rows = buckets.map((bucket) => ({
+    key: bucket.concept,
+    label:
+      bucket.concept === "unclassified"
+        ? t("charts.expenses.unclassified")
+        : bucket.concept,
+    segments: [
+      {key: "deductible", label: t("charts.expenses.deductible"), tone: "warning", pattern: "solid", value: bucket.deductible_minor},
+      {key: "non-deductible", label: t("charts.expenses.nonDeductible"), tone: "warning", pattern: "hatched", value: bucket.non_deductible_minor},
+    ],
+  }));
+  return spec;
+}
+
+function buildReviewAgingSpec(analytics) {
+  const aging = analytics.datasets.review_aging;
+  const spec = chartSpecBase(
+    "review-aging",
+    "charts.aging.title",
+    "charts.aging.aria",
+    t("charts.aging.empty")
+  );
+  spec.bucketLabel = t("charts.aging.bucketLabel");
+  spec.formatValue = (value) => String(value);
+  const counts = aging.counts || {};
+  const total = reviewQueueTotal(analytics);
+  if (!total) {
+    spec.rows = [];
+    return spec;
+  }
+  const seriesOrder = [
+    {key: "received", label: statusLabel("received"), tone: "info"},
+    {key: "extracted", label: statusLabel("extracted"), tone: "warning"},
+    {key: "needs_review", label: statusLabel("needs_review"), tone: "accent"},
+    {key: "approved_unposted", label: t("charts.aging.approvedOverdue"), tone: "danger"},
+  ];
+  spec.rows = (aging.buckets || []).map((bucket, index) => ({
+    key: bucket,
+    label: bucket,
+    segments: seriesOrder.map((series) => ({
+      key: series.key,
+      label: series.label,
+      tone: series.tone,
+      pattern: "solid",
+      value: (counts[series.key] || [])[index] ?? 0,
+    })),
+  }));
+  return spec;
+}
+
+function buildCounterpartySpec(analytics) {
+  const concentration = analytics.datasets.counterparty_concentration;
+  const spec = chartSpecBase(
+    "counterparty-concentration",
+    "charts.counterparties.title",
+    "charts.counterparties.aria",
+    t("charts.counterparties.empty")
+  );
+  spec.bucketLabel = "";
+  const rows = (concentration.top || []).map((entry) => ({
+    key: String(entry.counterparty_id || "none"),
+    label: entry.name || t("charts.counterparties.noname"),
+    segments: [
+      {key: "income", label: t("charts.counterparties.income"), tone: "info", pattern: "solid", value: entry.income_minor},
+    ],
+  }));
+  if (concentration.other_minor) {
+    rows.push({
+      key: "other",
+      label: t("charts.counterparties.other"),
+      segments: [
+        {key: "income", label: t("charts.counterparties.income"), tone: "info", pattern: "hatched", value: concentration.other_minor},
+      ],
+    });
+  }
+  spec.rows = rows;
+  return spec;
+}
+
+function buildAmortizationSpec(analytics) {
+  const amortization = analytics.datasets.amortization;
+  const spec = chartSpecBase(
+    "amortization",
+    "charts.amortization.title",
+    "charts.amortization.aria",
+    t("charts.amortization.empty")
+  );
+  spec.bucketLabel = t("charts.bucket.quarter");
+  spec.note = t("charts.amortization.note");
+  const points = amortization.points || [];
+  spec.buckets = points.map((point) => point.period_key);
+  spec.series = [
+    {key: "amortization", label: t("charts.amortization.perQuarter"), kind: "bar", stack: "amortization", tone: "accent", pattern: "solid", values: points.map((point) => point.total_minor)},
+  ];
+  return spec;
+}
+
+async function mountViewAnalyticsChart(slotId, buildSpec, renderer) {
+  const render = renderer || AutonomoCharts.renderCartesian;
+  try {
+    const analytics = await fetchJSON(
+      `/api/analytics?period=${encodeURIComponent(state.period)}`
+    );
+    const slot = document.querySelector(`#${slotId}`);
+    if (!slot) return;
+    render(slot, buildSpec(analytics));
+  } catch (error) {
+    const slot = document.querySelector(`#${slotId}`);
+    if (!slot) return;
+    const failure = document.createElement("div");
+    failure.className = "empty-state chart-empty-state";
+    failure.textContent = t("charts.loadError");
+    slot.replaceChildren(failure);
+  }
+}
+
 function renderDashboardCharts(analyticsResult) {
   const host = document.querySelector("#dashboard-charts");
   if (!host) return;
@@ -2059,10 +2269,21 @@ async function renderTransactions(entryType, renderGeneration = currentRenderGen
         <button class="primary-button" id="view-add-entry"><span aria-hidden="true">+</span> ${escapeHtml(t("common.add"))}</button>
       </div>
     </div>
+    ${entryType === "expense" ? `
+    <section class="panel">
+      <div class="chart-slot" id="chart-expense-structure"></div>
+    </section>` : ""}
     <section class="panel">
       <div id="transactions-table">${transactionTable(rows, {copyable: entryType === "income" && Boolean(state.copyTargetPeriodKey)})}</div>
     </section>
   `;
+  if (entryType === "expense") {
+    mountViewAnalyticsChart(
+      "chart-expense-structure",
+      buildExpenseStructureSpec,
+      AutonomoCharts.renderHorizontalBars
+    );
+  }
   document.querySelector("#view-add-entry").addEventListener("click", () => {
     openIntake(entryType === "income" ? "income_invoice" : "expense_invoice");
   });
@@ -2135,6 +2356,9 @@ function renderReviewOverview() {
         </div>
       </section>
       <section class="panel">
+        <div class="chart-slot" id="chart-review-aging"></div>
+      </section>
+      <section class="panel">
         <header class="panel-header"><h2>${escapeHtml(t("review.postingTitle"))}</h2><small>${escapeHtml(state.period)}</small></header>
         <div class="posting-panel">
           ${renderPostingRefreshWarning()}
@@ -2179,6 +2403,11 @@ function renderReviewOverview() {
       </section>
     </div>
   `;
+  mountViewAnalyticsChart(
+    "chart-review-aging",
+    buildReviewAgingSpec,
+    AutonomoCharts.renderHorizontalBars
+  );
 }
 
 function reviewTransactionTable(rows) {
@@ -2972,7 +3201,11 @@ async function renderAssets() {
         </table>
       </div>
     </section>
+    <section class="panel">
+      <div class="chart-slot" id="chart-amortization"></div>
+    </section>
   `;
+  mountViewAnalyticsChart("chart-amortization", buildAmortizationSpec);
 }
 
 async function renderTaxes() {
@@ -3009,9 +3242,13 @@ async function renderTaxes() {
           <header class="panel-header"><h2>Modelo 303</h2><small>${escapeHtml(formSubtitle(m303, obligations[303]))}</small></header>
           ${casillas(m303.values || {}, ["29", "45", "64", "69", "71", "72", "result", "compensation_carryforward"], formEmptyState(m303))}
         </section>
+        <section class="panel">
+          <div class="chart-slot" id="chart-ytd-comparison"></div>
+        </section>
       </div>
     </div>
   `;
+  mountViewAnalyticsChart("chart-ytd-comparison", buildYearComparisonSpec);
 }
 
 async function renderContacts() {
@@ -3036,7 +3273,15 @@ async function renderContacts() {
         </table>
       </div>
     </section>
+    <section class="panel">
+      <div class="chart-slot" id="chart-counterparty-concentration"></div>
+    </section>
   `;
+  mountViewAnalyticsChart(
+    "chart-counterparty-concentration",
+    buildCounterpartySpec,
+    AutonomoCharts.renderHorizontalBars
+  );
 }
 
 async function refreshDashboard() {
