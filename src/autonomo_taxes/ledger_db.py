@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -12,6 +12,7 @@ from typing import Any, Iterable, Mapping
 from uuid import uuid4
 
 from .fx_policy import ALLOWED_PRODUCTION_SOURCES, XOLO_RECORDED_PRODUCTION_THROUGH
+from .counterparty_names import normalize_counterparty_name, validate_counterparty_name
 from .outgoing_invoices import (
     calculate_invoice_totals,
     canonical_lines_json,
@@ -24,7 +25,7 @@ from .outgoing_invoices import (
 from .tax_rules import ALL_FORM_CODES
 
 
-LATEST_SCHEMA_VERSION = 19
+LATEST_SCHEMA_VERSION = 20
 
 # Migrations that rebuild a table referenced by a foreign key. They must
 # run with foreign-key enforcement temporarily disabled, and that pragma
@@ -163,6 +164,27 @@ class LedgerDB:
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA foreign_keys = ON")
         self.connection.execute("PRAGMA busy_timeout = 5000")
+
+    @contextmanager
+    def transaction(self):
+        """Own a write transaction, or isolate this operation inside its caller."""
+        nested = self.connection.in_transaction
+        savepoint = f"ledger_{uuid4().hex}"
+        self.connection.execute(f"SAVEPOINT {savepoint}" if nested else "BEGIN IMMEDIATE")
+        try:
+            yield
+        except BaseException:
+            if nested:
+                self.connection.execute(f"ROLLBACK TO {savepoint}")
+                self.connection.execute(f"RELEASE {savepoint}")
+            else:
+                self.connection.rollback()
+            raise
+        else:
+            if nested:
+                self.connection.execute(f"RELEASE {savepoint}")
+            else:
+                self.connection.commit()
 
     @classmethod
     def initialize(cls, path: str | Path) -> "LedgerDB":
@@ -561,7 +583,7 @@ class LedgerDB:
         if existing is not None:
             return existing
 
-        with self.connection:
+        with _write_scope(self.connection):
             return self._ensure_period_uncommitted(
                 period_key,
                 starts_on=starts_on,
@@ -650,21 +672,7 @@ class LedgerDB:
             "legal_form": effective_legal_form,
         }
         effective_source_hash = source_hash or _stable_hash(payload)
-        if existing is not None and all(
-            (
-                existing["external_key"] == (external_key if external_key is not None else existing["external_key"]),
-                existing["tax_id"] == (tax_id if tax_id is not None else existing["tax_id"]),
-                existing["display_name"] == display_name,
-                existing["country_code"] == country_code,
-                existing["email"] == email,
-                existing["phone"] == phone,
-                existing["legal_form"] == effective_legal_form,
-                existing["source_hash"] == effective_source_hash,
-            )
-        ):
-            return existing
-
-        with self.connection:
+        with _write_scope(self.connection):
             if existing is None:
                 new_id = counterparty_id or _new_id()
                 self.connection.execute(
@@ -691,34 +699,110 @@ class LedgerDB:
                 return self._fetch_one("SELECT * FROM counterparties WHERE counterparty_id = ?", (new_id,))
 
             self._check_row_version(existing, expected_row_version)
-            next_version = existing["row_version"] + 1
             self.connection.execute(
                 """
                 UPDATE counterparties
-                SET external_key = ?, tax_id = ?, display_name = ?, country_code = ?, email = ?, phone = ?,
-                    legal_form = ?, source_hash = ?, row_version = ?, updated_at = ?
-                WHERE counterparty_id = ?
+                SET external_key = COALESCE(:external_key, external_key),
+                    tax_id = COALESCE(:tax_id, tax_id),
+                    display_name = CASE WHEN name_is_manual = 1 THEN display_name ELSE :display_name END,
+                    country_code = :country_code, email = :email, phone = :phone,
+                    legal_form = :legal_form, source_hash = :source_hash,
+                    row_version = row_version + 1, updated_at = :timestamp
+                WHERE counterparty_id = :counterparty_id
+                  AND (:expected_version IS NULL OR row_version = :expected_version)
+                  AND (
+                    external_key IS NOT COALESCE(:external_key, external_key)
+                    OR tax_id IS NOT COALESCE(:tax_id, tax_id)
+                    OR (name_is_manual = 0 AND display_name IS NOT :display_name)
+                    OR country_code IS NOT :country_code OR email IS NOT :email
+                    OR phone IS NOT :phone OR legal_form IS NOT :legal_form
+                    OR source_hash IS NOT :source_hash
+                  )
                 """,
-                (
-                    external_key if external_key is not None else existing["external_key"],
-                    tax_id if tax_id is not None else existing["tax_id"],
-                    display_name,
-                    country_code,
-                    email,
-                    phone,
-                    effective_legal_form,
-                    effective_source_hash,
-                    next_version,
-                    timestamp,
-                    existing["counterparty_id"],
-                ),
+                {**payload, "source_hash": effective_source_hash, "timestamp": timestamp,
+                 "counterparty_id": existing["counterparty_id"],
+                 "expected_version": expected_row_version},
             )
-        return self._fetch_one(
-            "SELECT * FROM counterparties WHERE counterparty_id = ?",
-            (existing["counterparty_id"],),
+            if expected_row_version is not None and self.connection.execute(
+                "SELECT changes()"
+            ).fetchone()[0] == 0:
+                self._check_row_version(self._fetch_one(
+                    "SELECT * FROM counterparties WHERE counterparty_id = ?",
+                    (existing["counterparty_id"],),
+                ), expected_row_version)
+            return self._fetch_one(
+                "SELECT * FROM counterparties WHERE counterparty_id = ?",
+                (existing["counterparty_id"],),
+            )
+
+    def rename_counterparty(
+        self, counterparty_id: str, *, display_name: str,
+        expected_row_version: int, change_source: str, actor: str | None,
+    ) -> dict[str, Any]:
+        name = validate_counterparty_name(display_name)
+        if type(expected_row_version) is not int or expected_row_version < 1:
+            raise ValueError("expected_row_version must be a positive integer")
+        with self.transaction():
+            existing = self._fetch_one(
+                "SELECT * FROM counterparties WHERE counterparty_id = ?", (counterparty_id,),
+            )
+            self._check_row_version(existing, expected_row_version)
+            if name == existing["display_name"]:
+                return existing
+            self.connection.execute(
+                """UPDATE counterparties
+                   SET display_name = ?, name_is_manual = 1,
+                       row_version = row_version + 1, updated_at = ?
+                   WHERE counterparty_id = ? AND row_version = ?""",
+                (name, _utc_now(), counterparty_id, expected_row_version),
+            )
+            updated = self._fetch_one(
+                "SELECT * FROM counterparties WHERE counterparty_id = ?", (counterparty_id,),
+            )
+            self._record_counterparty_name_change(existing, updated, change_source, actor)
+            return updated
+
+    def counterparty_name_history(self, counterparty_id: str) -> list[dict[str, Any]]:
+        self._fetch_one(
+            "SELECT counterparty_id FROM counterparties WHERE counterparty_id = ?", (counterparty_id,),
+        )
+        return self._fetch_all(
+            """SELECT change_id, old_name, new_name, changed_at, change_source, actor,
+                      from_row_version, to_row_version
+               FROM counterparty_name_changes WHERE counterparty_id = ?
+               ORDER BY to_row_version DESC""", (counterparty_id,),
+        )
+
+    def _record_counterparty_name_change(
+        self, before: Mapping[str, Any], after: Mapping[str, Any],
+        change_source: str, actor: str | None,
+    ) -> None:
+        self.connection.execute(
+            """INSERT INTO counterparty_name_changes (
+                change_id, counterparty_id, old_name, new_name,
+                old_name_normalized, new_name_normalized, changed_at, change_source,
+                actor, from_row_version, to_row_version
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (_new_id(), before["counterparty_id"], before["display_name"], after["display_name"],
+             normalize_counterparty_name(before["display_name"]),
+             normalize_counterparty_name(after["display_name"]),
+             after["updated_at"], change_source, actor, before["row_version"], after["row_version"]),
         )
 
     def set_counterparty_tax_profile(
+        self, counterparty_id: str, *, vat_id: str | None = None,
+        roi_status: str = "unknown", professional_supplier: bool | None = None,
+        retention_expected: bool | None = None, legal_form: str | None = None,
+        expected_row_version: int | None = None, source_hash: str | None = None,
+    ) -> dict[str, Any]:
+        with self.transaction():
+            return self._set_counterparty_tax_profile(
+                counterparty_id, vat_id=vat_id, roi_status=roi_status,
+                professional_supplier=professional_supplier, retention_expected=retention_expected,
+                legal_form=legal_form, expected_row_version=expected_row_version, source_hash=source_hash,
+            )
+
+    def _set_counterparty_tax_profile(
         self,
         counterparty_id: str,
         *,
@@ -728,6 +812,7 @@ class LedgerDB:
         retention_expected: bool | None = None,
         legal_form: str | None = None,
         expected_row_version: int | None = None,
+        source_hash: str | None = None,
     ) -> dict[str, Any]:
         if roi_status not in {"unknown", "registered", "not_registered"}:
             raise ValueError(f"Unsupported ROI status: {roi_status}")
@@ -753,8 +838,8 @@ class LedgerDB:
                 """
                 UPDATE counterparties
                 SET vat_id = ?, roi_status = ?, professional_supplier = ?, retention_expected = ?,
-                    legal_form = ?, source_hash = ?, row_version = ?, updated_at = ?
-                WHERE counterparty_id = ?
+                    legal_form = ?, source_hash = ?, row_version = row_version + 1, updated_at = ?
+                WHERE counterparty_id = ? AND row_version = ?
                 """,
                 (
                     vat_id,
@@ -762,10 +847,10 @@ class LedgerDB:
                     _optional_bool_int(professional_supplier),
                     _optional_bool_int(retention_expected),
                     effective_legal_form,
-                    _stable_hash(payload),
-                    existing["row_version"] + 1,
+                    source_hash or _stable_hash(payload),
                     timestamp,
                     counterparty_id,
+                    existing["row_version"],
                 ),
             )
             updated = self._fetch_one(
@@ -1014,6 +1099,22 @@ class LedgerDB:
         return self._fetch_all(sql, params)
 
     def update_counterparty_review(
+        self, counterparty_id: str, *, display_name: str, tax_id: str | None,
+        country_code: str, vat_id: str | None, roi_status: str,
+        professional_supplier: bool | None, retention_expected: bool | None,
+        email: str | None, phone: str | None, legal_form: str | None = None,
+        reviewed_from: str = "sheet", expected_row_version: int | None = None,
+    ) -> dict[str, Any]:
+        with self.transaction():
+            return self._update_counterparty_review(
+                counterparty_id, display_name=display_name, tax_id=tax_id,
+                country_code=country_code, vat_id=vat_id, roi_status=roi_status,
+                professional_supplier=professional_supplier, retention_expected=retention_expected,
+                email=email, phone=phone, legal_form=legal_form, reviewed_from=reviewed_from,
+                expected_row_version=expected_row_version,
+            )
+
+    def _update_counterparty_review(
         self,
         counterparty_id: str,
         *,
@@ -1030,7 +1131,7 @@ class LedgerDB:
         reviewed_from: str = "sheet",
         expected_row_version: int | None = None,
     ) -> dict[str, Any]:
-        display_name = display_name.strip()
+        display_name = validate_counterparty_name(display_name)
         country_code = country_code.strip().upper()
         if not display_name:
             raise ValueError("Counterparty display_name is required")
@@ -1060,14 +1161,23 @@ class LedgerDB:
             "legal_form": effective_legal_form,
             "reviewed_from": reviewed_from,
         }
+        name_changed = display_name != existing["display_name"]
+        if all(existing[key] == value for key, value in payload.items()
+               if key not in {"display_name", "reviewed_from"}):
+            return self.rename_counterparty(
+                counterparty_id, display_name=display_name,
+                expected_row_version=existing["row_version"],
+                change_source=reviewed_from, actor=None,
+            )
         with _write_scope(self.connection):
             self.connection.execute(
                 """
                 UPDATE counterparties
                 SET display_name = ?, tax_id = ?, country_code = ?, vat_id = ?, roi_status = ?,
                     professional_supplier = ?, retention_expected = ?, email = ?, phone = ?,
-                    legal_form = ?, source_hash = ?, row_version = ?, updated_at = ?
-                WHERE counterparty_id = ?
+                    legal_form = ?, source_hash = ?, row_version = row_version + 1, updated_at = ?,
+                    name_is_manual = CASE WHEN ? THEN 1 ELSE name_is_manual END
+                WHERE counterparty_id = ? AND row_version = ?
                 """,
                 (
                     display_name,
@@ -1081,15 +1191,18 @@ class LedgerDB:
                     phone,
                     effective_legal_form,
                     _stable_hash(payload),
-                    existing["row_version"] + 1,
                     _utc_now(),
+                    name_changed,
                     counterparty_id,
+                    existing["row_version"],
                 ),
             )
             updated = self._fetch_one(
                 "SELECT * FROM counterparties WHERE counterparty_id = ?",
                 (counterparty_id,),
             )
+            if name_changed:
+                self._record_counterparty_name_change(existing, updated, reviewed_from, None)
             classification_changed = any(
                 (
                     country_code != existing["country_code"],
@@ -1155,7 +1268,7 @@ class LedgerDB:
             if _terminal_update_is_noop(existing, desired):
                 return existing
 
-        with self.connection:
+        with _write_scope(self.connection):
             if existing is None:
                 if period_id:
                     self._assert_period_mutable(period_id)
@@ -1917,7 +2030,7 @@ class LedgerDB:
             if _terminal_update_is_noop(existing, desired):
                 return existing
 
-        with self.connection:
+        with _write_scope(self.connection):
             if existing is None:
                 self._assert_period_mutable(period["period_id"])
                 new_id = transaction_id or _new_id()
@@ -2534,7 +2647,7 @@ class LedgerDB:
             "notes": notes,
         }
         effective_hash = source_hash or _stable_hash(payload)
-        with self.connection:
+        with _write_scope(self.connection):
             if existing is None:
                 treatment_id = _new_id()
                 self.connection.execute(
@@ -3155,7 +3268,7 @@ class LedgerDB:
             self._assert_period_mutable(existing["period_id"])
         self._check_row_version(existing, expected_row_version)
         timestamp = _utc_now()
-        with self.connection:
+        with _write_scope(self.connection):
             self.connection.execute(
                 """
                 UPDATE validation_issues
@@ -3193,7 +3306,7 @@ class LedgerDB:
             self._assert_period_mutable(existing["period_id"])
         self._check_row_version(existing, expected_row_version)
         timestamp = _utc_now()
-        with self.connection:
+        with _write_scope(self.connection):
             self.connection.execute(
                 """
                 UPDATE validation_issues
@@ -3763,7 +3876,7 @@ class LedgerDB:
             self._check_row_version(existing, expected_row_version)
         self._assert_asset_links_mutable(document_id, acquisition_transaction_id)
         timestamp = _utc_now()
-        with self.connection:
+        with _write_scope(self.connection):
             if existing is None:
                 asset_id = _new_id()
                 self.connection.execute(
@@ -5383,6 +5496,7 @@ class LedgerDB:
             "taxpayer_profile",
             "business_activities",
             "counterparties",
+            "counterparty_name_changes",
             "counterparty_identities",
             "documents",
             "files",
@@ -6967,6 +7081,31 @@ def _migration_19(connection: sqlite3.Connection) -> None:
     _backfill_fx_provenance(connection)
 
 
+def _migration_20(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        "ALTER TABLE counterparties ADD COLUMN name_is_manual INTEGER NOT NULL"
+        " DEFAULT 0 CHECK (name_is_manual IN (0, 1))"
+    )
+    connection.execute("""
+        CREATE TABLE counterparty_name_changes (
+            change_id TEXT PRIMARY KEY,
+            counterparty_id TEXT NOT NULL REFERENCES counterparties(counterparty_id),
+            old_name TEXT NOT NULL, new_name TEXT NOT NULL,
+            old_name_normalized TEXT NOT NULL, new_name_normalized TEXT NOT NULL,
+            changed_at TEXT NOT NULL, change_source TEXT NOT NULL,
+            actor TEXT,
+            from_row_version INTEGER NOT NULL,
+            to_row_version INTEGER NOT NULL CHECK (to_row_version = from_row_version + 1),
+            UNIQUE (counterparty_id, to_row_version)
+        )
+    """)
+    for column in ("old_name_normalized", "new_name_normalized"):
+        connection.execute(
+            f"CREATE INDEX counterparty_name_changes_{column}_idx"
+            f" ON counterparty_name_changes({column}, counterparty_id)"
+        )
+
+
 _MIGRATIONS = {
     1: _migration_1,
     2: _migration_2,
@@ -6987,4 +7126,5 @@ _MIGRATIONS = {
     17: _migration_17,
     18: _migration_18,
     19: _migration_19,
+    20: _migration_20,
 }

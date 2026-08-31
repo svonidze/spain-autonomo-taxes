@@ -161,6 +161,35 @@
     </form>
   </dialog>
 
+  <dialog id="counterparty-name-dialog" class="intake-dialog counterparty-name-dialog" aria-labelledby="counterparty-name-title">
+    <form id="counterparty-name-form" novalidate>
+      <header class="dialog-header">
+        <h2 id="counterparty-name-title" data-i18n="contacts.editName">Исправить имя</h2>
+        <button type="button" class="icon-button" id="close-counterparty-name" aria-label="Закрыть" data-i18n-aria="common.close">×</button>
+      </header>
+      <p id="counterparty-name-hint" data-i18n="contacts.renameHint">Имя изменится в приложении и новых выгрузках. Исходные документы останутся без изменений.</p>
+      <div class="form-grid counterparty-name-fields">
+        <label for="counterparty-name-input">
+          <span data-i18n="contacts.nameLabel">Имя</span>
+          <input id="counterparty-name-input" type="text" required aria-describedby="counterparty-name-hint counterparty-name-error">
+        </label>
+      </div>
+      <p id="counterparty-name-error" class="counterparty-name-error" role="alert"></p>
+      <div id="counterparty-name-conflict" class="counterparty-name-conflict" hidden>
+        <p id="counterparty-current-name"></p>
+        <button type="button" id="accept-counterparty-current-name" class="secondary-button" data-i18n="contacts.acceptCurrentName">Проверил: использовать текущую версию</button>
+      </div>
+      <details id="counterparty-name-history">
+        <summary data-i18n="contacts.nameHistory">История изменений</summary>
+        <div id="counterparty-name-history-body" aria-live="polite"></div>
+        <button type="button" id="retry-counterparty-name-history" class="secondary-button" data-i18n="contacts.retryHistory" hidden>Повторить загрузку</button>
+      </details>
+      <footer class="dialog-actions">
+        <button type="button" class="secondary-button" id="cancel-counterparty-name" data-i18n="common.cancel">Отмена</button>
+        <button type="submit" class="primary-button" id="save-counterparty-name" data-i18n="contacts.saveName">Сохранить</button>
+      </footer>
+    </form>
+  </dialog>
   <div id="toast" class="toast" role="status"></div>
   <dialog id="status-help-dialog" class="status-help-dialog" aria-labelledby="status-help-title">
     <header><h2 id="status-help-title"></h2><button type="button" id="status-help-close" aria-label="Закрыть пояснение">×</button></header>

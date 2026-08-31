@@ -102,7 +102,7 @@ def test_schema_19_preserves_linked_fx_and_backfills_provenance(tmp_path: Path) 
     _schema_18_database_with_linked_fx(path)
 
     with LedgerDB.open(path, apply_migrations=True) as db:
-        assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 19
+        assert db.connection.execute("PRAGMA user_version").fetchone()[0] == ledger_db_module.LATEST_SCHEMA_VERSION
         transaction = db.connection.execute(
             "SELECT fx_rate_id, amount_eur_minor FROM transactions "
             "WHERE transaction_id = 'transaction-1'"
