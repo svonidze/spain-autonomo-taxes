@@ -218,7 +218,7 @@ async function main() {
     applyDetailPeriod: () => calls.push({kind: "period"}),
     safeReturnUrl: () => "/expenses?period=2026-Q2&q=SYN",
     expenseDetailMarkup: () => "detail markup",
-    app: {innerHTML: ""},
+    app: {innerHTML: "", querySelector: () => null},
     renderCurrentView: async () => calls.push({kind: "render"}),
     refreshButton: {disabled: false, textContent: "↻"},
     requestDashboardRefresh: async () => calls.push({kind: "write-refresh"}),

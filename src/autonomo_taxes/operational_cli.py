@@ -245,6 +245,7 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     ingest.add_argument("--document-number")
     ingest.add_argument("--counterparty-id")
     ingest.add_argument("--counterparty-name")
+    ingest.add_argument("--defer-counterparty", action="store_true", help="Leave expense supplier selection to the reviewed UI workflow")
     ingest.add_argument("--drive-file-id")
     ingest.add_argument("--archive-root", type=Path)
     ingest.add_argument("--tesseract-command", default="tesseract")
@@ -1463,6 +1464,8 @@ def _cmd_intake_apply(args: argparse.Namespace) -> int:
 
 
 def _ingest_document(args: argparse.Namespace) -> dict[str, Any]:
+    if getattr(args, "defer_counterparty", False) and args.kind != "expense_invoice":
+        raise ValueError("Deferred supplier selection is only supported for expenses")
     if args.document_only and any(
         value is not None for value in (args.gross, args.taxable_base, args.vat, args.currency)
     ):
@@ -1507,11 +1510,11 @@ def _ingest_document(args: argparse.Namespace) -> dict[str, Any]:
             batch_key=f"document:{result.sha256}",
             notes=f"Extraction method: {result.extraction_method}",
         )
-        counterparty_id = args.counterparty_id or _upsert_intake_counterparty(
-            db,
-            suggestion,
-            preferred_name=getattr(args, "counterparty_name", None),
-        )
+        counterparty_id = args.counterparty_id
+        if counterparty_id is None and not getattr(args, "defer_counterparty", False):
+            counterparty_id = _upsert_intake_counterparty(
+                db, suggestion, preferred_name=getattr(args, "counterparty_name", None),
+            )
         document_number = args.document_number or extract_invoice_number(result.extracted_text)
         if document_number is None and suggestion is not None:
             parsed_description = suggestion.description or ""

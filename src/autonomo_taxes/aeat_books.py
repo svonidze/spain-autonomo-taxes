@@ -236,6 +236,7 @@ def _transaction_rows(
                ci.country_code AS counterparty_identity_country,
                ci.identifier AS counterparty_identity_identifier,
                oi.external_series, oi.external_number,
+               CASE WHEN EXISTS (SELECT 1 FROM assets a JOIN asset_depreciation_plans plan ON plan.asset_id=a.asset_id WHERE a.acquisition_transaction_id=t.transaction_id) THEN 1 ELSE 0 END AS native_asset_acquisition,
                CASE WHEN EXISTS (
                    SELECT 1 FROM assets a
                    WHERE a.acquisition_transaction_id = t.transaction_id
@@ -395,7 +396,7 @@ def _expense_rows(
         "autoliquidacion_periodo": f"{row_quarter}T",
         **_activity_columns(activity),
         "tipo_factura": invoice_type,
-        "concepto_gasto": concept,
+        "concepto_gasto": "" if transaction.get("native_asset_acquisition") and deductible_irpf_minor == 0 else concept,
         "fecha_expedicion": _date_es(transaction["issued_on"]),
         "fecha_operacion": _date_es(transaction["transaction_date"]),
         "factura_expedidor_serie_numero": transaction["document_number"],
@@ -718,7 +719,7 @@ def _asset_book_rows(
         asset = dict(raw)
         try:
             activity = _activity_for_asset(asset, activities)
-            output.append(_asset_row(database, asset, activity, year))
+            output.append(_asset_row(database, asset, activity, year, through_date=through_date))
         except AeatBookProjectionError as exc:
             blockers.append(
                 _blocker("asset_mapping_incomplete", asset["asset_id"], str(exc))
@@ -744,6 +745,7 @@ def _asset_row(
     asset: Mapping[str, Any],
     activity: Mapping[str, Any],
     year: int,
+    *, through_date: date | None = None,
 ) -> dict[str, Any]:
     required_fields = (
         "aeat_asset_type",
@@ -780,11 +782,17 @@ def _asset_row(
         """,
         (asset["asset_id"], year, str(year)),
     ).fetchall()
-    if len(evidence) != 1:
-        raise AeatBookProjectionError(
-            f"Asset requires exactly one annual evidence row for {year}; found {len(evidence)}"
-        )
-    annual = dict(evidence[0])
+    from .depreciation import native_year_summary
+    native = native_year_summary(database.connection, asset["asset_id"], year, through_date=through_date.isoformat() if through_date else None)
+    if native is not None:
+        annual = {"amount_minor": native["current_minor"], "source_book_line_id": None,
+                  "source_hash": native["source_hash"]}
+    else:
+        if len(evidence) != 1:
+            raise AeatBookProjectionError(
+                f"Asset requires exactly one annual evidence row for {year}; found {len(evidence)}"
+            )
+        annual = dict(evidence[0])
     prior = database.connection.execute(
         """
         SELECT COALESCE(SUM(ae.amount_minor), 0)
@@ -794,10 +802,13 @@ def _asset_row(
         """,
         (asset["asset_id"], year),
     ).fetchone()[0]
-    accumulated_start = int(prior)
+    accumulated_start = int(native["prior_minor"] if native is not None else prior)
     current_amount = int(annual["amount_minor"])
     accumulated_end = accumulated_start + current_amount
     amortizable_base = int(asset["amortizable_base_minor"])
+    if native is not None:
+        from .depreciation import minor
+        amortizable_base = minor(Decimal(amortizable_base) * Decimal(str(asset["business_use_ratio"])))
     pending = amortizable_base - accumulated_end
     if pending < 0:
         raise AeatBookProjectionError("Asset amortization exceeds its amortizable base")

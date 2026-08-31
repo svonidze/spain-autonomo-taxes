@@ -156,6 +156,7 @@ def test_transaction_detail_returns_closed_posted_snapshot_without_side_effects(
     detail = app.transaction_detail(fixture["transaction_id"])
 
     assert detail == {
+        "workflow_follow_up": None,
         "transaction": {
             "transaction_id": TRANSACTION_ID,
             "entry_type": "expense",

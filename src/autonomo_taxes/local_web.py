@@ -29,6 +29,9 @@ from typing import Any, Mapping
 from urllib.parse import parse_qs, unquote, urlencode, urlparse
 from uuid import UUID
 
+from . import expense_workflow
+from .expense_workflow import ExpenseWorkflowError
+
 try:
     import yaml
 except Exception:  # pragma: no cover - dependency guard
@@ -88,6 +91,7 @@ def _is_spa_route(path: str) -> bool:
 
 UPLOAD_KINDS = {"expense_invoice", "income_invoice"}
 INTAKE_FIELD_NAMES = {
+    "defer_counterparty",
     "period",
     "kind",
     "issued_on",
@@ -631,6 +635,8 @@ class LocalAccountingApp:
                         "transaction_not_found",
                         "Transaction was not found",
                     )
+                action = connection.execute("SELECT result_json FROM expense_actions WHERE json_extract(result_json,'$.transaction_id')=? ORDER BY created_at DESC LIMIT 1", (normalized_id,)).fetchone()
+                follow_up = json.loads(action[0]) if action else None
                 treatments = connection.execute(
                     """
                     SELECT
@@ -655,6 +661,7 @@ class LocalAccountingApp:
                 connection.rollback()
 
         return {
+            "workflow_follow_up": follow_up,
             "transaction": {
                 "transaction_id": row["transaction_id"],
                 "entry_type": row["entry_type"],
@@ -1010,6 +1017,117 @@ class LocalAccountingApp:
                 ) from exc
             raise
 
+    def expense_draft(self, transaction_id: str) -> dict[str, Any]:
+        with open_ledger_db(self.config.database, read_only=True) as db:
+            result = expense_workflow.get_draft(db, transaction_id)
+            state = json.loads(json.dumps(result["source"]))
+            facts = result["payload"]["facts"]
+            tx = state["transaction"]
+            if facts["currency"] != (tx.get("original_currency") or tx["currency"]) or facts["transaction_date"] != tx["transaction_date"] or facts["gross_minor"] != tx.get("amount_original_minor"):
+                tx["fx_rate_id"] = None
+                state["fx"] = None
+            tx.update(original_currency=facts["currency"], currency=facts["currency"], transaction_date=facts["transaction_date"])
+            result["fx_suggestion"] = self._fx_suggestion_for(db, {"state": state})
+            return result
+
+    def expense_save(self, transaction_id: str, payload: dict[str, Any], actor: str) -> dict[str, Any]:
+        _exact_object_fields(payload, {"payload", "expected_version", "source_snapshot_hash"}, "expense draft request")
+        with open_ledger_db(self.config.database) as db:
+            expense_workflow.save_draft(db, transaction_id, actor=actor, **payload)
+        return self.expense_draft(transaction_id)
+
+    def _expense_fx_verifier(self, transaction_id: str):
+        # External validation happens before the short accounting write transaction.
+        with open_ledger_db(self.config.database, read_only=True) as db:
+            draft = expense_workflow.get_draft(db, transaction_id)["payload"]
+        fx = draft["fx"]
+        if not fx or fx.get("rate_source") != "ecb":
+            return None
+        currency, rate_date = draft["facts"]["currency"], date.fromisoformat(fx["rate_date"])
+        observation = self._ecb_verify(currency, rate_date)
+        def verified(request_currency, request_date):
+            if (request_currency, request_date) != (currency, rate_date):
+                raise ExpenseWorkflowError("FX request changed during validation", code="expense_stale", status=409)
+            return observation
+        return verified
+
+    def expense_preview(self, transaction_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        _exact_object_fields(payload, {"expected_version"}, "expense preview request")
+        verifier = self._expense_fx_verifier(transaction_id)
+        with open_ledger_db(self.config.database) as db:
+            return expense_workflow.preview(db, transaction_id, ecb_verify=verifier, **payload)
+
+    def expense_confirm(self, transaction_id: str, payload: dict[str, Any], actor: str) -> dict[str, Any]:
+        _exact_object_fields(payload, {"expected_version", "preview_token", "request_id"}, "expense confirm request")
+        if self.config.archive_root is None:
+            raise LocalWebError("Original archive is not configured")
+        expense_workflow._request_id(payload["request_id"])
+        # A successful action can be retried even though its source is now posted.
+        with open_ledger_db(self.config.database, read_only=True) as db:
+            existing = db.connection.execute("SELECT 1 FROM expense_actions WHERE request_id=?", (payload["request_id"],)).fetchone()
+        verifier = None if existing else self._expense_fx_verifier(transaction_id)
+        with open_ledger_db(self.config.database) as db:
+            result = expense_workflow.confirm_and_post(db, transaction_id, actor=actor,
+                archive_root=self.config.archive_root, inbox_root=self.config.inbox_root, ecb_verify=verifier, **payload)
+        return {**result, **self.expense_follow_up(transaction_id)}
+
+    def expense_follow_up(self, transaction_id: str) -> dict[str, Any]:
+        from .intake import cleanup_expense_inbox_source
+        from .posting import prevalidate_expense_inbox_cleanup, expense_inbox_cleanup_row, build_expense_inbox_cleanup_candidate
+        warnings = []
+        with open_ledger_db(self.config.database, read_only=True) as db:
+            row = db.connection.execute("SELECT t.lifecycle_status,p.period_key FROM transactions t JOIN periods p ON p.period_id=t.period_id WHERE t.transaction_id=?", (transaction_id,)).fetchone()
+            if row is None or row["lifecycle_status"] not in {"posted", "included_in_snapshot"}:
+                raise ExpenseWorkflowError("Follow-up requires a posted transaction", status=409)
+            period = row["period_key"]
+            try:
+                action = db.connection.execute("SELECT result_json FROM expense_actions WHERE json_extract(result_json,'$.transaction_id')=? ORDER BY created_at DESC LIMIT 1", (transaction_id,)).fetchone()
+                original_period = json.loads(action[0]).get("cleanup_period_key") if action else None
+                if original_period and original_period != period:
+                    cleanup_row = expense_inbox_cleanup_row(db, transaction_id)
+                    if cleanup_row:
+                        cleanup_row["period_key"] = original_period
+                        candidate = build_expense_inbox_cleanup_candidate(cleanup_row, inbox_root=self.config.inbox_root, archive_root=self.config.archive_root)
+                        cleanup_expense_inbox_source(candidate)
+                else:
+                    cleanup = prevalidate_expense_inbox_cleanup(db, transaction_id,
+                        inbox_root=self.config.inbox_root, archive_root=self.config.archive_root)
+                    if cleanup.blocking:
+                        warnings.append("cleanup_pending")
+                    elif cleanup.candidate is not None:
+                        cleanup_expense_inbox_source(cleanup.candidate)
+            except Exception:
+                warnings.append("cleanup_pending")
+        try:
+            self.refresh_dashboard(period)
+        except Exception:
+            warnings.append("calculation_refresh_pending")
+        outcome = {"posted": True, "follow_up_pending": bool(warnings), "warnings": warnings}
+        with open_ledger_db(self.config.database) as db:
+            with db.transaction():
+                actions = db.connection.execute("SELECT request_id,result_json FROM expense_actions WHERE json_extract(result_json,'$.transaction_id')=?", (transaction_id,)).fetchall()
+                for action in actions:
+                    result = {**json.loads(action["result_json"]), **outcome}
+                    db.connection.execute("UPDATE expense_actions SET result_json=? WHERE request_id=?", (json.dumps(result), action["request_id"]))
+        return outcome
+
+    def depreciation_schedule(self, asset_id: str) -> dict[str, Any]:
+        with open_ledger_db(self.config.database, read_only=True) as db:
+            native = db.connection.execute("SELECT * FROM asset_depreciation_plans WHERE asset_id=?", (asset_id,)).fetchone()
+            rows = expense_workflow.asset_schedule(db, asset_id)
+            for row in rows:
+                row["can_post"] = bool(native and not row["recognition_transaction_id"] and row["amount_minor"] > 0
+                    and row["period_status"] == "open" and row["recognition_on"] and row["recognition_on"] <= date.today().isoformat())
+            return {"asset_id": asset_id, "native": bool(native), "rows": rows}
+
+    def depreciation_post(self, entry_id: str, payload: dict[str, Any], actor: str) -> dict[str, Any]:
+        _exact_object_fields(payload, {"expected_version", "request_id"}, "depreciation request")
+        if self.config.archive_root is None:
+            raise LocalWebError("Original archive is not configured")
+        with open_ledger_db(self.config.database) as db:
+            result = expense_workflow.recognize_period(db, entry_id, actor=actor, archive_root=self.config.archive_root, **payload)
+        return {**result, **self.expense_follow_up(result["transaction_id"])}
+
     def refresh_dashboard(self, period_key: str, *, as_of: str | None = None) -> dict[str, Any]:
         period = _validate_period(period_key)
         effective_as_of = date.fromisoformat(as_of) if as_of else date.today()
@@ -1084,6 +1202,10 @@ class LocalAccountingApp:
             "--archive-root",
             str(self.config.archive_root),
         ]
+        if fields.get("defer_counterparty") == "1":
+            if kind != "expense_invoice":
+                raise LocalWebError("Deferred supplier selection is only supported for expenses")
+            command.append("--defer-counterparty")
         option_map = {
             "issued_on": "--issued-on",
             "document_number": "--document-number",
@@ -1879,7 +2001,7 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             if parsed.path == "/":
                 self._serve_static("index.html", set_cookie=True, principal=principal)
                 return
-            if parsed.path in {"/app.js", "/charts.js", "/status-help.js", "/styles.css"}:
+            if parsed.path in {"/app.js", "/charts.js", "/status-help.js", "/expense-workflow.js", "/styles.css"}:
                 self._serve_static(parsed.path.removeprefix("/"))
                 return
             if parsed.path == "/favicon.ico":
@@ -1935,6 +2057,10 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                 self._send_json(
                     self.server.app.issues(_single_query(query, "period"))
                 )
+            elif match := re.fullmatch(r"/api/expense-workflows/([^/]+)", parsed.path):
+                self._send_json(self.server.app.expense_draft(match.group(1)))
+            elif match := re.fullmatch(r"/api/assets/([^/]+)/schedule", parsed.path):
+                self._send_json(self.server.app.depreciation_schedule(match.group(1)))
             elif parsed.path == "/api/assets":
                 self._send_json(self.server.app.assets(_optional_query(query, "period")))
             elif parsed.path == "/api/taxes":
@@ -1968,6 +2094,8 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                 self._send_json(
                     self.server.app.review_work_item(_single_query(query, "review_id"))
                 )
+            elif match := re.fullmatch(r"/api/document/([^/]+)/preview", parsed.path):
+                self._serve_document(match.group(1), preview=True)
             elif parsed.path.startswith("/api/document/") and parsed.path.endswith(
                 "/content"
             ):
@@ -1977,6 +2105,8 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                 self._send_error_json(HTTPStatus.NOT_FOUND, "Unknown API endpoint")
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
+        except ExpenseWorkflowError as exc:
+            self._send_error_json(HTTPStatus(exc.status), str(exc), code=exc.code)
         except LocalWebApiError as exc:
             self._send_error_json(exc.status, str(exc), code=exc.code, current=exc.current)
         except FileNotFoundError as exc:
@@ -1996,7 +2126,27 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             self._require_session(principal)
             self._guard_origin()
             parsed = urlparse(self.path)
-            if parsed.path == "/api/dashboard/refresh":
+            if match := re.fullmatch(r"/api/expense-workflows/([^/]+)/(save|preview|confirm|follow-up)", parsed.path):
+                self._require_same_origin()
+                self._require_json_content_type()
+                payload = self._read_json(max_bytes=150_000)
+                identifier, action = match.groups()
+                actor = principal or "local-session"
+                if action == "save":
+                    result = self.server.app.expense_save(identifier, payload, actor)
+                elif action == "preview":
+                    result = self.server.app.expense_preview(identifier, payload)
+                elif action == "confirm":
+                    result = self.server.app.expense_confirm(identifier, payload, actor)
+                else:
+                    _exact_object_fields(payload, set(), "expense follow-up request")
+                    result = self.server.app.expense_follow_up(identifier)
+                self._send_json(result)
+            elif match := re.fullmatch(r"/api/depreciation/([^/]+)/post", parsed.path):
+                self._require_same_origin()
+                self._require_json_content_type()
+                self._send_json(self.server.app.depreciation_post(match.group(1), self._read_json(), principal or "local-session"))
+            elif parsed.path == "/api/dashboard/refresh":
                 payload = self._read_json()
                 result = self.server.app.refresh_dashboard(
                     str(payload.get("period", "")),
@@ -2092,6 +2242,8 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                 self._send_error_json(HTTPStatus.NOT_FOUND, "Unknown API endpoint")
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
+        except ExpenseWorkflowError as exc:
+            self._send_error_json(HTTPStatus(exc.status), str(exc), code=exc.code)
         except LocalWebApiError as exc:
             self._send_error_json(exc.status, str(exc), code=exc.code, current=exc.current)
         except FileNotFoundError as exc:
@@ -2241,11 +2393,19 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(content)
 
-    def _serve_document(self, document_id: str) -> None:
+    def _serve_document(self, document_id: str, *, preview: bool = False) -> None:
         path, mime_type = self.server.app.document_file(document_id)
+        if preview:
+            signatures = {"application/pdf": b"%PDF-", "image/jpeg": b"\xff\xd8\xff",
+                          "image/png": b"\x89PNG\r\n\x1a\n"}
+            with path.open("rb") as source:
+                header = source.read(16)
+            if mime_type not in signatures or not header.startswith(signatures[mime_type]):
+                raise LocalWebApiError(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "preview_unavailable",
+                    "Inline preview supports verified PDF, JPEG and PNG; use Open original")
         size = path.stat().st_size
         self.send_response(HTTPStatus.OK)
-        self._security_headers()
+        self._security_headers(document_preview=preview)
         self.send_header("Content-Type", mime_type)
         self.send_header(
             "Content-Disposition",
@@ -2385,9 +2545,9 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             payload["current"] = dict(current)
         self._send_json(payload, status=status)
 
-    def _security_headers(self) -> None:
+    def _security_headers(self, *, document_preview: bool = False) -> None:
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("X-Frame-Options", "SAMEORIGIN" if document_preview else "DENY")
         picker_enabled = bool(
             self.server.app.config.google_picker_developer_key
             and self.server.app.config.google_picker_app_id
@@ -2399,10 +2559,12 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
         picker_csp = ""
         if picker_enabled:
             picker_csp = (
-                " https://apis.google.com; frame-src https://drive.google.com "
+                " https://apis.google.com; frame-src 'self' https://drive.google.com "
                 "https://docs.google.com; connect-src 'self' https://www.googleapis.com;"
             )
-        if picker_csp:
+        if document_preview:
+            policy = "default-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'"
+        elif picker_csp:
             policy = (
                 "default-src 'self'; img-src 'self' data:; style-src 'self'; "
                 "script-src 'self'" + picker_csp +

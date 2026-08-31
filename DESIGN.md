@@ -289,3 +289,27 @@ not an empty state.
   `charts.js`, contextual explanations in `status-help.js`, and uniquely named
   `build*Spec` helpers adapt analytics data to charts. Both supporting scripts
   load before `app.js`; adding a chart must not replace status explanations.
+
+## Expense and equipment workflow
+
+The approved expense workflow extends the earlier display-only scope. Routine
+bookkeeping uses the existing authenticated service, never sudo/SSH, deployments,
+service stops or full-root backups. Keep the current palette, components and RU/EN voice.
+
+- Unposted expenses offer a durable server draft: original alongside editable
+  facts, supplier/activity selection, business purpose and reviewed tax treatment.
+- Ordinary expense and equipment branches share one final preview and explicit
+  Confirm and post action. Only the selected purchase and immediately eligible
+  depreciation are posted. Saving a changed approved draft invalidates approval
+  visibly and preserves its audit trail. Posted/closed records remain read-only.
+- Equipment offers immediate low-value or calendar-day linear depreciation;
+  reviewed parameters and a versioned schedule are persisted. Plans are not actuals.
+  Future periods require a later explicit action from the asset page.
+- Native schedule-to-transaction links identify depreciation; do not infer new
+  journal types from descriptions or pretend they are historical imports.
+- The final summary distinguishes purchase amount, IVA, current IRPF deduction
+  and later depreciation. Business use and IVA investment status stay separate.
+- Errors preserve the draft. Repeated requests return the saved outcome;
+  post-commit refresh/cleanup failures offer repair without reposting.
+- Reuse label/focus/error patterns at desktop and 375px width. The original must
+  remain accessible if embedding fails. One expense or asset per workflow.

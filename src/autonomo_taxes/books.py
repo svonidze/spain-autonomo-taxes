@@ -183,7 +183,12 @@ def _build_transaction_rows(
             t.included_snapshot_id,
             t.source_hash,
             d.document_number,
-            c.display_name AS counterparty_name
+            c.display_name AS counterparty_name,
+            (EXISTS (SELECT 1 FROM expense_actions action
+                     WHERE action.action_kind='expense' AND action.subject_id=t.transaction_id)
+             OR EXISTS (SELECT 1 FROM amortization_entries ae
+                        JOIN asset_depreciation_plans plan ON plan.asset_id=ae.asset_id
+                        WHERE ae.recognition_transaction_id=t.transaction_id)) AS workflow_reviewed
         FROM transactions t
         JOIN periods p ON p.period_id = t.period_id
         LEFT JOIN documents d ON d.document_id = t.document_id
@@ -242,6 +247,17 @@ def _build_transaction_rows(
                     }
                 )
             else:
+                # Native commands explicitly reconcile and approve separate IRPF
+                # and IVA amounts. The historical diagnostic ratio must not
+                # re-deduct an acquisition or overwrite that reviewed split.
+                if transaction["workflow_reviewed"]:
+                    recomputed_base = treatment["taxable_base_minor"] or 0
+                    recomputed_irpf = (treatment["deductible_irpf_minor"] or 0) if treatment["include_modelo130"] else 0
+                    recomputed_vat = (treatment["deductible_vat_minor"] or 0) if treatment["include_modelo303"] else 0
+                else:
+                    recomputed_base = _recomputed_taxable_base_minor(gross_amount_minor, treatment)
+                    recomputed_irpf = _recomputed_deductible_minor(recomputed_base, treatment["deductible_ratio"])
+                    recomputed_vat = _recomputed_deductible_minor(treatment["vat_minor"] or 0, treatment["deductible_ratio"])
                 rows.append(
                     {
                         "period_key": period["period_key"],
@@ -262,21 +278,11 @@ def _build_transaction_rows(
                         "currency": transaction["currency"],
                         "gross_amount_minor": str(gross_amount_minor),
                         "filed_taxable_base_minor": _minor_text(treatment["taxable_base_minor"], fallback=gross_amount_minor),
-                        "recomputed_taxable_base_minor": str(_recomputed_taxable_base_minor(gross_amount_minor, treatment)),
+                        "recomputed_taxable_base_minor": str(recomputed_base),
                         "filed_deductible_irpf_minor": _minor_text(treatment["deductible_irpf_minor"]),
-                        "recomputed_deductible_irpf_minor": str(
-                            _recomputed_deductible_minor(
-                                _recomputed_taxable_base_minor(gross_amount_minor, treatment),
-                                treatment["deductible_ratio"],
-                            )
-                        ),
+                        "recomputed_deductible_irpf_minor": str(recomputed_irpf),
                         "filed_deductible_vat_minor": _minor_text(treatment["deductible_vat_minor"]),
-                        "recomputed_deductible_vat_minor": str(
-                            _recomputed_deductible_minor(
-                                treatment["vat_minor"] or 0,
-                                treatment["deductible_ratio"],
-                            )
-                        ),
+                        "recomputed_deductible_vat_minor": str(recomputed_vat),
                         "source_hash": transaction["source_hash"],
                     }
                 )
@@ -366,6 +372,10 @@ def _build_asset_rows(connection: sqlite3.Connection, period: sqlite3.Row) -> li
             business_use_ratio=row["business_use_ratio"],
             annual_rate_basis_points=row["annual_rate_basis_points"],
         )
+        native = connection.execute("SELECT 1 FROM asset_depreciation_plans WHERE asset_id=?", (row["asset_id"],)).fetchone()
+        if native:
+            planned = connection.execute("""SELECT COALESCE(SUM(ae.amount_minor),0) FROM amortization_entries ae JOIN transactions t ON t.transaction_id=ae.recognition_transaction_id WHERE ae.asset_id=? AND ae.period_id=? AND ae.include_in_books=1 AND t.lifecycle_status IN ('posted','included_in_snapshot')""", (row["asset_id"], period["period_id"])).fetchone()[0]
+            recomputed_minor = int(planned)
         export_rows.append(
             {
                 "period_key": period["period_key"],

@@ -86,7 +86,8 @@ def test_confirmation_roundtrip_and_stale_packet(tmp_path, investment):
 
 def test_schema_migration_keeps_legacy_treatment_and_source_hash(tmp_path):
     database = tmp_path / "legacy.sqlite"
-    with initialize(database) as db:
+    from unittest.mock import patch
+    with patch("autonomo_taxes.ledger_db.LATEST_SCHEMA_VERSION", 21), initialize(database) as db:
         transaction = db.add_transaction(external_key="legacy-device", period_key="2026-Q2",
             transaction_date="2026-04-01", booking_date="2026-04-01", entry_type="expense",
             description="Synthetic equipment", amount_minor=12100, lifecycle_status="posted")
