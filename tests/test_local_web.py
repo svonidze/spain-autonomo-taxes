@@ -1126,7 +1126,7 @@ def test_web_ui_copy_prefill_static_smoke_guards() -> None:
     assert 'formElements.gross.value = prefill?.gross || "";' in javascript
     assert "setIntakeNotice(noticeLines);" in javascript
 
-    assert 'function transactionTable(rows, {copyable = false, sourceUrl = null} = {})' in javascript
+    assert 'function transactionTable(rows, {copyable = false, sourceUrl = null, emptyMessage = null} = {})' in javascript
     assert javascript.count('Boolean(state.copyTargetPeriodKey)') >= 3
     assert 'app.addEventListener("click", (event) => {' in javascript
     assert 'const button = event.target.closest("[data-copy-transaction-id]");' in javascript

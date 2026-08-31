@@ -233,6 +233,9 @@ const messages = {
     "transactions.irpfDeduction": "Вычет IRPF",
     "transactions.noCounterparty": "Без контрагента",
     "transactions.actionNeeded": "требует решения",
+    "transactions.emptyIncome": "Доходов в этом периоде пока нет. Нажмите «Добавить», чтобы принять счёт.",
+    "transactions.noMatches": "По запросу ничего не найдено.",
+    "review.queueEmpty": "Очередь проверки пуста — всё проверено.",
     "review.transactions": "Операции на проверке",
     "review.documents": "Документы на проверке",
     "review.openIssues": "Открытые вопросы",
@@ -719,6 +722,9 @@ const messages = {
     "transactions.irpfDeduction": "IRPF deduction",
     "transactions.noCounterparty": "No counterparty",
     "transactions.actionNeeded": "action needed",
+    "transactions.emptyIncome": "No income in this period yet. Click “Add” to accept an invoice.",
+    "transactions.noMatches": "Nothing matches your search.",
+    "review.queueEmpty": "The review queue is empty — everything is reviewed.",
     "review.transactions": "Transactions to review",
     "review.documents": "Documents to review",
     "review.openIssues": "Open issues",
@@ -1966,13 +1972,17 @@ function showToast(message, error = false) {
   showToast.timer = setTimeout(() => toast.classList.remove("visible"), 3200);
 }
 
-function emptyRow(columns) {
-  return `<tr><td colspan="${columns}"><div class="empty-state">${escapeHtml(t("common.noRecords"))}</div></td></tr>`;
+function emptyRow(columns, message) {
+  return `<tr><td colspan="${columns}"><div class="empty-state">${escapeHtml(message || t("common.noRecords"))}</div></td></tr>`;
 }
 
 function errorState(error) {
   const sessionExpired = error.code === "session_forbidden";
-  return `<div class="empty-state" role="alert"><p>${escapeHtml(t(sessionExpired ? "common.sessionExpired" : "common.loadFailed"))}</p><button type="button" class="secondary-button" ${sessionExpired ? "data-reload-view" : "data-retry-view"}>${escapeHtml(t(sessionExpired ? "common.reload" : "common.retry"))}</button><details><summary>${escapeHtml(t("issues.sourceDetails"))}</summary><p>${escapeHtml(error.message || String(error))}</p></details></div>`;
+  return `<div class="empty-state state-error" role="alert"><p>${escapeHtml(t(sessionExpired ? "common.sessionExpired" : "common.loadFailed"))}</p><button type="button" class="secondary-button" ${sessionExpired ? "data-reload-view" : "data-retry-view"}>${escapeHtml(t(sessionExpired ? "common.reload" : "common.retry"))}</button><details><summary>${escapeHtml(t("issues.sourceDetails"))}</summary><p>${escapeHtml(error.message || String(error))}</p></details></div>`;
+}
+
+function uiLoadingSkeleton() {
+  return `<div class="loading-state state-loading"><div class="skeleton-panel" aria-hidden="true"><span class="skeleton-line"></span><span class="skeleton-line"></span><span class="skeleton-line"></span></div><p>${escapeHtml(t("common.loading"))}</p></div>`;
 }
 function shortId(value) {
   return value ? String(value).slice(0, 8) : t("common.noId");
@@ -2022,7 +2032,7 @@ function casillas(values, keys, emptyMessage = t("taxes.calculationMissing")) {
     </div>`;
 }
 
-function transactionTable(rows, {copyable = false, sourceUrl = null} = {}) {
+function transactionTable(rows, {copyable = false, sourceUrl = null, emptyMessage = null} = {}) {
   return `
     <div class="table-wrap">
       <table>
@@ -2042,7 +2052,7 @@ function transactionTable(rows, {copyable = false, sourceUrl = null} = {}) {
               <td class="amount">${row.expense_kind === "amortization" ? escapeHtml(t("expense.inAmount")) : AccountingHelp.money(row.deductible_irpf_minor)}</td>
               <td class="amount">${AccountingHelp.money(row.deductible_vat_minor)}</td>
               <td>${transactionActions(row, copyable)}</td>
-            </tr>`).join("") || emptyRow(7)}
+            </tr>`).join("") || emptyRow(7, emptyMessage)}
         </tbody>
       </table>
     </div>`;
@@ -2693,7 +2703,7 @@ async function renderCurrentView() {
   refreshCopyTargetState();
   incomeCopyRowsById.clear();
   if (state.view !== "review") closePostingConfirmDialog();
-  app.innerHTML = `<div class="loading-state">${escapeHtml(t("common.loading"))}</div>`;
+  app.innerHTML = uiLoadingSkeleton();
   try {
     if (state.view === "dashboard") await renderDashboard(renderGeneration);
     if (state.view === "income") await renderTransactions("income", renderGeneration);
@@ -2875,7 +2885,7 @@ async function renderTransactions(entryType, renderGeneration = currentRenderGen
       </div>
     </div>
     <section class="panel">
-      <div id="transactions-table">${transactionTable(rows, {copyable: entryType === "income" && Boolean(state.copyTargetPeriodKey), sourceUrl: sourceUrl()})}</div>
+      <div id="transactions-table">${transactionTable(rows, {copyable: entryType === "income" && Boolean(state.copyTargetPeriodKey), sourceUrl: sourceUrl(), emptyMessage: entryType === "income" ? t(initialQuery.trim() ? "transactions.noMatches" : "transactions.emptyIncome") : null})}</div>
     </section>
   `;
   document.querySelector("#view-add-entry").addEventListener("click", () => {
@@ -2907,7 +2917,7 @@ async function renderTransactions(entryType, renderGeneration = currentRenderGen
     if (entryType === "income") replaceIncomeCopyRows(filtered);
     table.innerHTML = transactionTable(
       filtered,
-      {copyable: entryType === "income" && Boolean(state.copyTargetPeriodKey), sourceUrl: sourceUrl()}
+      {copyable: entryType === "income" && Boolean(state.copyTargetPeriodKey), sourceUrl: sourceUrl(), emptyMessage: entryType === "income" ? t(query ? "transactions.noMatches" : "transactions.emptyIncome") : null}
     );
   }, 240));
 }
@@ -3166,7 +3176,7 @@ function reviewTransactionTable(rows) {
                   ${canOpenWorkspace ? `<a class="secondary-button compact-button" href="${escapeHtml(buildRouteUrl("review", {reviewId: row.transaction_id}))}" data-spa data-open-review-id="${escapeHtml(reviewId)}">${escapeHtml(t("review.openWorkspace"))}</a>` : ""}
                 </td>
               </tr>`;
-          }).join("") || emptyRow(6)}
+          }).join("") || emptyRow(6, t("review.queueEmpty"))}
         </tbody>
       </table>
     </div>`;
