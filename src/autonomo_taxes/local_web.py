@@ -33,6 +33,7 @@ try:
 except Exception:  # pragma: no cover - dependency guard
     yaml = None
 
+from .analytics_series import AnalyticsQuery, build_analytics
 from .fx_reference import FXReferenceError, fetch_eur_rate
 from .ledger_db import LedgerDB, LedgerDbError, open as open_ledger_db
 from .legacy_paths import LegacyPathResolver
@@ -56,6 +57,7 @@ from .storage_migration import StorageMigrationError, assert_storage_startup_rea
 from .tax_result_view import (
     compact_tax_preview as _compact_tax_preview,
     form_results as _dashboard_tax_forms,
+    year_form_results,
 )
 
 
@@ -658,6 +660,38 @@ class LocalAccountingApp:
             "forecast_as_of": cached.get("as_of") if cached else None,
             "warnings": list(cached.get("warnings", [])) if cached else [],
         }
+
+    def analytics(self, period_key: str, *, as_of: str | None = None) -> dict[str, Any]:
+        period = _validate_period(period_key)
+        if as_of is None:
+            as_of_date = date.today()
+        else:
+            try:
+                as_of_date = date.fromisoformat(as_of)
+            except ValueError as exc:
+                raise LocalWebError(f"Invalid as_of date: {as_of}") from exc
+        year = int(period[:4])
+        quarters = [f"{year}-Q{index}" for index in range(1, int(period[-1]) + 1)]
+        analytics_query = AnalyticsQuery(period_key=period, as_of=as_of_date)
+        with closing(self._connect()) as connection:
+
+            def load_obligations(quarter_key: str) -> list[dict[str, Any]]:
+                row = connection.execute(
+                    "SELECT period_id FROM periods"
+                    " WHERE period_key = ? AND period_type = 'quarter'",
+                    (quarter_key,),
+                ).fetchone()
+                if row is None:
+                    return []
+                return self._obligations(connection, period_id=row["period_id"])
+
+            year_forms = year_form_results(
+                connection,
+                quarters=quarters,
+                load_cached=self._load_cached_dashboard,
+                load_obligations=load_obligations,
+            )
+            return build_analytics(connection, analytics_query, year_forms=year_forms)
 
     def counterparties(self) -> list[dict[str, Any]]:
         with closing(self._connect()) as connection:
@@ -1537,6 +1571,13 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/taxes":
                 self._send_json(
                     self.server.app.taxes(_single_query(query, "period"))
+                )
+            elif parsed.path == "/api/analytics":
+                self._send_json(
+                    self.server.app.analytics(
+                        _single_query(query, "period"),
+                        as_of=_optional_query(query, "as_of"),
+                    )
                 )
             elif parsed.path == "/api/review/posting-preview":
                 self._send_json(
