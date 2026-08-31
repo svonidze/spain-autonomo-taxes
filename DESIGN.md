@@ -157,6 +157,53 @@ render handling using `tests/test_status_help.js`, `tests/test_status_context.py
 and `tests/test_web_ui_guided.py`. Keyboard, mobile reflow and browser-native
 zoom are separate checks; equivalent-width reflow does not certify 200% zoom.
 
+## Interface states and review navigation
+
+This contract covers the app-wide view states and the review screen's
+navigation added by the clarity redesign.
+
+- Views render through distinguishable states: a loading skeleton
+  (`uiLoadingSkeleton`), then content, a contextual empty state, or an error
+  state. Errors (`errorState`) carry the danger-toned `state-error` look,
+  `role="alert"`, and a retry button — or a reload button when the session
+  expired. An empty search result is not the same message as an empty
+  period; the income register and the review queue say what is empty and
+  what to do next.
+- Chart slots reserve height while empty (`.chart-slot:empty`) so mounted
+  charts do not shift the layout. Skeleton shimmer honors
+  `prefers-reduced-motion`.
+- The review overview is three tabs — queue, posting, documents — with the
+  actionable counts on the labels (needs review / ready to post / open
+  issues). The active tab travels in `?tab=`; `queue` is the implied default
+  and never appears in the URL; unknown values normalize to queue in the
+  current history entry; review and expense detail routes never carry a tab;
+  a period switch preserves the active tab. The dashboard posting banner
+  deep-links to the posting tab via `data-nav-tab`.
+- The workspace posting-readiness chip (`reviewCategoryBadge`) maps the
+  evaluation categories ready/later/blocked/needs_review onto the
+  status-help tone classes with localized labels; an unexpected category
+  degrades to the neutral tone with the generic status label, never a raw
+  token.
+- When a work item cannot be posted (later or blocked), every decision field
+  is disabled and a banner explains why; the reject panel stays usable.
+  Confirm and reject show a busy "Submitting" state while a request is in
+  flight. Minor-unit integer inputs carry a live euro preview
+  (`minorUnitEurPreview`): a known zero previews as 0.00 €, missing or
+  non-numeric input previews nothing.
+- The intake dialog keeps a versioned draft in
+  `localStorage["autonomo.intake-draft"]` (`{schema: 1, values}`): restored
+  on reopen unless a copy-flow prefill wins, cleared by a successful submit,
+  discarded on schema mismatch. The document date is capped at today, and an
+  expense whose base plus IVA disagrees with the total shows a live,
+  non-blocking hint. Server failures report through the dialog status line
+  only; toasts announce success. Error toasts persist until closed.
+
+The behavior is pinned by `tests/test_web_ui_states.js` (state helpers,
+category chip, drafts, euro previews), `tests/test_web_ui_i18n.py` (locale
+parity and inline-style hygiene), the tab cases in
+`tests/test_web_ui_guided.js`, and the navigation contract in
+`tests/test_web_ui_navigation.js`.
+
 ## Analytics and charts
 
 This file is the source of truth for measure definitions, status policy, chart
