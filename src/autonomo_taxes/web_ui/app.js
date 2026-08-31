@@ -2813,6 +2813,7 @@ async function renderCurrentView() {
   refreshCopyTargetState();
   incomeCopyRowsById.clear();
   if (state.view !== "review") closePostingConfirmDialog();
+  viewChartRegistry.clear();
   app.innerHTML = uiLoadingSkeleton();
   try {
     if (state.view === "dashboard") await renderDashboard(renderGeneration);
@@ -5604,7 +5605,22 @@ if (hasDOM) {
     if (state.view === "expenses") refreshExpenseView?.();
     if (state.view === "dashboard") void refreshDashboardExpenses();
   };
+  const handleChartResize = debounce(() => {
+    for (const [slotId, entry] of [...viewChartRegistry]) {
+      const slot = document.querySelector(`#${slotId}`);
+      if (!slot) {
+        viewChartRegistry.delete(slotId);
+        continue;
+      }
+      const width = chartHostWidth(slot);
+      if (!width || width === entry.spec.width) continue;
+      entry.spec.width = width;
+      entry.render(slot, entry.spec);
+    }
+  }, 200);
+  window.addEventListener("resize", handleChartResize);
   document.addEventListener("visibilitychange", refreshVisibleExpenseData);
+  document.addEventListener("visibilitychange", handleChartResize);
   window.setInterval(refreshVisibleExpenseData, 60000);
   localeButtons.forEach((button) => {
     button.addEventListener("click", () => {

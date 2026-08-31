@@ -90,6 +90,20 @@ def test_expense_chart_is_mounted_in_the_active_two_section_view() -> None:
     assert 'await renderExpenses(renderGeneration)' in source
 
 
+def test_charts_re_render_on_resize_from_the_single_dom_wiring_block() -> None:
+    source = APP_JS.read_text(encoding="utf-8")
+    wiring = source.index("\nif (hasDOM) {")
+    listener = source.index('window.addEventListener("resize", handleChartResize)')
+    assert listener > wiring
+    assert "viewChartRegistry.delete(slotId)" in source
+    render_current_view = source[
+        source.index("async function renderCurrentView(") : source.index(
+            "\nasync function renderDashboard("
+        )
+    ]
+    assert "viewChartRegistry.clear();" in render_current_view
+
+
 def test_chart_i18n_keys_exist_in_both_locales() -> None:
     source = APP_JS.read_text(encoding="utf-8")
     ru_start = source.index("const messages = {")
