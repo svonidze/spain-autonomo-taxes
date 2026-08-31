@@ -41,6 +41,7 @@ release_ref="${AUTONOMO_DEPLOY_REF:-master}"
 mkdir -p "$root/releases"
 "$script_dir/config-sync.sh" --stage-only "$secret_sha"
 "$script_dir/preflight.sh" "$secret_sha"
+python3 "$ops_dir/ocr-readiness.py" --runtime-env "$secret_generation/runtime.env"
 
 git -C "$source_repo" fetch --quiet origin "$release_ref"
 git -C "$source_repo" cat-file -e "$sha^{commit}"

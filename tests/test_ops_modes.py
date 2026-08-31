@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 from pathlib import Path
+import shutil
 import sqlite3
 import subprocess
+
+import pytest
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -195,3 +200,160 @@ def test_sops_runtime_path_loads_without_default_runtime_file(tmp_path: Path) ->
 
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout == "/sops-private\n"
+
+
+def _ocr_preflight_environment(tmp_path: Path, *, ready: bool) -> tuple[dict[str, str], str]:
+    private = tmp_path / "private"
+    private.mkdir(mode=0o700)
+    releases = tmp_path / "releases"
+    releases.mkdir()
+    with sqlite3.connect(private / "autonomo.sqlite") as db:
+        db.execute("PRAGMA user_version = 18")
+    (private / "autonomo.sqlite").chmod(0o600)
+    (private / "config.yaml").write_text("year: 2032\n")
+    (private / "config.yaml").chmod(0o600)
+    binaries = tmp_path / "bin"
+    binaries.mkdir()
+    engine = binaries / "tesseract"
+    engine.write_text(f"#!/bin/sh\nprintf '{'eng' if ready else 'spa'}\\n'\n")
+    engine.chmod(0o755)
+    for command in ("sops", "flock"):
+        stub = binaries / command
+        stub.write_text("#!/bin/sh\nexit 0\n")
+        stub.chmod(0o755)
+    runtime = tmp_path / "runtime.env"
+    runtime.write_text(
+        f"AUTONOMO_PRIVATE_ROOT={private}\nAUTONOMO_RELEASE_ROOT={releases}\n"
+        f"PATH={binaries}:/usr/bin:/bin\n"
+    )
+    runtime.chmod(0o600)
+    secret_sha = "a" * 40
+    mount = private / "runtime-config"
+    generation = mount / "generations" / secret_sha
+    generation.mkdir(parents=True, mode=0o700)
+    (generation / "credentials").mkdir(mode=0o700)
+    contents = {
+        ".secret-config-sha": secret_sha,
+        "runtime.env": runtime.read_text() + f"AUTONOMO_RCLONE_CONFIG={mount}/current/credentials/rclone.conf\n",
+        "config.yaml": "year: 2032\n",
+        "credentials/google-drive-reader-service-account.json": "{}",
+        "credentials/google-drive-oauth-token.json": "{}",
+        "credentials/rclone.conf": "[synthetic]\ntype = local\n",
+        "storage-backends.json": json.dumps({"backends": [{"backend_key": "synthetic"}]}),
+    }
+    manifest = {}
+    for relative, content in contents.items():
+        target = generation / relative
+        target.write_text(content)
+        target.chmod(0o600)
+        if relative != ".secret-config-sha":
+            manifest[relative] = {"byte_size": len(content.encode()), "sha256": hashlib.sha256(content.encode()).hexdigest()}
+    manifest_file = generation / ".manifest.json"
+    manifest_file.write_text(json.dumps({
+        "format": "autonomo-secret-generation/v1", "secret_config_sha": secret_sha, "files": manifest,
+    }))
+    manifest_file.chmod(0o600)
+    age = tmp_path / "synthetic-age.key"
+    age.write_text("synthetic fixture, not an identity")
+    age.chmod(0o600)
+    bootstrap = tmp_path / "bootstrap.env"
+    bootstrap.write_text(
+        f"AUTONOMO_PRIVATE_ROOT={private}\nAUTONOMO_RELEASE_ROOT={releases}\n"
+        f"AUTONOMO_SECRET_CONFIG_MOUNT={mount}\nAUTONOMO_AGE_PRIVATE_KEY_PATH={age}\n"
+        "AUTONOMO_SECRET_SYNC_REQUIRED=1\n"
+    )
+    bootstrap.chmod(0o600)
+    env = {key: value for key, value in os.environ.items() if not key.startswith("AUTONOMO_")}
+    env.update({
+        "PATH": f"{binaries}:/usr/bin:/bin",
+        "AUTONOMO_RUNTIME_ENV_PATH": str(runtime),
+        "AUTONOMO_BOOTSTRAP_ENV_PATH": str(bootstrap),
+    })
+    return env, secret_sha
+
+
+@pytest.mark.parametrize("sops", [False, True])
+@pytest.mark.parametrize("ready", [False, True])
+def test_recovery_preflights_remain_usable_without_ocr(tmp_path: Path, sops: bool, ready: bool) -> None:
+    env, sha = _ocr_preflight_environment(tmp_path, ready=ready)
+    command = [str(OPS / "sops" / "preflight.sh"), sha] if sops else [str(OPS / "preflight.sh")]
+    result = subprocess.run(command, env=env, text=True, capture_output=True, timeout=10, check=False)
+    assert result.returncode == 0, result.stderr
+    assert "ocr=ready" not in result.stdout
+
+
+def test_sops_checks_staged_runtime_not_operator_or_current_path(tmp_path: Path) -> None:
+    env, sha = _ocr_preflight_environment(tmp_path, ready=True)
+    staged = tmp_path / "private" / "runtime-config" / "generations" / sha
+    runtime = staged / "runtime.env"
+    runtime.write_text(runtime.read_text().replace(f"PATH={tmp_path / 'bin'}:/usr/bin:/bin", "PATH=/missing-synthetic-bin"))
+    manifest_path = staged / ".manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    content = runtime.read_bytes()
+    manifest["files"]["runtime.env"] = {"byte_size": len(content), "sha256": hashlib.sha256(content).hexdigest()}
+    manifest_path.write_text(json.dumps(manifest))
+    command, events = _deployment_harness(tmp_path, env, sha, sops=True)
+    result = subprocess.run(command, env=env, text=True, capture_output=True, timeout=10, check=False)
+    assert result.returncode != 0
+    assert "not found in the runtime PATH" in result.stderr
+    assert not events.exists()
+
+
+def _deployment_harness(tmp_path: Path, env: dict[str, str], sha: str, *, sops: bool) -> tuple[list[str], Path]:
+    binaries = tmp_path / "bin"
+    events = tmp_path / "events.txt"
+    for name in ("git", "systemctl"):
+        stub = binaries / name
+        stub.write_text(
+            "#!/bin/sh\n"
+            'case "$*" in *--is-inside-work-tree*) exit 0;; esac\n'
+            f'printf "{name} call\\n" >> "$OCR_TEST_EVENTS"\nexit 88\n'
+        )
+        stub.chmod(0o755)
+    env.update({"OCR_TEST_EVENTS": str(events), "AUTONOMO_DEPLOY_REPOSITORY": str(tmp_path)})
+    if sops:
+        # Only secret transport is stubbed. The deployed script, its library,
+        # staged-generation validation, and OCR readiness are real code.
+        staged_ops = tmp_path / "ops"
+        staged_sops = staged_ops / "sops"
+        staged_sops.mkdir(parents=True)
+        shutil.copy2(OPS / "ocr-readiness.py", staged_ops / "ocr-readiness.py")
+        for name in ("deploy.sh", "lib.sh", "preflight.sh"):
+            shutil.copy2(OPS / "sops" / name, staged_sops / name)
+        sync = staged_sops / "config-sync.sh"
+        sync.write_text("#!/bin/sh\nexit 0\n")
+        sync.chmod(0o755)
+        command = [str(staged_sops / "deploy.sh"), "b" * 40, sha]
+    else:
+        command = [str(OPS / "deploy.sh"), "b" * 40]
+    return command, events
+
+
+@pytest.mark.parametrize("sops", [False, True])
+@pytest.mark.parametrize("ready", [False, True])
+def test_deploy_checks_ocr_before_git_fetch_or_systemctl(tmp_path: Path, sops: bool, ready: bool) -> None:
+    env, sha = _ocr_preflight_environment(tmp_path, ready=ready)
+    command, events = _deployment_harness(tmp_path, env, sha, sops=sops)
+    result = subprocess.run(command, env=env, text=True, capture_output=True, timeout=10, check=False)
+    if ready:
+        assert result.returncode == 88, result.stderr
+        assert "ocr=ready" in result.stdout
+        assert events.read_text() == "git call\n"
+    else:
+        assert result.returncode != 0
+        assert "eng language data is unavailable" in result.stderr
+        assert not events.exists()
+
+
+@pytest.mark.parametrize("sops", [False, True])
+def test_installers_deliver_helper_before_deploy(sops: bool) -> None:
+    installer = OPS / "sops" / "install-systemd-user-units.sh" if sops else OPS / "install-systemd-user-units.sh"
+    contents = installer.read_text()
+    assert contents.index('"$ops_root/ocr-readiness.py"') < contents.index('/*.sh')
+
+
+def test_ocr_gate_is_deployment_only_not_a_rollback_dependency() -> None:
+    for directory in (OPS, OPS / "sops"):
+        assert "ocr-readiness.py" in (directory / "deploy.sh").read_text()
+        for name in ("rollback.sh", "restore.sh", "preflight.sh"):
+            assert "ocr-readiness.py" not in (directory / name).read_text()

@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from hashlib import sha256
 from pathlib import Path
+import subprocess
 
 import pytest
+
+import autonomo_taxes.intake as intake_module
 
 from autonomo_taxes.intake import (
     ExpenseInboxCleanupCandidate,
@@ -38,6 +41,48 @@ def test_image_without_tesseract_fails_closed(tmp_path: Path) -> None:
     assert result.status == "needs_review"
     assert result.posting_eligible is False
     assert "OCR unavailable" in result.structural_errors[0]
+
+
+@pytest.mark.parametrize("failure", ["timeout", "exec"])
+def test_image_ocr_runtime_failure_stays_in_review(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    path = tmp_path / "receipt.png"
+    path.write_bytes(b"synthetic-image")
+    monkeypatch.setattr(intake_module.shutil, "which", lambda command: "/synthetic/tesseract")
+
+    def fail(command: list[str], **kwargs: object) -> None:
+        assert kwargs["timeout"] == 60
+        if failure == "timeout":
+            raise subprocess.TimeoutExpired(command, 60)
+        raise PermissionError("cannot execute")
+
+    monkeypatch.setattr(intake_module.subprocess, "run", fail)
+    result = inspect_document(path, "income_invoice")
+    assert result.status == "needs_review"
+    assert result.posting_eligible is False
+    assert "OCR" in result.structural_errors[0]
+    assert ("timed out" if failure == "timeout" else "could not start") in result.structural_errors[0]
+    assert path.read_bytes() == b"synthetic-image"
+
+
+def test_successful_image_ocr_remains_extraction_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "receipt.png"
+    path.write_bytes(b"synthetic-image")
+    monkeypatch.setattr(intake_module.shutil, "which", lambda command: "/synthetic/tesseract")
+    text = "Synthetic invoice dated 2032-04-10 for consulting services. Total 100.00 EUR."
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert kwargs["timeout"] == 60
+        return subprocess.CompletedProcess(command, 0, text, "")
+
+    monkeypatch.setattr(intake_module.subprocess, "run", run)
+    result = inspect_document(path, "income_invoice")
+    assert result.status == "extracted"
+    assert result.extracted_text == text
+    assert result.posting_eligible is False
 
 
 def test_invoice_requires_date_amount_and_enough_text() -> None:

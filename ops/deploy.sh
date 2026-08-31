@@ -25,6 +25,7 @@ release_ref="${AUTONOMO_DEPLOY_REF:-master}"
   || die "AUTONOMO_DEPLOY_REF must be a safe remote branch or ref name"
 mkdir -p "$root/releases"
 "$script_dir/preflight.sh"
+python3 "$script_dir/ocr-readiness.py" --runtime-env "$(runtime_env_path)"
 
 git -C "$source_repo" fetch --quiet origin "$release_ref"
 git -C "$source_repo" cat-file -e "$sha^{commit}"

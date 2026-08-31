@@ -20,6 +20,7 @@ DOCUMENT_KINDS = {
 }
 IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
 INVOICE_KINDS = {"income_invoice", "expense_invoice"}
+OCR_TIMEOUT_SECONDS = 60
 
 
 @dataclass(frozen=True)
@@ -295,14 +296,20 @@ def _ocr_image(path: Path, command: str) -> tuple[str, str | None]:
     executable = shutil.which(command)
     if not executable:
         return "", f"OCR unavailable: {command} was not found"
-    run = subprocess.run(
-        [executable, str(path), "stdout", "--psm", "6"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
+    try:
+        run = subprocess.run(
+            [executable, str(path), "stdout", "--psm", "6"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=OCR_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return "", f"OCR timed out after {OCR_TIMEOUT_SECONDS} seconds"
+    except OSError:
+        return "", "OCR could not start"
     if run.returncode != 0:
         message = run.stderr.strip() or f"exit code {run.returncode}"
         return "", f"OCR failed: {message}"
