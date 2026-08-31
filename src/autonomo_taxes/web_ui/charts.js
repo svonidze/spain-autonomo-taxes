@@ -640,7 +640,19 @@
     const figure = doc.createElement("figure");
     figure.className = "chart-figure";
     const caption = doc.createElement("figcaption");
-    caption.textContent = spec.title;
+    if (scene.empty || !spec.expandAction) {
+      caption.textContent = spec.title;
+    } else {
+      const title = doc.createElement("span");
+      title.textContent = spec.title;
+      caption.appendChild(title);
+      const expand = doc.createElement("button");
+      expand.type = "button";
+      expand.className = "chart-expand-button";
+      expand.textContent = spec.expandAction.label;
+      expand.addEventListener("click", () => spec.expandAction.handler(expand));
+      caption.appendChild(expand);
+    }
     figure.appendChild(caption);
     if (scene.empty) {
       const empty = doc.createElement("div");

@@ -437,6 +437,75 @@ function geometryOnly(scene) {
   assert.strictEqual(scene.viewBox.width, 320);
 }
 
+// The expand button lives in the caption of non-empty charts only.
+{
+  function fakeElement(tag) {
+    return {
+      tag,
+      type: "",
+      className: "",
+      textContent: "",
+      children: [],
+      listeners: {},
+      appendChild(child) {
+        this.children.push(child);
+        return child;
+      },
+      removeChild(child) {
+        this.children = this.children.filter((entry) => entry !== child);
+        return child;
+      },
+      setAttribute() {},
+      addEventListener(name, handler) {
+        this.listeners[name] = handler;
+      },
+      get firstChild() {
+        return this.children[0] || null;
+      },
+    };
+  }
+  const doc = {
+    createElement: (tag) => Object.assign(fakeElement(tag), {ownerDocument: doc}),
+    createElementNS: (_ns, tag) => Object.assign(fakeElement(tag), {ownerDocument: doc}),
+  };
+  const container = Object.assign(fakeElement("div"), {ownerDocument: doc});
+  let expanded = 0;
+  const spec = cartesianSpec({
+    expandAction: {label: "Expand", handler: () => { expanded += 1; }},
+  });
+  AutonomoCharts.renderCartesian(container, spec);
+  const caption = container.children[0].children[0];
+  assert.strictEqual(caption.tag, "figcaption");
+  const button = caption.children.find((child) => child.tag === "button");
+  assert.ok(button, "a non-empty chart offers the expand button");
+  assert.strictEqual(button.className, "chart-expand-button");
+  assert.strictEqual(button.textContent, "Expand");
+  button.listeners.click();
+  assert.strictEqual(expanded, 1);
+
+  const emptyContainer = Object.assign(fakeElement("div"), {ownerDocument: doc});
+  AutonomoCharts.renderCartesian(
+    emptyContainer,
+    cartesianSpec({
+      expandAction: {label: "Expand", handler: () => { expanded += 1; }},
+      series: [
+        {
+          key: "income",
+          label: "Income",
+          kind: "bar",
+          stack: "income",
+          tone: "info",
+          pattern: "solid",
+          values: [null, null],
+        },
+      ],
+    })
+  );
+  const emptyCaption = emptyContainer.children[0].children[0];
+  assert.strictEqual(emptyCaption.children.length, 0);
+  assert.strictEqual(emptyCaption.textContent, "Test");
+}
+
 // ---- app.js spec builders (extracted with stubbed i18n) --------------------
 
 function extractFunction(appSource, name) {

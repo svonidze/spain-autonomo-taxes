@@ -275,6 +275,30 @@ Additional rules:
 | Contacts | top customers with an "Other" fold |
 | Assets | amortization per quarter (`include_in_books = 1` only) |
 
+### Chart sizing and expansion
+
+A chart is drawn at the width it actually occupies, never scaled to fit.
+The mount site measures its host, subtracts the figure padding, and passes
+that width into the scene, so one viewBox unit equals one CSS pixel and axis
+and value text stay at a plain 12px in every slot. Requested widths are
+clamped to 280–1600; when no measurement is available (a hidden tab, a
+non-browser test harness) the scene keeps the 640-unit default. A window
+resize or a return to the tab re-measures live charts and redraws only those
+whose width changed.
+
+Narrow charts thin their bucket labels deterministically — every Nth label
+when a band falls under 34px — and the horizontal-bar label column shrinks
+from 150 toward 90 below roughly 500px. Thinning removes labels only; every
+value stays in the data table and in the mark titles. Quarterly charts have
+too few buckets to thin.
+
+Each non-empty chart carries one expand control in its caption. It re-renders
+the same spec in the shared `#chart-dialog` at dialog width — no nested
+expansion, no second copy of a slot id. The dialog closes on any view
+re-render, returns focus to the control that opened it, and pauses the
+periodic refresh while open. Empty charts show no control, and the control is
+hidden in print. No animation accompanies the expansion.
+
 ### Color and pattern semantics
 
 Chart series colors bind to the existing CSS custom properties via

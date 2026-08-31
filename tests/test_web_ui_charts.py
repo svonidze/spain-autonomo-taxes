@@ -104,6 +104,28 @@ def test_charts_re_render_on_resize_from_the_single_dom_wiring_block() -> None:
     assert "viewChartRegistry.clear();" in render_current_view
 
 
+def test_chart_expand_dialog_is_wired_and_closes_with_the_view() -> None:
+    index_source = INDEX_HTML.read_text(encoding="utf-8")
+    assert index_source.count('id="chart-dialog"') == 1
+    assert 'id="chart-dialog-slot"' in index_source
+    assert 'id="chart-dialog-close"' in index_source
+
+    source = APP_JS.read_text(encoding="utf-8")
+    render_current_view = source[
+        source.index("async function renderCurrentView(") : source.index(
+            "\nasync function renderDashboard("
+        )
+    ]
+    assert "closeChartDialog();" in render_current_view
+    refresh_guard = source[
+        source.index("const refreshVisibleExpenseData") : source.index(
+            "window.setInterval(refreshVisibleExpenseData"
+        )
+    ]
+    assert "chartDialog?.open" in refresh_guard
+    assert "chart-expand-button" in CHARTS_JS.read_text(encoding="utf-8")
+
+
 def test_chart_i18n_keys_exist_in_both_locales() -> None:
     source = APP_JS.read_text(encoding="utf-8")
     ru_start = source.index("const messages = {")

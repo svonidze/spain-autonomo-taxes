@@ -260,6 +260,7 @@ async function main() {
     refreshCopyTargetState: () => {},
     incomeCopyRowsById: {clear: () => {}},
     viewChartRegistry: {clear: () => {}},
+    closeChartDialog: () => {},
     closePostingConfirmDialog: () => {},
     closeCounterpartyMenu: () => {},
     escapeHtml: (value) => String(value),
