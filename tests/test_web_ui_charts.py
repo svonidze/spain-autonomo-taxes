@@ -68,6 +68,19 @@ def test_dashboard_renders_chart_slots_from_analytics() -> None:
         assert f'id="{slot}"' in source, slot
 
 
+def test_specialist_views_render_chart_slots() -> None:
+    source = APP_JS.read_text(encoding="utf-8")
+    assert "mountViewAnalyticsChart" in source
+    for slot in (
+        "chart-expense-structure",
+        "chart-review-aging",
+        "chart-ytd-comparison",
+        "chart-counterparty-concentration",
+        "chart-amortization",
+    ):
+        assert f'id="{slot}"' in source, slot
+
+
 def test_chart_i18n_keys_exist_in_both_locales() -> None:
     source = APP_JS.read_text(encoding="utf-8")
     ru_start = source.index("const messages = {")

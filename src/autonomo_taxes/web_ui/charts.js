@@ -649,6 +649,12 @@
       note.textContent = spec.unavailableMessage;
       figure.appendChild(note);
     }
+    if (spec.note) {
+      const info = doc.createElement("p");
+      info.className = "chart-note chart-tone-muted";
+      info.textContent = spec.note;
+      figure.appendChild(info);
+    }
     if (scene.legend.length > 1) {
       figure.appendChild(buildLegend(doc, scene.legend));
     }
