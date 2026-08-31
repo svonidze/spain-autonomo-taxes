@@ -63,6 +63,7 @@ const context = {
   REVIEW_DETAIL_RE: /^\/review\/([0-9a-fA-F-]{32,36})$/,
   EXPENSE_DETAIL_RE: /^\/expenses\/([0-9a-fA-F-]{32,36})$/,
   PERIOD_ROUTE_PATHS: new Set(["/dashboard", "/income", "/expenses", "/review", "/assets", "/taxes"]),
+  REVIEW_TABS: ["queue", "posting", "documents"],
 };
 
 [
@@ -70,6 +71,7 @@ const context = {
   "parseRoute",
   "routePathFor",
   "buildRouteUrl",
+  "reviewTabFromQuery",
   "autoResolveCoveredIssues",
   "mapConfirmErrorToQuestion",
   "buildConfirmFxSpec",
@@ -109,6 +111,26 @@ assert.equal(
   `/review/${REVIEW_UUID}?period=2026-Q3`,
 );
 assert.equal(context.buildRouteUrl("review", {reviewId: `transaction:${REVIEW_UUID}`, period: "2026-Q2"}), `/review/${REVIEW_UUID}?period=2026-Q2`);
+
+// Review tabs: the default queue tab stays out of the URL, other tabs are
+// carried in ?tab=, detail routes never carry one, and the active tab
+// travels with programmatic navigations such as a period switch.
+assert.equal(context.buildRouteUrl("review"), "/review?period=2026-Q3");
+assert.equal(context.buildRouteUrl("review", {tab: "posting"}), "/review?period=2026-Q3&tab=posting");
+assert.equal(context.buildRouteUrl("review", {tab: "queue"}), "/review?period=2026-Q3");
+assert.equal(
+  context.buildRouteUrl("review", {reviewId: REVIEW_UUID, tab: "posting"}),
+  `/review/${REVIEW_UUID}?period=2026-Q3`,
+);
+context.state.review.activeTab = "documents";
+assert.equal(context.buildRouteUrl("review"), "/review?period=2026-Q3&tab=documents");
+context.state.review.activeTab = "queue";
+assert.equal(context.buildRouteUrl("review"), "/review?period=2026-Q3");
+delete context.state.review.activeTab;
+assert.equal(context.reviewTabFromQuery(new URLSearchParams("tab=documents")), "documents");
+assert.equal(context.reviewTabFromQuery(new URLSearchParams("tab=POSTING")), "posting");
+assert.equal(context.reviewTabFromQuery(new URLSearchParams("tab=bogus")), "queue");
+assert.equal(context.reviewTabFromQuery(new URLSearchParams("")), "queue");
 
 // Guided issues
 const packet = {

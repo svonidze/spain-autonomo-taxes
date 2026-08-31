@@ -32,7 +32,7 @@ def test_web_ui_guided_markers_exist_in_app() -> None:
         'class="secondary-button review-back-link"',
         'data-spa data-open-review-id',
         'window.addEventListener("popstate", () => {',
-        'navigateToRoute(viewButton.dataset.navView)',
+        'navigateToRoute(viewButton.dataset.navView, viewButton.dataset.navTab ? {tab: viewButton.dataset.navTab} : {})',
         'periodSelect.disabled = Boolean(detail)',
     ):
         assert expected in javascript
