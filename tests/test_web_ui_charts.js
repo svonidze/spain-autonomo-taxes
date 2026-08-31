@@ -345,6 +345,98 @@ function geometryOnly(scene) {
   assert.strictEqual(scene.marks.length, 0);
 }
 
+// Width-true rendering: scenes adopt spec.width inside the [280, 1600] band.
+{
+  const narrow = AutonomoCharts.buildCartesianScene(cartesianSpec({width: 320}));
+  assert.strictEqual(narrow.viewBox.width, 320);
+  assert.strictEqual(narrow.grid[0].x2, 304);
+  assert.strictEqual(
+    AutonomoCharts.buildCartesianScene(cartesianSpec({width: 10000})).viewBox.width,
+    1600
+  );
+  assert.strictEqual(
+    AutonomoCharts.buildCartesianScene(cartesianSpec({width: 100})).viewBox.width,
+    280
+  );
+  assert.strictEqual(
+    AutonomoCharts.buildCartesianScene(cartesianSpec({width: "wide"})).viewBox.width,
+    640
+  );
+  assert.strictEqual(
+    AutonomoCharts.buildCartesianScene(cartesianSpec({})).viewBox.width,
+    640
+  );
+}
+
+// Narrow monthly charts thin bucket labels deterministically; marks stay complete.
+{
+  const buckets = [];
+  for (let month = 1; month <= 12; month += 1) {
+    buckets.push(`2026-${String(month).padStart(2, "0")}`);
+  }
+  const monthlySeries = [
+    {
+      key: "income",
+      label: "Income",
+      kind: "bar",
+      stack: "income",
+      tone: "info",
+      pattern: "solid",
+      values: buckets.map((_, index) => (index + 1) * 100),
+    },
+  ];
+  const wide = AutonomoCharts.buildCartesianScene(
+    cartesianSpec({buckets, series: monthlySeries})
+  );
+  assert.strictEqual(wide.bucketLabels.length, 12);
+  const narrow = AutonomoCharts.buildCartesianScene(
+    cartesianSpec({width: 320, buckets, series: monthlySeries})
+  );
+  assert.strictEqual(narrow.bucketLabels.length, 6);
+  assert.strictEqual(
+    narrow.marks.filter((mark) => mark.kind === "rect").length,
+    12
+  );
+}
+
+// Horizontal bars: the label column keeps 150 at the default width and
+// shrinks toward 90 on narrow slots.
+{
+  const rows = [
+    {
+      key: "G45",
+      label: "Supplies",
+      segments: [
+        {key: "deductible", label: "Deductible", tone: "warning", value: 3000},
+      ],
+    },
+  ];
+  const spec = {chartId: "expenses", title: "Expenses", formatValue: eur, rows};
+  const wide = AutonomoCharts.buildHorizontalBarsScene(spec);
+  assert.strictEqual(wide.viewBox.width, 640);
+  assert.strictEqual(wide.rowLabels[0].x, 150);
+  const narrow = AutonomoCharts.buildHorizontalBarsScene(
+    Object.assign({}, spec, {width: 320})
+  );
+  assert.strictEqual(narrow.viewBox.width, 320);
+  assert.strictEqual(narrow.rowLabels[0].x, 90);
+}
+
+// Bullet scenes honour the requested width too.
+{
+  const scene = AutonomoCharts.buildBulletScene({
+    chartId: "reserve",
+    title: "Reserve",
+    formatValue: eur,
+    width: 320,
+    ranges: [
+      {key: "required", label: "Required", tone: "warning", value: 26391},
+    ],
+    measure: null,
+  });
+  assert.strictEqual(scene.viewBox.width, 320);
+}
+
 // ---- app.js spec builders (extracted with stubbed i18n) --------------------
 
 function extractFunction(appSource, name) {
@@ -387,6 +479,7 @@ vm.createContext(builderContext);
   "formatMinorEur",
   "chartMonthLabel",
   "chartSpecBase",
+  "chartHostWidth",
   "reviewQueueTotal",
   "transactionsEmptyMessage",
   "taxChartEmptyMessage",
@@ -401,6 +494,17 @@ vm.createContext(builderContext);
   "buildCounterpartySpec",
   "buildAmortizationSpec",
 ].forEach((name) => vm.runInContext(extractFunction(appSource, name), builderContext));
+
+// chartHostWidth measures defensively and subtracts the figure padding.
+{
+  assert.strictEqual(
+    builderContext.chartHostWidth({getBoundingClientRect: () => ({width: 371})}),
+    343
+  );
+  assert.strictEqual(builderContext.chartHostWidth({clientWidth: 348}), 320);
+  assert.strictEqual(builderContext.chartHostWidth({}), 0);
+  assert.strictEqual(builderContext.chartHostWidth(null), 0);
+}
 
 function analyticsFixture(overrides) {
   return Object.assign(

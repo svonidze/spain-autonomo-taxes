@@ -2076,6 +2076,19 @@ function debounce(callback, wait) {
   };
 }
 
+function chartHostWidth(host) {
+  const raw =
+    (host && typeof host.getBoundingClientRect === "function"
+      ? host.getBoundingClientRect().width
+      : 0) ||
+    (host && host.clientWidth) ||
+    0;
+  const width = Math.round(raw) - 28;
+  return width > 0 ? width : 0;
+}
+
+const viewChartRegistry = new Map();
+
 function badge(value, forcedClass) {
   const text = String(value ?? "unknown");
   const className = forcedClass || text.replace(/[^a-z0-9_-]/gi, "_");
@@ -2714,7 +2727,11 @@ async function mountViewAnalyticsChart(slotId, buildSpec, renderer) {
     if (generation !== currentRenderGeneration) return;
     const slot = document.querySelector(`#${slotId}`);
     if (!slot) return;
-    render(slot, buildSpec(analytics));
+    const spec = buildSpec(analytics);
+    const width = chartHostWidth(slot);
+    if (width) spec.width = width;
+    viewChartRegistry.set(slotId, {render, spec});
+    render(slot, spec);
   } catch (error) {
     if (generation !== currentRenderGeneration) return;
     const slot = document.querySelector(`#${slotId}`);
@@ -2737,26 +2754,19 @@ function renderDashboardCharts(analyticsResult) {
     return;
   }
   const analytics = analyticsResult.payload;
-  AutonomoCharts.renderCartesian(
-    document.querySelector("#chart-business-result"),
-    buildBusinessResultSpec(analytics)
-  );
-  AutonomoCharts.renderCartesian(
-    document.querySelector("#chart-tax-due"),
-    buildTaxDueSpec(analytics)
-  );
-  AutonomoCharts.renderCartesian(
-    document.querySelector("#chart-iva-position"),
-    buildIvaPositionSpec(analytics)
-  );
-  AutonomoCharts.renderBullet(
-    document.querySelector("#chart-tax-reserve"),
-    buildReserveSpec(analytics)
-  );
-  AutonomoCharts.renderCartesian(
-    document.querySelector("#chart-cumulative-net"),
-    buildCumulativeNetSpec(analytics)
-  );
+  const mount = (slotId, renderChart, spec) => {
+    const slot = document.querySelector(`#${slotId}`);
+    if (!slot) return;
+    const width = chartHostWidth(slot);
+    if (width) spec.width = width;
+    viewChartRegistry.set(slotId, {render: renderChart, spec});
+    renderChart(slot, spec);
+  };
+  mount("chart-business-result", AutonomoCharts.renderCartesian, buildBusinessResultSpec(analytics));
+  mount("chart-tax-due", AutonomoCharts.renderCartesian, buildTaxDueSpec(analytics));
+  mount("chart-iva-position", AutonomoCharts.renderCartesian, buildIvaPositionSpec(analytics));
+  mount("chart-tax-reserve", AutonomoCharts.renderBullet, buildReserveSpec(analytics));
+  mount("chart-cumulative-net", AutonomoCharts.renderCartesian, buildCumulativeNetSpec(analytics));
 }
 
 async function init() {
