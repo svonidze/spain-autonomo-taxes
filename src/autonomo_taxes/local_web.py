@@ -79,8 +79,9 @@ SPA_TOP_LEVEL_ROUTES = {
 def _is_spa_route(path: str) -> bool:
     if path in SPA_TOP_LEVEL_ROUTES:
         return True
-    if path.startswith("/review/"):
-        return UUID_RE.fullmatch(path[len("/review/"):]) is not None
+    for prefix in ("/expenses/", "/review/"):
+        if path.startswith(prefix):
+            return UUID_RE.fullmatch(path[len(prefix):]) is not None
     return False
 
 
@@ -548,6 +549,135 @@ class LocalAccountingApp:
                 query=query,
                 limit=min(max(limit, 1), 500),
             )
+
+    def transaction_detail(self, transaction_id: str) -> dict[str, Any]:
+        """Return one stored transaction projection without invoking review workflows."""
+        try:
+            normalized_id = str(UUID(str(transaction_id)))
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise LocalWebApiError(
+                HTTPStatus.BAD_REQUEST,
+                "invalid_transaction_id",
+                "transaction_id must be a UUID",
+            ) from exc
+
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN")
+            try:
+                row = connection.execute(
+                    """
+                    SELECT
+                        t.transaction_id,
+                        t.entry_type,
+                        t.transaction_date,
+                        t.booking_date,
+                        t.description,
+                        t.lifecycle_status,
+                        t.row_version,
+                        t.amount_minor,
+                        t.currency,
+                        t.amount_original_minor,
+                        t.original_currency,
+                        t.amount_eur_minor,
+                        p.period_key,
+                        p.status AS period_status,
+                        d.document_id,
+                        d.document_number,
+                        d.document_type,
+                        d.issued_on,
+                        d.lifecycle_status AS document_lifecycle_status,
+                        c.display_name AS counterparty_display_name,
+                        c.country_code AS counterparty_country_code
+                    FROM transactions t
+                    JOIN periods p ON p.period_id = t.period_id
+                    LEFT JOIN documents d ON d.document_id = t.document_id
+                    LEFT JOIN counterparties c ON c.counterparty_id = t.counterparty_id
+                    WHERE t.transaction_id = ?
+                    """,
+                    (normalized_id,),
+                ).fetchone()
+                if row is None:
+                    raise LocalWebApiError(
+                        HTTPStatus.NOT_FOUND,
+                        "transaction_not_found",
+                        "Transaction was not found",
+                    )
+                treatments = connection.execute(
+                    """
+                    SELECT
+                        treatment_id,
+                        treatment_type,
+                        jurisdiction,
+                        tax_code,
+                        deductible_irpf_minor,
+                        deductible_vat_minor,
+                        include_modelo130,
+                        include_modelo303,
+                        include_modelo347,
+                        notes
+                    FROM tax_treatments
+                    WHERE transaction_id = ?
+                    ORDER BY treatment_type, jurisdiction, treatment_id
+                    """,
+                    (normalized_id,),
+                ).fetchall()
+            finally:
+                connection.rollback()
+
+        return {
+            "transaction": {
+                "transaction_id": row["transaction_id"],
+                "entry_type": row["entry_type"],
+                "transaction_date": row["transaction_date"],
+                "booking_date": row["booking_date"],
+                "description": row["description"],
+                "lifecycle_status": row["lifecycle_status"],
+                "row_version": row["row_version"],
+                "amount_minor": row["amount_minor"],
+                "currency": row["currency"],
+                "amount_original_minor": row["amount_original_minor"],
+                "original_currency": row["original_currency"],
+                "amount_eur_minor": row["amount_eur_minor"],
+            },
+            "period": {
+                "period_key": row["period_key"],
+                "status": row["period_status"],
+            },
+            "document": (
+                None
+                if row["document_id"] is None
+                else {
+                    "document_id": row["document_id"],
+                    "document_number": row["document_number"],
+                    "document_type": row["document_type"],
+                    "issued_on": row["issued_on"],
+                    "lifecycle_status": row["document_lifecycle_status"],
+                }
+            ),
+            "counterparty": (
+                None
+                if row["counterparty_display_name"] is None
+                else {
+                    "display_name": row["counterparty_display_name"],
+                    "country_code": row["counterparty_country_code"],
+                }
+            ),
+            "tax_treatments": [
+                {
+                    "treatment_id": treatment["treatment_id"],
+                    "treatment_type": treatment["treatment_type"],
+                    "jurisdiction": treatment["jurisdiction"],
+                    "tax_code": treatment["tax_code"],
+                    "deductible_irpf_minor": treatment["deductible_irpf_minor"],
+                    "deductible_vat_minor": treatment["deductible_vat_minor"],
+                    "include_modelo130": bool(treatment["include_modelo130"]),
+                    "include_modelo303": bool(treatment["include_modelo303"]),
+                    "include_modelo347": bool(treatment["include_modelo347"]),
+                    "notes": treatment["notes"],
+                }
+                for treatment in treatments
+            ],
+        }
 
     def documents(
         self,
@@ -1668,6 +1798,12 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                         entry_type=_optional_query(query, "entry_type"),
                         lifecycle_status=_optional_query(query, "status"),
                         query=_optional_query(query, "q"),
+                    )
+                )
+            elif parsed.path.startswith("/api/transactions/"):
+                self._send_json(
+                    self.server.app.transaction_detail(
+                        parsed.path[len("/api/transactions/"):]
                     )
                 )
             elif parsed.path == "/api/documents":

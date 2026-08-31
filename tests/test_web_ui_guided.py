@@ -33,7 +33,7 @@ def test_web_ui_guided_markers_exist_in_app() -> None:
         'data-spa data-open-review-id',
         'window.addEventListener("popstate", () => {',
         'navigateToRoute(viewButton.dataset.navView)',
-        'periodSelect.disabled = state.view === "review" && Boolean(state.review.selectedReviewId)',
+        'periodSelect.disabled = Boolean(detail)',
     ):
         assert expected in javascript
 

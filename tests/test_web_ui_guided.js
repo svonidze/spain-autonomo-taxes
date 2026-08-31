@@ -37,6 +37,7 @@ const context = {
   Array,
   Boolean,
   JSON,
+  URLSearchParams,
   state: {locale: "ru", period: "2026-Q3", review: {}},
   messages: {
     ru: {"review.issueAutoResolveHint": "Закроется автоматически: {labels}"},
@@ -60,7 +61,8 @@ const context = {
     "/contacts": "contacts",
   },
   REVIEW_DETAIL_RE: /^\/review\/([0-9a-fA-F-]{32,36})$/,
-  PERIOD_ROUTE_PATHS: new Set(["/dashboard", "/income", "/expenses", "/review"]),
+  EXPENSE_DETAIL_RE: /^\/expenses\/([0-9a-fA-F-]{32,36})$/,
+  PERIOD_ROUTE_PATHS: new Set(["/dashboard", "/income", "/expenses", "/review", "/assets", "/taxes"]),
 };
 
 [
@@ -99,11 +101,13 @@ assert.equal(
 );
 assert.equal(context.routePathFor("review"), "/review");
 assert.equal(context.buildRouteUrl("dashboard"), "/dashboard?period=2026-Q3");
-assert.equal(context.buildRouteUrl("assets"), "/assets");
+assert.equal(context.buildRouteUrl("assets"), "/assets?period=2026-Q3");
+assert.equal(context.buildRouteUrl("taxes", {period: "2026-Q2"}), "/taxes?period=2026-Q2");
 assert.equal(
   context.buildRouteUrl("review", {reviewId: REVIEW_UUID}),
-  `/review/${REVIEW_UUID}`,
+  `/review/${REVIEW_UUID}?period=2026-Q3`,
 );
+assert.equal(context.buildRouteUrl("review", {reviewId: `transaction:${REVIEW_UUID}`, period: "2026-Q2"}), `/review/${REVIEW_UUID}?period=2026-Q2`);
 
 // Guided issues
 const packet = {
