@@ -259,6 +259,7 @@ async function main() {
     }},
     refreshCopyTargetState: () => {},
     incomeCopyRowsById: {clear: () => {}},
+    viewChartRegistry: {clear: () => {}},
     closePostingConfirmDialog: () => {},
     closeCounterpartyMenu: () => {},
     escapeHtml: (value) => String(value),
