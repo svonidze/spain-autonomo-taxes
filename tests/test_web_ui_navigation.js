@@ -52,6 +52,7 @@ class FakeElement {
   hasAttribute(name) { return Object.hasOwn(this.attributes, name); }
   setAttribute(name, value) { this.attributes[name] = String(value); }
   querySelectorAll() { return []; }
+  querySelector() { return null; }
   closest(selector) {
     if (selector === "a[data-spa]" && this.attributes.href && Object.hasOwn(this.attributes, "data-spa")) return this;
     if (selector === "[data-nav-view]" && this.dataset.navView) return this;

@@ -171,6 +171,8 @@ def _run_cli_ingest(
         "--drive-file-id",
         drive_file_id,
     ]
+    if fields.get("defer_counterparty") == "1":
+        command.append("--defer-counterparty")
     for field, option in {
         "issued_on": "--issued-on",
         "document_number": "--document-number",

@@ -123,12 +123,17 @@ class ReviewPacketError(ValueError):
 def prepare_review_packet(db: LedgerDB, review_id: str) -> dict[str, Any]:
     """Build a deterministic, path-free review projection from one read snapshot."""
     connection = db.connection
-    connection.execute("BEGIN")
+    nested = connection.in_transaction
+    connection.execute("SAVEPOINT review_read" if nested else "BEGIN")
     try:
         packet = _build_packet(db, review_id)
         _verify_archived_document(db, packet["state"])
     finally:
-        connection.rollback()
+        if nested:
+            connection.execute("ROLLBACK TO review_read")
+            connection.execute("RELEASE review_read")
+        else:
+            connection.rollback()
     return packet
 
 
@@ -250,8 +255,7 @@ def confirm_review_packet(
     if fx_spec is not None:
         _validate_fx_spec_shape(fx_spec)
     connection = db.connection
-    connection.execute("BEGIN IMMEDIATE")
-    try:
+    with db.transaction():
         live_packet = _build_packet(db, str(packet["review_id"]))
         _validate_snapshot(packet, live_packet)
         _verify_archived_document(db, live_packet["state"])
@@ -262,11 +266,6 @@ def confirm_review_packet(
             live_packet = _build_packet(db, str(packet["review_id"]))
         decision = _validate_decision(packet["decision"], live_packet["state"])
         result = _apply_decision(db, live_packet["state"], decision)
-        connection.commit()
-    except Exception:
-        if connection.in_transaction:
-            connection.rollback()
-        raise
     return {
         "review_id": packet["review_id"],
         "dry_run": False,
@@ -277,36 +276,32 @@ def confirm_review_packet(
     }
 
 
+class _ReviewPreviewRollback(Exception):
+    pass
+
+
 def apply_review_packet(
-    db: LedgerDB,
-    packet: Mapping[str, Any],
-    *,
-    dry_run: bool = False,
+    db: LedgerDB, packet: Mapping[str, Any], *, dry_run: bool = False,
 ) -> dict[str, Any]:
-    """Validate and apply one decision as an all-or-nothing SQLite transaction."""
+    """Validate/apply within the caller's transaction, or own one standalone."""
     _validate_packet_shape(packet)
-    connection = db.connection
-    connection.execute("BEGIN IMMEDIATE")
+    decision: dict[str, Any] | None = None
+    result: dict[str, Any] | None = None
     try:
-        live_packet = _build_packet(db, str(packet["review_id"]))
-        _validate_snapshot(packet, live_packet)
-        _verify_archived_document(db, live_packet["state"])
-        decision = _validate_decision(packet["decision"], live_packet["state"])
-        result = _apply_decision(db, live_packet["state"], decision)
-        if dry_run:
-            connection.rollback()
-        else:
-            connection.commit()
-    except Exception:
-        if connection.in_transaction:
-            connection.rollback()
-        raise
+        with db.transaction():
+            live_packet = _build_packet(db, str(packet["review_id"]))
+            _validate_snapshot(packet, live_packet)
+            _verify_archived_document(db, live_packet["state"])
+            decision = _validate_decision(packet["decision"], live_packet["state"])
+            result = _apply_decision(db, live_packet["state"], decision)
+            if dry_run:
+                raise _ReviewPreviewRollback()
+    except _ReviewPreviewRollback:
+        pass
+    assert decision is not None and result is not None
     return {
-        "review_id": packet["review_id"],
-        "dry_run": dry_run,
-        "outcome": decision["outcome"],
-        "posted": False,
-        **result,
+        "review_id": packet["review_id"], "dry_run": dry_run,
+        "outcome": decision["outcome"], "posted": False, **result,
     }
 
 

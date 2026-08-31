@@ -13,45 +13,87 @@ Routine review and posting use the application. You do not need administrator
 access, a terminal, or a maintenance script for these actions. Missing editing
 features and service failures may require an operator, as described below.
 
-## The normal workflow
+## Expenses: document to posting in one screen
 
-These are the English labels in this source version. An installed server can
-run an older release: merging a change does not deploy it. If the available
-actions differ, ask the operator to check the active version before proceeding.
+These actions require the expense workflow release (schema 22 or later).
+Merging code does not update an installed server. Deployment is a separate
+administrative operation; it never appears in the expense form.
 
-1. Open **Income** or **Expenses**, select the intended period and use **New
-   entry** to add the document. Check its number, dates, currency and amount
-   before submitting it. If the original is already registered, work with that
-   existing entry instead of uploading it again to fix a field.
-2. The service attempts extraction. Recognized text and amounts are candidates
-   for review; successful OCR does not establish that the document or its tax
-   treatment is correct. Some intermediate statuses may be skipped.
-3. Use **Open review** for the entry and **Open file** to compare its saved
-   facts with the original. Confirm the business purpose and accounting
-   treatment, explain the decision and address each outstanding requirement.
-   Ask an operator about unsupported or uncertain fields; do not guess values
-   merely to make validation pass.
-4. Use **Confirm review** when the facts and decision are correct. The service
-   validates and applies the decision, including a confirmed exchange rate
-   when needed. Successful confirmation leaves the transaction approved, not
-   posted. A validation preview alone does not save approval.
-5. In **Review**, inspect **Post approved transactions** and choose **Post
-   ready**. Check every row in the **Post ready transactions** confirmation
-   before confirming **Post ready**. This action covers the ready rows shown
-   in that preview, not necessarily just the entry you last opened. If the
-   list exceeds your intended scope, do not confirm it; ask an operator to
-   post only the authorized transaction through the supported single-entry
-   operation.
-6. Check the posting result and reload the entry. Its transaction status should
-   be `posted`. Calculations can refresh separately: if the app reports that
-   transactions were posted but calculations are stale, use **Retry calculation
-   refresh**. Do not repeat posting or create another entry to refresh totals.
+1. Open **Expenses → New entry**, choose the period and upload the original.
+   Extraction supplies candidates, not confirmed accounting facts. An existing
+   document should be reopened rather than uploaded again to correct its data.
+2. The expense review opens beside the original. Check or edit the number,
+   issue date, transaction date, booking date, currency and gross amount. Select
+   the business activity and enter the business purpose and decision basis.
+3. Search the supplier by name or tax identifier. Select the existing card when
+   its identifier matches. **New supplier** creates a card only at confirmation;
+   a collision with any existing identifier blocks creation. A shop's name does
+   not rename a shared supplier. Use the separate contact correction action if
+   a verified shared name correction is needed.
+4. Choose **Ordinary expense** or **Equipment**. Confirm the tax classification,
+   base, IVA quota and deduction, and the separate IVA current/investment choice.
+   Ordinary expenses also show the current IRPF deduction. Foreign-currency
+   amounts need a confirmed exchange rate and reconciled EUR tax amounts.
+5. **Save draft** saves on the server so you can close the browser and resume.
+   Unsaved fields are not durable. A saved change to an approved but unposted
+   entry invalidates approval and requires a reason, retained in audit history.
+   If another session changed the source, reload and review it explicitly.
+6. **Preview result** validates the current data without posting. Check the exact
+   purchase, IVA deduction, IRPF deduction now and future depreciation. The
+   tax amounts must reconcile to the original's converted gross. Mixed-rate or
+   composite invoices need a separate workflow; do not force them into one row.
+7. **Confirm and post** posts only this expense and the depreciation explicitly
+   shown as due. It neither pays an invoice nor submits a return. Repeated
+   requests use the saved action result and cannot create another acquisition.
+8. Check **Posted**. If cleanup or calculation refresh failed, **Retry follow-up**
+   runs only those steps. The warning survives reopening the posted expense.
+   Never re-create or re-post the expense to repair a refresh failure.
 
-The server decides posting readiness from the current record. A closed period,
-unresolved blocking issue, unreviewed tax treatment, missing required currency
-conversion or document that is not ready can prevent posting. Future-dated
-transactions cannot be posted before their transaction date. A disabled button
-is a reason to inspect the explanation, not to bypass the checks.
+A readable original can be checked manually after extraction fails: confirm
+that its facts were inspected and explain the manual review. This closes only
+supported structural/classification issues belonging to this document. Missing
+or altered originals, closed/future periods, unresolved unrelated blockers and
+unreviewed tax/FX decisions remain blocking. The application cannot make an
+incomplete period ready by silently resolving its other issues.
+
+### Equipment and depreciation
+
+One new asset is supported per expense. Confirm its description/category,
+service date, amortizable basis before business share, and business-use share.
+The acquisition itself has zero current IRPF deduction; depreciation creates
+separate internal accounting entries linked directly to schedule rows.
+
+- **New low-value equipment:** full depreciation requires an object costing at
+  most EUR 300 before business share and an available annual EUR 25,000 limit.
+  The application conservatively counts recorded low-value assets in the same
+  service year and requires a direct-estimation activity. This does not prove
+  that unrecorded assets are absent. Confirm a complete register and the
+  decision's basis; short tax years or other special regimes need separate
+  review. See [AEAT's depreciation guidance](https://sede.agenciatributaria.gob.es/Sede/ayuda/manuales-videos-folletos/manuales-ayuda-presentacion/irpf-2025/7-cumplimentacion-irpf/7_4-rendimientos-actividades-economicas/7_4_2-regimen-estimacion-directa/7_4_2_3-gastos-fiscalmente-deducibles/dotaciones-amotizacion.html).
+- **Linear schedule:** enter the reviewed annual rate (the app does not choose
+  the legally appropriate rate). The calculation applies business share once,
+  accrues by actual calendar days using 365/366 days, rounds cumulative totals
+  at quarter ends and caps the last installment at the remaining basis.
+
+Immediate depreciation becomes due on the service date. Linear installments
+become due at quarter end. Already-due rows are shown in the purchase preview;
+future rows remain a plan. In **Assets → Schedule and recognized depreciation**,
+choose the asset and explicitly **Post** the eligible quarter. Closed or future
+rows cannot be posted, and an already recognized row cannot create a duplicate.
+
+New schedules retain their calculation version and reviewed parameters. Annual
+actuals come from linked posted journals, not the plan and not a fabricated
+external `annual_evidence` document. Imported schedules and historical amounts
+are not recalculated. Only unambiguous legacy service links are migrated.
+Existing acquisitions already linked to an asset continue through their legacy
+review rather than creating a second asset in this wizard.
+
+### Income and legacy review
+
+The existing **Confirm review** API and legacy review form still save approval
+without posting. Their **Post ready** action is a separate batch action: inspect
+all listed rows before confirming it. It may include more than the last opened
+entry. Routine new expense posting should use the scoped wizard above.
 
 ## What the statuses mean
 
@@ -118,12 +160,12 @@ Other metadata is not necessarily editable through that action.
 
 | Situation | What it means | What happens next |
 |---|---|---|
-| OCR is unavailable or unreadable. | Extraction failed; this is not a tax-authority check. | The operator checks the service's [OCR dependency](../ops/PROVISIONING.md#local-ocr-dependency). A fresh extraction or documented manual review must support closing the exact old issue. Installation alone does not close it. |
+| OCR is unavailable or unreadable. | Extraction failed; this is not a tax-authority check. | Use the documented manual-original check in the expense wizard when the original is readable. Missing/unreadable files remain blockers; an operator can investigate the [OCR dependency](../ops/PROVISIONING.md#local-ocr-dependency). |
 | A fact or accounting decision is missing. | The entry still needs internal confirmation. | The operator first checks the original, applicable earlier sources and confirmations already supplied. Ask the user only for the unresolved fact, with an explanation of its effect. Do not invent a value. |
 | The transaction is approved but absent from posted totals. | Approval is saved, but posting has not happened. | The user or operator checks the posting preview, addresses any blocker and posts only the intended rows. |
-| The issue date is wrong and cannot be edited. | The current guided review shows the issue date as a fact, not an editable decision. | An operator checks the installed capabilities and, if necessary, arranges [scoped maintenance](../ops/README.md#scoped-accounting-maintenance) before approval/posting. The user should not re-upload the original or supply an administrator password for routine review. |
+| An unposted expense has incorrect data. | Its server draft can be edited before posting. | Correct the facts beside the original and record the reason; an earlier approval is invalidated. Posted data requires the separate correction procedure. |
 | A save or posting response is lost. | The server may already have saved some or all of the work. | Reload first. The operator compares the actual status, current versions and saved decision before retrying only unfinished work. Keep intervening changes. |
-| Posting succeeded but refresh or cleanup failed. | The accounting write may be complete even though follow-up work is not. | Check the saved transaction. Retry calculation refresh or ask the operator to handle the reported cleanup problem; do not treat this as an unposted entry. |
+| Posting succeeded but refresh or cleanup failed. | The accounting write may be complete even though follow-up work is not. | Check the saved transaction. Use **Retry follow-up** on the posted expense; ask an operator about a persistent cleanup problem. Do not treat this as an unposted entry. |
 | A posted entry needs correction. | Posting is not a license to reopen and overwrite finalized data. | Ask the operator for the supported correction procedure, respecting period and snapshot restrictions. The read-only expense card is not an editor. |
 
 An operator's update should say what is already saved, what remains and who

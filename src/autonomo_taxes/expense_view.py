@@ -66,11 +66,16 @@ def enrich_expense_context(
         if any(row["entry_type"] == "expense" and row["tax_code"] == "historical_g03" for row in rows)
         else {}
     )
+    native = {row["recognition_transaction_id"]: dict(row) for row in connection.execute(
+        """SELECT ae.recognition_transaction_id,a.asset_id,a.description AS asset_description,
+            1 AS asset_match_count,'linked' AS asset_match_method
+            FROM amortization_entries ae JOIN assets a ON a.asset_id=ae.asset_id
+            WHERE ae.period_id=? AND ae.recognition_transaction_id IS NOT NULL""", (period_id,))}
     for row in rows:
         kind = None
         if row["entry_type"] == "expense":
-            kind = "amortization" if row["tax_code"] == "historical_g03" else "purchase"
-        context = assets.get(row["transaction_id"], {}) if kind == "amortization" else {}
+            kind = "amortization" if row["transaction_id"] in native or row["tax_code"] == "historical_g03" else "purchase"
+        context = native.get(row["transaction_id"], assets.get(row["transaction_id"], {})) if kind == "amortization" else {}
         row.update(
             expense_kind=kind,
             view_as_of=today.isoformat(),

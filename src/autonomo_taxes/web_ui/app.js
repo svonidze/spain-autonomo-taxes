@@ -3028,6 +3028,7 @@ function expenseDetailMarkup(data, returnUrl) {
     ["EUR", minorEur(euroMinor)],
   ];
   return `<div class="section-stack expense-detail">
+    ${data.workflow_follow_up?.follow_up_pending ? `<section class="panel expense-panel-body"><p>${escapeHtml(state.locale === "ru" ? "Расход проведён; обновление расчётов или очистка Inbox ещё не завершены." : "Posted; calculation refresh or Inbox cleanup is pending.")}</p><button type="button" id="expense-follow-up">${escapeHtml(state.locale === "ru" ? "Повторить обновление" : "Retry follow-up")}</button><p id="expense-follow-up-error" role="alert"></p></section>` : ""}
     <header class="review-workspace-header">
       ${back}
       <div><h2>${escapeHtml(documentState.document_number || t("expense.title"))}</h2><p>${escapeHtml(data.counterparty?.display_name || "—")}</p></div>
@@ -3068,6 +3069,15 @@ async function renderExpenseDetail(renderGeneration = currentRenderGeneration) {
   state.expenseDetail.data = data;
   applyDetailPeriod(data, "expense-detail", id);
   app.innerHTML = expenseDetailMarkup(data, safeReturnUrl(state.returnTo, data.period.period_key));
+  app.querySelector("#expense-follow-up")?.addEventListener("click", async (event) => {
+    event.target.disabled = true;
+    try {
+      await fetchJSON(`/api/expense-workflows/${encodeURIComponent(id)}/follow-up`, {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"});
+      if (detailRouteActive("expense-detail", id, renderGeneration)) await renderExpenseDetail(renderGeneration);
+    } catch (error) {
+      if (detailRouteActive("expense-detail", id, renderGeneration)) {app.querySelector("#expense-follow-up-error").textContent = error.message;event.target.disabled = false;}
+    }
+  });
 }
 
 function reviewWorkItemPeriod(workItem, reviewId) {
@@ -3096,10 +3106,22 @@ async function loadReviewWorkspace(reviewId, {factsOnly = false} = {}) {
       navigateToRoute("expense-detail", {transactionId, period: data.period.period_key, returnTo: state.returnTo, replace: true});
       return;
     }
+    if (data.transaction.entry_type === "expense" && typeof ExpenseWorkflow !== "undefined" && !factsOnly) {
+      applyDetailPeriod(data, "review", transactionId);
+      await ExpenseWorkflow.open({container: app, api: fetchJSON, transactionId, locale: state.locale,
+        isActive, taxLabel: taxCodeLabel,
+        onLegacy: () => loadReviewWorkspace(reviewId, {factsOnly: true}),
+        onPosted: (result) => navigateToRoute("expense-detail", {transactionId: result.transaction_id, period: data.period.period_key, returnTo: state.returnTo})});
+      return;
+    }
     const workItem = await fetchJSON(`/api/review/work-item?review_id=${encodeURIComponent(reviewId)}`);
     if (!isActive()) return;
     const period = reviewWorkItemPeriod(workItem, reviewId);
     const packet = deepClone(workItem.packet);
+    if (packet.state.transaction.entry_type === "expense" && packet.state.assets?.length === 1) {
+      packet.decision.asset_decision = "asset";
+      packet.decision.asset_id = packet.state.assets[0].asset_id;
+    }
     const draft = loadReviewDraft(packet.state.transaction.transaction_id);
     const mode = !factsOnly && draft?.snapshot_hash === packet.snapshot_hash ? "full" : "facts";
     const mergedPacket = mergeReviewDecisionFromDraft(packet, draft, mode);
@@ -3301,7 +3323,11 @@ async function renderReview(renderGeneration = currentRenderGeneration) {
     } else {
       reviewWorkItemPeriod(state.review.workItem, reviewId);
       applyDetailPeriod({period: state.review.workItem.packet.state.period}, "review", reviewIdToTransactionId(reviewId));
-      renderReviewWorkspace();
+      if (state.review.workItem.packet.state.transaction.entry_type === "expense" && typeof ExpenseWorkflow !== "undefined") {
+        await loadReviewWorkspace(reviewId);
+      } else {
+        renderReviewWorkspace();
+      }
     }
     return;
   }
@@ -4083,7 +4109,7 @@ async function submitReviewReject() {
   }
 }
 
-async function renderAssets(renderGeneration = currentRenderGeneration) {
+async function renderAssets(renderGeneration = currentRenderGeneration, selectedAssetId = null, postingResult = null) {
   const rows = await fetchJSON(`/api/assets?period=${encodeURIComponent(state.period)}`);
   if (renderGeneration !== currentRenderGeneration || state.view !== "assets") return;
   app.innerHTML = `
@@ -4101,6 +4127,31 @@ async function renderAssets(renderGeneration = currentRenderGeneration) {
     <section class="panel">
       <div class="chart-slot" id="chart-amortization"></div>
     </section>`;
+  if (typeof ExpenseWorkflow !== "undefined") {
+    const actions = document.createElement("section");
+    actions.className = "panel wf-fields";
+    actions.innerHTML = `<label><span>${escapeHtml(state.locale === "ru" ? "График оборудования" : "Equipment schedule")}</span><select id="asset-plan-select"><option value=""></option>${rows.map((row) => `<option value="${escapeHtml(row.asset_id)}">${escapeHtml(row.description || row.asset_code)}</option>`).join("")}</select></label><div id="asset-plan-detail"></div>`;
+    app.appendChild(actions);
+    const selector = actions.querySelector("select");
+    async function loadSelectedSchedule() {
+      const assetId = selector.value;
+      if (!assetId) {actions.querySelector("#asset-plan-detail").innerHTML = "";return;}
+      try {
+        await ExpenseWorkflow.showSchedule({container: actions.querySelector("#asset-plan-detail"), api: fetchJSON,
+          assetId, locale: state.locale, isActive: () => renderGeneration === currentRenderGeneration && state.view === "assets" && selector.value === assetId,
+          onPosted: (result) => renderAssets(renderGeneration, assetId, result)});
+      } catch (error) {if (renderGeneration === currentRenderGeneration) actions.querySelector("#asset-plan-detail").textContent = error.message;}
+    }
+    selector.addEventListener("change", loadSelectedSchedule);
+    if (selectedAssetId) {
+      selector.value = selectedAssetId;
+      await loadSelectedSchedule();
+      const status = actions.querySelector('[role="status"]');
+      if (status && postingResult) status.textContent = postingResult.follow_up_pending
+        ? (state.locale === "ru" ? "Проведено; требуется обновление расчётов." : "Posted; calculation refresh needs retry.")
+        : (state.locale === "ru" ? "Амортизация проведена." : "Depreciation posted.");
+    }
+  }
   mountViewAnalyticsChart("chart-amortization", buildAmortizationSpec);
 }
 
@@ -5705,6 +5756,7 @@ if (hasDOM) {
             body: JSON.stringify((() => {
               const fields = Object.fromEntries(new FormData(intakeForm).entries());
               delete fields.drive_url;
+              if (fields.kind === "expense_invoice") fields.defer_counterparty = "1";
               return {fields, drive_url: googleDriveUrl.value.trim()};
             })()),
           },
@@ -5715,6 +5767,7 @@ if (hasDOM) {
             method: "POST",
             body: (() => {
               const formData = new FormData(intakeForm);
+              if (formData.get("kind") === "expense_invoice") formData.set("defer_counterparty", "1");
               if (state.googleFolder?.id) formData.set("google_folder_id", state.googleFolder.id);
               return formData;
             })(),
@@ -5731,7 +5784,11 @@ if (hasDOM) {
       showToast(t("intake.acceptedToast", {period: result.period}));
       setTimeout(() => {
         closeIntake();
-        renderCurrentView();
+        if (result.kind === "expense_invoice" && result.transaction_id) {
+          navigateToRoute("review", {reviewId: "transaction:" + result.transaction_id, period: result.period});
+        } else {
+          renderCurrentView();
+        }
       }, 700);
     } catch (error) {
       intakeStatus.textContent = error.message;

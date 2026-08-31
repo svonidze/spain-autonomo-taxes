@@ -27,7 +27,7 @@ from .tax_rules import ALL_FORM_CODES
 from .vat_classification import is_vat_investment_good
 
 
-LATEST_SCHEMA_VERSION = 21
+LATEST_SCHEMA_VERSION = 22
 
 # Migrations that rebuild a table referenced by a foreign key. They must
 # run with foreign-key enforcement temporarily disabled, and that pragma
@@ -1358,7 +1358,7 @@ class LedgerDB:
         if existing["period_id"]:
             self._assert_period_mutable(existing["period_id"])
         timestamp = _utc_now()
-        with self.connection:
+        with _write_scope(self.connection):
             self.connection.execute(
                 """
                 UPDATE documents
@@ -4071,7 +4071,7 @@ class LedgerDB:
         ):
             self._assert_period_mutable(amortization_period["period_id"])
         timestamp = _utc_now()
-        with self.connection:
+        with _write_scope(self.connection):
             self.connection.execute(
                 """
                 UPDATE assets
@@ -4127,7 +4127,7 @@ class LedgerDB:
             (asset_id, period["period_id"]),
         )
         timestamp = _utc_now()
-        with self.connection:
+        with _write_scope(self.connection):
             if existing is None:
                 entry_id = _new_id()
                 self.connection.execute(
@@ -4226,6 +4226,7 @@ class LedgerDB:
         )
         year_end = date(tax_year, 12, 31)
         grouped: dict[str, dict[str, Any]] = {}
+        issues: list[dict[str, Any]] = []
         for asset in assets:
             placed_on = (
                 date.fromisoformat(asset["placed_in_service_on"])
@@ -4236,6 +4237,18 @@ class LedgerDB:
             if placed_on is not None and placed_on > year_end and not has_current_rows:
                 continue
             effective_base_minor = _effective_asset_base_minor(asset)
+            from .depreciation import native_year_summary
+            native = native_year_summary(self.connection, asset["asset_id"], tax_year)
+            if native is not None:
+                bucket = _empty_asset_year_bucket(asset)
+                bucket.update(annual_minor=native["current_minor"], quarter_minor=native["current_minor"],
+                              source_kind="native_posted_journals")
+                grouped[asset["asset_id"]] = bucket
+                if native["pending"]:
+                    issues.append({"issue_code": "pending_native_depreciation", **bucket})
+                if native["prior_minor"] + native["current_minor"] > effective_base_minor:
+                    issues.append({"issue_code": "native_depreciation_exceeds_basis", **bucket})
+                continue
             fully_amortized_before_year = (
                 effective_base_minor > 0
                 and int(asset["prior_annual_minor"]) >= effective_base_minor - 1
@@ -4249,6 +4262,8 @@ class LedgerDB:
                 row["asset_id"],
                 _empty_asset_year_bucket(row),
             )
+            if bucket.get("source_kind") == "native_posted_journals":
+                continue
             if row["entry_kind"] == "annual_evidence":
                 bucket["annual_minor"] += row["amount_minor"]
                 bucket["annual_rows"] += 1
@@ -4256,8 +4271,9 @@ class LedgerDB:
                 bucket["quarter_minor"] += row["amount_minor"]
                 bucket["quarter_rows"] += 1
 
-        issues: list[dict[str, Any]] = []
         for bucket in grouped.values():
+            if bucket.get("source_kind") == "native_posted_journals":
+                continue
             if bucket["annual_rows"] == 0:
                 issues.append({"issue_code": "missing_annual_asset_evidence", **bucket})
             if bucket["quarter_rows"] == 0:
@@ -7126,6 +7142,53 @@ def _migration_21(connection: sqlite3.Connection) -> None:
     )
 
 
+def _migration_22(connection: sqlite3.Connection) -> None:
+    statements = (
+        """CREATE TABLE expense_drafts (
+            transaction_id TEXT PRIMARY KEY REFERENCES transactions(transaction_id),
+            payload_json TEXT NOT NULL, source_snapshot_hash TEXT NOT NULL,
+            row_version INTEGER NOT NULL DEFAULT 1, actor TEXT NOT NULL, updated_at TEXT NOT NULL
+        )""",
+        """CREATE TABLE expense_draft_events (
+            event_id TEXT PRIMARY KEY, transaction_id TEXT NOT NULL REFERENCES transactions(transaction_id),
+            before_json TEXT NOT NULL, after_json TEXT NOT NULL, reason TEXT NOT NULL,
+            actor TEXT NOT NULL, created_at TEXT NOT NULL
+        )""",
+        """CREATE TABLE expense_actions (
+            request_id TEXT PRIMARY KEY, action_kind TEXT NOT NULL, subject_id TEXT NOT NULL,
+            request_hash TEXT NOT NULL, result_json TEXT NOT NULL, actor TEXT NOT NULL, created_at TEXT NOT NULL
+        )""",
+        """CREATE TABLE asset_depreciation_plans (
+            asset_id TEXT PRIMARY KEY REFERENCES assets(asset_id), method TEXT NOT NULL CHECK(method IN ('immediate','linear')),
+            calculation_version TEXT NOT NULL, parameters_json TEXT NOT NULL, source_hash TEXT NOT NULL
+        )""",
+        "ALTER TABLE amortization_entries ADD COLUMN recognition_transaction_id TEXT REFERENCES transactions(transaction_id)",
+        "ALTER TABLE amortization_entries ADD COLUMN recognition_on TEXT",
+        "CREATE UNIQUE INDEX amortization_one_recognition ON amortization_entries(recognition_transaction_id)",
+    )
+    for statement in statements:
+        connection.execute(statement)
+    # The previous private native workflow left an explicit transaction reference.
+    # Adopt only a unique, matching posted journal; never infer from descriptions.
+    connection.execute("""
+        UPDATE amortization_entries AS ae SET recognition_transaction_id = substr(source_book_line_id,13),
+            recognition_on = (SELECT transaction_date FROM transactions WHERE transaction_id=substr(ae.source_book_line_id,13))
+        WHERE source_book_line_id LIKE 'transaction:%' AND entry_kind='quarter_schedule' AND include_in_books=1
+          AND (SELECT count(*) FROM amortization_entries other WHERE other.source_book_line_id=ae.source_book_line_id)=1
+          AND EXISTS (
+            SELECT 1 FROM transactions t JOIN tax_treatments tt ON tt.transaction_id=t.transaction_id
+            JOIN assets a ON a.asset_id=ae.asset_id
+            JOIN transactions acquisition ON acquisition.transaction_id=a.acquisition_transaction_id
+            WHERE t.transaction_id=substr(ae.source_book_line_id,13) AND t.period_id=ae.period_id
+              AND t.entry_type='expense' AND t.lifecycle_status IN ('posted','included_in_snapshot')
+              AND t.amount_minor=ae.amount_minor AND t.currency='EUR' AND t.document_id<>a.document_id
+              AND t.counterparty_id=acquisition.counterparty_id AND tt.aeat_expense_concept='G31'
+              AND tt.deductible_irpf_minor=ae.amount_minor AND tt.vat_minor=0
+              AND tt.deductible_vat_minor=0 AND tt.include_modelo130=1 AND tt.include_modelo303=0
+          )
+    """)
+
+
 _MIGRATIONS = {
     1: _migration_1,
     2: _migration_2,
@@ -7148,4 +7211,5 @@ _MIGRATIONS = {
     19: _migration_19,
     20: _migration_20,
     21: _migration_21,
+    22: _migration_22,
 }
