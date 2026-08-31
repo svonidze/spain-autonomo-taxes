@@ -81,6 +81,15 @@ def test_specialist_views_render_chart_slots() -> None:
         assert f'id="{slot}"' in source, slot
 
 
+def test_expense_chart_is_mounted_in_the_active_two_section_view() -> None:
+    source = APP_JS.read_text(encoding="utf-8")
+    expenses = source[source.index("async function renderExpenses("):source.index("function transactionActions(")]
+    assert 'id="chart-expense-structure"' in expenses
+    assert 'mountViewAnalyticsChart("chart-expense-structure"' in expenses
+    assert source.count('id="chart-expense-structure"') == 1
+    assert 'await renderExpenses(renderGeneration)' in source
+
+
 def test_chart_i18n_keys_exist_in_both_locales() -> None:
     source = APP_JS.read_text(encoding="utf-8")
     ru_start = source.index("const messages = {")

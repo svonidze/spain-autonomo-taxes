@@ -650,7 +650,8 @@
   function cell(ctx) {
     ctx = ctx || { domain: "unknown", state: "unknown" };
     const id = register(ctx);
-    return `<div class="status-context"><span class="badge status-${tone(ctx)}">${esc(label(ctx))}</span><small>${esc(summary(ctx))}</small><button type="button" class="text-button status-details-button" data-status-help="${id}" aria-haspopup="dialog">${esc(word("details"))}</button></div>`;
+    const subject = ctx.subject_id ? ` data-status-subject="${esc(`${ctx.domain || "unknown"}:${ctx.subject_id}`)}"` : "";
+    return `<div class="status-context"><span class="badge status-${tone(ctx)}">${esc(label(ctx))}</span><small>${esc(summary(ctx))}</small><button type="button" class="text-button status-details-button" data-status-help="${id}"${subject} aria-haspopup="dialog">${esc(word("details"))}</button></div>`;
   }
   function term(key) {
     return `<button type="button" class="term-help" data-help-term="${esc(key)}" aria-label="${esc(word("help") + ": " + (termNames[key] ? lang(termNames[key]) : key))}" aria-describedby="accounting-tooltip">?</button>`;
