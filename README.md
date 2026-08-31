@@ -55,6 +55,20 @@ python scripts/migrate_private_root.py `
 
 The migration copies files, verifies SHA-256 hashes, and transactionally rewrites supported SQLite evidence paths. It does not delete the source data.
 
+## Using the accounting workflow
+
+Posting makes an approved income or expense transaction eligible for the
+working accounting calculations. Approval and posting are separate actions.
+Neither action transfers money, proves payment, or submits a return to AEAT.
+Routine review and posting use the application and do not require administrator
+scripts or a terminal.
+
+Start with the [accounting workflow](docs/ACCOUNTING_WORKFLOW.md) for the normal
+steps, status meanings, source-document rules and common problems. When a needed
+correction is unavailable in the installed interface, an operator follows
+[scoped accounting maintenance](ops/README.md#scoped-accounting-maintenance).
+Exceptional maintenance is separate from the routine workflow.
+
 ## Operating and recovering the service
 
 - [Correcting counterparty names](docs/COUNTERPARTY_NAMES.md): manual corrections,
