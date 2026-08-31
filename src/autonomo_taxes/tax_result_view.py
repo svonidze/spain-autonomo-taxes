@@ -5,7 +5,7 @@ import re
 import sqlite3
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from typing import Any, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 
 TAX_FORM_KEYS = {
@@ -338,3 +338,60 @@ def form_results(
             continue
         result[form_key] = preview_form
     return result
+
+
+def period_status(
+    connection: sqlite3.Connection,
+    period_key: str,
+) -> dict[str, Any] | None:
+    row = connection.execute(
+        """
+        SELECT
+            p.period_key,
+            p.status,
+            p.starts_on,
+            p.ends_on,
+            p.amendment_reason,
+            amendment.period_key AS amendment_period_key
+        FROM periods p
+        LEFT JOIN periods amendment
+            ON amendment.period_id = p.amendment_period_id
+        WHERE p.period_key = ? AND p.period_type = 'quarter'
+        """,
+        (period_key,),
+    ).fetchone()
+    if row is None:
+        return None
+    return {
+        "period_key": str(row["period_key"]),
+        "status": str(row["status"]),
+        "starts_on": row["starts_on"],
+        "ends_on": row["ends_on"],
+        "amendment_period_key": row["amendment_period_key"],
+        "amendment_reason": row["amendment_reason"],
+    }
+
+
+def year_form_results(
+    connection: sqlite3.Connection,
+    *,
+    quarters: Sequence[str],
+    load_cached: Callable[[str], Mapping[str, Any]],
+    load_obligations: Callable[[str], list[dict[str, Any]]],
+) -> dict[str, dict[str, Any]]:
+    results: dict[str, dict[str, Any]] = {}
+    for period_key in quarters:
+        period = period_status(connection, period_key)
+        obligations = load_obligations(period_key) if period else []
+        cached = load_cached(period_key)
+        results[period_key] = {
+            "period": period,
+            "obligations": obligations,
+            "forms": form_results(
+                connection,
+                period_key=period_key,
+                obligations=obligations,
+                cached=cached,
+            ),
+        }
+    return results
