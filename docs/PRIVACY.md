@@ -40,6 +40,36 @@ The secrets repository is a ciphertext distribution and recovery layer, not an a
 - Write commit messages without email addresses; name tools in `Co-Authored-By` trailers without an address. The only reviewed exception is the digest-allowlisted Anthropic no-reply service address that already appears in merged history.
 - Any new default output path must resolve under the private root, independent of the current working directory.
 
+## What each scan covers
+
+All modes inspect the Git index and working-tree versions of indexed paths.
+New untracked files are not included until added to the index. Stage only the
+intended files before relying on a scan of a new document or fixture.
+
+| Command | Additional history checked |
+|---|---|
+| `python scripts/privacy_guard.py` | None; index and corresponding working-tree files only. |
+| `python scripts/privacy_guard.py --commit-range origin/master..HEAD` | The specified revision range. Fetch the remote base first when this is intended to represent a PR's new commits. |
+| `python scripts/privacy_guard.py --commit-range HEAD` | History reachable from the current commit, not merely the last commit's diff. |
+| `python scripts/privacy_guard.py --history` | All history reachable through local Git references (`--all`), including other branches, remote-tracking references and tags; annotated tag content is also checked. |
+
+History checks inspect reachable blobs, historical paths and commit messages,
+not just changed lines. The command's reported scope matters: passing the PR
+range does not certify every branch or tag. A local backup reference also
+retains history for an all-reference scan.
+
+CI runs `--history` after a full-history checkout. The references available to
+that checkout can differ from those in a developer's clone. For a CI finding,
+record its category, location/commit ID and fingerprint without reproducing the
+matched private value. Compare the reported commit with the run's revision and
+the current PR head/base SHAs, then inspect which references reach it. Do not
+assume a finding belongs to the PR's changes, or that a local range scan clears
+it. Repeat verification when the branch or base changes.
+
+Do not weaken the scanner or rewrite unrelated history to turn a check green.
+Investigate the identified material under the repository privacy boundary and
+report the affected scope separately from merge/rebase availability.
+
 ## Before sharing
 
 1. Run all tests and `python scripts/privacy_guard.py --history`.

@@ -69,6 +69,10 @@ correction is unavailable in the installed interface, an operator follows
 [scoped accounting maintenance](ops/README.md#scoped-accounting-maintenance).
 Exceptional maintenance is separate from the routine workflow.
 
+Use [Understanding accounting statuses](docs/ACCOUNTING_STATUSES.md) for review
+versus posting readiness, blocking reasons, next actions, assets and filing
+evidence.
+
 ## Operating and recovering the service
 
 - [Correcting counterparty names](docs/COUNTERPARTY_NAMES.md): manual corrections,
@@ -81,8 +85,9 @@ Exceptional maintenance is separate from the routine workflow.
 
 Private-root backups do not automatically include credentials stored elsewhere,
 such as `~/.config`. Verify their independent recovery copy before relying on a
-server-loss recovery plan. Documents under `docs/plans/` describe future work;
-they do not establish that a feature or recovery procedure is implemented.
+server-loss recovery plan. Documents under `docs/plans/` record proposals and
+historical implementation decisions; they do not establish current behavior
+or that a feature or recovery procedure is deployed.
 
 ## Privacy checks
 
