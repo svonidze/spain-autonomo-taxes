@@ -420,6 +420,50 @@ function geometryOnly(scene) {
   );
   assert.strictEqual(narrow.viewBox.width, 320);
   assert.strictEqual(narrow.rowLabels[0].x, 90);
+  assert.strictEqual(narrow.rowLabels[0].label, "Supplies");
+  assert.strictEqual(narrow.rowLabels[0].title, null);
+}
+
+// Long row labels shorten instead of clipping, keeping the full name as a title.
+{
+  const longName = "Telefónica Móviles España, S.A.U.";
+  const spec = {
+    chartId: "counterparties",
+    title: "Top customers",
+    formatValue: eur,
+    rows: [
+      {
+        key: "cp-1",
+        label: longName,
+        segments: [{key: "income", label: "Income", tone: "info", value: 90000}],
+      },
+    ],
+  };
+  const narrow = AutonomoCharts.buildHorizontalBarsScene(
+    Object.assign({}, spec, {width: 320})
+  );
+  const narrowLabel = narrow.rowLabels[0];
+  assert.strictEqual(narrowLabel.title, longName);
+  assert.ok(narrowLabel.label.endsWith("…"));
+  assert.strictEqual(narrowLabel.label.length, Math.floor(90 / 6.5));
+  assert.ok(longName.startsWith(narrowLabel.label.slice(0, -1)));
+
+  const wideLabel = AutonomoCharts.buildHorizontalBarsScene(spec).rowLabels[0];
+  assert.strictEqual(wideLabel.label.length, Math.floor(150 / 6.5));
+  assert.strictEqual(wideLabel.title, longName);
+
+  const shortSpec = Object.assign({}, spec, {
+    rows: [
+      {
+        key: "cp-2",
+        label: "Acme",
+        segments: [{key: "income", label: "Income", tone: "info", value: 1000}],
+      },
+    ],
+  });
+  const shortLabel = AutonomoCharts.buildHorizontalBarsScene(shortSpec).rowLabels[0];
+  assert.strictEqual(shortLabel.label, "Acme");
+  assert.strictEqual(shortLabel.title, null);
 }
 
 // Bullet scenes honour the requested width too.

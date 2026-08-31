@@ -327,10 +327,15 @@
     rows.forEach((row, index) => {
       const y = MARGIN.top + index * ROW_HEIGHT;
       const barHeight = ROW_HEIGHT - 10;
+      // The label column is right-anchored, so an overlong name would be
+      // clipped at its start; shorten the end and keep the full text as a title.
+      const maxChars = Math.max(6, Math.floor(labelWidth / 6.5));
+      const clipped = row.label.length > maxChars;
       scene.rowLabels.push({
         x: labelWidth,
         y: round2(y + barHeight / 2 + 4),
-        label: row.label,
+        label: clipped ? `${row.label.slice(0, maxChars - 1)}…` : row.label,
+        title: clipped ? row.label : null,
       });
       let base = 0;
       row.segments.forEach((segment) => {
@@ -558,6 +563,7 @@
         "text-anchor": "end",
       });
       label.textContent = entry.label;
+      appendTitle(doc, label, entry.title);
       svg.appendChild(label);
     });
     (scene.valueLabels || []).forEach((entry) => {

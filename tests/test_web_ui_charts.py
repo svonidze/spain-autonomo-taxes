@@ -125,6 +125,21 @@ def test_chart_expand_dialog_is_wired_and_closes_with_the_view() -> None:
     assert "chartDialog?.open" in refresh_guard
     assert "chart-expand-button" in CHARTS_JS.read_text(encoding="utf-8")
 
+    # close() fires asynchronously, so the close listener — not closeChartDialog —
+    # must own the cleanup, or the opener is already null when focus returns.
+    close_helper = source[
+        source.index("function closeChartDialog()") : source.index(
+            "function withChartExpandAction("
+        )
+    ]
+    assert "chartDialog.close();\n    return;" in close_helper
+    close_listener = source[
+        source.index('chartDialog?.addEventListener("close"') : source.index(
+            'document.addEventListener("visibilitychange", refreshVisibleExpenseData)'
+        )
+    ]
+    assert "opener.focus({preventScroll: true})" in close_listener
+
 
 def test_chart_i18n_keys_exist_in_both_locales() -> None:
     source = APP_JS.read_text(encoding="utf-8")
