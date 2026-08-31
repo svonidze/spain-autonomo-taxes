@@ -27,6 +27,7 @@ install -m 755 "$source_ops_dir/backup.sh" "$source_ops_dir/alert.sh" "$source_o
 install -m 644 "$source_ops_dir/healthcheck.py" "$ops_root/healthcheck.py"
 install -m 644 "$source_ops_dir/../scripts/backup_sqlite.py" "$ops_root/backup_sqlite.py"
 install -m 644 "$source_ops_dir/../scripts/backup_private_root.py" "$ops_root/backup_private_root.py"
+install -m 644 "$source_ops_dir/../src/autonomo_taxes/backup_settings.py" "$ops_root/backup_settings.py"
 install -m 644 "$source_ops_dir/../scripts/restore_private_root.py" "$ops_root/restore_private_root.py"
 install -m 644 "$script_dir/systemd"/*.template "$sops_root/systemd/"
 render_unit() {

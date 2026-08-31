@@ -16,6 +16,10 @@ require_absolute_directory "$data"
 [[ -f "$data/config.yaml" ]] || die "private config does not exist: $data/config.yaml"
 require_private_file "$data/autonomo.sqlite" "database"
 require_private_file "$data/config.yaml" "private config"
+if [[ -e "$data/account-backup-settings.json" || -L "$data/account-backup-settings.json" ]]; then
+  [[ -f "$script_dir/backup_settings.py" ]] || die "installed backup settings reader is missing"
+  python3 "$script_dir/backup_settings.py" --private-root "$data"
+fi
 if [[ -n "${AUTONOMO_RCLONE_CONFIG:-}" ]]; then
   require_private_file "$AUTONOMO_RCLONE_CONFIG" "rclone config"
 fi

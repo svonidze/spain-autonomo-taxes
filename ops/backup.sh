@@ -21,6 +21,11 @@ else
   backup_keep="${AUTONOMO_BACKUP_KEEP:-35}"
   remote="${AUTONOMO_RCLONE_REMOTE:-}"
 fi
+if [[ -e "$data/account-backup-settings.json" || -L "$data/account-backup-settings.json" ]]; then
+  policy_tool="$script_dir/backup_settings.py"
+  [[ -f "$policy_tool" ]] || die "installed backup settings reader is missing"
+  backup_keep="$(python3 "$policy_tool" --private-root "$data" --backup-class "$backup_class" --fallback "$backup_keep")"
+fi
 require_absolute_directory "$backup_dir"
 output="$(python3 "$tool" --private-root "$data" --database "$data/autonomo.sqlite" --out-dir "$backup_dir" --keep "$backup_keep")"
 printf '%s\n' "$output"
@@ -66,5 +71,7 @@ fi
 # read instead of reconstructing the outcome from the journal.
 record_state "last-backup-$backup_class.json" \
   "class=$backup_class" \
+  "keep=$backup_keep" \
+  "settings_format=1" \
   "archive=$(basename "$backup_file")" \
   "offsite=$([[ -n "$remote" ]] && printf yes || printf no)"

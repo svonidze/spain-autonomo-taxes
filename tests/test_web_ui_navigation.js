@@ -95,7 +95,7 @@ function response(payload, ok = true) {
   };
 }
 
-function createHarness({initial = "/review?period=2026-Q2", deferred = false, deferDetailAt = null, deferDetailCalls = [], failDetailIds = [], workItemFactory = null, postedIds = []} = {}) {
+function createHarness({emptyPeriods = false, settingsControls = null, initial = "/review?period=2026-Q2", deferred = false, deferDetailAt = null, deferDetailCalls = [], failDetailIds = [], workItemFactory = null, postedIds = []} = {}) {
   const elements = new Map();
   const element = (selector) => {
     if (!elements.has(selector)) elements.set(selector, new FakeElement());
@@ -200,9 +200,10 @@ function createHarness({initial = "/review?period=2026-Q2", deferred = false, de
       return Promise.resolve(response(payload));
     }
     if (text === "/api/bootstrap") return Promise.resolve(response({
-      profile_name: "Synthetic profile", default_period: "2026-Q3", intake_enabled: false,
-      periods: [{period_key: "2026-Q2", status: "closed"}, {period_key: "2026-Q3", status: "open"}],
+      profile_name: "Synthetic profile", default_period: emptyPeriods ? null : "2026-Q3", intake_enabled: false,
+      periods: emptyPeriods ? [] : [{period_key: "2026-Q2", status: "closed"}, {period_key: "2026-Q3", status: "open"}],
     }));
+    if (text === "/api/settings") return Promise.resolve(response({profiles: [], backups: {available: false}}));
     const period = new URL(text, location.origin).searchParams.get("period");
     if (text.startsWith("/api/expenses?")) return Promise.resolve(response({
       period, as_of: "2026-08-31", rows: [], matching_counts: {purchase: 0, amortization: 0},
@@ -221,6 +222,11 @@ function createHarness({initial = "/review?period=2026-Q2", deferred = false, de
   const storage = new Map();
   const context = {
     console, URL, URLSearchParams, Element: FakeElement, document, window, fetch,
+    AutonomoSettings: {mount(container) {
+      container.innerHTML = "Settings mounted";
+      return {canLeave: () => settingsControls?.allowLeave !== false,
+        isDirty: () => settingsControls?.allowLeave === false, isBusy: () => false, dispose() {}};
+    }},
     localStorage: {getItem: (key) => storage.get(key) || null, setItem: (key, value) => storage.set(key, String(value)), removeItem: (key) => storage.delete(key)},
     setTimeout, clearTimeout, Map, Set, Date: FrozenDate, JSON, Math, Number, String, Array, Boolean, Object, RegExp,
     Intl, Promise, FormData: class { constructor() {} entries() { return []; } set() {} },
@@ -269,6 +275,25 @@ async function run(name, test) {
 }
 
 async function main() {
+  await run("settings opens without periods and guards SPA, locale and popstate", async () => {
+    const controls = {allowLeave: false};
+    const h = createHarness({initial: "/settings", emptyPeriods: true, settingsControls: controls});
+    await h.flush();
+    assert.equal(h.app.innerHTML, "Settings mounted");
+    assert.equal(h.element("#new-entry-button").hidden, true);
+    assert.equal(h.element("#refresh-button").hidden, true);
+    await h.click("/contacts");
+    assert.equal(h.window.location.pathname, "/settings");
+    await vm.runInContext("changeLocale('en')", h.context);
+    assert.equal(vm.runInContext("state.locale", h.context), "ru");
+    await h.applyExternalLocation("/contacts");
+    assert.equal(h.window.location.pathname, "/settings");
+    assert.equal(h.app.innerHTML, "Settings mounted");
+    controls.allowLeave = true;
+    await vm.runInContext("changeLocale('en')", h.context);
+    assert.equal(vm.runInContext("state.locale", h.context), "en");
+    assert.equal(h.app.innerHTML, "Settings mounted");
+  });
   await run("posted expense detail returns to the two-section expense query", async () => {
     const source = "/expenses?period=2026-Q2&q=supplier";
     const h = createHarness({initial: source, postedIds: [Q2_ID]}); await h.flush();
