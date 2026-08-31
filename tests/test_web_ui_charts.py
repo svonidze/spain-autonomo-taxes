@@ -54,6 +54,36 @@ def test_charts_js_is_served_and_loaded_before_app_js() -> None:
     assert charts_tag < app_tag
 
 
+def test_dashboard_renders_chart_slots_from_analytics() -> None:
+    source = APP_JS.read_text(encoding="utf-8")
+    assert "/api/analytics" in source
+    assert "renderDashboardCharts(analyticsResult)" in source
+    for slot in (
+        "chart-business-result",
+        "chart-tax-due",
+        "chart-iva-position",
+        "chart-tax-reserve",
+        "chart-cumulative-net",
+    ):
+        assert f'id="{slot}"' in source, slot
+
+
+def test_chart_i18n_keys_exist_in_both_locales() -> None:
+    source = APP_JS.read_text(encoding="utf-8")
+    ru_start = source.index("const messages = {")
+    en_start = source.index("  en: {", ru_start)
+    messages_end = source.index("\n};", en_start)
+    pattern = re.compile(r'"(charts\.[A-Za-z0-9.]+)"\s*:')
+    ru_keys = set(pattern.findall(source[ru_start:en_start]))
+    en_keys = set(pattern.findall(source[en_start:messages_end]))
+    assert ru_keys, "chart i18n keys must exist"
+    assert ru_keys == en_keys
+
+    used = set(re.findall(r'[t(]\("(charts\.[A-Za-z0-9.]+)"\)', source[messages_end:]))
+    missing = used - ru_keys
+    assert not missing, f"t() references without dictionary entries: {sorted(missing)}"
+
+
 def test_charts_js_respects_csp_and_determinism_rules() -> None:
     source = CHARTS_JS.read_text(encoding="utf-8")
     assert "createElementNS" in source
