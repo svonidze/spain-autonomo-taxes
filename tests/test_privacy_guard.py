@@ -50,6 +50,28 @@ def test_exact_synthetic_value_hash_is_allowed() -> None:
     assert findings == []
 
 
+def test_anthropic_coauthor_trailer_is_allowed_in_commit_messages() -> None:
+    service_email = "noreply" + "@anthropic.com"
+    message = f"Subject line\n\nCo-Authored-By: Claude <{service_email}>\n".encode()
+
+    findings = privacy_guard.scan_content(message, "commit-message:0123456789ab")
+
+    assert findings == []
+    assert (
+        hashlib.sha256(service_email.encode()).hexdigest()
+        in privacy_guard.ALLOWED_SYNTHETIC_VALUE_SHA256
+    )
+
+
+def test_other_coauthor_trailer_emails_remain_findings() -> None:
+    personal_email = "private.person" + "@example.net"
+    message = f"Subject line\n\nCo-Authored-By: Someone <{personal_email}>\n".encode()
+
+    findings = privacy_guard.scan_content(message, "commit-message:0123456789ab")
+
+    assert [finding.category for finding in findings] == ["email-address"]
+
+
 def test_path_rules_do_not_allow_a_fixture_directory_bypass() -> None:
     assert privacy_guard.prohibited_path_reason("tests/fixtures/customer.sqlite") == "private-file-type"
     assert privacy_guard.prohibited_path_reason("nested/browser_sessions/state.json") == "private-directory"
