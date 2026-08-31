@@ -333,6 +333,44 @@ const messages = {
     "taxCodeLabels.withholding_service": "Удержание IRPF: услуги",
     "taxCodeLabels.withholding_rent": "Удержание IRPF: аренда",
     "taxCodeLabels.unknown": "Код не определён",
+    "charts.loadError": "Не удалось загрузить аналитику",
+    "charts.table": "Данные таблицей",
+    "charts.bucket.month": "Месяц",
+    "charts.bucket.quarter": "Квартал",
+    "charts.empty.noTransactions": "Нет операций за период",
+    "charts.empty.missingFx": "У части операций нет курса валюты — суммы не рассчитаны",
+    "charts.empty.onlyUnreviewed": "Операции есть, но ещё не разобраны",
+    "charts.empty.filedWithoutValues": "Форма подана, но значения не извлечены",
+    "charts.business.title": "Доходы и вычитаемые расходы по месяцам",
+    "charts.business.aria": "Столбики доходов и вычитаемых расходов по месяцам",
+    "charts.business.incomeActual": "Доход — факт",
+    "charts.business.incomeBacklog": "Доход — не проведено",
+    "charts.business.incomeForecast": "Доход — прогноз",
+    "charts.business.expenseActual": "Вычет — факт",
+    "charts.business.expenseBacklog": "Вычет — не проведено",
+    "charts.business.expenseForecast": "Вычет — прогноз",
+    "charts.taxDue.title": "Налоги к оплате по кварталам",
+    "charts.taxDue.aria": "Платежи Modelo 130 и Modelo 303 по кварталам",
+    "charts.taxDue.m130": "Modelo 130 к оплате",
+    "charts.taxDue.m303": "Modelo 303 к оплате",
+    "charts.taxDue.empty": "Квартальные расчёты не сформированы",
+    "charts.iva.title": "Позиция IVA по кварталам",
+    "charts.iva.aria": "IVA начисленный, к вычету и итог по кварталам",
+    "charts.iva.output": "IVA начисленный (27)",
+    "charts.iva.input": "IVA к вычету (45)",
+    "charts.iva.result": "Итог (71)",
+    "charts.reserve.title": "Резерв под налоги",
+    "charts.reserve.aria": "Требуемый налог, рекомендуемый резерв и доступные средства",
+    "charts.reserve.required": "Нужно на налоги",
+    "charts.reserve.recommended": "Рекомендуемый резерв",
+    "charts.reserve.available": "Доступно",
+    "charts.reserve.notChecked": "Свободные средства не проверены — сверьте резерв вручную",
+    "charts.reserve.notRequired": "Платежей к резервированию нет",
+    "charts.reserve.blocked": "Расчёт заблокирован — резерв не определён",
+    "charts.cumulative.title": "Чистый результат нарастающим итогом",
+    "charts.cumulative.aria": "Накопленный чистый результат до трудно обосновываемых расходов",
+    "charts.cumulative.actual": "Факт",
+    "charts.cumulative.projected": "С учётом одобренного",
   },
   en: {
     "app.title": "Autónomo accounting",
@@ -651,6 +689,44 @@ const messages = {
     "taxCodeLabels.withholding_service": "IRPF withholding: services",
     "taxCodeLabels.withholding_rent": "IRPF withholding: rent",
     "taxCodeLabels.unknown": "Code not set",
+    "charts.loadError": "Could not load analytics",
+    "charts.table": "Data as a table",
+    "charts.bucket.month": "Month",
+    "charts.bucket.quarter": "Quarter",
+    "charts.empty.noTransactions": "No transactions in this period",
+    "charts.empty.missingFx": "Some transactions have no FX rate — amounts are not computed",
+    "charts.empty.onlyUnreviewed": "Transactions exist but are not reviewed yet",
+    "charts.empty.filedWithoutValues": "The form was filed but no values were extracted",
+    "charts.business.title": "Income and deductible expenses by month",
+    "charts.business.aria": "Bars of income and deductible expenses by month",
+    "charts.business.incomeActual": "Income — actual",
+    "charts.business.incomeBacklog": "Income — not posted",
+    "charts.business.incomeForecast": "Income — forecast",
+    "charts.business.expenseActual": "Deductible — actual",
+    "charts.business.expenseBacklog": "Deductible — not posted",
+    "charts.business.expenseForecast": "Deductible — forecast",
+    "charts.taxDue.title": "Tax cash due by quarter",
+    "charts.taxDue.aria": "Modelo 130 and Modelo 303 payments by quarter",
+    "charts.taxDue.m130": "Modelo 130 payable",
+    "charts.taxDue.m303": "Modelo 303 payable",
+    "charts.taxDue.empty": "Quarterly calculations are not available",
+    "charts.iva.title": "IVA position by quarter",
+    "charts.iva.aria": "Output IVA, deductible input IVA and the result by quarter",
+    "charts.iva.output": "Output IVA (27)",
+    "charts.iva.input": "Deductible input IVA (45)",
+    "charts.iva.result": "Result (71)",
+    "charts.reserve.title": "Tax reserve",
+    "charts.reserve.aria": "Required tax, recommended reserve and available funds",
+    "charts.reserve.required": "Required for taxes",
+    "charts.reserve.recommended": "Recommended reserve",
+    "charts.reserve.available": "Available",
+    "charts.reserve.notChecked": "Available funds are not checked — verify the reserve manually",
+    "charts.reserve.notRequired": "No payments to reserve for",
+    "charts.reserve.blocked": "Calculation is blocked — the reserve is not determined",
+    "charts.cumulative.title": "Cumulative business result",
+    "charts.cumulative.aria": "Cumulative net result before difficult-to-justify expenses",
+    "charts.cumulative.actual": "Actual",
+    "charts.cumulative.projected": "Including approved",
   },
 };
 
@@ -1675,6 +1751,190 @@ function issuesList(rows) {
     </ul>`;
 }
 
+function formatMinorEur(minor) {
+  return eur(minor / 100);
+}
+
+function chartMonthLabel(bucket) {
+  const parsed = new Date(`${bucket}-01T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return String(bucket);
+  return new Intl.DateTimeFormat(intlLocale(), {month: "short"}).format(parsed);
+}
+
+function chartSpecBase(chartId, titleKey, ariaKey, emptyMessage) {
+  return {
+    chartId,
+    title: t(titleKey),
+    ariaLabel: t(ariaKey),
+    tableLabel: t("charts.table"),
+    formatValue: formatMinorEur,
+    emptyMessage,
+  };
+}
+
+function reviewQueueTotal(analytics) {
+  const counts = (analytics.datasets.review_aging || {}).counts || {};
+  return Object.values(counts).reduce(
+    (total, values) => total + values.reduce((sum, value) => sum + value, 0),
+    0
+  );
+}
+
+function transactionsEmptyMessage(analytics) {
+  if ((analytics.quality || {}).missing_fx_transaction_count > 0) {
+    return t("charts.empty.missingFx");
+  }
+  if (reviewQueueTotal(analytics) > 0) return t("charts.empty.onlyUnreviewed");
+  return t("charts.empty.noTransactions");
+}
+
+function taxChartEmptyMessage(points, fallbackKey) {
+  const filedWithoutValues = points.some((point) =>
+    [point.modelo130, point.modelo303, point].some(
+      (entry) => entry && entry.source === "filed_without_values"
+    )
+  );
+  return filedWithoutValues
+    ? t("charts.empty.filedWithoutValues")
+    : t(fallbackKey);
+}
+
+function buildBusinessResultSpec(analytics) {
+  const monthly = analytics.datasets.business_result.monthly;
+  const spec = chartSpecBase(
+    "business-result",
+    "charts.business.title",
+    "charts.business.aria",
+    transactionsEmptyMessage(analytics)
+  );
+  spec.bucketLabel = t("charts.bucket.month");
+  spec.buckets = monthly.buckets.map(chartMonthLabel);
+  spec.series = [
+    {key: "income-actual", label: t("charts.business.incomeActual"), kind: "bar", stack: "income", tone: "info", pattern: "solid", values: monthly.actual.income_base_minor},
+    {key: "income-backlog", label: t("charts.business.incomeBacklog"), kind: "bar", stack: "income", tone: "info", pattern: "hatched", values: monthly.approved_unposted.income_base_minor},
+    {key: "income-forecast", label: t("charts.business.incomeForecast"), kind: "bar", stack: "income", tone: "info", pattern: "outline", values: monthly.approved_future.income_base_minor},
+    {key: "expense-actual", label: t("charts.business.expenseActual"), kind: "bar", stack: "expense", tone: "warning", pattern: "solid", values: monthly.actual.deductible_expense_minor},
+    {key: "expense-backlog", label: t("charts.business.expenseBacklog"), kind: "bar", stack: "expense", tone: "warning", pattern: "hatched", values: monthly.approved_unposted.deductible_expense_minor},
+    {key: "expense-forecast", label: t("charts.business.expenseForecast"), kind: "bar", stack: "expense", tone: "warning", pattern: "outline", values: monthly.approved_future.deductible_expense_minor},
+  ];
+  return spec;
+}
+
+function buildTaxDueSpec(analytics) {
+  const points = analytics.datasets.quarterly_tax_due.points || [];
+  const spec = chartSpecBase(
+    "tax-due",
+    "charts.taxDue.title",
+    "charts.taxDue.aria",
+    taxChartEmptyMessage(points, "charts.taxDue.empty")
+  );
+  spec.bucketLabel = t("charts.bucket.quarter");
+  spec.buckets = points.map((point) => point.period_key);
+  spec.series = [
+    {key: "m130", label: t("charts.taxDue.m130"), kind: "bar", stack: "m130", tone: "accent", pattern: "solid", values: points.map((point) => point.modelo130.payable_minor)},
+    {key: "m303", label: t("charts.taxDue.m303"), kind: "bar", stack: "m303", tone: "warning", pattern: "solid", values: points.map((point) => point.modelo303.payable_minor)},
+  ];
+  return spec;
+}
+
+function buildIvaPositionSpec(analytics) {
+  const points = analytics.datasets.iva_position.points || [];
+  const spec = chartSpecBase(
+    "iva-position",
+    "charts.iva.title",
+    "charts.iva.aria",
+    taxChartEmptyMessage(points, "charts.taxDue.empty")
+  );
+  spec.bucketLabel = t("charts.bucket.quarter");
+  spec.buckets = points.map((point) => point.period_key);
+  spec.series = [
+    {key: "output", label: t("charts.iva.output"), kind: "bar", stack: "output", tone: "info", pattern: "solid", values: points.map((point) => point.output_vat_minor)},
+    {key: "input", label: t("charts.iva.input"), kind: "bar", stack: "input", tone: "warning", pattern: "solid", values: points.map((point) => point.deductible_input_vat_minor)},
+    {key: "result", label: t("charts.iva.result"), kind: "line", tone: "accent", pattern: "solid", values: points.map((point) => point.result_minor)},
+  ];
+  return spec;
+}
+
+function buildReserveSpec(analytics) {
+  const reserve = analytics.datasets.reserve_bullet;
+  const spec = chartSpecBase(
+    "tax-reserve",
+    "charts.reserve.title",
+    "charts.reserve.aria",
+    t("charts.reserve.notRequired")
+  );
+  spec.bucketLabel = "";
+  spec.ranges = [];
+  spec.measure = null;
+  if (reserve.status === "calculation_blocked" || reserve.status === "unsupported_form") {
+    spec.emptyMessage = t("charts.reserve.blocked");
+    return spec;
+  }
+  if (!reserve.required_tax_minor) return spec;
+  spec.ranges = [
+    {key: "recommended", label: t("charts.reserve.recommended"), tone: "info", value: reserve.recommended_reserve_minor},
+    {key: "required", label: t("charts.reserve.required"), tone: "warning", value: reserve.required_tax_minor},
+  ];
+  spec.measure = {
+    key: "available",
+    label: t("charts.reserve.available"),
+    tone: "accent",
+    value: reserve.available_minor,
+  };
+  spec.unavailableMessage = t("charts.reserve.notChecked");
+  return spec;
+}
+
+function buildCumulativeNetSpec(analytics) {
+  const cumulative = analytics.datasets.cumulative_net;
+  const spec = chartSpecBase(
+    "cumulative-net",
+    "charts.cumulative.title",
+    "charts.cumulative.aria",
+    transactionsEmptyMessage(analytics)
+  );
+  spec.bucketLabel = t("charts.bucket.month");
+  spec.buckets = cumulative.buckets.map(chartMonthLabel);
+  spec.series = [
+    {key: "net-projected", label: t("charts.cumulative.projected"), kind: "line", tone: "accent", pattern: "dashed", values: cumulative.projected_minor},
+    {key: "net-actual", label: t("charts.cumulative.actual"), kind: "line", tone: "accent", pattern: "solid", values: cumulative.actual_minor},
+  ];
+  return spec;
+}
+
+function renderDashboardCharts(analyticsResult) {
+  const host = document.querySelector("#dashboard-charts");
+  if (!host) return;
+  if (!analyticsResult.ok) {
+    const failure = document.createElement("div");
+    failure.className = "empty-state chart-empty-state";
+    failure.textContent = t("charts.loadError");
+    host.replaceChildren(failure);
+    return;
+  }
+  const analytics = analyticsResult.payload;
+  AutonomoCharts.renderCartesian(
+    document.querySelector("#chart-business-result"),
+    buildBusinessResultSpec(analytics)
+  );
+  AutonomoCharts.renderCartesian(
+    document.querySelector("#chart-tax-due"),
+    buildTaxDueSpec(analytics)
+  );
+  AutonomoCharts.renderCartesian(
+    document.querySelector("#chart-iva-position"),
+    buildIvaPositionSpec(analytics)
+  );
+  AutonomoCharts.renderBullet(
+    document.querySelector("#chart-tax-reserve"),
+    buildReserveSpec(analytics)
+  );
+  AutonomoCharts.renderCartesian(
+    document.querySelector("#chart-cumulative-net"),
+    buildCumulativeNetSpec(analytics)
+  );
+}
+
 async function init() {
   try {
     state.bootstrap = await fetchJSON("/api/bootstrap");
@@ -1717,7 +1977,15 @@ async function renderCurrentView() {
 
 async function renderDashboard(renderGeneration = currentRenderGeneration) {
   const renderToken = transactionRenderToken("dashboard", renderGeneration);
-  const data = await fetchJSON(`/api/dashboard?period=${encodeURIComponent(state.period)}`);
+  const analyticsPromise = fetchJSON(
+    `/api/analytics?period=${encodeURIComponent(state.period)}`
+  )
+    .then((payload) => ({ok: true, payload}))
+    .catch((error) => ({ok: false, error}));
+  const [data, analyticsResult] = await Promise.all([
+    fetchJSON(`/api/dashboard?period=${encodeURIComponent(state.period)}`),
+    analyticsPromise,
+  ]);
   if (!isActiveTransactionRenderToken(renderToken, "dashboard", renderGeneration)) return;
   replaceIncomeCopyRows(data.recent_transactions || []);
   const actual = data.totals.actual;
@@ -1750,6 +2018,13 @@ async function renderDashboard(renderGeneration = currentRenderGeneration) {
         <p>${escapeHtml(t("dashboard.obligationDue"))}</p>
         <time datetime="${escapeHtml(nextDue.statutory_due_on || "")}">${formatDate(nextDue.statutory_due_on)}</time>
       </div>` : ""}
+    <section class="charts-panel" id="dashboard-charts">
+      <div class="chart-slot" id="chart-business-result"></div>
+      <div class="chart-slot" id="chart-tax-due"></div>
+      <div class="chart-slot" id="chart-iva-position"></div>
+      <div class="chart-slot" id="chart-tax-reserve"></div>
+      <div class="chart-slot" id="chart-cumulative-net"></div>
+    </section>
     <div class="dashboard-grid">
       <section class="panel">
         <header class="panel-header"><h2>${escapeHtml(t("dashboard.recentTransactions"))}</h2><small>${escapeHtml(state.period)}</small></header>
@@ -1761,6 +2036,7 @@ async function renderDashboard(renderGeneration = currentRenderGeneration) {
       </section>
     </div>
   `;
+  renderDashboardCharts(analyticsResult);
   document.querySelector("#dashboard-ready-banner")?.addEventListener("click", () => {
     navigateToRoute("review");
   });
