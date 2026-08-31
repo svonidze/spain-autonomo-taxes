@@ -18,7 +18,7 @@ def test_posting_ui_static_assets_cover_dashboard_banner_and_review_flow() -> No
     assert 'id="confirm-posting-button"' in html
 
     for expected in (
-        'fetchJSON(`/api/review/posting-preview?period=${encodeURIComponent(state.period)}`)',
+        'fetchJSON(`/api/review/posting-preview?period=${encodeURIComponent(period)}`)',
         'fetchJSON("/api/review/post-ready", {',
         'await requestDashboardRefresh({showSuccessToast: false});',
         'data-nav-view="review"',

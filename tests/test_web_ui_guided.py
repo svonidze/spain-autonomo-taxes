@@ -10,6 +10,12 @@ def test_web_ui_guided_helpers_run_under_node() -> None:
     subprocess.run(["node", str(script)], cwd=root, check=True)
 
 
+def test_web_ui_navigation_regressions_run_under_node() -> None:
+    root = Path(__file__).resolve().parents[1]
+    script = root / "tests" / "test_web_ui_navigation.js"
+    subprocess.run(["node", str(script)], cwd=root, check=True)
+
+
 def test_web_ui_guided_markers_exist_in_app() -> None:
     javascript = (
         Path(__file__).resolve().parents[1]

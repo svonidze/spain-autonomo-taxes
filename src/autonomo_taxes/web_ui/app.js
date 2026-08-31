@@ -206,6 +206,7 @@ const messages = {
     "review.postingBlocked": "Проверено · Нельзя провести",
     "review.needsReview": "Нужно проверить решение по счету",
     "review.unknownSupport": "Налоговый код не поддерживается для проведения.",
+    "review.invalidWorkItem": "Не удалось проверить операцию и её период. Обновите страницу или вернитесь к списку через меню «Проверка».",
     "review.outcomeApprove": "Подтвердить",
     "review.outcomeReject": "Отклонить",
     "review.actionResolve": "Закрыть вопрос",
@@ -597,6 +598,7 @@ const messages = {
     "review.postingBlocked": "Reviewed · Cannot post",
     "review.needsReview": "This invoice still needs a guided tax decision",
     "review.unknownSupport": "The tax code is not supported for posting.",
+    "review.invalidWorkItem": "Could not verify the transaction and its period. Reload the page or return to the list using the Review menu.",
     "review.outcomeApprove": "Approve",
     "review.outcomeReject": "Reject",
     "review.actionResolve": "Resolve issue",
@@ -1058,6 +1060,7 @@ const postingConfirmStatus = hasDOM ? document.querySelector("#posting-confirm-s
 const confirmPostingButton = hasDOM ? document.querySelector("#confirm-posting-button") : null;
 const incomeCopyRowsById = new Map();
 let currentRenderGeneration = 0;
+let currentReviewRequest = 0;
 
 function buildReviewDraftStorageKey(transactionId) {
   return `${REVIEW_DRAFT_STORAGE_PREFIX}:${String(transactionId || "unknown")}`;
@@ -1140,24 +1143,36 @@ function selectedReviewTransactionId() {
 function applyRouteFromLocation() {
   if (!state.bootstrap) return false;
   const route = parseRoute(window.location.pathname);
-  if (!route) {
-    app.innerHTML = unknownRoutePanel();
-    return false;
-  }
-  if (PERIOD_ROUTE_PATHS.has(routePathFor(route.view, route.reviewId)) || (route.view === "review" && route.reviewId)) {
-    const period = routePeriodFromQuery(window.location.search);
-    if (period && period !== state.period) {
-      state.period = period;
-      if (periodSelect) periodSelect.value = period;
-    }
-  }
-  if (route.view !== "review") {
-    state.review.selectedReviewId = null;
+  const reviewId = route?.view === "review" && route.reviewId
+    ? reviewIdFromTransaction(route.reviewId)
+    : null;
+  if (!reviewId || reviewId !== state.review.selectedReviewId) {
     state.review.workItem = null;
     state.review.fxChoice = null;
     state.review.confirmError = null;
-  } else if (route.reviewId) {
-    state.review.selectedReviewId = `transaction:${route.reviewId}`;
+    state.review.validationDirty = true;
+    state.review.validationResult = null;
+    state.review.error = "";
+  }
+  state.review.selectedReviewId = reviewId;
+  if (!route) {
+    ++currentRenderGeneration;
+    AccountingHelp.beforeRender();
+    app.innerHTML = unknownRoutePanel();
+    app.setAttribute("aria-busy", "false");
+    return false;
+  }
+  const query = new URLSearchParams(window.location.search);
+  if (PERIOD_ROUTE_PATHS.has(routePathFor(route.view, route.reviewId))) {
+    state.period = routePeriodFromQuery(window.location.search)
+      || state.period || state.bootstrap.default_period;
+    if (state.period) query.set("period", state.period);
+  }
+  if (reviewId) query.delete("period");
+  const search = query.toString() ? `?${query}` : "";
+  if (search !== window.location.search) {
+    window.history.replaceState(window.history.state, "",
+      `${window.location.pathname}${search}${window.location.hash}`);
   }
   state.view = route.view;
   applyViewState();
@@ -1165,8 +1180,8 @@ function applyRouteFromLocation() {
   return true;
 }
 
-function navigateToRoute(view, {reviewId = null, replace = false} = {}) {
-  const url = buildRouteUrl(view, {reviewId});
+function navigateToRoute(view, {reviewId = null, period = state.period, replace = false} = {}) {
+  const url = buildRouteUrl(view, {reviewId, period});
   if (replace) window.history.replaceState(null, "", url);
   else window.history.pushState(null, "", url);
   applyRouteFromLocation();
@@ -2111,7 +2126,7 @@ async function init() {
 }
 
 async function renderCurrentView() {
-  if (!state.period || !app) return;
+  if (!app || (!state.period && !state.review.selectedReviewId)) return;
   AccountingHelp.beforeRender();
   AccountingHelp.setLocale(state.locale);
   app.setAttribute("aria-busy", "true");
@@ -2129,7 +2144,7 @@ async function renderCurrentView() {
     if (state.view === "taxes") await renderTaxes(renderGeneration);
     if (state.view === "contacts") await renderContacts(renderGeneration);
   } catch (error) {
-    app.innerHTML = errorState(error);
+    if (renderGeneration === currentRenderGeneration) app.innerHTML = errorState(error);
   } finally {
     if (renderGeneration === currentRenderGeneration) { app.setAttribute("aria-busy", "false"); AccountingHelp.labelTables(app); }
   }
@@ -2256,29 +2271,55 @@ async function renderTransactions(entryType, renderGeneration = currentRenderGen
   }, 240));
 }
 
-async function fetchReviewWorkItem(reviewId, options = {}) {
-  const workItem = await fetchJSON(`/api/review/work-item?review_id=${encodeURIComponent(reviewId)}`);
-  const packet = deepClone(workItem.packet || {});
-  const transactionId = packet.state?.transaction?.transaction_id;
-  const packetPeriod = packet.state?.period?.period_key;
-  if (packetPeriod && (state.bootstrap?.periods || []).some(row => row.period_key === packetPeriod)) {
-    state.period = packetPeriod;
-    if (periodSelect) periodSelect.value = packetPeriod;
+function reviewWorkItemPeriod(workItem, reviewId) {
+  const packet = workItem?.packet;
+  const period = packet?.state?.period?.period_key;
+  if (packet?.review_id !== reviewId
+    || packet?.state?.transaction?.transaction_id !== reviewIdToTransactionId(reviewId)
+    || !(state.bootstrap?.periods || []).some((row) => row.period_key === period)) {
+    throw new Error(t("review.invalidWorkItem"));
   }
-  const draft = loadReviewDraft(transactionId);
-  const mode = options.factsOnly ? "facts" : (draft && draft.snapshot_hash === packet.snapshot_hash ? "full" : "facts");
-  const mergedPacket = mergeReviewDecisionFromDraft(packet, draft, mode);
-  state.review.workItem = {
-    ...workItem,
-    packet: mergedPacket,
-    requirements: (workItem.requirements || []).map(normalizeReviewRequirement),
-  };
-  state.review.validationDirty = true;
-  state.review.validationResult = null;
-  state.review.error = "";
-  state.review.fxChoice = initialFxChoice(state.review.workItem.fx_suggestion);
-  state.review.confirmError = null;
-  persistReviewDraft(mergedPacket, {factsOnly: options.factsOnly});
+  return period;
+}
+
+async function loadReviewWorkspace(reviewId, {factsOnly = false} = {}) {
+  if (state.view !== "review" || state.review.selectedReviewId !== reviewId) return;
+  const generation = currentRenderGeneration;
+  const requestId = ++currentReviewRequest;
+  const isActive = () => generation === currentRenderGeneration
+    && requestId === currentReviewRequest
+    && state.view === "review" && state.review.selectedReviewId === reviewId;
+  try {
+    const workItem = await fetchJSON(`/api/review/work-item?review_id=${encodeURIComponent(reviewId)}`);
+    if (!isActive()) return;
+    const period = reviewWorkItemPeriod(workItem, reviewId);
+    const packet = deepClone(workItem.packet);
+    const draft = loadReviewDraft(packet.state.transaction.transaction_id);
+    const mode = !factsOnly && draft?.snapshot_hash === packet.snapshot_hash ? "full" : "facts";
+    const mergedPacket = mergeReviewDecisionFromDraft(packet, draft, mode);
+    state.review.workItem = {
+      ...workItem,
+      packet: mergedPacket,
+      requirements: (workItem.requirements || []).map(normalizeReviewRequirement),
+    };
+    state.period = period;
+    state.review.validationDirty = true;
+    state.review.validationResult = null;
+    state.review.error = "";
+    state.review.fxChoice = initialFxChoice(state.review.workItem.fx_suggestion);
+    state.review.confirmError = null;
+    persistReviewDraft(mergedPacket, {factsOnly});
+    applyViewState();
+    renderReviewWorkspace();
+  } catch (error) {
+    if (!isActive()) return;
+    if (factsOnly && state.review.workItem) {
+      state.review.confirmError = {message: error.message, target: "general"};
+      renderReviewWorkspace();
+    } else {
+      app.innerHTML = errorState(error);
+    }
+  }
 }
 
 function renderReviewOverview() {
@@ -2391,7 +2432,7 @@ function reviewTransactionTable(rows) {
                 <td class="amount">${row.amount_eur ? eur(row.amount_eur) : `${escapeHtml(row.amount_original || "—")} ${escapeHtml(row.currency || "")}`}</td>
                 <td class="table-actions">
                   ${row.document_id ? `<a class="text-button" href="/api/document/${encodeURIComponent(row.document_id)}/content" target="_blank" rel="noreferrer">${escapeHtml(t("review.documentLink"))}</a>` : ""}
-                  ${canOpenWorkspace ? `<a class="secondary-button compact-button" href="${escapeHtml(buildRouteUrl("review", {reviewId}))}" data-spa data-open-review-id="${escapeHtml(reviewId)}">${escapeHtml(t("review.openWorkspace"))}</a>` : ""}
+                  ${canOpenWorkspace ? `<a class="secondary-button compact-button" href="${escapeHtml(buildRouteUrl("review", {reviewId: row.transaction_id}))}" data-spa data-open-review-id="${escapeHtml(reviewId)}">${escapeHtml(t("review.openWorkspace"))}</a>` : ""}
                 </td>
               </tr>`;
           }).join("") || emptyRow(6)}
@@ -2401,25 +2442,31 @@ function reviewTransactionTable(rows) {
 }
 
 async function renderReview(renderGeneration = currentRenderGeneration) {
+  const reviewId = state.review.selectedReviewId;
+  if (reviewId) {
+    if (!state.review.workItem || state.review.workItem.packet?.review_id !== reviewId) {
+      await loadReviewWorkspace(reviewId);
+    } else {
+      state.period = reviewWorkItemPeriod(state.review.workItem, reviewId);
+      applyViewState();
+      renderReviewWorkspace();
+    }
+    return;
+  }
+  const period = state.period;
   const [rows, issues, documents, previewPayload] = await Promise.all([
-    fetchJSON(`/api/transactions?period=${encodeURIComponent(state.period)}&status=review`),
-    fetchJSON(`/api/issues?period=${encodeURIComponent(state.period)}`),
-    fetchJSON(`/api/documents?period=${encodeURIComponent(state.period)}`),
-    fetchJSON(`/api/review/posting-preview?period=${encodeURIComponent(state.period)}`),
+    fetchJSON(`/api/transactions?period=${encodeURIComponent(period)}&status=review`),
+    fetchJSON(`/api/issues?period=${encodeURIComponent(period)}`),
+    fetchJSON(`/api/documents?period=${encodeURIComponent(period)}`),
+    fetchJSON(`/api/review/posting-preview?period=${encodeURIComponent(period)}`),
   ]);
-  if (renderGeneration !== currentRenderGeneration || state.view !== "review") return;
+  if (renderGeneration !== currentRenderGeneration || state.view !== "review"
+    || state.review.selectedReviewId || period !== state.period) return;
   state.review.rows = rows;
   state.review.issues = issues;
   state.review.documents = documents;
   state.posting.preview = normalizePostingPreview(previewPayload);
-  state.posting.previewPeriod = state.period;
-  if (state.review.selectedReviewId) {
-    if (!state.review.workItem || state.review.workItem.packet?.review_id !== state.review.selectedReviewId) {
-      await fetchReviewWorkItem(state.review.selectedReviewId);
-    }
-    renderReviewWorkspace();
-    return;
-  }
+  state.posting.previewPeriod = period;
   renderReviewOverview();
 }
 
@@ -2763,7 +2810,7 @@ function renderReviewWorkspace() {
     <div class="review-workspace">
       ${AccountingHelp.cell(workItem.ui_context)}
       <div class="review-workspace-header">
-        <a class="secondary-button review-back-link" href="${escapeHtml(buildRouteUrl("review"))}" data-spa>${escapeHtml(t("review.workspaceBack"))}</a>
+        <a class="secondary-button review-back-link" href="${escapeHtml(buildRouteUrl("review", {period: packetState.period.period_key}))}" data-spa>${escapeHtml(t("review.workspaceBack"))}</a>
         <div class="review-workspace-title">
           <h2>${escapeHtml(counterparty.display_name || documentState.document_number || t("review.workspaceTitle"))}</h2>
           <p>${escapeHtml(documentState.document_number ? t("review.invoiceLabel", {number: documentState.document_number}) : t("review.workspaceTitle"))}</p>
@@ -2986,14 +3033,8 @@ function renderReviewWorkspace() {
     </div>
   `;
 
-  document.querySelector("#review-refresh-button")?.addEventListener("click", async () => {
-    try {
-      await fetchReviewWorkItem(packet.review_id, {factsOnly: true});
-      renderReviewWorkspace();
-    } catch (error) {
-      state.review.confirmError = {message: error.message, target: "general"};
-      renderReviewWorkspace();
-    }
+  document.querySelector("#review-refresh-button")?.addEventListener("click", () => {
+    void loadReviewWorkspace(packet.review_id, {factsOnly: true});
   });
 
   document.querySelectorAll("[data-decision-path]").forEach((element) => {
@@ -3976,6 +4017,9 @@ function applyViewState() {
   pageTitle.textContent = t(`titles.${state.view}`);
   if (periodSelect) {
     periodSelect.disabled = state.view === "review" && Boolean(state.review.selectedReviewId);
+    periodSelect.value = periodSelect.disabled
+      ? state.review.workItem?.packet?.state?.period?.period_key || ""
+      : state.period || "";
   }
 }
 
@@ -4036,11 +4080,18 @@ if (hasDOM) {
     if (event.target.closest("[data-retry-view]")) { void renderCurrentView(); return; }
     if (event.target.closest("[data-refresh-calculation]")) { void refreshDashboard(); return; }
     const link = event.target.closest("a[data-spa]");
-    if (!link) return;
-    const route = parseRoute(link.getAttribute("href") || "/");
+    if (!link || event.defaultPrevented || event.button !== 0
+      || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
+      || link.hasAttribute("download") || (link.target && link.target !== "_self")) return;
+    const url = new URL(link.getAttribute("href") || "/", window.location.href);
+    if (url.origin !== window.location.origin) return;
+    const route = parseRoute(url.pathname);
     if (!route) return;
     event.preventDefault();
-    navigateToRoute(route.view, {reviewId: route.reviewId});
+    navigateToRoute(route.view, {
+      reviewId: route.reviewId,
+      period: routePeriodFromQuery(url.search) || state.period,
+    });
   });
 
   window.addEventListener("popstate", () => {
