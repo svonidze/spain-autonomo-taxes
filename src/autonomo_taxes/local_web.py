@@ -643,6 +643,7 @@ class LocalAccountingApp:
                         include_modelo130,
                         include_modelo303,
                         include_modelo347,
+                        vat_investment_good,
                         notes
                     FROM tax_treatments
                     WHERE transaction_id = ?
@@ -702,6 +703,10 @@ class LocalAccountingApp:
                     "include_modelo130": bool(treatment["include_modelo130"]),
                     "include_modelo303": bool(treatment["include_modelo303"]),
                     "include_modelo347": bool(treatment["include_modelo347"]),
+                    "vat_investment_good": (
+                        None if treatment["vat_investment_good"] is None
+                        else bool(treatment["vat_investment_good"])
+                    ),
                     "notes": treatment["notes"],
                 }
                 for treatment in treatments

@@ -190,6 +190,7 @@ def test_transaction_detail_returns_closed_posted_snapshot_without_side_effects(
                 "include_modelo130": True,
                 "include_modelo303": False,
                 "include_modelo347": False,
+                "vat_investment_good": None,
                 "notes": "First preserved note\nwith a second line",
             },
             {
@@ -202,6 +203,7 @@ def test_transaction_detail_returns_closed_posted_snapshot_without_side_effects(
                 "include_modelo130": False,
                 "include_modelo303": True,
                 "include_modelo347": True,
+                "vat_investment_good": None,
                 "notes": "Second preserved note",
             },
         ],

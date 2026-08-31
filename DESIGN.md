@@ -69,6 +69,25 @@
 ## Open questions
 - None for this iteration. Creating new depreciation operations is a separate accounting workflow.
 
+## Reviewed IVA investment classification
+
+The expense review now separates the IRPF asset decision from the IVA investment
+goods decision. This authorized accounting change supersedes the earlier
+display-only constraints for this field and its schema/calculation integration.
+Keep existing components, routes, source amounts and unrelated design rules.
+
+- Add a labelled, keyboard-accessible RU/EN select beside the expense decision:
+  unknown, current purchase for IVA, or investment good for IVA. Unknown remains
+  visibly blank and must not become false through truthiness or a default.
+- Explain persistently that IRPF depreciation does not determine IVA treatment.
+  Approval requires an explicit IVA choice; rejection does not.
+- Preserve the selected boolean, including false, across edits, reloads and
+  validation. Stale review packets must be reloaded, not silently upgraded.
+- Show the saved classification in the read-only expense card. Legacy null
+  means unreviewed classification, not an affirmative tax decision.
+- Existing rows and snapshots are not automatically reclassified. Legacy
+  calculation fallback must be accompanied by a visible report warning.
+
 ## Accounting status explanations
 
 This contract also covers the read-only context

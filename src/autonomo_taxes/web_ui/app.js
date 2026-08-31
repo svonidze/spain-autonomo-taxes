@@ -261,6 +261,11 @@ const messages = {
     "review.invoiceLabel": "Счет {number}",
     "review.issueOpen": "Открытый вопрос",
     "review.issueResolved": "Вопрос будет закрыт",
+    "review.vatInvestment": "Классификация покупки для IVA",
+    "review.vatCurrent": "Текущая покупка для IVA",
+    "review.vatAsset": "Инвестиционный товар для IVA",
+    "review.vatUnknown": "Классификация IVA не проверена",
+    "review.vatInvestmentHint": "Амортизация для IRPF не определяет классификацию IVA. Выберите отдельно на основании покупки.",
     "review.assetDecision": "Классификация расхода",
     "review.assetCurrentExpense": "Текущий расход",
     "review.assetAsset": "Основное средство",
@@ -721,6 +726,11 @@ const messages = {
     "review.invoiceLabel": "Invoice {number}",
     "review.issueOpen": "Open issue",
     "review.issueResolved": "Issue will be resolved",
+    "review.vatInvestment": "IVA purchase classification",
+    "review.vatCurrent": "Current purchase for IVA",
+    "review.vatAsset": "Investment good for IVA",
+    "review.vatUnknown": "IVA classification not reviewed",
+    "review.vatInvestmentHint": "IRPF depreciation does not determine IVA classification. Review the purchase separately.",
     "review.assetDecision": "Expense classification",
     "review.assetCurrentExpense": "Current expense",
     "review.assetAsset": "Asset",
@@ -2866,6 +2876,7 @@ function expenseDetailMarkup(data, returnUrl) {
         <div><dt>${escapeHtml(t("fields.taxCode"))}</dt><dd>${escapeHtml(taxCodeLabel(row.tax_code || ""))}</dd></div>
         <div><dt>${escapeHtml(t("transactions.irpfDeduction"))}</dt><dd>${escapeHtml(minorEur(row.deductible_irpf_minor))}</dd></div>
         <div><dt>IVA</dt><dd>${escapeHtml(minorEur(row.deductible_vat_minor))}</dd></div>
+        <div><dt>${escapeHtml(t("review.vatInvestment"))}</dt><dd>${escapeHtml(t(row.vat_investment_good == null ? "review.vatUnknown" : row.vat_investment_good ? "review.vatAsset" : "review.vatCurrent"))}</dd></div>
         ${[130, 303, 347].map((form) => `<div><dt>Modelo ${form}</dt><dd>${row[`include_modelo${form}`] == null ? "—" : escapeHtml(boolText(row[`include_modelo${form}`]))}</dd></div>`).join("")}
       </dl></div>`).join("") || `<p>${escapeHtml(t("common.noRecords"))}</p>`}
       </div>
@@ -3167,6 +3178,7 @@ function questionAnswerMap(decision, reviewState, fxChoice) {
     tax_code: Boolean(decision?.tax_treatment?.tax_code),
     deductible_irpf_minor: decision?.tax_treatment?.deductible_irpf_minor != null,
     asset_decision: Boolean(decision?.asset_decision),
+    vat_investment_good: typeof decision?.tax_treatment?.vat_investment_good === "boolean",
     counterparty_country: Boolean(text(decision?.counterparty_changes?.country_code)) ||
       (Boolean(counterparty.country_code) && counterparty.country_code !== "ZZ"),
     fx_rate: Boolean(fxChoice),
@@ -3201,6 +3213,7 @@ function mapConfirmErrorToQuestion(message) {
   if (text.includes("deductible_irpf")) return "deductible_irpf_minor";
   if (text.includes("counterparty") || text.includes("country")) return "counterparty_country";
   if (text.includes("document_valid") || text.includes("document valid")) return "document_valid";
+  if (text.includes("vat_investment_good")) return "vat_investment_good";
   if (text.includes("asset")) return "asset_decision";
   if (text.includes("fx") || text.includes("rate") || text.includes("eur")) return "fx_rate";
   if (text.includes("issue")) return "issues";
@@ -3484,6 +3497,16 @@ function renderReviewWorkspace() {
                   <option value="asset"${decision.asset_decision === "asset" ? " selected" : ""}>${escapeHtml(t("review.assetAsset"))}</option>
                 </select>
                 ${inlineErrorFor("asset_decision")}
+              </label>
+              <label class="review-guided-field">
+                <span>${escapeHtml(t("review.vatInvestment"))}</span>
+                <select data-decision-path="tax_treatment.vat_investment_good" data-value-type="nullable-boolean" aria-describedby="vat-investment-help">
+                  <option value=""${decision.tax_treatment?.vat_investment_good == null ? " selected" : ""}></option>
+                  <option value="false"${decision.tax_treatment?.vat_investment_good === false ? " selected" : ""}>${escapeHtml(t("review.vatCurrent"))}</option>
+                  <option value="true"${decision.tax_treatment?.vat_investment_good === true ? " selected" : ""}>${escapeHtml(t("review.vatAsset"))}</option>
+                </select>
+                <small id="vat-investment-help">${escapeHtml(t("review.vatInvestmentHint"))}</small>
+                ${inlineErrorFor("vat_investment_good")}
               </label>` : ""}
             ${transaction.entry_type === "expense" ? `
               <label class="review-guided-field">

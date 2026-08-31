@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import sqlite3
 from typing import Any, Iterable, Mapping
+from types import EllipsisType
 from uuid import uuid4
 
 from .fx_policy import ALLOWED_PRODUCTION_SOURCES, XOLO_RECORDED_PRODUCTION_THROUGH
@@ -23,9 +24,10 @@ from .outgoing_invoices import (
     validate_withholding_rate,
 )
 from .tax_rules import ALL_FORM_CODES
+from .vat_classification import is_vat_investment_good
 
 
-LATEST_SCHEMA_VERSION = 20
+LATEST_SCHEMA_VERSION = 21
 
 # Migrations that rebuild a table referenced by a foreign key. They must
 # run with foreign-key enforcement temporarily disabled, and that pragma
@@ -2561,6 +2563,7 @@ class LedgerDB:
         aeat_operation_qualification: str | None = None,
         aeat_exemption_code: str | None = None,
         aeat_reverse_charge: bool | None = None,
+        vat_investment_good: bool | None | EllipsisType = ...,
         aeat_expense_concept: str | None = None,
         jurisdiction: str = "ES",
         rate_basis_points: int | None = None,
@@ -2621,6 +2624,13 @@ class LedgerDB:
             """,
             (transaction_id, treatment_type, jurisdiction),
         )
+        # Older callers (including Sheets review) must not erase a saved choice.
+        if vat_investment_good is ...:
+            stored = existing["vat_investment_good"] if existing is not None else None
+            vat_investment_good = None if stored is None else bool(stored)
+        if vat_investment_good is not None and not isinstance(vat_investment_good, bool):
+            raise ValueError("vat_investment_good must be boolean or null")
+        is_vat_investment_good(vat_investment_good, legacy_asset=False, tax_code=tax_code)
         timestamp = _utc_now()
         payload = {
             "transaction_id": transaction_id,
@@ -2631,6 +2641,7 @@ class LedgerDB:
             "aeat_operation_qualification": aeat_operation_qualification,
             "aeat_exemption_code": aeat_exemption_code,
             "aeat_reverse_charge": aeat_reverse_charge,
+            "vat_investment_good": vat_investment_good,
             "aeat_expense_concept": aeat_expense_concept,
             "jurisdiction": jurisdiction,
             "rate_basis_points": rate_basis_points,
@@ -2660,8 +2671,8 @@ class LedgerDB:
                         include_modelo303, include_modelo347, rule_version_id,
                         aeat_invoice_type, aeat_operation_key,
                         aeat_operation_qualification, aeat_exemption_code,
-                        aeat_reverse_charge, aeat_expense_concept
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        aeat_reverse_charge, aeat_expense_concept, vat_investment_good
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         treatment_id,
@@ -2690,6 +2701,7 @@ class LedgerDB:
                         aeat_exemption_code,
                         None if aeat_reverse_charge is None else int(aeat_reverse_charge),
                         aeat_expense_concept,
+                        None if vat_investment_good is None else int(vat_investment_good),
                     ),
                 )
             else:
@@ -2704,7 +2716,7 @@ class LedgerDB:
                         include_modelo303 = ?, include_modelo347 = ?, rule_version_id = ?,
                         aeat_invoice_type = ?, aeat_operation_key = ?,
                         aeat_operation_qualification = ?, aeat_exemption_code = ?,
-                        aeat_reverse_charge = ?, aeat_expense_concept = ?,
+                        aeat_reverse_charge = ?, aeat_expense_concept = ?, vat_investment_good = ?,
                         source_hash = ?, row_version = ?, updated_at = ?
                     WHERE treatment_id = ?
                     """,
@@ -2728,6 +2740,7 @@ class LedgerDB:
                         aeat_exemption_code,
                         None if aeat_reverse_charge is None else int(aeat_reverse_charge),
                         aeat_expense_concept,
+                        None if vat_investment_good is None else int(vat_investment_good),
                         effective_hash,
                         existing["row_version"] + 1,
                         timestamp,
@@ -4670,7 +4683,7 @@ class LedgerDB:
                    c.vat_id, tt.tax_code, tt.taxable_base_minor, tt.vat_minor,
                    tt.deductible_irpf_minor, tt.deductible_vat_minor, tt.withholding_minor,
                    tt.include_modelo130, tt.include_modelo303, tt.include_modelo347,
-                   tt.treatment_type, tt.jurisdiction,
+                   tt.treatment_type, tt.jurisdiction, tt.vat_investment_good,
                    CASE
                        WHEN COALESCE(at.asset_count, 0) + COALESCE(ad.asset_count, 0) > 0
                            THEN COALESCE(at.asset_id, ad.asset_id)
@@ -7106,6 +7119,13 @@ def _migration_20(connection: sqlite3.Connection) -> None:
         )
 
 
+def _migration_21(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        "ALTER TABLE tax_treatments ADD COLUMN vat_investment_good INTEGER"
+        " CHECK (vat_investment_good IN (0, 1))"
+    )
+
+
 _MIGRATIONS = {
     1: _migration_1,
     2: _migration_2,
@@ -7127,4 +7147,5 @@ _MIGRATIONS = {
     18: _migration_18,
     19: _migration_19,
     20: _migration_20,
+    21: _migration_21,
 }

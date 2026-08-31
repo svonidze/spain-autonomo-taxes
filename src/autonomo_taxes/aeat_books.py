@@ -8,6 +8,9 @@ import re
 from typing import Any, Iterable, Mapping
 
 from .ledger_db import LedgerDB
+from .vat_classification import (
+    LEGACY_VAT_CLASSIFICATION_WARNING, effective_vat_investment_choice, is_vat_investment_good,
+)
 
 
 AEAT_BOOK_CONTRACT = {
@@ -116,6 +119,7 @@ def build_aeat_book_projection(
 
     income_rows: list[dict[str, Any]] = []
     expense_rows: list[dict[str, Any]] = []
+    legacy_vat_classification = False
     for transaction in included:
         try:
             activity = _activity_for_transaction(transaction, activities)
@@ -123,6 +127,7 @@ def build_aeat_book_projection(
             if transaction["entry_type"].startswith("income"):
                 income_rows.append(_income_row(transaction, treatment, activity))
             elif transaction["entry_type"].startswith("expense"):
+                legacy_vat_classification |= treatment.get("vat_investment_good") is None
                 expense_rows.extend(_expense_rows(transaction, treatment, activity))
         except AeatBookProjectionError as exc:
             blockers.append(
@@ -176,6 +181,7 @@ def build_aeat_book_projection(
         "asset_rows": asset_rows,
         "blockers": blockers,
         "warnings": [
+            *([LEGACY_VAT_CLASSIFICATION_WARNING] if legacy_vat_classification else []),
             "This JSON is a reviewed row projection, not an AEAT-importable XLSX.",
             "Only posted rows and explicitly allowed authoritative historical rows are included.",
             "Counts describe projected book rows; one source transaction may produce consecutive component rows.",
@@ -274,6 +280,16 @@ def _single_treatment(database: LedgerDB, transaction: Mapping[str, Any]) -> dic
     treatment = dict(rows[0])
     if not treatment.get("tax_code") or treatment["tax_code"] == "unknown":
         raise AeatBookProjectionError("Transaction tax_code is not reviewed")
+    flags = database.connection.execute(
+        "SELECT vat_investment_good FROM tax_treatments WHERE transaction_id = ?",
+        (transaction["transaction_id"],),
+    ).fetchall()
+    try:
+        treatment["vat_investment_good"] = effective_vat_investment_choice(row[0] for row in flags)
+        is_vat_investment_good(treatment["vat_investment_good"], legacy_asset=False,
+                               tax_code=treatment["tax_code"])
+    except ValueError as exc:
+        raise AeatBookProjectionError(str(exc)) from exc
     return treatment
 
 
@@ -389,7 +405,10 @@ def _expense_rows(
         "expedidor_identificacion": counterparty_id,
         "expedidor_nombre": transaction["counterparty_name"],
         "clave_operacion": operation_key,
-        "bien_inversion": "S" if transaction.get("is_asset_acquisition") else "N",
+        "bien_inversion": "S" if is_vat_investment_good(
+            treatment.get("vat_investment_good"),
+            legacy_asset=bool(transaction.get("is_asset_acquisition")),
+        ) else "N",
         "inversion_sujeto_pasivo": "S" if reverse_charge else "N",
         "tipo_retencion_irpf_percent": _withholding_rate(
             taxable_base_minor, withholding_minor

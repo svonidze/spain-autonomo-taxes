@@ -10,6 +10,7 @@ from typing import Any, Callable, Mapping
 
 from .fx_policy import ALLOWED_PRODUCTION_SOURCES, XOLO_RECORDED_PRODUCTION_THROUGH
 from .ledger_db import LedgerDB, VALID_LIFECYCLE_TRANSITIONS
+from .vat_classification import is_vat_investment_good
 from .tax_engine import MODELO303_SUPPORTED_CODES, WITHHOLDING_TYPE_BY_TAX_CODE
 
 
@@ -53,6 +54,7 @@ TREATMENT_DECISION_FIELDS = (
     "aeat_operation_qualification",
     "aeat_exemption_code",
     "aeat_reverse_charge",
+    "vat_investment_good",
     "aeat_expense_concept",
     "rate_basis_points",
     "deductible_ratio",
@@ -872,7 +874,7 @@ def _apply_decision(
             UPDATE tax_treatments
             SET tax_code = ?, aeat_invoice_type = ?, aeat_operation_key = ?,
                 aeat_operation_qualification = ?, aeat_exemption_code = ?,
-                aeat_reverse_charge = ?, aeat_expense_concept = ?,
+                aeat_reverse_charge = ?, aeat_expense_concept = ?, vat_investment_good = ?,
                 rate_basis_points = ?, deductible_ratio = ?, taxable_base_minor = ?,
                 vat_minor = ?, deductible_irpf_minor = ?, deductible_vat_minor = ?,
                 withholding_minor = ?, include_modelo130 = ?, include_modelo303 = ?,
@@ -888,6 +890,7 @@ def _apply_decision(
                 proposed["aeat_exemption_code"],
                 _bool_db(proposed["aeat_reverse_charge"]),
                 proposed["aeat_expense_concept"],
+                _bool_db(proposed["vat_investment_good"]),
                 proposed["rate_basis_points"],
                 proposed["deductible_ratio"],
                 proposed["taxable_base_minor"],
@@ -1030,6 +1033,15 @@ def _validate_tax_treatment(value: Any, *, transaction: Mapping[str, Any]) -> di
         raise ReviewPacketError(
             f"Tax code {result['tax_code']} is not valid for {entry_type} invoice review"
         )
+    investment = result["vat_investment_good"]
+    if entry_type == "expense" and not isinstance(investment, bool):
+        raise ReviewPacketError("Expense review requires an explicit vat_investment_good boolean")
+    if investment is not None and not isinstance(investment, bool):
+        raise ReviewPacketError("vat_investment_good must be boolean or null")
+    try:
+        is_vat_investment_good(investment, legacy_asset=False, tax_code=result["tax_code"])
+    except ValueError as exc:
+        raise ReviewPacketError(str(exc)) from exc
     invoice_type = _optional_upper(result["aeat_invoice_type"])
     if invoice_type not in AEAT_INVOICE_TYPES:
         raise ReviewPacketError("A reviewed AEAT invoice type is required")
@@ -1358,6 +1370,12 @@ def _build_guidance(
             auto_filled=_filled(treatment.get("deductible_irpf_minor")),
             source="extraction" if _filled(treatment.get("deductible_irpf_minor")) else None,
         )
+    if entry_type == "expense":
+        add_question(
+            "vat_investment_good", "decision.tax_treatment.vat_investment_good",
+            "choice", ["approve"],
+            auto_filled=isinstance(treatment.get("vat_investment_good"), bool),
+        )
     add_question("tax_code", "decision.tax_treatment.tax_code", "choice", ["approve"])
     if original_currency != "EUR":
         add_question(
@@ -1670,6 +1688,7 @@ def _decision_treatment_value(key: str, value: Any) -> Any:
         return None
     if key in {
         "aeat_reverse_charge",
+        "vat_investment_good",
         "include_modelo130",
         "include_modelo303",
         "include_modelo347",
@@ -1693,6 +1712,9 @@ def _review_audit_note(base_note: Any, decision: Mapping[str, Any]) -> str:
         lines.append(f"Business purpose: {decision['business_purpose']}")
     if decision.get("asset_decision"):
         lines.append(f"Asset decision: {decision['asset_decision']}")
+    investment = (decision.get("tax_treatment") or {}).get("vat_investment_good")
+    if investment is not None:
+        lines.append(f"IVA investment good: {str(investment).lower()}")
     return "\n".join(lines)
 
 
