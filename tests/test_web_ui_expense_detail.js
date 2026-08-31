@@ -260,6 +260,7 @@ async function main() {
     refreshCopyTargetState: () => {},
     incomeCopyRowsById: {clear: () => {}},
     closePostingConfirmDialog: () => {},
+    closeCounterpartyMenu: () => {},
     escapeHtml: (value) => String(value),
     t: (key) => key,
     renderExpenseDetail: async () => { throw new Error("old request failed"); },

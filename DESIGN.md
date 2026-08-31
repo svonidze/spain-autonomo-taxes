@@ -69,6 +69,37 @@
 ## Open questions
 - None for this iteration. Creating new depreciation operations is a separate accounting workflow.
 
+## Counterparty list and detail
+
+- The list's primary action is opening `/contacts/{id}`. Names are real links
+  (including new-tab behavior); unmodified clicks on non-interactive row space
+  also navigate. Text selection, links and controls keep their normal behavior.
+- Keep existing columns, status explanations and the concentration chart.
+  Remove persistent rename buttons and manual-correction labels from rows.
+  A borderless 44px actions trigger at the right edge opens the single
+  additional action, Correct name. The same menu appears in the detail header.
+- One menu at a time, outside table overflow; clamp it to the viewport. Escape
+  and clicks on noninteractive outside space restore focus to the trigger.
+  Clicking another interactive control closes the menu without stealing focus.
+- The detail page is read-only: existing identity/contact facts, linked
+  transactions and collapsed name history. Do not add monetary totals or new
+  accounting actions. Preserve unknown, zero and negative amounts.
+- Operations default to all periods, newest first, in batches of 50. The local
+  period filter belongs to the card and does not change other screens' period.
+  Hide the global period selector on the card; return links preserve the card's
+  filter and the list's scroll position. Preserve the originating global
+  period across an expense excursion; the expense itself keeps its true period.
+- Use the existing read-only expense page and document availability/actions.
+  No income detail editor, schema change or import change is part of this work.
+- Reuse the existing rename dialog from both surfaces, including direct links
+  that have never loaded the list. Saving refreshes the active card or list,
+  not another record reached while the request was in flight.
+- Navigation uses the rename dialog's dirty/busy policy. A refused Back restores
+  the current route and draft; while saving, navigation waits for the result.
+- Preserve the palette, fonts, status-help and chart components. Check RU/EN,
+  keyboard access, 375px width, long names, bottom-row menus, empty/error states,
+  pagination and stale responses during navigation or filter changes.
+
 ## Reviewed IVA investment classification
 
 The expense review now separates the IRPF asset decision from the IVA investment

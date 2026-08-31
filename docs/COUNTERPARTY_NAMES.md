@@ -1,8 +1,19 @@
 # Correcting a counterparty name
 
-Use **Counterparties → Correct name** to fix a typo in the name of the same
+Use **Counterparties → ⋯ → Correct name** to fix a typo in the name of the same
 person or organisation. The action is not a way to replace one counterparty
 with another.
+
+Select a counterparty name to open its own read-only page. The same actions
+menu is available in its header; there are no persistent correction buttons
+in the list. The card contains existing details, linked operations and
+collapsible name history. It also works when opened directly in a new tab.
+
+Operations initially cover all periods and load in batches of 50. The card's
+period filter is separate from other screens. Viewing an expense and returning
+to the card retains that filter and restores the originating global period,
+including after an expense-page reload. Viewing a card never posts, recalculates
+or changes accounting records.
 
 The corrected name is used throughout the app and in newly generated books,
 including exports for earlier periods. Existing documents and saved filing
@@ -37,6 +48,12 @@ batch, not other users' committed work.
 ## API
 
 - `GET /api/counterparties` includes `row_version` and `name_is_manual`.
+- `GET /api/counterparties/{uuid}` returns `counterparty` facts and its list of
+  transaction `periods`; no internal source hashes are exposed.
+- `GET /api/counterparties/{uuid}/transactions` accepts an optional `period`,
+  `offset` (default 0) and `limit` (default 50, maximum 100). It returns `rows`,
+  `matching_count`, `next_offset` and `has_more`, scoped strictly to that ID.
+  It does not total monetary amounts across lifecycle states.
 - `POST /api/counterparties/{uuid}/rename` accepts only `display_name` and
   `expected_row_version`. It returns the current ID, name, version, manual flag
   and `changed`. A current-version no-op has `changed: false`.
@@ -56,6 +73,7 @@ Malformed requests return 400 and missing counterparties return 404.
 
 Schema 20 adds the manual-name flag and append-only application history.
 Migration does not rename existing records or infer past manual edits.
+The counterparty card and compact menus add no further schema migration.
 
 Deploy only through the reviewed operations workflow: stage the new release,
 stop writers, make and verify a backup, migrate with the new code, start the
