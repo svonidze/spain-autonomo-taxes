@@ -2772,7 +2772,12 @@ function renderChartDialogFigure() {
 }
 
 function closeChartDialog() {
-  if (chartDialog?.open) chartDialog.close();
+  // close() fires its event asynchronously; let that handler own the cleanup
+  // so it still sees the opener it has to focus.
+  if (chartDialog?.open) {
+    chartDialog.close();
+    return;
+  }
   chartDialogEntry = null;
   chartDialogOpener = null;
 }
