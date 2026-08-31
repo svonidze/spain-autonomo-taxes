@@ -254,6 +254,47 @@ def test_spa_deep_links_serve_the_app_shell_and_session_cookie(
         server.close()
 
 
+def test_review_deep_link_packet_keeps_its_period_when_bootstrap_defaults_to_q3(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _config(tmp_path)
+    fixture = _usd_invoice_fixture(config, transaction_date=date(2026, 5, 15))
+    with LedgerDB.open(config.database) as db:
+        db.ensure_period("2026-Q3")
+    monkeypatch.setattr(local_web, "_current_or_latest_period", lambda periods: "2026-Q3")
+
+    def offline_fx(currency: str, as_of: date) -> ECBRateResult:
+        raise FXRateUnavailableError("Synthetic fixture: no external FX lookup")
+
+    server = _Server(config, monkeypatch, ecb=offline_fx)
+    try:
+        status, _headers, body = server.request("GET", "/api/bootstrap")
+        assert status == 200
+        bootstrap = json.loads(body)
+        assert bootstrap["default_period"] == "2026-Q3"
+        assert {row["period_key"] for row in bootstrap["periods"]} >= {
+            "2026-Q2", "2026-Q3"
+        }
+        for path in (
+            f"/review/{fixture['transaction_id']}",
+            "/review?period=2026-Q2",
+        ):
+            status, headers, _body = server.request("GET", path, cookie=False)
+            assert status == 200
+            assert headers["Content-Type"].startswith("text/html")
+
+        status, _headers, body = server.request(
+            "GET", f"/api/review/work-item?review_id={fixture['review_id']}"
+        )
+        assert status == 200
+        packet = json.loads(body)["packet"]
+        assert packet["review_id"] == fixture["review_id"]
+        assert packet["state"]["transaction"]["transaction_id"] == fixture["transaction_id"]
+        assert packet["state"]["period"]["period_key"] == "2026-Q2"
+    finally:
+        server.close()
+
+
 def test_unknown_routes_and_api_keep_404_without_html_fallback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
