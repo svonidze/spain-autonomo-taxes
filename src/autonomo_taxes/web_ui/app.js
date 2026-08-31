@@ -17,6 +17,42 @@ const KNOWN_REVIEW_TAX_CODES = new Set([
 
 const messages = {
   ru: {
+    "expense.purchase": "Покупки, услуги и прочие расходы",
+    "expense.amortization": "Амортизация техники",
+    "expense.explanation": "Часть стоимости ранее купленной техники, учитываемая в расходах этого квартала. Это не новая покупка и не платёж.",
+    "expense.recognitionDate": "Дата учёта",
+    "expense.sourceDate": "Документ от {date}",
+    "expense.sourceAmount": "Сумма документа: {amount}",
+    "expense.recordedAmount": "Сумма исходной записи: {amount}",
+    "expense.amount": "Сумма расхода",
+    "expense.quarterAmount": "Амортизация за квартал",
+    "expense.periodDate": "Период и дата учёта",
+    "expense.assetDocument": "Актив / исходный документ",
+    "expense.quarter": "{quarter} квартал {year}",
+    "expense.forQuarter": "Амортизация за {period}",
+    "expense.future": "Дата учёта ещё не наступила: {date}",
+    "expense.unposted": "Не проведено",
+    "expense.unmatched": "Актив не сопоставлен",
+    "expense.inferred": "Сопоставлено по контрагенту и дате документа",
+    "expense.source": "Источник",
+    "expense.quarterTotal": "Проведено и проверено за весь квартал: {amount}",
+    "expense.shown": "Показано {shown} из {count}",
+    "expense.empty": "В этом квартале записей нет.",
+    "expense.noMatches": "По запросу ничего не найдено.",
+    "expense.moreRecords": "Эти записи находятся на следующих страницах. Нажмите «Показать ещё».",
+    "expense.loadMore": "Показать ещё",
+    "expense.retry": "Повторить загрузку",
+    "expense.refreshData": "Обновить данные",
+    "expense.refreshFailed": "Не удалось обновить данные. Показаны предыдущие значения.",
+    "expense.invalidPage": "Не удалось загрузить следующую страницу. Повторите попытку.",
+    "expense.loading": "Загружаем расходы…",
+    "expense.search": "Контрагент, документ или актив",
+    "expense.posted": "Проведено",
+    "expense.approved": "Проверено, не проведено: {amount}",
+    "expense.futureAmount": "Из них будущей датой: {amount}",
+    "expense.missing": "Не хватает данных о сумме",
+    "expense.inAmount": "В сумме амортизации",
+    "expense.chartSourceNote": "График использует исходные суммы записей. Для амортизации это полная стоимость прежней покупки, а не новое списание: сумму за квартал смотрите в блоке выше.",
     "common.loadFailed": "Не удалось загрузить данные. Проверьте подключение и повторите попытку.",
     "common.retry": "Повторить",
     "common.sessionExpired": "Сессия истекла. Перезагрузите страницу, чтобы восстановить доступ.",
@@ -441,6 +477,42 @@ const messages = {
     "charts.amortization.empty": "Начислений амортизации нет",
   },
   en: {
+    "expense.purchase": "Purchases, services and other expenses",
+    "expense.amortization": "Asset depreciation",
+    "expense.explanation": "Part of an earlier asset purchase recognized as an expense this quarter. This is not a new purchase or a payment.",
+    "expense.recognitionDate": "Recognition date",
+    "expense.sourceDate": "Document dated {date}",
+    "expense.sourceAmount": "Document amount: {amount}",
+    "expense.recordedAmount": "Source entry amount: {amount}",
+    "expense.amount": "Expense amount",
+    "expense.quarterAmount": "Quarterly depreciation",
+    "expense.periodDate": "Period and recognition date",
+    "expense.assetDocument": "Asset / source document",
+    "expense.quarter": "Q{quarter} {year}",
+    "expense.forQuarter": "Depreciation for {period}",
+    "expense.future": "Recognition date has not arrived: {date}",
+    "expense.unposted": "Not posted",
+    "expense.unmatched": "Asset not matched",
+    "expense.inferred": "Matched by counterparty and document date",
+    "expense.source": "Source",
+    "expense.quarterTotal": "Posted and reviewed for the whole quarter: {amount}",
+    "expense.shown": "Showing {shown} of {count}",
+    "expense.empty": "No entries in this quarter.",
+    "expense.noMatches": "No matching entries.",
+    "expense.moreRecords": "These entries are on subsequent pages. Select “Show more”.",
+    "expense.loadMore": "Show more",
+    "expense.retry": "Retry loading",
+    "expense.refreshData": "Refresh data",
+    "expense.refreshFailed": "Could not refresh data. Previous values are still shown.",
+    "expense.invalidPage": "Could not load the next page. Please retry.",
+    "expense.loading": "Loading expenses…",
+    "expense.search": "Counterparty, document or asset",
+    "expense.posted": "Posted",
+    "expense.approved": "Reviewed, not posted: {amount}",
+    "expense.futureAmount": "Of which future-dated: {amount}",
+    "expense.missing": "Amount information is missing",
+    "expense.inAmount": "In depreciation amount",
+    "expense.chartSourceNote": "The chart uses source entry amounts. For depreciation this is the original purchase cost, not a new charge; see the section above for the quarterly deduction.",
     "common.loadFailed": "Could not load data. Check the connection and try again.",
     "common.retry": "Retry",
     "common.sessionExpired": "The session expired. Reload the page to restore access.",
@@ -1854,21 +1926,258 @@ function transactionTable(rows, {copyable = false, sourceUrl = null} = {}) {
         <thead><tr><th>${escapeHtml(t("transactions.date"))}</th><th>${escapeHtml(t("transactions.counterpartyDocument"))}</th><th>${escapeHtml(t("transactions.status"))} ${AccountingHelp.term("posting")}</th><th>${escapeHtml(t("transactions.amount"))}</th><th>${escapeHtml(t("transactions.irpfDeduction"))} ${AccountingHelp.term("IRPF")}</th><th>IVA ${AccountingHelp.term("IVA")}</th><th></th></tr></thead>
         <tbody>
           ${rows.map((row) => `
-            <tr>
-              <td>${formatDate(row.transaction_date)}</td>
+            <tr data-transaction-id="${escapeHtml(row.transaction_id)}">
+              <td>${row.expense_kind === "amortization" ? expenseRecognition(row, true) : formatDate(row.transaction_date)}</td>
               <td class="cell-primary">
+                ${row.expense_kind === "amortization" ? expenseAsset(row, sourceUrl) : `
                 <strong>${escapeHtml(row.counterparty_name || row.description || t("transactions.noCounterparty"))}</strong>
                 <small>${transactionDocumentLink(row, sourceUrl)}</small>
+                `}
               </td>
-              <td>${AccountingHelp.cell(row.ui_context)}</td>
-              <td class="amount">${row.amount_eur ? eur(row.amount_eur) : `${escapeHtml(row.amount_original || "—")} ${escapeHtml(row.currency || "")}`}</td>
-              <td class="amount">${AccountingHelp.money(row.deductible_irpf_minor)}</td>
+              <td>${row.entry_type === "expense" ? expenseStatus(row) : AccountingHelp.cell(row.ui_context)}</td>
+              <td class="amount">${row.expense_kind === "amortization" ? `${expenseMoney(row.deductible_irpf_eur)}<small class="expense-note">${escapeHtml(t("expense.quarterAmount"))}</small>` : row.amount_eur ? eur(row.amount_eur) : `${escapeHtml(row.amount_original || "—")} ${escapeHtml(row.currency || "")}`}</td>
+              <td class="amount">${row.expense_kind === "amortization" ? escapeHtml(t("expense.inAmount")) : AccountingHelp.money(row.deductible_irpf_minor)}</td>
               <td class="amount">${AccountingHelp.money(row.deductible_vat_minor)}</td>
               <td>${transactionActions(row, copyable)}</td>
             </tr>`).join("") || emptyRow(7)}
         </tbody>
       </table>
     </div>`;
+}
+
+function hasExpenseAmount(value) {
+  return value !== null && value !== undefined && value !== "";
+}
+
+function expenseMoney(value) {
+  return hasExpenseAmount(value) ? eur(value) : "—";
+}
+
+function expenseQuarter(period) {
+  const match = /^(\d{4})-Q([1-4])$/.exec(String(period || ""));
+  if (!match) return String(period || "—");
+  return t("expense.quarter", {
+    year: match[1], quarter: state.locale === "ru" ? ["I", "II", "III", "IV"][Number(match[2]) - 1] : match[2],
+  });
+}
+
+function expenseRecognition(row, amortization = false) {
+  const date = escapeHtml(formatDate(row.transaction_date));
+  if (amortization) {
+    return `<strong>${escapeHtml(expenseQuarter(row.period_key))}</strong><small class="expense-note">${escapeHtml(t("expense.recognitionDate"))}: ${date}</small>`;
+  }
+  return `${date}${row.document_issued_on && row.document_issued_on !== row.transaction_date
+    ? `<small class="expense-note">${escapeHtml(t("expense.sourceDate", {date: formatDate(row.document_issued_on)}))}</small>` : ""}`;
+}
+
+function expenseStatus(row) {
+  return `${AccountingHelp.cell(row.ui_context)}
+    ${row.lifecycle_status === "approved" ? `<small class="expense-note">${escapeHtml(t("expense.unposted"))}</small>` : ""}
+    ${row.is_future_dated === true ? `<small class="expense-note">${escapeHtml(t("expense.future", {date: formatDate(row.transaction_date)}))}</small>` : ""}`;
+}
+
+function expenseAsset(row, sourceUrl = null) {
+  const matched = row.asset_match_count === 1 && row.asset_id;
+  const sourceAmount = hasExpenseAmount(row.document_amount_eur) ? row.document_amount_eur : row.amount_eur;
+  return `<strong>${escapeHtml(matched ? row.asset_description || t("nav.assets") : t("expense.unmatched"))}</strong>
+    <small>${escapeHtml(row.counterparty_name || row.description || "")}</small>
+    <small>${transactionDocumentLink(row, sourceUrl)}${row.document_issued_on ? ` · ${escapeHtml(t("expense.sourceDate", {date: formatDate(row.document_issued_on)}))}` : ""}</small>
+    <small>${escapeHtml(t(hasExpenseAmount(row.document_amount_eur) ? "expense.sourceAmount" : "expense.recordedAmount", {amount: expenseMoney(sourceAmount)}))}</small>
+    ${matched && row.asset_match_method === "inferred" ? `<small>${escapeHtml(t("expense.inferred"))}</small>` : ""}`;
+}
+
+function expenseActions(row) {
+  const source = row.document_id ? `<a class="text-button" href="/api/document/${encodeURIComponent(row.document_id)}/content" target="_blank" rel="noreferrer">${escapeHtml(t("expense.source"))}</a>` : "";
+  const asset = row.asset_match_count === 1 && row.asset_id ? `<a class="text-button" href="/assets" data-spa>${escapeHtml(t("nav.assets"))}</a>` : "";
+  return `<div class="transaction-actions">${source}${asset}</div>`;
+}
+
+function expenseTable(rows, kind, sourceUrl = null) {
+  const amortization = kind === "amortization";
+  const headers = amortization
+    ? ["expense.assetDocument", "expense.periodDate", "transactions.status", "expense.quarterAmount"]
+    : ["expense.recognitionDate", "transactions.counterpartyDocument", "transactions.status", "expense.amount", "transactions.irpfDeduction", "IVA"];
+  const labels = headers.map(key => key === "IVA" ? key : t(key));
+  return `<div class="table-wrap"><table class="expense-table" role="table">
+    <thead role="rowgroup"><tr role="row">${labels.map(label => `<th scope="col" role="columnheader">${escapeHtml(label)}</th>`).join("")}</tr></thead>
+    <tbody role="rowgroup">${rows.map(row => {
+      const primary = `<strong>${escapeHtml(row.counterparty_name || row.description || t("transactions.noCounterparty"))}</strong><small>${transactionDocumentLink(row, sourceUrl)}</small>
+        ${hasExpenseAmount(row.document_amount_eur) && row.document_amount_eur !== row.amount_eur ? `<small>${escapeHtml(t("expense.sourceAmount", {amount: expenseMoney(row.document_amount_eur)}))}</small>` : ""}`;
+      const amount = amortization ? row.deductible_irpf_eur : row.amount_eur;
+      const amountCell = `<strong>${expenseMoney(amount)}</strong>${!hasExpenseAmount(amount) ? `<small class="expense-note">${escapeHtml(t("expense.missing"))}</small>` : ""}`;
+      const cells = amortization
+        ? [expenseAsset(row, sourceUrl) + expenseActions(row), expenseRecognition(row, true), expenseStatus(row), amountCell + (hasExpenseAmount(row.deductible_vat_eur) && Number(row.deductible_vat_eur) !== 0 ? `<small class="expense-note">IVA: ${expenseMoney(row.deductible_vat_eur)}</small>` : "")]
+        : [expenseRecognition(row), primary + expenseActions(row), expenseStatus(row), amountCell, expenseMoney(row.deductible_irpf_eur), expenseMoney(row.deductible_vat_eur)];
+      return `<tr role="row" data-transaction-id="${escapeHtml(row.transaction_id)}">${cells.map((cell, i) => `<td role="cell" data-label="${escapeHtml(labels[i])}" class="${(amortization ? i === 0 : i === 1) ? "expense-primary" : ""}"><div>${cell}</div></td>`).join("")}</tr>`;
+    }).join("")}</tbody></table></div>`;
+}
+
+function expenseSections(payload, sourceUrl = null) {
+  return ["purchase", "amortization"].map(kind => {
+    const rows = payload.rows.filter(row => row.expense_kind === kind);
+    const matching = payload.matching_counts[kind];
+    const total = payload.summary[kind].reviewed_total;
+    const emptyKey = matching ? "expense.moreRecords" : payload.period_counts[kind] ? "expense.noMatches" : "expense.empty";
+    return `<section class="panel expense-section" aria-labelledby="expenses-${kind}">
+      <header class="expense-section-header"><h3 id="expenses-${kind}">${escapeHtml(t(`expense.${kind}`))}</h3>
+        <p>${escapeHtml(t("expense.quarterTotal", {amount: expenseMoney(total.amount_eur)}))}</p>
+        ${total.missing_amount_count ? `<p>${escapeHtml(t("expense.missing"))}</p>` : ""}
+        ${kind === "amortization" ? `<p class="expense-explanation">${escapeHtml(t("expense.explanation"))}</p>` : ""}
+        <div class="expense-terms"><span>${escapeHtml(t("transactions.status"))} ${AccountingHelp.term("posting")}</span><span>IRPF ${AccountingHelp.term("IRPF")}</span>${kind === "purchase" ? `<span>IVA ${AccountingHelp.term("IVA")}</span>` : ""}</div>
+        <small>${escapeHtml(t("expense.shown", {shown: rows.length, count: matching}))}</small>
+      </header>
+      ${rows.length ? expenseTable(rows, kind, sourceUrl) : `<div class="empty-state">${escapeHtml(t(emptyKey))}</div>`}
+    </section>`;
+  }).join("");
+}
+
+function expenseMetric(kind, summary) {
+  const scopes = summary?.[kind];
+  return `<div class="metric"><span>${escapeHtml(t(`expense.${kind}`))}</span>
+    <strong>${expenseMoney(scopes?.posted?.amount_eur)}</strong><small>${escapeHtml(t("expense.posted"))}</small>
+    <small>${escapeHtml(t("expense.approved", {amount: expenseMoney(scopes?.approved?.amount_eur)}))}</small>
+    ${scopes?.future_approved?.count ? `<small>${escapeHtml(t("expense.futureAmount", {amount: expenseMoney(scopes.future_approved.amount_eur)}))}</small>` : ""}
+    ${scopes && [scopes.posted, scopes.approved].some(scope => scope.missing_amount_count) ? `<small>${escapeHtml(t("expense.missing"))}</small>` : ""}
+  </div>`;
+}
+
+function createExpensePager(fetchPage) {
+  let version = 0;
+  let current = null;
+  let currentQuery = "";
+  async function load(query, append = false, targetCount = 0) {
+    const request = ++version;
+    const previous = append && query === currentQuery ? current : null;
+    try {
+      let offset = previous?.next_offset || 0;
+      let rows = previous?.rows || [];
+      let snapshot = previous;
+      let page;
+      do {
+        page = await fetchPage({query, offset});
+        if (request !== version) return null;
+        if (snapshot && (snapshot.as_of !== page.as_of || snapshot.view_revision !== page.view_revision)) {
+          return load(query, false, Math.max(targetCount, rows.length + (append ? page.rows.length : 0)));
+        }
+        snapshot = page;
+        rows = [...new Map([...rows, ...page.rows].map(row => [row.transaction_id, row])).values()];
+        if (page.has_more && page.next_offset <= offset) throw new Error(t("expense.invalidPage"));
+        offset = page.next_offset;
+      } while (page.has_more && rows.length < targetCount);
+      current = {...page, rows};
+      currentQuery = query;
+      return current;
+    } catch (error) {
+      if (request !== version) return null;
+      throw error;
+    }
+  }
+  return {
+    load,
+    refresh: query => load(query, false, query === currentQuery ? current?.rows.length || 0 : 0),
+    invalidate: () => { version += 1; },
+  };
+}
+
+let refreshExpenseView = null;
+
+function replaceExpenseResults(results, html) {
+  const focused = document.activeElement;
+  const contained = results.contains(focused);
+  const id = contained ? focused?.id : null;
+  const copyId = contained ? focused?.getAttribute("data-copy-transaction-id") : null;
+  const statusHelp = contained ? focused?.getAttribute("data-status-help") : null;
+  const statusSubject = contained ? focused?.getAttribute("data-status-subject") : null;
+  const term = contained ? focused?.getAttribute("data-help-term") : null;
+  const termSection = term ? focused.closest(".expense-section")?.getAttribute("aria-labelledby") : null;
+  const href = contained ? focused?.getAttribute("href") : null;
+  const transactionId = href || statusHelp ? focused.closest("tr")?.dataset.transactionId : null;
+  results.innerHTML = html;
+  const replacement = id ? [...results.querySelectorAll("[id]")].find(node => node.id === id)
+    : copyId ? [...results.querySelectorAll("[data-copy-transaction-id]")].find(node => node.getAttribute("data-copy-transaction-id") === copyId)
+    : statusHelp && statusSubject ? [...results.querySelectorAll("[data-status-help]")].find(node => node.getAttribute("data-status-subject") === statusSubject)
+    : statusHelp && transactionId ? [...results.querySelectorAll("[data-status-help]")].find(node => node.closest("tr")?.dataset.transactionId === transactionId)
+    : term ? [...results.querySelectorAll("[data-help-term]")].find(node => node.getAttribute("data-help-term") === term
+      && node.closest(".expense-section")?.getAttribute("aria-labelledby") === termSection)
+    : href ? [...results.querySelectorAll("a")].find(link => link.getAttribute("href") === href
+      && link.closest("tr")?.dataset.transactionId === transactionId) : null;
+  replacement?.focus({preventScroll: true});
+}
+
+async function renderExpenses(renderGeneration = currentRenderGeneration) {
+  const token = transactionRenderToken("expense", renderGeneration);
+  const period = state.period;
+  const active = () => isActiveTransactionRenderToken(token, "expense", renderGeneration);
+  app.innerHTML = `<div class="table-toolbar expense-toolbar"><h2>${escapeHtml(t("titles.expenses"))} · ${escapeHtml(state.period)}</h2>
+    <div class="toolbar-filters"><label>${escapeHtml(t("expense.search"))}<input id="expense-search" type="search"></label>
+    <button class="primary-button" id="view-add-entry">+ ${escapeHtml(t("common.add"))}</button></div></div>
+    <div id="expense-results"></div><div id="expense-load-status" role="status" aria-live="polite"></div>
+    <button class="secondary-button" id="expense-more" hidden>${escapeHtml(t("expense.loadMore"))}</button>
+    <button class="secondary-button" id="expense-retry" hidden>${escapeHtml(t("expense.retry"))}</button>
+    <section class="panel"><p class="expense-section-header">${escapeHtml(t("expense.chartSourceNote"))}</p><div class="chart-slot" id="chart-expense-structure"></div></section>`;
+  const search = document.querySelector("#expense-search");
+  search.value = state.expensesQuery || "";
+  const sourceUrl = () => buildRouteUrl("expenses", {period, q: state.expensesQuery});
+  const results = document.querySelector("#expense-results");
+  const status = document.querySelector("#expense-load-status");
+  const more = document.querySelector("#expense-more");
+  const retry = document.querySelector("#expense-retry");
+  let busy = false;
+  let loadVersion = 0;
+  let retryAppend = false;
+  let retryRefresh = false;
+  const pager = createExpensePager(({query, offset}) => fetchJSON(`/api/expenses?period=${encodeURIComponent(period)}&q=${encodeURIComponent(query)}&offset=${offset}`));
+  async function load(append = false, refresh = false) {
+    if (!active()) return;
+    const version = ++loadVersion;
+    busy = true;
+    retry.hidden = true;
+    more.disabled = true;
+    status.textContent = t("expense.loading");
+    try {
+      const page = await (refresh ? pager.refresh(search.value.trim()) : pager.load(search.value.trim(), append));
+      if (!page || !active()) return;
+      if (refresh && document.querySelector("#status-help-dialog")?.open) return;
+      AccountingHelp.beforeRender();
+      replaceExpenseResults(results, expenseSections(page, sourceUrl()));
+      AccountingHelp.labelTables(results);
+      more.hidden = !page.has_more;
+      status.textContent = "";
+    } catch (error) {
+      if (!active()) return;
+      if (error.code === "session_forbidden") status.innerHTML = errorState(error);
+      else status.textContent = error.message;
+      retryAppend = append;
+      retryRefresh = refresh;
+      retry.hidden = error.code === "session_forbidden";
+    } finally {
+      if (active() && version === loadVersion) { busy = false; more.disabled = false; }
+    }
+  }
+  const runSearch = debounce(() => { void load(); }, 240);
+  search.addEventListener("input", () => {
+    if (!active()) return;
+    state.expensesQuery = search.value;
+    window.history.replaceState(null, "", sourceUrl());
+    pager.invalidate();
+    loadVersion += 1;
+    busy = false;
+    results.innerHTML = "";
+    more.hidden = true;
+    retry.hidden = true;
+    status.textContent = t("expense.loading");
+    runSearch();
+  });
+  more.addEventListener("click", () => { void load(true); });
+  retry.addEventListener("click", () => { void load(retryAppend, retryRefresh); });
+  document.querySelector("#view-add-entry").addEventListener("click", () => openIntake("expense_invoice"));
+  refreshExpenseView = () => {
+    if (active() && !busy && document.activeElement !== search && !document.querySelector("#status-help-dialog")?.open) void load(false, true);
+  };
+  await load();
+  if (active()) {
+    void mountViewAnalyticsChart("chart-expense-structure", buildExpenseStructureSpec, AutonomoCharts.renderHorizontalBars);
+  }
 }
 
 function transactionDocumentLink(row, sourceUrl) {
@@ -2284,7 +2593,7 @@ async function renderCurrentView() {
   try {
     if (state.view === "dashboard") await renderDashboard(renderGeneration);
     if (state.view === "income") await renderTransactions("income", renderGeneration);
-    if (state.view === "expenses") await renderTransactions("expense", renderGeneration);
+    if (state.view === "expenses") await renderExpenses(renderGeneration);
     if (state.view === "expense-detail") await renderExpenseDetail(renderGeneration);
     if (state.view === "review") await renderReview(renderGeneration);
     if (state.view === "assets") await renderAssets(renderGeneration);
@@ -2302,7 +2611,63 @@ async function renderCurrentView() {
   }
 }
 
+let dashboardReadVersion = 0;
+let dashboardRefreshVersion = 0;
+
+function captureDashboardChartState(container) {
+  if (!container.querySelector("#chart-business-result")) return null;
+  return {
+    scrollX: typeof window === "undefined" ? 0 : window.scrollX,
+    scrollY: typeof window === "undefined" ? 0 : window.scrollY,
+    slots: [...container.querySelectorAll(".chart-slot")].map(slot => ({
+      id: slot.id,
+      open: Boolean(slot.querySelector("details")?.open),
+      focused: slot.querySelector("summary") === document.activeElement,
+    })),
+  };
+}
+
+function restoreDashboardChartState(container, previous) {
+  if (!previous) return;
+  const slots = new Map([...container.querySelectorAll(".chart-slot")].map(slot => [slot.id, slot]));
+  for (const state of previous.slots) {
+    const slot = slots.get(state.id);
+    const details = slot?.querySelector("details");
+    if (details) details.open = state.open;
+    if (state.focused) slot?.querySelector("summary")?.focus({preventScroll: true});
+  }
+  if (typeof window !== "undefined") window.scrollTo({left: previous.scrollX, top: previous.scrollY, behavior: "auto"});
+}
+
+function showDashboardExpenseFailure(error) {
+  const notice = document.querySelector("#dashboard-expense-refresh-status");
+  const message = document.querySelector("#dashboard-expense-refresh-message");
+  if (!notice || !message) return;
+  document.querySelector("#dashboard-expense-refresh-retry").hidden = error.code === "session_forbidden";
+  if (error.code === "session_forbidden") {
+    message.innerHTML = errorState(error);
+  } else {
+    message.textContent = `${t("expense.refreshFailed")} ${error.message}`;
+  }
+  notice.hidden = false;
+}
+
+async function refreshDashboardExpenses(read = renderDashboard, showFailure = showDashboardExpenseFailure) {
+  const version = ++dashboardRefreshVersion;
+  const token = transactionRenderToken("dashboard");
+  try {
+    await read(currentRenderGeneration);
+    return true;
+  } catch (error) {
+    if (version === dashboardRefreshVersion && isActiveTransactionRenderToken(token, "dashboard") && state.view === "dashboard") {
+      showFailure(error);
+    }
+    return false;
+  }
+}
+
 async function renderDashboard(renderGeneration = currentRenderGeneration) {
+  const readVersion = ++dashboardReadVersion;
   const renderToken = transactionRenderToken("dashboard", renderGeneration);
   const analyticsPromise = fetchJSON(
     `/api/analytics?period=${encodeURIComponent(state.period)}`
@@ -2314,6 +2679,7 @@ async function renderDashboard(renderGeneration = currentRenderGeneration) {
     analyticsPromise,
   ]);
   if (!isActiveTransactionRenderToken(renderToken, "dashboard", renderGeneration)) return;
+  if (readVersion !== dashboardReadVersion) return;
   replaceIncomeCopyRows(data.recent_transactions || []);
   const actual = data.totals.actual;
   const forecast = data.totals.forecast;
@@ -2325,12 +2691,19 @@ async function renderDashboard(renderGeneration = currentRenderGeneration) {
   const readyCount = Number(data.readyCount ?? data.ready_count ?? forecast.transaction_count ?? 0);
   const readyKey = readyCount === 1 ? "dashboard.readyBannerOne" : "dashboard.readyBannerOther";
 
-  app.innerHTML = `
+  const chartState = captureDashboardChartState(app);
+  if (document.querySelector("#status-help-dialog")?.open) return;
+  AccountingHelp.beforeRender();
+  replaceExpenseResults(app, `
+    <div id="dashboard-expense-refresh-status" class="expense-refresh-status" role="status" aria-live="polite" hidden>
+      <div id="dashboard-expense-refresh-message"></div>
+      <button class="secondary-button" id="dashboard-expense-refresh-retry">${escapeHtml(t("expense.refreshData"))}</button>
+    </div>
     ${showApprovedActivityBanner(postingSummary)}
     <div class="metric-grid">
       ${metric(t("dashboard.incomePosted"), eur(actual.income_eur), countNoun(actual.income_transaction_count, "operations"), "accent")}
-      ${metric(t("dashboard.expensesPosted"), eur(actual.expense_gross_eur), `IRPF ${eur(actual.deductible_irpf_eur)}`)}
-      ${metric(t("dashboard.expensesForecast"), eur(forecast.expense_gross_eur), countNoun(forecast.transaction_count, "operations"), "warning")}
+      ${expenseMetric("purchase", data.expense_summary)}
+      ${expenseMetric("amortization", data.expense_summary)}
       ${metric(t("dashboard.modelo130Box"), formCardValue(m130), formSubtitle(m130, obligations[130]), formAccentClass(m130))}
       ${metric(t("dashboard.modelo303Result"), formCardValue(m303), formSubtitle(m303, obligations[303]), formAccentClass(m303))}
     </div>
@@ -2362,10 +2735,15 @@ async function renderDashboard(renderGeneration = currentRenderGeneration) {
         ${issuesList(data.open_issues)}
       </section>
     </div>
-  `;
+  `);
   renderDashboardCharts(analyticsResult);
+  restoreDashboardChartState(app, chartState);
+  AccountingHelp.labelTables(app);
   document.querySelector("#dashboard-ready-banner")?.addEventListener("click", () => {
     navigateToRoute("review");
+  });
+  document.querySelector("#dashboard-expense-refresh-retry").addEventListener("click", () => {
+    void refreshDashboardExpenses();
   });
 }
 
@@ -2388,21 +2766,10 @@ async function renderTransactions(entryType, renderGeneration = currentRenderGen
         <button class="primary-button" id="view-add-entry"><span aria-hidden="true">+</span> ${escapeHtml(t("common.add"))}</button>
       </div>
     </div>
-    ${entryType === "expense" ? `
-    <section class="panel">
-      <div class="chart-slot" id="chart-expense-structure"></div>
-    </section>` : ""}
     <section class="panel">
       <div id="transactions-table">${transactionTable(rows, {copyable: entryType === "income" && Boolean(state.copyTargetPeriodKey), sourceUrl: sourceUrl()})}</div>
     </section>
   `;
-  if (entryType === "expense") {
-    mountViewAnalyticsChart(
-      "chart-expense-structure",
-      buildExpenseStructureSpec,
-      AutonomoCharts.renderHorizontalBars
-    );
-  }
   document.querySelector("#view-add-entry").addEventListener("click", () => {
     openIntake(entryType === "income" ? "income_invoice" : "expense_invoice");
   });
@@ -4452,6 +4819,29 @@ function applyViewState() {
 
 if (typeof globalThis !== "undefined") {
   globalThis.__AUTONOMO_WEB_UI_TEST_HOOKS__ = {
+    createExpensePager,
+    replaceExpenseResults,
+    captureDashboardChartState,
+    restoreDashboardChartState,
+    refreshDashboardExpenses,
+    expenseLocaleKeys: () => ({ru: Object.keys(messages.ru).filter(key => key.startsWith("expense.")), en: Object.keys(messages.en).filter(key => key.startsWith("expense."))}),
+    renderExpensePreview: (payload, locale = "ru", sourceUrl = null) => {
+      const previousLocale = state.locale;
+      state.locale = locale;
+      AccountingHelp.setLocale(locale);
+      try { return expenseSections(payload, sourceUrl); } finally { state.locale = previousLocale; AccountingHelp.setLocale(previousLocale); }
+    },
+    renderExpenseMetric: (kind, summary, locale = "ru") => {
+      const previousLocale = state.locale;
+      state.locale = locale;
+      try { return expenseMetric(kind, summary); } finally { state.locale = previousLocale; }
+    },
+    renderRecentPreview: (rows, locale = "ru") => {
+      const previousLocale = state.locale;
+      state.locale = locale;
+      AccountingHelp.setLocale(locale);
+      try { return transactionTable(rows); } finally { state.locale = previousLocale; AccountingHelp.setLocale(previousLocale); }
+    },
     buildReviewDraftStorageKey,
     buildRequirementSteps,
     countNoun: (value, noun, locale) => {
@@ -4495,6 +4885,13 @@ if (typeof globalThis !== "undefined") {
 }
 
 if (hasDOM) {
+  const refreshVisibleExpenseData = () => {
+    if (document.visibilityState !== "visible" || dialog?.open || postingConfirmDialog?.open || document.querySelector("#status-help-dialog")?.open) return;
+    if (state.view === "expenses") refreshExpenseView?.();
+    if (state.view === "dashboard") void refreshDashboardExpenses();
+  };
+  document.addEventListener("visibilitychange", refreshVisibleExpenseData);
+  window.setInterval(refreshVisibleExpenseData, 60000);
   localeButtons.forEach((button) => {
     button.addEventListener("click", () => {
       void changeLocale(button.dataset.locale);

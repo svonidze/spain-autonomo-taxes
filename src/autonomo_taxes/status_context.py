@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import date
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -47,12 +48,14 @@ class StatusContext:
         inbox_root: Path | None = None,
         archive_root: Path | None = None,
         resolve_path: Callable[[str], Path] = Path,
+        today: date | None = None,
     ) -> None:
         self.connection = connection
         self.db = LedgerDB(connection)
         self.inbox_root = inbox_root
         self.archive_root = archive_root
         self.resolve_path = resolve_path
+        self.today = today
         self._previews: dict[str, dict[str, dict[str, Any]]] = {}
         self._preview_payloads: dict[str, dict[str, Any]] = {}
         self._transactions: dict[str, dict[str, Any]] = {}
@@ -105,6 +108,7 @@ class StatusContext:
                 period_key=period,
                 inbox_root=self.inbox_root,
                 archive_root=self.archive_root,
+                today=self.today,
             )
             self._previews[period] = {r["transaction_id"]: r for r in result["items"]}
             self._preview_payloads[period] = result

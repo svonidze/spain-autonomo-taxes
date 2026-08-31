@@ -27,7 +27,7 @@ def context_app(tmp_path, monkeypatch):
     monkeypatch.setattr(
         status_context,
         "build_posting_preview",
-        lambda db, **kwargs: build_posting_preview(
+        lambda db, today=None, **kwargs: build_posting_preview(
             db, today=date(2032, 4, 1), **kwargs
         ),
     )

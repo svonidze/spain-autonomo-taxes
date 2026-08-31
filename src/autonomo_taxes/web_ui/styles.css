@@ -498,6 +498,37 @@ button:focus-visible {
   overflow-x: auto;
 }
 
+.expense-section { margin-bottom: 20px; }
+.expense-section-header { padding: 18px 20px; border-bottom: 1px solid var(--line); }
+.expense-section-header h3 { margin: 0 0 8px; }
+.expense-section-header p { margin: 5px 0; }
+.expense-section-header small, .expense-note, .expense-primary small { color: var(--muted); }
+.expense-explanation { max-width: 80ch; }
+.expense-terms { display: flex; flex-wrap: wrap; gap: 12px; margin: 8px 0; font-size: 0.85rem; }
+.expense-note, .expense-primary strong, .expense-primary small { display: block; white-space: normal; margin-top: 4px; }
+.expense-table td { white-space: normal; overflow-wrap: anywhere; }
+.expense-table td > div { min-width: 0; }
+.expense-table .expense-primary { max-width: 340px; }
+.expense-toolbar label { display: grid; gap: 5px; font-size: 0.85rem; }
+.expense-toolbar input { width: min(340px, 42vw); }
+.expense-toolbar .toolbar-filters { align-items: end; }
+#expense-load-status { margin: 12px 0; }
+#expense-more, #expense-retry { margin-bottom: 20px; }
+.expense-refresh-status { padding: 12px 16px; border: 1px solid var(--line); border-radius: 5px; margin-bottom: 16px; }
+.expense-refresh-status[hidden] { display: none; }
+
+@media (max-width: 700px) {
+  .expense-toolbar, .expense-toolbar .toolbar-filters { display: grid; grid-template-columns: minmax(0, 1fr); justify-content: stretch; width: 100%; }
+  .expense-toolbar input { width: 100%; }
+  .expense-table, .expense-table tbody, .expense-table tr, .expense-table td { display: block; width: 100%; }
+  .expense-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .expense-table tr { padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .expense-table td { display: grid; grid-template-columns: minmax(100px, 38%) minmax(0, 1fr); gap: 12px; border: 0; padding: 7px 12px; }
+  .expense-table td::before { content: attr(data-label); color: var(--muted); font-size: 0.8rem; }
+  .expense-table .expense-primary { max-width: none; }
+  .expense-table .transaction-actions { flex-wrap: wrap; }
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

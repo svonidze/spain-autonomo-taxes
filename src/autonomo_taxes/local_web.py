@@ -36,6 +36,7 @@ except Exception:  # pragma: no cover - dependency guard
 
 from .analytics_series import AnalyticsQuery, build_analytics
 from .fx_reference import FXReferenceError, fetch_eur_rate
+from .expense_view import enrich_expense_context, expense_page, expense_summary
 from .ledger_db import LedgerDB, LedgerDbError, StaleRowVersionError, open as open_ledger_db
 from .legacy_paths import LegacyPathResolver
 from .posting import build_posting_preview
@@ -401,15 +402,22 @@ class LocalAccountingApp:
 
     def dashboard(self, period_key: str) -> dict[str, Any]:
         period = _validate_period(period_key)
+        today = date.today()
         cached = self._load_cached_dashboard(period)
         with closing(self._connect()) as connection:
             period_row = self._period_row(connection, period)
-            context_builder = self._status_context(connection)
+            context_builder = self._status_context(connection, today=today)
             totals = self._transaction_totals(connection, period_row["period_id"])
+            expense_rows = self._transactions(
+                connection, period_id=period_row["period_id"], entry_type="expense", limit=-1, today=today,
+                context_builder=context_builder,
+            )
             recent = self._transactions(
                 connection,
                 period_id=period_row["period_id"],
-                limit=8, context_builder=context_builder,
+                limit=8,
+                today=today,
+                context_builder=context_builder,
             )
             open_issues = self._issues(
                 connection,
@@ -449,6 +457,8 @@ class LocalAccountingApp:
         return {
             "period": dict(period_row),
             "totals": totals,
+            "expense_summary": expense_summary(expense_rows),
+            "expense_view_as_of": today.isoformat(),
             "recent_transactions": recent,
             "open_issues": open_issues,
             "obligations": obligations,
@@ -548,6 +558,25 @@ class LocalAccountingApp:
                 lifecycle_status=lifecycle_status,
                 query=query,
                 limit=min(max(limit, 1), 500),
+            )
+
+    def expenses(
+        self, period_key: str, *, query: str | None = None,
+        offset: int = 0, limit: int = 250, today: date | None = None,
+    ) -> dict[str, Any]:
+        period = _validate_period(period_key)
+        if offset < 0 or not 1 <= limit <= 500:
+            raise LocalWebError("Expense page requires offset >= 0 and limit between 1 and 500")
+        effective_today = today or date.today()
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN")
+            period_row = self._period_row(connection, period)
+            rows = self._transactions(
+                connection, period_id=period_row["period_id"], entry_type="expense",
+                limit=-1, today=effective_today,
+            )
+            return expense_page(
+                rows, period=period, today=effective_today, query=query, offset=offset, limit=limit,
             )
 
     def transaction_detail(self, transaction_id: str) -> dict[str, Any]:
@@ -754,9 +783,9 @@ class LocalAccountingApp:
                 limit=250,
             )
 
-    def _status_context(self, connection: sqlite3.Connection) -> StatusContext:
+    def _status_context(self, connection: sqlite3.Connection, *, today: date | None = None) -> StatusContext:
         return StatusContext(connection, inbox_root=self.config.inbox_root,
-                             archive_root=self.config.archive_root, resolve_path=self.resolve_document_path)
+                             archive_root=self.config.archive_root, resolve_path=self.resolve_document_path, today=today)
 
     def assets(self, period_key: str | None = None) -> list[dict[str, Any]]:
         with closing(self._connect()) as connection:
@@ -1404,6 +1433,7 @@ class LocalAccountingApp:
         lifecycle_status: str | None = None,
         query: str | None = None,
         limit: int,
+        today: date | None = None,
         context_builder: StatusContext | None = None,
     ) -> list[dict[str, Any]]:
         where = ["t.period_id = ?"]
@@ -1439,9 +1469,13 @@ class LocalAccountingApp:
                 t.lifecycle_status,
                 t.row_version,
                 t.document_id,
+                p.period_key,
                 c.display_name AS counterparty_name,
                 c.country_code,
                 d.document_number,
+                d.issued_on AS document_issued_on,
+                d.total_minor AS document_total_minor,
+                d.currency AS document_currency,
                 d.document_type,
                 d.lifecycle_status AS document_status,
                 tt.tax_code,
@@ -1452,6 +1486,7 @@ class LocalAccountingApp:
                 COUNT(DISTINCT i.validation_issue_id) AS open_issue_count,
                 COUNT(DISTINCT CASE WHEN i.blocking=1 THEN i.validation_issue_id END) AS blocking_issue_count
             FROM transactions t
+            JOIN periods p ON p.period_id = t.period_id
             LEFT JOIN counterparties c ON c.counterparty_id = t.counterparty_id
             LEFT JOIN documents d ON d.document_id = t.document_id
             LEFT JOIN (
@@ -1472,16 +1507,19 @@ class LocalAccountingApp:
                 )
             WHERE {" AND ".join(where)}
             GROUP BY t.transaction_id
-            ORDER BY t.transaction_date DESC, t.created_at DESC
+            ORDER BY t.transaction_date DESC, t.created_at DESC, t.transaction_id DESC
             LIMIT ?
             """,
             parameters,
         ).fetchall()
-        builder = context_builder or self._status_context(connection)
+        effective_today = today or date.today()
+        builder = context_builder or self._status_context(connection, today=effective_today)
         builder.prime_transactions([row["transaction_id"] for row in rows])
-        return [
+        result = [
             {
                 **_row_dict(row),
+                "document_amount_eur": _minor_to_text(row["document_total_minor"])
+                if row["document_currency"] == "EUR" else None,
                 "ui_context": builder.transaction(row["transaction_id"]),
                 "amount_original": _minor_to_text(row["amount_minor"]),
                 "amount_eur": _minor_to_text(
@@ -1500,6 +1538,9 @@ class LocalAccountingApp:
             }
             for row in rows
         ]
+        return enrich_expense_context(
+            connection, result, period_id=period_id, today=effective_today,
+        )
 
     def _issues(
         self,
@@ -1798,6 +1839,15 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                         entry_type=_optional_query(query, "entry_type"),
                         lifecycle_status=_optional_query(query, "status"),
                         query=_optional_query(query, "q"),
+                    )
+                )
+            elif parsed.path == "/api/expenses":
+                self._send_json(
+                    self.server.app.expenses(
+                        _single_query(query, "period"),
+                        query=_optional_query(query, "q"),
+                        offset=int(_optional_query(query, "offset") or "0"),
+                        limit=int(_optional_query(query, "limit") or "250"),
                     )
                 )
             elif parsed.path.startswith("/api/transactions/"):

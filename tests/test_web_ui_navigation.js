@@ -117,10 +117,12 @@ function createHarness({initial = "/review?period=2026-Q2", deferred = false, de
   const historyEntries = [{url: location.pathname + location.search + location.hash, state: null}];
   let historyIndex = 0;
   const listeners = new Map();
+  const intervals = [];
   const window = {
     location,
     scrollY: 0,
     scrollTo() {},
+    setInterval(callback, delay) { intervals.push({callback, delay}); return intervals.length; },
     history: {
       get state() { return historyEntries[historyIndex].state; },
       get length() { return historyEntries.length; },
@@ -201,11 +203,18 @@ function createHarness({initial = "/review?period=2026-Q2", deferred = false, de
       periods: [{period_key: "2026-Q2", status: "closed"}, {period_key: "2026-Q3", status: "open"}],
     }));
     const period = new URL(text, location.origin).searchParams.get("period");
+    if (text.startsWith("/api/expenses?")) return Promise.resolve(response({
+      period, as_of: "2026-08-31", rows: [], matching_counts: {purchase: 0, amortization: 0},
+      period_counts: {purchase: 0, amortization: 0}, has_more: false, next_offset: 0,
+      summary: Object.fromEntries(["purchase", "amortization"].map(kind => [kind, {
+        reviewed_total: {amount_eur: "0.00", count: 0, missing_amount_count: 0},
+      }])),
+    }));
     if (text.startsWith("/api/transactions?")) return Promise.resolve(response(rowsFor(period)));
     if (text.startsWith("/api/issues?")) return Promise.resolve(response([]));
     if (text.startsWith("/api/documents?")) return Promise.resolve(response([]));
     if (text.startsWith("/api/review/posting-preview?")) return Promise.resolve(response({period, summary: {}, ready: [], deferred: [], blocked: []}));
-    if (text.startsWith("/api/analytics?")) return Promise.resolve(response({datasets: {review_aging: {counts: {}}}}));
+    if (text.startsWith("/api/analytics?")) return Promise.resolve(response({datasets: {review_aging: {counts: {}}, expense_structure: {buckets: []}}}));
     throw new Error(`Unexpected fetch: ${text}`);
   };
   const storage = new Map();
@@ -245,7 +254,7 @@ function createHarness({initial = "/review?period=2026-Q2", deferred = false, de
     await flush();
   };
   const inspect = () => vm.runInContext("({period: state.period, view: state.view, selectedReviewId: state.review.selectedReviewId, workItem: state.review.workItem, html: app.innerHTML, disabled: periodSelect.disabled})", context);
-  return {context, window, requests, deferredRequests, flush, click, clickNav, clickStatusHelp, applyExternalLocation, inspect, app: element("#app"), periodSelect: element("#period-select"), storage, element};
+  return {context, window, intervals, requests, deferredRequests, flush, click, clickNav, clickStatusHelp, applyExternalLocation, inspect, app: element("#app"), periodSelect: element("#period-select"), storage, element};
 }
 
 async function run(name, test) {
@@ -259,6 +268,42 @@ async function run(name, test) {
 }
 
 async function main() {
+  await run("posted expense detail returns to the two-section expense query", async () => {
+    const source = "/expenses?period=2026-Q2&q=supplier";
+    const h = createHarness({initial: source, postedIds: [Q2_ID]}); await h.flush();
+    assert.equal(h.element("#expense-search").value, "supplier");
+    await h.click(`/expenses/${Q2_ID}?period=2026-Q2&returnTo=${encodeURIComponent(source)}`);
+    assert.match(h.app.innerHTML, /expense-detail/);
+    assert.doesNotMatch(h.app.innerHTML, /review-form|review-primary-button/);
+    assert.equal(h.requests.some(url => url.startsWith("/api/review/work-item")), false);
+    await h.click(source);
+    assert.equal(h.element("#expense-search").value, "supplier");
+    assert.match(h.element("#expense-results").innerHTML, /expenses-amortization/);
+    assert.match(h.element("#expense-results").innerHTML, /expenses-purchase/);
+  });
+
+  await run("expense refresh respects the active route and open status help", async () => {
+    const h = createHarness({initial: "/expenses?period=2026-Q2"}); await h.flush();
+    assert.equal(h.inspect().view, "expenses");
+    assert.match(h.element("#expense-results").innerHTML, /expenses-amortization/);
+    assert.match(h.element("#expense-results").innerHTML, /expenses-purchase/);
+    assert.equal(h.intervals.length, 1);
+    assert.equal(h.intervals[0].delay, 60000);
+    h.context.document.visibilityState = "visible";
+    const countReads = () => h.requests.filter(url => url.startsWith("/api/expenses?")).length;
+    const initialReads = countReads();
+    h.intervals[0].callback(); await h.flush();
+    assert.equal(countReads(), initialReads + 1);
+    h.element("#status-help-dialog").open = true;
+    h.intervals[0].callback(); await h.flush();
+    assert.equal(countReads(), initialReads + 1);
+    h.element("#status-help-dialog").open = false;
+    await h.click("/review?period=2026-Q2");
+    h.intervals[0].callback(); await h.flush();
+    assert.equal(countReads(), initialReads + 1);
+    assert.equal(h.inspect().view, "review");
+  });
+
   await run("posted legacy review uses the read-only expense page before work-item or draft", async () => {
     const h = createHarness({initial: `/review/${Q2_ID}?period=2026-Q3`, postedIds: [Q2_ID]});
     await h.flush();
