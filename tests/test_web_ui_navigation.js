@@ -94,7 +94,7 @@ function response(payload, ok = true) {
   };
 }
 
-function createHarness({initial = "/review?period=2026-Q2", deferred = false, deferDetailAt = null, deferDetailCalls = [], failDetailIds = [], workItemFactory = null} = {}) {
+function createHarness({initial = "/review?period=2026-Q2", deferred = false, deferDetailAt = null, deferDetailCalls = [], failDetailIds = [], workItemFactory = null, postedIds = []} = {}) {
   const elements = new Map();
   const element = (selector) => {
     if (!elements.has(selector)) elements.set(selector, new FakeElement());
@@ -173,6 +173,16 @@ function createHarness({initial = "/review?period=2026-Q2", deferred = false, de
       throw new Error(`Unexpected non-GET fetch: ${options.method} ${text}`);
     }
     requests.push(text);
+    const transactionMatch = /^\/api\/transactions\/([^/?]+)$/.exec(text);
+    if (transactionMatch) {
+      const id = decodeURIComponent(transactionMatch[1]);
+      return Promise.resolve(response({
+        transaction: {transaction_id: id, entry_type: "expense", lifecycle_status: postedIds.includes(id) ? "posted" : "needs_review"},
+        period: {period_key: id === Q2_ID ? "2026-Q2" : "2026-Q3"},
+        document: null, counterparty: null,
+        tax_treatments: [{treatment_type: "invoice_review", jurisdiction: "ES", notes: "Synthetic saved note"}],
+      }));
+    }
     const detailMatch = /review_id=transaction%3A([^&]+)/.exec(text);
     if (detailMatch) {
       detailRequests += 1;
@@ -249,10 +259,20 @@ async function run(name, test) {
 }
 
 async function main() {
-  await run("R1 table opens an ID-only detail route", async () => {
+  await run("posted legacy review uses the read-only expense page before work-item or draft", async () => {
+    const h = createHarness({initial: `/review/${Q2_ID}?period=2026-Q3`, postedIds: [Q2_ID]});
+    await h.flush();
+    assert.equal(h.window.location.pathname, `/expenses/${Q2_ID}`);
+    assert.equal(h.window.location.search, "?period=2026-Q2");
+    assert.match(h.app.innerHTML, /Synthetic saved note/);
+    assert.doesNotMatch(h.app.innerHTML, /review-form|review-primary-button/);
+    assert.equal(h.requests.some(url => url.startsWith("/api/review/work-item")), false);
+    assert.equal(h.storage.has(`autonomo.review-draft:${Q2_ID}`), false);
+  });
+  await run("R1 table opens a raw-ID detail route with list context", async () => {
     const h = createHarness(); await h.flush();
     const html = vm.runInContext(`reviewTransactionTable([{transaction_id: ${JSON.stringify(Q2_ID)}, lifecycle_status: "needs_review", transaction_date: "2026-05-15"}])`, h.context);
-    assert.match(html, new RegExp(`href="/review/${Q2_ID}"`));
+    assert.match(html, new RegExp(`href="/review/${Q2_ID}\\?period=2026-Q2"`));
     assert.doesNotMatch(html, /transaction%3A/);
   });
 
@@ -385,7 +405,7 @@ async function main() {
     const initialLength = h.window.history.length;
     await h.flush();
     assert.equal(h.inspect().period, "2026-Q2");
-    assert.equal(h.window.location.pathname + h.window.location.search + h.window.location.hash, `/review/${Q2_ID}#synthetic-proof`);
+    assert.equal(h.window.location.pathname + h.window.location.search + h.window.location.hash, `/review/${Q2_ID}?period=2026-Q2#synthetic-proof`);
     assert.equal(h.window.history.length, initialLength);
   });
 
@@ -437,6 +457,7 @@ async function main() {
     await h.click(`/review/${Q2_ID}`);
     const refresh = h.element("#review-refresh-button");
     for (const callback of refresh.listeners.get("click") || []) callback({target: refresh});
+    await h.flush();
     await h.click("/review?period=2026-Q2");
     assert.equal(h.deferredRequests.length, 1);
     h.deferredRequests[0].resolve(response(h.deferredRequests[0].payload));
@@ -456,7 +477,9 @@ async function main() {
     await h.click(`/review/${Q2_ID}`);
     const refresh = h.element("#review-refresh-button");
     for (const callback of refresh.listeners.get("click") || []) callback({target: refresh});
+    await h.flush();
     for (const callback of refresh.listeners.get("click") || []) callback({target: refresh});
+    await h.flush();
     assert.equal(h.deferredRequests.length, 2);
     h.deferredRequests[1].resolve(response(h.deferredRequests[1].payload));
     await h.flush();

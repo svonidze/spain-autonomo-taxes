@@ -131,6 +131,16 @@ const messages = {
     "titles.dashboard": "Обзор",
     "titles.income": "Доходы",
     "titles.expenses": "Расходы",
+    "expense.open": "Открыть расход",
+    "expense.title": "Просмотр расхода",
+    "expense.notes": "Примечания",
+    "expense.noNotes": "Примечаний нет",
+    "expense.readOnly": "Только просмотр сохранённых данных",
+    "expense.back": "К списку: {title} · {period}",
+    "expense.notFound": "Расход не найден",
+    "expense.wrongType": "Это не расход",
+    "expense.refresh": "Обновить данные",
+    "expense.description": "Описание",
     "titles.review": "Проверка",
     "titles.assets": "Активы",
     "titles.taxes": "Налоги и сроки",
@@ -545,6 +555,16 @@ const messages = {
     "titles.dashboard": "Overview",
     "titles.income": "Income",
     "titles.expenses": "Expenses",
+    "expense.open": "Open expense",
+    "expense.title": "Expense details",
+    "expense.notes": "Notes",
+    "expense.noNotes": "No notes",
+    "expense.readOnly": "Read-only saved data",
+    "expense.back": "Back to {title} · {period}",
+    "expense.notFound": "Expense not found",
+    "expense.wrongType": "This is not an expense",
+    "expense.refresh": "Refresh data",
+    "expense.description": "Description",
     "titles.review": "Review",
     "titles.assets": "Assets",
     "titles.taxes": "Taxes and deadlines",
@@ -1041,6 +1061,10 @@ const state = {
   bootstrap: null,
   period: null,
   view: "dashboard",
+  expenseDetail: {transactionId: null, data: null},
+  expensesQuery: "",
+  returnTo: null,
+  detailPeriodResolved: false,
   intakeKind: "expense_invoice",
   intakeSource: "upload",
   googlePicker: null,
@@ -1136,6 +1160,7 @@ const ROUTE_VIEWS = {
   "/contacts": "contacts",
 };
 const REVIEW_DETAIL_RE = /^\/review\/([0-9a-fA-F-]{32,36})$/;
+const EXPENSE_DETAIL_RE = /^\/expenses\/([0-9a-fA-F-]{32,36})$/;
 const PERIOD_ROUTE_PATHS = new Set(["/dashboard", "/income", "/expenses", "/review", "/assets", "/taxes"]);
 
 function parseRoute(pathname) {
@@ -1143,20 +1168,62 @@ function parseRoute(pathname) {
   const normalized = path === "" ? "/" : path;
   const detail = REVIEW_DETAIL_RE.exec(normalized);
   if (detail) return {view: "review", reviewId: detail[1]};
+  const expense = EXPENSE_DETAIL_RE.exec(normalized);
+  if (expense) return {view: "expense-detail", reviewId: null, transactionId: expense[1]};
   if (ROUTE_VIEWS[normalized]) return {view: ROUTE_VIEWS[normalized], reviewId: null};
   return null;
 }
 
 function routePathFor(view, reviewId = null) {
   if (view === "review" && reviewId) return `/review/${encodeURIComponent(String(reviewId).replace(/^transaction:/, ""))}`;
+  if (view === "expense-detail" && reviewId) return `/expenses/${encodeURIComponent(reviewId)}`;
   if (view === "review") return "/review";
   return `/${view}`;
 }
 
-function buildRouteUrl(view, {period = state.period, reviewId = null} = {}) {
-  const path = routePathFor(view, reviewId);
-  if (!PERIOD_ROUTE_PATHS.has(path) || !period) return path;
-  return `${path}?period=${encodeURIComponent(period)}`;
+function buildRouteUrl(view, {period = state.period, reviewId = null, transactionId = null, returnTo = null, q = ""} = {}) {
+  const path = routePathFor(view, transactionId || reviewId);
+  const query = new URLSearchParams();
+  if ((PERIOD_ROUTE_PATHS.has(`/${view}`) || view === "expense-detail") && period) query.set("period", period);
+  if (view === "expenses" && q) query.set("q", q);
+  if (returnTo && (view === "expense-detail" || (view === "review" && reviewId))) query.set("returnTo", returnTo);
+  return query.size ? `${path}?${query}` : path;
+}
+
+function detailRouteActive(view, id, generation) {
+  return generation === currentRenderGeneration && state.view === view
+    && (view === "expense-detail" ? state.expenseDetail.transactionId : selectedReviewTransactionId()) === id;
+}
+
+function safeReturnUrl(value, period, fallbackView = "expenses") {
+  const fallback = buildRouteUrl(fallbackView, {period});
+  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return fallback;
+  try {
+    const url = new URL(value, window.location.origin);
+    if (url.origin !== window.location.origin || url.hash || !["/expenses", "/review", "/dashboard"].includes(url.pathname)) return fallback;
+    const allowed = url.pathname === "/expenses" ? ["period", "q"] : ["period"];
+    if ([...url.searchParams.keys()].some((key) => !allowed.includes(key) || url.searchParams.getAll(key).length !== 1)) return fallback;
+    const sourcePeriod = routePeriodFromQuery(url.search);
+    if (!sourcePeriod) return fallback;
+    return buildRouteUrl(ROUTE_VIEWS[url.pathname], {period: sourcePeriod, q: url.searchParams.get("q") || ""});
+  } catch {
+    return fallback;
+  }
+}
+
+function applyDetailPeriod(data, view, id) {
+  const period = data.period.period_key;
+  state.period = period;
+  state.detailPeriodResolved = true;
+  if (!state.bootstrap.periods.some((row) => row.period_key === period)) {
+    state.bootstrap.periods.push({period_key: period, status: data.period.status});
+    if (periodSelect) periodSelect.innerHTML = state.bootstrap.periods.map((row) => `<option value="${escapeHtml(row.period_key)}">${escapeHtml(row.period_key)}</option>`).join("");
+  }
+  if (periodSelect) periodSelect.value = period;
+  if (state.returnTo) state.returnTo = safeReturnUrl(state.returnTo, period, view === "review" ? "review" : "expenses");
+  const url = buildRouteUrl(view, {period, reviewId: view === "review" ? id : null, transactionId: view === "expense-detail" ? id : null, returnTo: state.returnTo});
+  if (`${window.location.pathname}${window.location.search}` !== url) window.history.replaceState(window.history.state, "", `${url}${window.location.hash || ""}`);
+  applyViewState();
 }
 
 function routePeriodFromQuery(search) {
@@ -1188,6 +1255,7 @@ function selectedReviewTransactionId() {
 
 function applyRouteFromLocation() {
   if (!state.bootstrap) return false;
+  if (hasDOM) closePostingConfirmDialog();
   const route = parseRoute(window.location.pathname);
   const reviewId = route?.view === "review" && route.reviewId
     ? reviewIdFromTransaction(route.reviewId)
@@ -1201,6 +1269,8 @@ function applyRouteFromLocation() {
     state.review.error = "";
   }
   state.review.selectedReviewId = reviewId;
+  state.expenseDetail = {transactionId: route?.transactionId || null, data: null};
+  ++currentReviewRequest;
   if (!route) {
     ++currentRenderGeneration;
     AccountingHelp.beforeRender();
@@ -1214,23 +1284,39 @@ function applyRouteFromLocation() {
       || state.period || state.bootstrap.default_period;
     if (state.period) query.set("period", state.period);
   }
-  if (reviewId) query.delete("period");
   const search = query.toString() ? `?${query}` : "";
   if (search !== window.location.search) {
     window.history.replaceState(window.history.state, "",
       `${window.location.pathname}${search}${window.location.hash}`);
   }
+  state.expensesQuery = route.view === "expenses" ? query.get("q") || "" : "";
+  state.returnTo = (route.reviewId || route.transactionId) ? query.get("returnTo") : null;
+  state.detailPeriodResolved = false;
   state.view = route.view;
   applyViewState();
   void renderCurrentView();
   return true;
 }
 
-function navigateToRoute(view, {reviewId = null, period = state.period, replace = false} = {}) {
-  const url = buildRouteUrl(view, {reviewId, period});
+function navigateToUrl(url, {replace = false} = {}) {
   if (replace) window.history.replaceState(null, "", url);
   else window.history.pushState(null, "", url);
   applyRouteFromLocation();
+}
+
+function navigateToRoute(view, {replace = false, ...options} = {}) {
+  navigateToUrl(buildRouteUrl(view, options), {replace});
+}
+
+function handleSpaClick(event) {
+  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  if (!(event.target instanceof Element)) return;
+  const link = event.target.closest("a[data-spa]");
+  if (!link || link.hasAttribute("target") || link.hasAttribute("download")) return;
+  const url = new URL(link.getAttribute("href"), window.location.origin);
+  if (url.origin !== window.location.origin || !parseRoute(url.pathname)) return;
+  event.preventDefault();
+  navigateToUrl(`${url.pathname}${url.search}`);
 }
 
 function deepClone(value) {
@@ -1761,7 +1847,7 @@ function casillas(values, keys, emptyMessage = t("taxes.calculationMissing")) {
     </div>`;
 }
 
-function transactionTable(rows, {copyable = false} = {}) {
+function transactionTable(rows, {copyable = false, sourceUrl = null} = {}) {
   return `
     <div class="table-wrap">
       <table>
@@ -1772,7 +1858,7 @@ function transactionTable(rows, {copyable = false} = {}) {
               <td>${formatDate(row.transaction_date)}</td>
               <td class="cell-primary">
                 <strong>${escapeHtml(row.counterparty_name || row.description || t("transactions.noCounterparty"))}</strong>
-                <small>${escapeHtml(row.document_number || row.description || "")}</small>
+                <small>${transactionDocumentLink(row, sourceUrl)}</small>
               </td>
               <td>${AccountingHelp.cell(row.ui_context)}</td>
               <td class="amount">${row.amount_eur ? eur(row.amount_eur) : `${escapeHtml(row.amount_original || "—")} ${escapeHtml(row.currency || "")}`}</td>
@@ -1783,6 +1869,14 @@ function transactionTable(rows, {copyable = false} = {}) {
         </tbody>
       </table>
     </div>`;
+}
+
+function transactionDocumentLink(row, sourceUrl) {
+  if (row.entry_type !== "expense" || !["posted", "included_in_snapshot"].includes(row.lifecycle_status)) {
+    return escapeHtml(row.document_number || row.description || "");
+  }
+  const url = buildRouteUrl("expense-detail", {transactionId: row.transaction_id, returnTo: sourceUrl});
+  return `<a class="expense-document-link" href="${escapeHtml(url)}" data-spa>${escapeHtml(row.document_number || t("expense.open"))}</a>`;
 }
 
 function transactionActions(row, copyable) {
@@ -2178,7 +2272,7 @@ async function init() {
 }
 
 async function renderCurrentView() {
-  if (!app || (!state.period && !state.review.selectedReviewId)) return;
+  if (!app || (!state.period && !state.expenseDetail.transactionId && !state.review.selectedReviewId)) return;
   AccountingHelp.beforeRender();
   AccountingHelp.setLocale(state.locale);
   app.setAttribute("aria-busy", "true");
@@ -2191,12 +2285,18 @@ async function renderCurrentView() {
     if (state.view === "dashboard") await renderDashboard(renderGeneration);
     if (state.view === "income") await renderTransactions("income", renderGeneration);
     if (state.view === "expenses") await renderTransactions("expense", renderGeneration);
+    if (state.view === "expense-detail") await renderExpenseDetail(renderGeneration);
     if (state.view === "review") await renderReview(renderGeneration);
     if (state.view === "assets") await renderAssets(renderGeneration);
     if (state.view === "taxes") await renderTaxes(renderGeneration);
     if (state.view === "contacts") await renderContacts(renderGeneration);
   } catch (error) {
-    if (renderGeneration === currentRenderGeneration) app.innerHTML = errorState(error);
+    if (renderGeneration !== currentRenderGeneration) return;
+    if (state.view === "expense-detail") {
+      if (refreshButton) refreshButton.disabled = false;
+      const back = expenseBackLink(safeReturnUrl(state.returnTo, state.period));
+      app.innerHTML = `${back}${error.status === 404 ? `<div class="empty-state">${escapeHtml(t("expense.notFound"))}</div>` : errorState(error)}`;
+    } else app.innerHTML = errorState(error);
   } finally {
     if (renderGeneration === currentRenderGeneration) { app.setAttribute("aria-busy", "false"); AccountingHelp.labelTables(app); }
   }
@@ -2255,7 +2355,7 @@ async function renderDashboard(renderGeneration = currentRenderGeneration) {
     <div class="dashboard-grid">
       <section class="panel">
         <header class="panel-header"><h2>${escapeHtml(t("dashboard.recentTransactions"))}</h2><small>${escapeHtml(state.period)}</small></header>
-        ${transactionTable(data.recent_transactions, {copyable: Boolean(state.copyTargetPeriodKey)})}
+        ${transactionTable(data.recent_transactions, {copyable: Boolean(state.copyTargetPeriodKey), sourceUrl: buildRouteUrl("dashboard")})}
       </section>
       <section class="panel">
         <header class="panel-header"><h2>${escapeHtml(t("dashboard.needsAttention"))}</h2><small>${data.open_issues.length}</small></header>
@@ -2272,8 +2372,10 @@ async function renderDashboard(renderGeneration = currentRenderGeneration) {
 async function renderTransactions(entryType, renderGeneration = currentRenderGeneration) {
   const renderToken = transactionRenderToken(entryType, renderGeneration);
   let latestSearchRequestId = 0;
+  const initialQuery = entryType === "expense" ? state.expensesQuery : "";
+  const sourceUrl = () => buildRouteUrl(entryType === "expense" ? "expenses" : "income", {q: state.expensesQuery});
   const rows = await fetchJSON(
-    `/api/transactions?period=${encodeURIComponent(state.period)}&entry_type=${entryType}`
+    `/api/transactions?period=${encodeURIComponent(state.period)}&entry_type=${entryType}${initialQuery ? `&q=${encodeURIComponent(initialQuery.trim())}` : ""}`
   );
   if (!isActiveTransactionRenderToken(renderToken, entryType, renderGeneration)) return;
   if (entryType === "income") replaceIncomeCopyRows(rows);
@@ -2282,7 +2384,7 @@ async function renderTransactions(entryType, renderGeneration = currentRenderGen
     <div class="table-toolbar">
       <h2>${label} · ${escapeHtml(state.period)}</h2>
       <div class="toolbar-filters">
-        <input id="transaction-search" type="search" placeholder="${escapeHtml(t("transactions.search"))}">
+        <input id="transaction-search" type="search" value="${escapeHtml(initialQuery)}" placeholder="${escapeHtml(t("transactions.search"))}">
         <button class="primary-button" id="view-add-entry"><span aria-hidden="true">+</span> ${escapeHtml(t("common.add"))}</button>
       </div>
     </div>
@@ -2291,7 +2393,7 @@ async function renderTransactions(entryType, renderGeneration = currentRenderGen
       <div class="chart-slot" id="chart-expense-structure"></div>
     </section>` : ""}
     <section class="panel">
-      <div id="transactions-table">${transactionTable(rows, {copyable: entryType === "income" && Boolean(state.copyTargetPeriodKey)})}</div>
+      <div id="transactions-table">${transactionTable(rows, {copyable: entryType === "income" && Boolean(state.copyTargetPeriodKey), sourceUrl: sourceUrl()})}</div>
     </section>
   `;
   if (entryType === "expense") {
@@ -2306,7 +2408,19 @@ async function renderTransactions(entryType, renderGeneration = currentRenderGen
   });
   const search = document.querySelector("#transaction-search");
   const searchToken = renderToken;
+  search.addEventListener("input", () => {
+    ++latestSearchRequestId;
+    if (entryType === "expense" && isActiveTransactionRenderToken(searchToken, entryType, renderGeneration)) {
+      state.expensesQuery = search.value;
+      window.history.replaceState(null, "", sourceUrl());
+      document.querySelectorAll(".expense-document-link").forEach((link) => {
+        const route = parseRoute(link.getAttribute("href"));
+        link.setAttribute("href", buildRouteUrl("expense-detail", {transactionId: route.transactionId, returnTo: sourceUrl()}));
+      });
+    }
+  });
   search.addEventListener("input", debounce(async () => {
+    if (!isActiveTransactionRenderToken(searchToken, entryType, renderGeneration)) return;
     const searchRequestId = ++latestSearchRequestId;
     const query = search.value.trim();
     const url = `/api/transactions?period=${encodeURIComponent(state.period)}&entry_type=${entryType}&q=${encodeURIComponent(query)}`;
@@ -2318,9 +2432,87 @@ async function renderTransactions(entryType, renderGeneration = currentRenderGen
     if (entryType === "income") replaceIncomeCopyRows(filtered);
     table.innerHTML = transactionTable(
       filtered,
-      {copyable: entryType === "income" && Boolean(state.copyTargetPeriodKey)}
+      {copyable: entryType === "income" && Boolean(state.copyTargetPeriodKey), sourceUrl: sourceUrl()}
     );
   }, 240));
+}
+
+async function fetchTransactionDetail(id) {
+  return fetchJSON(`/api/transactions/${encodeURIComponent(id)}`);
+}
+
+function expenseBackLink(url) {
+  const parsed = new URL(url, window.location.origin);
+  const label = t("expense.back", {title: t(`titles.${ROUTE_VIEWS[parsed.pathname] || "expenses"}`), period: parsed.searchParams.get("period") || "—"});
+  return `<a class="secondary-button" href="${escapeHtml(url)}" data-spa>${escapeHtml(label)}</a>`;
+}
+
+function expenseDetailMarkup(data, returnUrl) {
+  const transaction = data.transaction;
+  const period = data.period.period_key;
+  const back = expenseBackLink(returnUrl || safeReturnUrl(state.returnTo, period));
+  if (transaction.entry_type !== "expense") {
+    const url = buildRouteUrl(transaction.entry_type === "income" ? "income" : "dashboard", {period});
+    return `${back}<div class="empty-state"><p>${escapeHtml(t("expense.wrongType"))}</p>${expenseBackLink(url)}</div>`;
+  }
+  const documentState = data.document || {};
+  const treatments = data.tax_treatments || [];
+  const notes = treatments.filter((row) => row.notes != null && row.notes !== "");
+  const treatmentLabel = (row) => `${row.treatment_type} · ${row.jurisdiction}`;
+  const minorEur = (value) => value == null ? "—" : eur(value / 100);
+  const originalMinor = transaction.amount_original_minor ?? transaction.amount_minor;
+  const originalCurrency = transaction.original_currency || transaction.currency;
+  const original = originalMinor == null ? "—" : `${new Intl.NumberFormat(intlLocale(), {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(originalMinor / 100)} ${originalCurrency}`;
+  const euroMinor = transaction.amount_eur_minor ?? (transaction.currency === "EUR" ? transaction.amount_minor : null);
+  const facts = [
+    [t("fields.transactionDate"), formatDate(transaction.transaction_date)],
+    [t("fields.bookingDate"), formatDate(transaction.booking_date)],
+    [t("fields.issuedOn"), formatDate(documentState.issued_on)],
+    [t("toolbar.period"), period],
+    [t("expense.description"), transaction.description || "—"],
+    [t("fields.amount"), original],
+    ["EUR", minorEur(euroMinor)],
+  ];
+  return `<div class="section-stack expense-detail">
+    <header class="review-workspace-header">
+      ${back}
+      <div><h2>${escapeHtml(documentState.document_number || t("expense.title"))}</h2><p>${escapeHtml(data.counterparty?.display_name || "—")}</p></div>
+      <div>${badge(transaction.lifecycle_status)}<p>${escapeHtml(t("expense.readOnly"))}</p></div>
+    </header>
+    <section class="panel expense-notes" aria-labelledby="expense-notes-title">
+      <header class="panel-header"><h2 id="expense-notes-title">${escapeHtml(t("expense.notes"))}</h2></header>
+      <div class="expense-panel-body">
+      ${notes.length ? notes.map((row) => `<div class="expense-note">${treatments.length > 1 ? `<small>${escapeHtml(treatmentLabel(row))}</small>` : ""}<p class="expense-note-text">${escapeHtml(row.notes)}</p></div>`).join("") : `<p>${escapeHtml(t("expense.noNotes"))}</p>`}
+      </div>
+    </section>
+    <section class="panel">
+      <header class="panel-header"><h2>${escapeHtml(t("review.factsTitle"))}</h2><small>${escapeHtml(period)}</small></header>
+      <div class="expense-panel-body">
+      <dl class="review-facts-list">${facts.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}</dl>
+      ${documentState.document_id ? `<a class="text-button" href="/api/document/${encodeURIComponent(documentState.document_id)}/content" target="_blank" rel="noreferrer">${escapeHtml(t("common.file"))}</a>` : ""}
+      </div>
+    </section>
+    <section class="panel">
+      <header class="panel-header"><h2>${escapeHtml(t("review.taxDecision"))}</h2></header>
+      <div class="expense-panel-body">
+      ${treatments.map((row) => `<div class="expense-treatment"><small>${escapeHtml(treatmentLabel(row))}</small><dl class="review-facts-list">
+        <div><dt>${escapeHtml(t("fields.taxCode"))}</dt><dd>${escapeHtml(taxCodeLabel(row.tax_code || ""))}</dd></div>
+        <div><dt>${escapeHtml(t("transactions.irpfDeduction"))}</dt><dd>${escapeHtml(minorEur(row.deductible_irpf_minor))}</dd></div>
+        <div><dt>IVA</dt><dd>${escapeHtml(minorEur(row.deductible_vat_minor))}</dd></div>
+        ${[130, 303, 347].map((form) => `<div><dt>Modelo ${form}</dt><dd>${row[`include_modelo${form}`] == null ? "—" : escapeHtml(boolText(row[`include_modelo${form}`]))}</dd></div>`).join("")}
+      </dl></div>`).join("") || `<p>${escapeHtml(t("common.noRecords"))}</p>`}
+      </div>
+    </section>
+  </div>`;
+}
+
+async function renderExpenseDetail(renderGeneration = currentRenderGeneration) {
+  const id = state.expenseDetail.transactionId;
+  const data = await fetchTransactionDetail(id);
+  if (!detailRouteActive("expense-detail", id, renderGeneration)) return;
+  state.expenseDetail.data = data;
+  applyDetailPeriod(data, "expense-detail", id);
+  app.innerHTML = expenseDetailMarkup(data, safeReturnUrl(state.returnTo, data.period.period_key));
 }
 
 function reviewWorkItemPeriod(workItem, reviewId) {
@@ -2342,6 +2534,13 @@ async function loadReviewWorkspace(reviewId, {factsOnly = false} = {}) {
     && requestId === currentReviewRequest
     && state.view === "review" && state.review.selectedReviewId === reviewId;
   try {
+    const transactionId = reviewIdToTransactionId(reviewId);
+    const data = await fetchTransactionDetail(transactionId);
+    if (!isActive()) return;
+    if (data.transaction.entry_type === "expense" && ["posted", "included_in_snapshot"].includes(data.transaction.lifecycle_status)) {
+      navigateToRoute("expense-detail", {transactionId, period: data.period.period_key, returnTo: state.returnTo, replace: true});
+      return;
+    }
     const workItem = await fetchJSON(`/api/review/work-item?review_id=${encodeURIComponent(reviewId)}`);
     if (!isActive()) return;
     const period = reviewWorkItemPeriod(workItem, reviewId);
@@ -2361,7 +2560,7 @@ async function loadReviewWorkspace(reviewId, {factsOnly = false} = {}) {
     state.review.fxChoice = initialFxChoice(state.review.workItem.fx_suggestion);
     state.review.confirmError = null;
     persistReviewDraft(mergedPacket, {factsOnly});
-    applyViewState();
+    applyDetailPeriod({period: packet.state.period}, "review", transactionId);
     renderReviewWorkspace();
   } catch (error) {
     if (!isActive()) return;
@@ -2499,8 +2698,8 @@ async function renderReview(renderGeneration = currentRenderGeneration) {
     if (!state.review.workItem || state.review.workItem.packet?.review_id !== reviewId) {
       await loadReviewWorkspace(reviewId);
     } else {
-      state.period = reviewWorkItemPeriod(state.review.workItem, reviewId);
-      applyViewState();
+      reviewWorkItemPeriod(state.review.workItem, reviewId);
+      applyDetailPeriod({period: state.review.workItem.packet.state.period}, "review", reviewIdToTransactionId(reviewId));
       renderReviewWorkspace();
     }
     return;
@@ -2862,7 +3061,7 @@ function renderReviewWorkspace() {
     <div class="review-workspace">
       ${AccountingHelp.cell(workItem.ui_context)}
       <div class="review-workspace-header">
-        <a class="secondary-button review-back-link" href="${escapeHtml(buildRouteUrl("review", {period: packetState.period.period_key}))}" data-spa>${escapeHtml(t("review.workspaceBack"))}</a>
+        <a class="secondary-button review-back-link" href="${escapeHtml(safeReturnUrl(state.returnTo, state.period, "review"))}" data-spa>${escapeHtml(t("review.workspaceBack"))}</a>
         <div class="review-workspace-title">
           <h2>${escapeHtml(counterparty.display_name || documentState.document_number || t("review.workspaceTitle"))}</h2>
           <p>${escapeHtml(documentState.document_number ? t("review.invoiceLabel", {number: documentState.document_number}) : t("review.workspaceTitle"))}</p>
@@ -3138,6 +3337,7 @@ function renderReviewWorkspace() {
 async function submitReviewConfirm() {
   const packet = currentReviewPacket();
   if (!packet || state.review.busy) return;
+  const generation = currentRenderGeneration;
   const workItem = state.review.workItem;
   const transaction = packet.state?.transaction || {};
   const suggestion = workItem?.fx_suggestion || null;
@@ -3167,17 +3367,18 @@ async function submitReviewConfirm() {
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({packet, fx: fxSpec}),
     });
-    clearReviewDraft(currentReviewTransactionId());
+    clearReviewDraft(transaction.transaction_id);
+    state.review.busy = false;
+    if (!detailRouteActive("review", transaction.transaction_id, generation)) return;
     showToast(t("review.confirmSuccess"));
     state.review.selectedReviewId = null;
     state.review.workItem = null;
     state.review.fxChoice = null;
-    state.review.busy = false;
     navigateToRoute("review");
-    await renderReview();
   } catch (error) {
-    state.review.confirmError = {message: error.message, target: mapConfirmErrorToQuestion(error.message)};
     state.review.busy = false;
+    if (!detailRouteActive("review", transaction.transaction_id, generation)) return;
+    state.review.confirmError = {message: error.message, target: mapConfirmErrorToQuestion(error.message)};
     renderReviewWorkspace();
   }
 }
@@ -3185,6 +3386,8 @@ async function submitReviewConfirm() {
 async function submitReviewReject() {
   const packet = currentReviewPacket();
   if (!packet || state.review.busy) return;
+  const generation = currentRenderGeneration;
+  const transactionId = packet.state.transaction.transaction_id;
   const documentValidRaw = document.querySelector("#review-reject-document-valid")?.value || "";
   const reasonRaw = (document.querySelector("#review-reject-reason")?.value || "").trim();
   if (documentValidRaw !== "true" && documentValidRaw !== "false") {
@@ -3211,24 +3414,25 @@ async function submitReviewReject() {
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({packet, fx: null}),
     });
-    clearReviewDraft(currentReviewTransactionId());
+    clearReviewDraft(transactionId);
+    state.review.busy = false;
+    if (!detailRouteActive("review", transactionId, generation)) return;
     showToast(t("review.rejectSuccess"));
     state.review.selectedReviewId = null;
     state.review.workItem = null;
     state.review.fxChoice = null;
-    state.review.busy = false;
     navigateToRoute("review");
-    await renderReview();
   } catch (error) {
-    state.review.confirmError = {message: error.message, target: "reject"};
     state.review.busy = false;
+    if (!detailRouteActive("review", transactionId, generation)) return;
+    state.review.confirmError = {message: error.message, target: "reject"};
     renderReviewWorkspace();
   }
 }
 
 async function renderAssets(renderGeneration = currentRenderGeneration) {
   const rows = await fetchJSON(`/api/assets?period=${encodeURIComponent(state.period)}`);
-  if (renderGeneration !== currentRenderGeneration) return;
+  if (renderGeneration !== currentRenderGeneration || state.view !== "assets") return;
   app.innerHTML = `
     <div class="table-toolbar"><div><h2>${escapeHtml(t("assets.title"))}</h2><p>${escapeHtml(AccountingHelp.word("allAssets"))}: ${escapeHtml(state.period)}</p></div></div>
     <section class="panel"><div class="table-wrap"><table class="asset-explanations-table">
@@ -3249,7 +3453,7 @@ async function renderAssets(renderGeneration = currentRenderGeneration) {
 
 async function renderTaxes(renderGeneration = currentRenderGeneration) {
   const data = await fetchJSON(`/api/taxes?period=${encodeURIComponent(state.period)}`);
-  if (renderGeneration !== currentRenderGeneration) return;
+  if (renderGeneration !== currentRenderGeneration || state.view !== "taxes") return;
   const obligations = obligationMap(data.obligations);
   const m130 = formCardData(data.tax_forms?.[FORM_KEYS[130]], obligations[130]);
   const m303 = formCardData(data.tax_forms?.[FORM_KEYS[303]], obligations[303]);
@@ -3295,7 +3499,7 @@ async function renderTaxes(renderGeneration = currentRenderGeneration) {
 
 async function renderContacts(renderGeneration = currentRenderGeneration) {
   const rows = await fetchJSON("/api/counterparties");
-  if (renderGeneration !== currentRenderGeneration) return;
+  if (renderGeneration !== currentRenderGeneration || state.view !== "contacts") return;
   counterpartyRowsById.clear();
   rows.forEach((row) => counterpartyRowsById.set(row.counterparty_id, row));
   app.innerHTML = `
@@ -3469,37 +3673,49 @@ async function submitCounterpartyName(event) {
 }
 
 async function refreshDashboard() {
+  if (state.view === "expense-detail" || (state.view === "review" && state.review.selectedReviewId && !state.detailPeriodResolved)) {
+    await renderCurrentView();
+    return;
+  }
   refreshButton.disabled = true;
   refreshButton.textContent = "…";
+  const period = state.period;
+  const generation = currentRenderGeneration;
   try {
-    await requestDashboardRefresh();
-    state.posting.staleRefresh = null;
+    await requestDashboardRefresh({period, showSuccessToast: false});
+    if (state.posting.staleRefresh?.period === period) state.posting.staleRefresh = null;
+    if (generation !== currentRenderGeneration) return;
+    showToast(t("refresh.done", {period}));
     await renderCurrentView();
   } catch (error) {
-    showToast(error.message, true);
+    if (generation === currentRenderGeneration) showToast(error.message, true);
   } finally {
-    refreshButton.disabled = false;
     refreshButton.textContent = "↻";
+    applyViewState();
   }
 }
 
-async function requestDashboardRefresh({showSuccessToast = true} = {}) {
+async function requestDashboardRefresh({showSuccessToast = true, period = state.period} = {}) {
   const response = await fetchJSON("/api/dashboard/refresh", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({period: state.period, as_of: new Date().toISOString().slice(0, 10)}),
+    body: JSON.stringify({period, as_of: new Date().toISOString().slice(0, 10)}),
   });
-  if (showSuccessToast) showToast(t("refresh.done", {period: state.period}));
+  if (showSuccessToast) showToast(t("refresh.done", {period}));
   return response;
 }
 
 async function retryPostingRefresh() {
+  const period = state.posting.staleRefresh?.period;
+  if (!period || state.view !== "review" || period !== state.period) return;
+  const generation = currentRenderGeneration;
   try {
-    await requestDashboardRefresh();
-    state.posting.staleRefresh = null;
-    await renderCurrentView();
+    await requestDashboardRefresh({period, showSuccessToast: false});
+    if (state.posting.staleRefresh?.period === period) state.posting.staleRefresh = null;
+    if (generation === currentRenderGeneration) await renderCurrentView();
   } catch (error) {
-    state.posting.staleRefresh = {period: state.period, error: error.message};
+    state.posting.staleRefresh = {period, error: error.message};
+    if (generation !== currentRenderGeneration) return;
     showToast(error.message, true);
     await renderCurrentView();
   }
@@ -3850,6 +4066,9 @@ function postingResultToast(result) {
 async function submitPostingReady() {
   const preview = currentPostingPreview();
   if (!preview || postingActionDisabled(preview)) return;
+  const submissionPeriod = state.period;
+  const generation = currentRenderGeneration;
+  const isActive = () => generation === currentRenderGeneration && state.view === "review" && state.period === submissionPeriod;
   const pendingItems = state.posting.pendingItems.length ? state.posting.pendingItems : preview.ready;
   state.posting.isSubmitting = true;
   renderPostingConfirmDialog();
@@ -3858,30 +4077,36 @@ async function submitPostingReady() {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
-        period: state.period,
+        period: submissionPeriod,
         items: buildPostReadyItems(pendingItems),
       }),
     });
     state.posting.lastResult = normalizePostingResult(payload, pendingItems);
-    state.posting.lastResultPeriod = state.period;
+    state.posting.lastResultPeriod = submissionPeriod;
+    if (!isActive()) {
+      if (state.posting.lastResult.summary.postedCount > 0) state.posting.staleRefresh = {period: submissionPeriod, error: ""};
+      return;
+    }
     closePostingConfirmDialog();
     if (state.posting.lastResult.summary.postedCount > 0) {
       try {
-        await requestDashboardRefresh({showSuccessToast: false});
+        await requestDashboardRefresh({showSuccessToast: false, period: submissionPeriod});
         state.posting.staleRefresh = null;
       } catch (error) {
-        state.posting.staleRefresh = {period: state.period, error: error.message};
+        state.posting.staleRefresh = {period: submissionPeriod, error: error.message};
       }
     }
+    if (!isActive()) return;
     state.posting.isSubmitting = false;
-    await renderCurrentView();
     showToast(postingResultToast(state.posting.lastResult));
+    await renderCurrentView();
   } catch (error) {
+    if (!isActive()) return;
     postingConfirmStatus.textContent = error.message;
     showToast(error.message, true);
   } finally {
     state.posting.isSubmitting = false;
-    if (postingConfirmDialog.open) renderPostingConfirmDialog();
+    if (isActive() && postingConfirmDialog.open) renderPostingConfirmDialog();
   }
 }
 
@@ -4204,15 +4429,24 @@ function applyStaticTranslations() {
 }
 
 function applyViewState() {
+  const expenseDetail = state.view === "expense-detail";
+  const detail = expenseDetail || (state.view === "review" && Boolean(state.review.selectedReviewId));
+  const navView = expenseDetail ? "expenses" : state.view;
   document.querySelectorAll(".nav-item").forEach((button) => {
-    button.classList.toggle("active", button.dataset.view === state.view);
+    button.classList.toggle("active", button.dataset.view === navView);
+    button.setAttribute("href", buildRouteUrl(button.dataset.view));
   });
-  pageTitle.textContent = t(`titles.${state.view}`);
+  pageTitle.textContent = expenseDetail ? t("expense.title") : t(`titles.${state.view}`);
   if (periodSelect) {
-    periodSelect.disabled = state.view === "review" && Boolean(state.review.selectedReviewId);
-    periodSelect.value = periodSelect.disabled
-      ? state.review.workItem?.packet?.state?.period?.period_key || ""
-      : state.period || "";
+    periodSelect.disabled = Boolean(detail);
+    periodSelect.value = detail && !state.detailPeriodResolved ? "" : state.period;
+  }
+  if (newEntryButton) newEntryButton.hidden = Boolean(detail);
+  if (refreshButton) {
+    const label = t(expenseDetail ? "expense.refresh" : "toolbar.refresh");
+    refreshButton.title = label;
+    refreshButton.setAttribute("aria-label", label);
+    refreshButton.disabled = Boolean(detail && !state.detailPeriodResolved);
   }
 }
 
@@ -4272,19 +4506,7 @@ if (hasDOM) {
     if (event.target.closest("[data-reload-view]")) { window.location.reload(); return; }
     if (event.target.closest("[data-retry-view]")) { void renderCurrentView(); return; }
     if (event.target.closest("[data-refresh-calculation]")) { void refreshDashboard(); return; }
-    const link = event.target.closest("a[data-spa]");
-    if (!link || event.defaultPrevented || event.button !== 0
-      || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
-      || link.hasAttribute("download") || (link.target && link.target !== "_self")) return;
-    const url = new URL(link.getAttribute("href") || "/", window.location.href);
-    if (url.origin !== window.location.origin) return;
-    const route = parseRoute(url.pathname);
-    if (!route) return;
-    event.preventDefault();
-    navigateToRoute(route.view, {
-      reviewId: route.reviewId,
-      period: routePeriodFromQuery(url.search) || state.period,
-    });
+    handleSpaClick(event);
   });
 
   window.addEventListener("popstate", () => {

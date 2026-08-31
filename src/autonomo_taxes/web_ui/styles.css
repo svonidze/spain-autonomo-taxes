@@ -2055,3 +2055,39 @@ textarea:focus {
 .chart-data table {
   font-size: 0.8rem;
 }
+.expense-document-link {
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.expense-document-link:focus-visible,
+.expense-detail a:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
+.expense-note-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.expense-panel-body {
+  padding: 16px;
+}
+
+.expense-panel-body > :first-child {
+  margin-top: 0;
+}
+
+.expense-panel-body > :last-child {
+  margin-bottom: 0;
+}
+
+.expense-note + .expense-note,
+.expense-treatment + .expense-treatment {
+  margin-top: 1rem;
+}
+
+.expense-detail .review-facts-list dd {
+  overflow-wrap: anywhere;
+}

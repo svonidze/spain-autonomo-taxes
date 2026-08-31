@@ -219,7 +219,7 @@ assert.match(
   const builder = () => ({});
   const renderContext = vm.createContext({
     app: rendered,
-    state: {period: '2032-Q2'},
+    state: {view: 'assets', period: '2032-Q2'},
     currentRenderGeneration: 7,
     fetchJSON: async url => {
       requests.push(url);
@@ -248,4 +248,8 @@ assert.match(
   await renderContext.renderAssets(6);
   assert.equal(rendered.innerHTML, previous);
   assert.equal(mounts.length, 1, 'A stale render must not mount a chart');
+  renderContext.state.view = 'expense-detail';
+  await renderContext.renderAssets(7);
+  assert.equal(rendered.innerHTML, previous);
+  assert.equal(mounts.length, 1, 'An old assets request must not overwrite an expense detail');
 })().catch(error => {console.error(error); process.exitCode = 1;});
