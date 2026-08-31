@@ -17,11 +17,149 @@ Roadmaps in `docs/plans/` are not operating instructions.
 |---|---|---|
 | Diagnostics | Unit status, SHA, read-only SQLite checks, remote listing | No intended application or remote-object changes |
 | Isolated drill | Download archive and restore into a fresh directory | Writes private scratch files; no production replacement |
-| Production change | Deploy, rollback, live restore, installer, backup job | Can restart services, replace data, upload objects, or reconcile replicas |
+| Production change | Accounting correction, approval or posting; deploy, rollback, live restore, installer, backup job | Can change accounting records, restart services, replace data, upload objects, or reconcile replicas |
 
 Run server examples in a fresh **Bash** shell as the non-root service user.
 Do not use shell tracing, print environment files, or paste logs with private
 paths into public issues. Read each section before running its commands.
+
+## Scoped accounting maintenance
+
+Use the [accounting workflow](../docs/ACCOUNTING_WORKFLOW.md) for routine
+review and posting. This section covers an authorized correction or recovery
+that the installed interface cannot complete. It does not authorize a
+deployment, a tax filing, changes to other records, or broader access.
+
+### Establish the target and supported action
+
+Before any write, record the intended service URL, host/instance, active release
+SHA, service account, effective configuration and database in a private work
+record. Derive the database from the running service's configuration and
+overrides; do not select a convenient local copy or guess from a default path.
+Check the period, exact document and transaction IDs, counterparty, current row
+versions, source hash, amounts and dates. Confirm the linked transaction is the
+one the user authorized. Do not print secrets or the service's full environment.
+
+Inspect the actual release's capabilities. A merged PR, a newer local checkout
+or a copied operations helper does not prove that the running application has
+that feature. Never use a newer schema or application library against the live
+database merely to obtain an editor; migration/deployment is a separate change.
+
+Prefer the supported web API or CLI. The following are interface names, not
+complete commands to paste into a production shell:
+
+| Purpose | Supported interface | Boundary |
+|---|---|---|
+| Read the current invoice review | `GET /api/review/work-item`; CLI `review prepare` | The CLI writes a private packet file. For a single invoice, a document-scoped review requires exactly one linked transaction. |
+| Validate a decision | `POST /api/review/validate`; CLI `review apply --dry-run` | The native validation transaction is rolled back. Validation does not save approval or post the entry. |
+| Apply a reviewed decision | `POST /api/review/confirm`; CLI `review apply` | These save approval, not posting. The web confirmation can also apply a confirmed FX rate atomically; CLI packet application alone does not replace that FX workflow. |
+| Post the authorized approved entry | CLI `review post` with its current expected row version | Uses the native posting checks. The web `POST /api/review/post-ready` and CLI `review post-batch` accept explicit lists; restrict them to authorized rows. |
+
+Read the release's CLI help and API validation contract before constructing a
+request. Preserve the session/Origin protections for web writes. Edit only the
+packet's decision fields, never its state or snapshot hash. If a version is
+stale, reload and review the new facts before making another decision.
+
+Document-scoped review checks the single-transaction relationship during
+application as well as preparation. A custom repair must retain that check
+at the write boundary; an earlier inspection cannot protect against a later
+second link. Resolve only the specifically justified issues, with their current
+versions and evidence-backed reasons. Do not close every open issue to obtain
+a ready status.
+
+Do not reimport the original to correct metadata or clear an old extraction
+error. Keep document/transaction identity and source bytes intact. Check
+existing source material and user confirmations before asking for another
+document or repeating a question. Explain the precise unresolved requirement.
+See [source and date rules](../docs/ACCOUNTING_WORKFLOW.md#dates-source-documents-and-missing-details)
+and [OCR provisioning](PROVISIONING.md#local-ocr-dependency).
+
+### When a bounded repair is necessary
+
+If no supported interface can make the correction, agree the exact fields and
+records first. Do not publish a case-specific repair as a general database
+editing script. Prepare and review the repair privately with these safeguards:
+
+1. Use the compatible active release and its domain operations. Keep schema,
+   lifecycle, evidence and posting checks enabled. Posted records and closed
+   periods require the supported correction/amendment procedure, not a forced
+   transition back into review or direct SQL that bypasses the checks.
+2. Create a consistent private database backup and verify its integrity and
+   foreign keys. Rehearse the complete operation on an isolated copy, checking
+   that only the authorized records and fields change. Keep the copy isolated
+   from external writes such as uploads, cleanup or notifications. A successful
+   rehearsal is not proof of a successful live write.
+3. Before each live write, recheck current state and expected versions under
+   the appropriate transaction/locking discipline. Stop on unrelated changes,
+   conflicting evidence or new blockers. Preserve other users' work.
+4. Run application/database operations as the service user, not root. Any
+   necessary administrator step must be explicitly scoped. The user enters
+   the administrator password only in their own interactive terminal, never
+   in chat, a command argument, a log or a file. Keep a one-shot launcher bound
+   to its reviewed payload and verify its integrity before execution. Do not
+   add persistent privileges, alter sudo/SSH policy or establish a tunnel as
+   a routine prerequisite for posting. If access is unavailable, report the
+   exact remaining action and stop the privileged step.
+5. Preserve the original's verified hash and record the reason and source for
+   each correction. Distinguish source facts, explicit user confirmation and
+   an operator's accounting decision. Maintain an audit record without
+   silently rewriting earlier evidence.
+
+Store the backup, reviewed repair, before/after evidence and results under the
+appropriate private storage boundary. Follow [Privacy](../docs/PRIVACY.md);
+public examples must be independently synthetic, without case-specific
+identifiers, amounts, server addresses or private paths.
+
+### Interruptions, retries and proof of completion
+
+Date correction, approval and posting may be separate commits. A batch may
+also succeed for some rows and fail for others. After a lost response, a
+terminal disconnect or any other interruption, read the actual records before
+retrying. A progress message is only a lower bound on completed work; writing
+that message and committing the database are not necessarily atomic.
+
+For a resumable repair, check the entire expected checkpoint, including exact
+versions, treatment identity and jurisdiction, source hashes and audit notes.
+Verify the resolved issue still exists with the intended resolution and
+version. An empty list of open issues alone does not prove how an issue was
+resolved. Stop if another writer changed the checkpoint. Retry only verified
+unfinished work; do not duplicate the entry or repeat an already saved stage.
+
+Do not automatically restore the whole database to undo a partial repair.
+That could remove later valid changes. Escalate any required live restore
+through the separately authorized [recovery procedure](../docs/DISASTER_RECOVERY.md).
+
+After execution, independently reread the entry through the running service.
+Verify its actual transaction status, document number, amounts/currency,
+issue/transaction/payment facts and booking date, reviewed treatment, linked
+document and remaining issues. Check for an unintended duplicate and verify
+the accessible original's hash against the pre-change evidence. If a record
+is posted but calculation refresh or expense-inbox cleanup failed, report
+those remaining tasks separately. Neither failure implies the accounting
+write was rolled back.
+
+### Operator and assistant updates
+
+Every update should identify what is saved, what is still pending and who will
+perform the next action. Use the installed application's terminology with an
+explicit explanation of internal review. Avoid an unexplained "tax review"
+or "tax check", which can sound like an inspection by AEAT.
+
+Examples without operational data:
+
+- "The document details are saved. The entry still needs internal confirmation
+  of its accounting treatment; I will review it next."
+- "The decision is approved but not posted. I will post the authorized entry
+  after checking the current posting preview."
+- "The correction is prepared but has not run. You need to enter the
+  administrator password in your terminal for this one authorized repair."
+- "The transaction is posted in the application. Calculation refresh failed;
+  I will handle the refresh separately. Nothing was submitted to AEAT."
+
+Say "posted" only after verifying the saved transaction. Report deployments,
+original-file changes and tax submissions separately, and only when supported
+by evidence. Do not turn unfinished operator work into an unexplained task
+for the user or ask again for facts already confirmed.
 
 ## Bootstrap the default control plane
 
