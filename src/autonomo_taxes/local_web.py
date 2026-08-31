@@ -80,7 +80,7 @@ SPA_TOP_LEVEL_ROUTES = {
 def _is_spa_route(path: str) -> bool:
     if path in SPA_TOP_LEVEL_ROUTES:
         return True
-    for prefix in ("/expenses/", "/review/"):
+    for prefix in ("/expenses/", "/review/", "/contacts/"):
         if path.startswith(prefix):
             return UUID_RE.fullmatch(path[len(prefix):]) is not None
     return False
@@ -917,6 +917,54 @@ class LocalAccountingApp:
                 result.append(row | {"ui_context": context})
             return result
 
+    def counterparty_detail(self, counterparty_id: str) -> dict[str, Any]:
+        counterparty_id = _validated_counterparty_id(counterparty_id)
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN")
+            _counterparty_api_state(connection, counterparty_id)
+            row = dict(connection.execute(
+                """SELECT counterparty_id, display_name, row_version, name_is_manual,
+                          country_code, tax_id, vat_id, roi_status, legal_form, email, phone,
+                          professional_supplier, retention_expected
+                   FROM counterparties WHERE counterparty_id = ?""", (counterparty_id,),
+            ).fetchone())
+            builder = self._status_context(connection)
+            context = simple_context("counterparty", row)
+            context["reasons"] = builder.issues([("counterparties", counterparty_id)])
+            periods = [item["period_key"] for item in connection.execute(
+                """SELECT DISTINCT p.period_key FROM transactions t
+                   JOIN periods p ON p.period_id=t.period_id
+                   WHERE t.counterparty_id = ? ORDER BY p.period_key DESC""", (counterparty_id,),
+            )]
+            return {"counterparty": row | {"ui_context": context}, "periods": periods}
+
+    def counterparty_transactions(
+        self, counterparty_id: str, *, period_key: str | None = None,
+        offset: int = 0, limit: int = 50,
+    ) -> dict[str, Any]:
+        counterparty_id = _validated_counterparty_id(counterparty_id)
+        if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 100:
+            raise LocalWebError("Counterparty page requires offset >= 0 and limit between 1 and 100")
+        period = _validate_period(period_key) if period_key is not None else None
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN")
+            _counterparty_api_state(connection, counterparty_id)
+            period_id = self._period_row(connection, period)["period_id"] if period else None
+            count = connection.execute(
+                """SELECT COUNT(*) FROM transactions
+                   WHERE counterparty_id = ? AND (? IS NULL OR period_id = ?)""",
+                (counterparty_id, period_id, period_id),
+            ).fetchone()[0]
+            rows = self._transactions(
+                connection, period_id=period_id, counterparty_id=counterparty_id,
+                offset=offset, limit=limit,
+            )
+            return {
+                "counterparty_id": counterparty_id, "period": period, "rows": rows,
+                "offset": offset, "limit": limit, "matching_count": count,
+                "has_more": offset + len(rows) < count, "next_offset": offset + len(rows),
+            }
+
     def counterparty_name_history(self, counterparty_id: str) -> dict[str, Any]:
         counterparty_id = _validated_counterparty_id(counterparty_id)
         with open_ledger_db(self.config.database, read_only=True) as db:
@@ -1433,16 +1481,24 @@ class LocalAccountingApp:
         self,
         connection: sqlite3.Connection,
         *,
-        period_id: str,
+        period_id: str | None,
         entry_type: str | None = None,
         lifecycle_status: str | None = None,
         query: str | None = None,
         limit: int,
+        counterparty_id: str | None = None,
+        offset: int = 0,
         today: date | None = None,
         context_builder: StatusContext | None = None,
     ) -> list[dict[str, Any]]:
-        where = ["t.period_id = ?"]
-        parameters: list[Any] = [period_id]
+        where = ["1 = 1"]
+        parameters: list[Any] = []
+        if period_id is not None:
+            where.append("t.period_id = ?")
+            parameters.append(period_id)
+        if counterparty_id is not None:
+            where.append("t.counterparty_id = ?")
+            parameters.append(counterparty_id)
         if entry_type:
             where.append("(t.entry_type = ? OR t.entry_type LIKE ?)")
             parameters.extend((entry_type, entry_type + "_%"))
@@ -1459,7 +1515,7 @@ class LocalAccountingApp:
             )
             needle = f"%{query.strip()}%"
             parameters.extend((needle, needle, needle))
-        parameters.append(limit)
+        parameters.extend((limit, offset))
         rows = connection.execute(
             f"""
             SELECT
@@ -1513,7 +1569,7 @@ class LocalAccountingApp:
             WHERE {" AND ".join(where)}
             GROUP BY t.transaction_id
             ORDER BY t.transaction_date DESC, t.created_at DESC, t.transaction_id DESC
-            LIMIT ?
+            LIMIT ? OFFSET ?
             """,
             parameters,
         ).fetchall()
@@ -1543,9 +1599,16 @@ class LocalAccountingApp:
             }
             for row in rows
         ]
-        return enrich_expense_context(
-            connection, result, period_id=period_id, today=effective_today,
-        )
+        if period_id is not None:
+            return enrich_expense_context(
+                connection, result, period_id=period_id, today=effective_today,
+            )
+        for period_key in dict.fromkeys(row["period_key"] for row in result):
+            enrich_expense_context(
+                connection, [row for row in result if row["period_key"] == period_key],
+                period_id=self._period_row(connection, period_key)["period_id"], today=effective_today,
+            )
+        return result
 
     def _issues(
         self,
@@ -1891,6 +1954,14 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                 )
             elif parsed.path == "/api/counterparties":
                 self._send_json(self.server.app.counterparties())
+            elif match := re.fullmatch(r"/api/counterparties/([^/]+)/transactions", parsed.path):
+                self._send_json(self.server.app.counterparty_transactions(
+                    unquote(match.group(1)), period_key=_optional_query(query, "period"),
+                    offset=int(_optional_query(query, "offset") or "0"),
+                    limit=int(_optional_query(query, "limit") or "50"),
+                ))
+            elif match := re.fullmatch(r"/api/counterparties/([^/]+)", parsed.path):
+                self._send_json(self.server.app.counterparty_detail(unquote(match.group(1))))
             elif match := re.fullmatch(r"/api/counterparties/([^/]+)/name-history", parsed.path):
                 self._send_json(self.server.app.counterparty_name_history(unquote(match.group(1))))
             elif parsed.path == "/api/review/work-item":

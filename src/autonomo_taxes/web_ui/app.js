@@ -181,6 +181,26 @@ const messages = {
     "titles.assets": "Активы",
     "titles.taxes": "Налоги и сроки",
     "titles.contacts": "Контрагенты",
+    "contacts.cardTitle": "Карточка контрагента",
+    "contacts.actionsFor": "Действия для {name}",
+    "contacts.actions": "Дополнительные действия",
+    "contacts.back": "К списку контрагентов",
+    "contacts.backToParty": "К контрагенту",
+    "contacts.facts": "Реквизиты",
+    "contacts.operations": "Операции",
+    "contacts.operationType": "Тип",
+    "contacts.description": "Описание",
+    "contacts.sourceDocument": "Документ-источник",
+    "contacts.email": "Эл. почта",
+    "contacts.phone": "Телефон",
+    "contacts.allPeriods": "Все периоды",
+    "contacts.more": "Показать ещё",
+    "contacts.shown": "Показано {count} из {total}",
+    "contacts.noOperations": "Операций за этот период нет.",
+    "contacts.operationsError": "Не удалось загрузить операции.",
+    "contacts.retry": "Повторить",
+    "contacts.notFound": "Контрагент не найден.",
+    "contacts.refresh": "Обновить карточку",
     "dashboard.incomePosted": "Доходы, проведено",
     "dashboard.expensesPosted": "Расходы, проведено",
     "dashboard.expensesForecast": "Готово к проведению",
@@ -646,6 +666,26 @@ const messages = {
     "titles.assets": "Assets",
     "titles.taxes": "Taxes and deadlines",
     "titles.contacts": "Counterparties",
+    "contacts.cardTitle": "Counterparty details",
+    "contacts.actionsFor": "Actions for {name}",
+    "contacts.actions": "Additional actions",
+    "contacts.back": "Back to counterparties",
+    "contacts.backToParty": "Back to counterparty",
+    "contacts.facts": "Details",
+    "contacts.operations": "Transactions",
+    "contacts.operationType": "Type",
+    "contacts.description": "Description",
+    "contacts.sourceDocument": "Source document",
+    "contacts.email": "Email",
+    "contacts.phone": "Phone",
+    "contacts.allPeriods": "All periods",
+    "contacts.more": "Show more",
+    "contacts.shown": "Showing {count} of {total}",
+    "contacts.noOperations": "No transactions in this period.",
+    "contacts.operationsError": "Could not load transactions.",
+    "contacts.retry": "Retry",
+    "contacts.notFound": "Counterparty not found.",
+    "contacts.refresh": "Refresh counterparty",
     "dashboard.incomePosted": "Posted income",
     "dashboard.expensesPosted": "Posted expenses",
     "dashboard.expensesForecast": "Ready to post",
@@ -1143,6 +1183,9 @@ const state = {
   bootstrap: null,
   period: null,
   view: "dashboard",
+  contactDetail: {id: null},
+  contactGlobalPeriod: null,
+  contactsListPosition: null,
   expenseDetail: {transactionId: null, data: null},
   expensesQuery: "",
   returnTo: null,
@@ -1211,6 +1254,7 @@ const confirmPostingButton = hasDOM ? document.querySelector("#confirm-posting-b
 const incomeCopyRowsById = new Map();
 const counterpartyRowsById = new Map();
 let counterpartyNameEditor = null;
+let counterpartyMenu = null;
 let currentRenderGeneration = 0;
 let currentReviewRequest = 0;
 
@@ -1248,6 +1292,8 @@ const PERIOD_ROUTE_PATHS = new Set(["/dashboard", "/income", "/expenses", "/revi
 function parseRoute(pathname) {
   const path = String(pathname || "/").split("?")[0].split("#")[0];
   const normalized = path === "" ? "/" : path;
+  const contact = /^\/contacts\/([0-9a-fA-F-]{32,36})$/.exec(normalized);
+  if (contact) return {view: "contact-detail", reviewId: null, counterpartyId: contact[1].toLowerCase()};
   const detail = REVIEW_DETAIL_RE.exec(normalized);
   if (detail) return {view: "review", reviewId: detail[1]};
   const expense = EXPENSE_DETAIL_RE.exec(normalized);
@@ -1257,13 +1303,15 @@ function parseRoute(pathname) {
 }
 
 function routePathFor(view, reviewId = null) {
+  if (view === "contact-detail" && reviewId) return contactUrl(reviewId);
   if (view === "review" && reviewId) return `/review/${encodeURIComponent(String(reviewId).replace(/^transaction:/, ""))}`;
   if (view === "expense-detail" && reviewId) return `/expenses/${encodeURIComponent(reviewId)}`;
   if (view === "review") return "/review";
   return `/${view}`;
 }
 
-function buildRouteUrl(view, {period = state.period, reviewId = null, transactionId = null, returnTo = null, q = ""} = {}) {
+function buildRouteUrl(view, {period = state.period, reviewId = null, transactionId = null, counterpartyId = null, contactPeriod = "", returnTo = null, q = ""} = {}) {
+  if (view === "contact-detail") return contactUrl(counterpartyId || reviewId, contactPeriod);
   const path = routePathFor(view, transactionId || reviewId);
   const query = new URLSearchParams();
   if ((PERIOD_ROUTE_PATHS.has(`/${view}`) || view === "expense-detail") && period) query.set("period", period);
@@ -1282,6 +1330,13 @@ function safeReturnUrl(value, period, fallbackView = "expenses") {
   if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return fallback;
   try {
     const url = new URL(value, window.location.origin);
+    const contact = /^\/contacts\/([0-9a-fA-F-]{32,36})$/.exec(url.pathname);
+    if (contact && url.origin === window.location.origin && !url.hash) {
+      if ([...url.searchParams.keys()].some(key => key !== "period" || url.searchParams.getAll(key).length !== 1)) return fallback;
+      const contactPeriod = url.searchParams.get("period") || "";
+      if (contactPeriod && !/^\d{4}-Q[1-4]$/.test(contactPeriod)) return fallback;
+      return contactUrl(contact[1].toLowerCase(), contactPeriod);
+    }
     if (url.origin !== window.location.origin || url.hash || !["/expenses", "/review", "/dashboard"].includes(url.pathname)) return fallback;
     const allowed = url.pathname === "/expenses" ? ["period", "q"] : ["period"];
     if ([...url.searchParams.keys()].some((key) => !allowed.includes(key) || url.searchParams.getAll(key).length !== 1)) return fallback;
@@ -1337,6 +1392,14 @@ function selectedReviewTransactionId() {
 
 function applyRouteFromLocation() {
   if (!state.bootstrap) return false;
+  closeCounterpartyMenu(false);
+  if (counterpartyNameEditor) {
+    const edit = counterpartyNameEditor;
+    if (!closeCounterpartyNameEditor()) {
+      window.history.pushState(edit.pageState, "", edit.pageUrl);
+      return false;
+    }
+  }
   if (hasDOM) closePostingConfirmDialog();
   const route = parseRoute(window.location.pathname);
   const reviewId = route?.view === "review" && route.reviewId
@@ -1361,6 +1424,25 @@ function applyRouteFromLocation() {
     return false;
   }
   const query = new URLSearchParams(window.location.search);
+  if (route.view === "expense-detail" &&
+      (state.bootstrap.periods || []).some(item => item.period_key === window.history.state?.contactGlobalPeriod)) {
+    state.contactGlobalPeriod = window.history.state.contactGlobalPeriod;
+  }
+  if (route.view === "contact-detail") {
+    const fromContactExpense = state.view === "expense-detail" &&
+      safeReturnUrl(state.returnTo, state.period).startsWith("/contacts/");
+    const previousGlobal = window.history.state?.contactGlobalPeriod ||
+      (state.view === "contact-detail" || fromContactExpense ? state.contactGlobalPeriod : state.period);
+    if ((state.bootstrap.periods || []).some(item => item.period_key === previousGlobal)) state.period = previousGlobal;
+    state.contactGlobalPeriod = state.period;
+    window.history.replaceState({...window.history.state, contactGlobalPeriod: state.period}, "",
+      window.location.pathname + window.location.search);
+  }
+  state.contactDetail = {
+    id: route.counterpartyId || null, period: query.get("period") || "",
+    data: null, rows: [], nextOffset: 0, total: null, hasMore: false,
+    busy: false, error: false, history: null, historyRequest: 0,
+  };
   if (PERIOD_ROUTE_PATHS.has(routePathFor(route.view, route.reviewId))) {
     state.period = routePeriodFromQuery(window.location.search)
       || state.period || state.bootstrap.default_period;
@@ -1381,8 +1463,17 @@ function applyRouteFromLocation() {
 }
 
 function navigateToUrl(url, {replace = false} = {}) {
-  if (replace) window.history.replaceState(null, "", url);
-  else window.history.pushState(null, "", url);
+  if (counterpartyNameEditor && !closeCounterpartyNameEditor()) return;
+  rememberContactsListPosition();
+  const nextView = parseRoute(url)?.view;
+  let navigationState = null;
+  if (state.view === "contact-detail" && nextView === "expense-detail") {
+    navigationState = {contactGlobalPeriod: state.contactGlobalPeriod || state.period};
+  } else if (state.view === "expense-detail" && nextView === "contact-detail") {
+    navigationState = {contactGlobalPeriod: window.history.state?.contactGlobalPeriod || state.contactGlobalPeriod};
+  }
+  if (replace) window.history.replaceState(navigationState, "", url);
+  else window.history.pushState(navigationState, "", url);
   applyRouteFromLocation();
 }
 
@@ -2591,7 +2682,8 @@ async function init() {
 }
 
 async function renderCurrentView() {
-  if (!app || (!state.period && !state.expenseDetail.transactionId && !state.review.selectedReviewId)) return;
+  if (!app || (!state.period && !state.expenseDetail.transactionId && !state.review.selectedReviewId && !state.contactDetail.id)) return;
+  closeCounterpartyMenu(false);
   AccountingHelp.beforeRender();
   AccountingHelp.setLocale(state.locale);
   app.setAttribute("aria-busy", "true");
@@ -2609,12 +2701,16 @@ async function renderCurrentView() {
     if (state.view === "assets") await renderAssets(renderGeneration);
     if (state.view === "taxes") await renderTaxes(renderGeneration);
     if (state.view === "contacts") await renderContacts(renderGeneration);
+    if (state.view === "contact-detail") await renderContactDetail(renderGeneration);
   } catch (error) {
     if (renderGeneration !== currentRenderGeneration) return;
     if (state.view === "expense-detail") {
       if (refreshButton) refreshButton.disabled = false;
       const back = expenseBackLink(safeReturnUrl(state.returnTo, state.period));
       app.innerHTML = `${back}${error.status === 404 ? `<div class="empty-state">${escapeHtml(t("expense.notFound"))}</div>` : errorState(error)}`;
+    } else if (state.view === "contact-detail") {
+      app.innerHTML = contactBackLink() + (error.status === 404
+        ? '<div class="empty-state">' + escapeHtml(t("contacts.notFound")) + '</div>' : errorState(error));
     } else app.innerHTML = errorState(error);
   } finally {
     if (renderGeneration === currentRenderGeneration) { app.setAttribute("aria-busy", "false"); AccountingHelp.labelTables(app); }
@@ -2820,6 +2916,10 @@ async function fetchTransactionDetail(id) {
 
 function expenseBackLink(url) {
   const parsed = new URL(url, window.location.origin);
+  if (/^\/contacts\/[0-9a-fA-F-]{32,36}$/.test(parsed.pathname)) {
+    return '<a class="secondary-button" href="' + escapeHtml(url) + '" data-spa>' +
+      escapeHtml(t("contacts.backToParty")) + '</a>';
+  }
   const label = t("expense.back", {title: t(`titles.${ROUTE_VIEWS[parsed.pathname] || "expenses"}`), period: parsed.searchParams.get("period") || "—"});
   return `<a class="secondary-button" href="${escapeHtml(url)}" data-spa>${escapeHtml(label)}</a>`;
 }
@@ -3895,19 +3995,20 @@ async function renderContacts(renderGeneration = currentRenderGeneration) {
   app.innerHTML = `
     <div class="table-toolbar"><h2>${escapeHtml(t("contacts.title"))}</h2></div>
     <section class="panel">
-      <div class="table-wrap">
+      <div class="table-wrap" id="contacts-list-wrap">
         <table>
-          <thead><tr><th>${escapeHtml(t("contacts.name"))}</th><th>${escapeHtml(t("contacts.country"))}</th><th>NIF / VAT ID</th><th>ROI ${AccountingHelp.term("ROI")}</th><th>${escapeHtml(t("contacts.transactions"))}</th><th>${escapeHtml(t("contacts.last"))}</th></tr></thead>
+          <thead><tr><th>${escapeHtml(t("contacts.name"))}</th><th>${escapeHtml(t("contacts.country"))}</th><th>NIF / VAT ID</th><th>ROI ${AccountingHelp.term("ROI")}</th><th>${escapeHtml(t("contacts.transactions"))}</th><th>${escapeHtml(t("contacts.last"))}</th><th class="counterparty-action-cell"><span class="sr-only">${escapeHtml(t("contacts.actions"))}</span></th></tr></thead>
           <tbody>
             ${rows.map((row) => `
-              <tr>
+              <tr data-counterparty-row="${escapeHtml(row.counterparty_id)}" class="counterparty-row">
                 <td class="cell-primary">${counterpartyNameCell(row)}</td>
                 <td>${escapeHtml(row.country_code || "—")}</td>
                 <td>${escapeHtml(row.vat_id || row.tax_id || "—")}</td>
                 <td>${AccountingHelp.cell(row.ui_context)}</td>
                 <td>${row.transaction_count}</td>
                 <td>${formatDate(row.last_transaction_on)}</td>
-              </tr>`).join("") || emptyRow(6)}
+                <td class="counterparty-action-cell">${counterpartyMenuTrigger(row)}</td>
+              </tr>`).join("") || emptyRow(7)}
           </tbody>
         </table>
       </div>
@@ -3921,14 +4022,244 @@ async function renderContacts(renderGeneration = currentRenderGeneration) {
     buildCounterpartySpec,
     AutonomoCharts.renderHorizontalBars
   );
+  restoreContactsListPosition();
+}
+
+function contactUrl(id, period = "") {
+  const path = "/contacts/" + encodeURIComponent(id);
+  return period ? path + "?period=" + encodeURIComponent(period) : path;
+}
+
+function contactBackLink() {
+  return '<a class="text-button contact-back-link" href="/contacts" data-spa><span aria-hidden="true">←</span> ' +
+    escapeHtml(t("contacts.back")) + '</a>';
+}
+
+function counterpartyMenuTrigger(row) {
+  return '<button type="button" class="counterparty-more" data-counterparty-menu="' +
+    escapeHtml(row.counterparty_id) + '" aria-label="' + escapeHtml(t("contacts.actionsFor", {name: row.display_name})) +
+    '" aria-haspopup="menu" aria-expanded="false" aria-controls="counterparty-actions-menu"><span aria-hidden="true">⋯</span></button>';
+}
+
+function contactMenuPosition(rect, width, height, viewportWidth, viewportHeight) {
+  return {
+    left: Math.max(8, Math.min(rect.right - width, viewportWidth - width - 8)),
+    top: Math.max(8, rect.bottom + height + 4 <= viewportHeight - 8 ? rect.bottom + 4 : rect.top - height - 4),
+  };
+}
+
+function closeCounterpartyMenu(restoreFocus = true) {
+  if (!counterpartyMenu) return;
+  const trigger = counterpartyMenu.trigger;
+  counterpartyMenu = null;
+  document.querySelector("#counterparty-actions-menu").hidden = true;
+  trigger.setAttribute("aria-expanded", "false");
+  if (restoreFocus && trigger.isConnected) trigger.focus({preventScroll: true});
+}
+
+function toggleCounterpartyMenu(trigger) {
+  if (counterpartyMenu?.trigger === trigger) { closeCounterpartyMenu(); return; }
+  closeCounterpartyMenu(false);
+  const id = trigger.dataset.counterpartyMenu;
+  const row = state.view === "contact-detail" && state.contactDetail.id === id
+    ? state.contactDetail.data?.counterparty : counterpartyRowsById.get(id);
+  if (!row) return;
+  const menu = document.querySelector("#counterparty-actions-menu");
+  counterpartyMenu = {trigger, row: {...row}};
+  trigger.setAttribute("aria-expanded", "true");
+  menu.hidden = false;
+  const position = contactMenuPosition(trigger.getBoundingClientRect(), menu.offsetWidth,
+    menu.offsetHeight, window.innerWidth, window.innerHeight);
+  menu.style.left = position.left + "px";
+  menu.style.top = position.top + "px";
+  menu.querySelector('[role="menuitem"]').focus({preventScroll: true});
+}
+
+function counterpartyRowClickAllowed(event) {
+  return !event.defaultPrevented && event.button === 0 && !event.metaKey && !event.ctrlKey &&
+    !event.altKey && !event.shiftKey && !window.getSelection()?.toString() &&
+    !event.target.closest("a, button, input, select, textarea, summary, [role=button], [contenteditable]");
+}
+
+function closeCounterpartyMenuFromOutside(target) {
+  if (!counterpartyMenu || target.closest("#counterparty-actions-menu") || counterpartyMenu.trigger.contains(target)) return;
+  // Do not steal focus from the input/link the user deliberately clicked.
+  closeCounterpartyMenu(!target.closest("a, button, input, select, textarea, [tabindex], [contenteditable]"));
+}
+
+function rememberContactsListPosition() {
+  if (!hasDOM || state.view !== "contacts") return;
+  const wrapper = document.querySelector("#contacts-list-wrap");
+  if (!wrapper) return;
+  const position = {
+    x: window.scrollX, y: window.scrollY, tableX: wrapper.scrollLeft,
+    id: document.activeElement?.closest("[data-counterparty-row]")?.dataset.counterpartyRow || null,
+  };
+  state.contactsListPosition = position;
+  window.history.replaceState({...window.history.state, contactsList: position}, "", window.location.href);
+}
+
+function restoreContactsListPosition() {
+  const position = window.history.state?.contactsList || state.contactsListPosition;
+  if (!position) return;
+  const wrapper = document.querySelector("#contacts-list-wrap");
+  if (wrapper) wrapper.scrollLeft = position.tableX;
+  Array.from(document.querySelectorAll("[data-counterparty-row]"))
+    .find(row => row.dataset.counterpartyRow === position.id)?.querySelector("a")?.focus({preventScroll: true});
+  window.scrollTo({left: position.x, top: position.y, behavior: "auto"});
+}
+
+function activeContactDetail(detail, generation) {
+  return state.view === "contact-detail" && state.contactDetail === detail &&
+    currentRenderGeneration === generation;
+}
+
+function contactIdentityMarkup(party) {
+  const facts = [
+    [t("contacts.country"), party.country_code === "ZZ" ? null : party.country_code],
+    ["NIF", party.tax_id], ["VAT ID", party.vat_id],
+    [t("fields.legalForm"), legalFormLabels[party.legal_form || "unknown"]?.[state.locale] || party.legal_form],
+    [t("contacts.email"), party.email], [t("contacts.phone"), party.phone],
+  ];
+  return '<header class="contact-detail-header"><h2>' + escapeHtml(party.display_name) +
+    '</h2>' + counterpartyMenuTrigger(party) + '</header><section class="panel contact-facts-panel">' +
+    '<h3>' + escapeHtml(t("contacts.facts")) + '</h3><dl class="contact-facts">' +
+    facts.map(([label, value]) => '<div><dt>' + escapeHtml(label) + '</dt><dd>' + escapeHtml(value || "—") + '</dd></div>').join("") +
+    '<div><dt>' + escapeHtml(t("fields.roiStatus")) + '</dt><dd>' + AccountingHelp.cell(party.ui_context) +
+    '</dd></div></dl></section>';
+}
+
+function contactOperationMarkup(row, detail) {
+  const description = row.entry_type === "expense"
+    ? '<a data-spa href="' + escapeHtml(buildRouteUrl("expense-detail", {
+        transactionId: row.transaction_id, period: row.period_key, returnTo: contactUrl(detail.id, detail.period),
+      })) + '">' + escapeHtml(row.description || t("expense.title")) + '</a>'
+    : escapeHtml(row.description || "—");
+  const document = (row.ui_context?.documents || []).find(item => item.document_id === row.document_id);
+  const source = document?.available
+    ? '<a target="_blank" rel="noreferrer" href="/api/document/' + encodeURIComponent(row.document_id) +
+      '/content">' + escapeHtml(row.document_number || t("common.file")) + '</a>'
+    : escapeHtml(row.document_number || "—");
+  const amount = row.expense_kind === "amortization"
+    ? expenseMoney(row.deductible_irpf_eur) + '<small class="expense-note">' + escapeHtml(t("expense.quarterAmount")) + '</small>'
+    : hasExpenseAmount(row.amount_eur) ? eur(row.amount_eur)
+    : escapeHtml(row.amount_original ?? "—") + " " + escapeHtml(row.currency || "");
+  const cells = [
+    ["transactions.date", formatDate(row.transaction_date), ""],
+    ["contacts.operationType", escapeHtml(row.entry_type === "income" ? t("nav.income") : row.entry_type === "expense" ? t("nav.expenses") : row.entry_type), ""],
+    ["contacts.description", description, "cell-primary"], ["contacts.sourceDocument", source, ""],
+    ["transactions.status", row.entry_type === "expense" ? expenseStatus(row) : AccountingHelp.cell(row.ui_context), ""],
+    ["transactions.amount", amount, "amount"],
+  ];
+  return '<tr>' + cells.map(([key, content, className]) => '<td class="' + className +
+    '" data-label="' + escapeHtml(t(key)) + '">' + content + '</td>').join("") + '</tr>';
+}
+
+function renderContactOperations(detail) {
+  const host = document.querySelector("#contact-operations-results");
+  if (!host) return;
+  const columns = ["transactions.date", "contacts.operationType", "contacts.description",
+    "contacts.sourceDocument", "transactions.status", "transactions.amount"];
+  host.innerHTML = (detail.rows.length ? '<div class="table-wrap"><table><thead><tr>' +
+    columns.map(key => '<th>' + escapeHtml(t(key)) + '</th>').join("") + '</tr></thead><tbody>' +
+    detail.rows.map(row => contactOperationMarkup(row, detail)).join("") + '</tbody></table></div>' : "") +
+    (detail.error ? '<p role="alert">' + escapeHtml(t("contacts.operationsError")) + '</p>'
+      : detail.busy && !detail.rows.length ? '<p role="status">' + escapeHtml(t("common.loading")) + '</p>'
+      : !detail.rows.length ? '<p>' + escapeHtml(t("contacts.noOperations")) + '</p>' : "") +
+    '<div class="contact-page-actions">' +
+    (detail.total !== null ? '<small>' + escapeHtml(t("contacts.shown", {count: detail.rows.length, total: detail.total})) + '</small>' : "") +
+    ((detail.error || detail.hasMore) ? '<button type="button" class="secondary-button" id="contact-load-more"' +
+      (detail.busy ? " disabled" : "") + '>' + escapeHtml(t(detail.busy ? "common.loading" : detail.error ? "contacts.retry" : "contacts.more")) + '</button>' : "") +
+    '</div>';
+  AccountingHelp.labelTables(host);
+}
+
+async function loadContactOperations(detail, generation) {
+  if (detail.busy || !activeContactDetail(detail, generation)) return;
+  detail.busy = true;
+  detail.error = false;
+  renderContactOperations(detail);
+  try {
+    const query = new URLSearchParams({offset: String(detail.nextOffset), limit: "50"});
+    if (detail.period) query.set("period", detail.period);
+    const page = await fetchJSON("/api/counterparties/" + encodeURIComponent(detail.id) + "/transactions?" + query);
+    if (!activeContactDetail(detail, generation)) return;
+    const ids = new Set(detail.rows.map(row => row.transaction_id));
+    detail.rows.push(...page.rows.filter(row => !ids.has(row.transaction_id)));
+    detail.nextOffset = page.next_offset;
+    detail.total = page.matching_count;
+    detail.hasMore = page.has_more;
+  } catch (_) {
+    if (activeContactDetail(detail, generation)) detail.error = true;
+  } finally {
+    if (activeContactDetail(detail, generation)) {
+      detail.busy = false;
+      renderContactOperations(detail);
+    }
+  }
+}
+
+function counterpartyHistoryMarkup(changes) {
+  if (!changes.length) return '<p>' + escapeHtml(t("contacts.noNameHistory")) + '</p>';
+  return '<ol class="counterparty-name-history-list">' + changes.map(change => {
+    const actor = change.actor || t(change.change_source === "sheet" ? "contacts.sheetActor" : "contacts.localActor");
+    const time = new Intl.DateTimeFormat(intlLocale(), {dateStyle: "medium", timeStyle: "short"}).format(new Date(change.changed_at));
+    return '<li><div>' + escapeHtml(change.old_name) + ' → <strong>' + escapeHtml(change.new_name) +
+      '</strong></div><small>' + escapeHtml(time) + ' · ' + escapeHtml(actor) + '</small></li>';
+  }).join("") + '</ol>';
+}
+
+async function loadContactHistory(detail, generation) {
+  const request = ++detail.historyRequest;
+  const body = document.querySelector("#contact-history-body");
+  body.textContent = t("common.loading");
+  try {
+    const result = await fetchJSON("/api/counterparties/" + encodeURIComponent(detail.id) + "/name-history");
+    if (!activeContactDetail(detail, generation) || request !== detail.historyRequest) return;
+    detail.history = result.changes;
+    body.innerHTML = counterpartyHistoryMarkup(result.changes);
+  } catch (_) {
+    if (!activeContactDetail(detail, generation) || request !== detail.historyRequest) return;
+    body.innerHTML = '<p role="alert">' + escapeHtml(t("contacts.historyError")) +
+      '</p><button class="secondary-button" type="button" id="contact-retry-history">' + escapeHtml(t("contacts.retry")) + '</button>';
+  }
+}
+
+async function renderContactDetail(generation) {
+  const detail = state.contactDetail;
+  const data = await fetchJSON("/api/counterparties/" + encodeURIComponent(detail.id));
+  if (!activeContactDetail(detail, generation)) return;
+  detail.data = data;
+  detail.rows = [];
+  detail.nextOffset = 0;
+  detail.total = null;
+  detail.hasMore = false;
+  detail.busy = false;
+  detail.history = null;
+  const periods = [...new Set([detail.period, ...data.periods].filter(Boolean))];
+  app.innerHTML = '<div class="section-stack contact-detail">' + contactBackLink() +
+    '<div id="contact-identity">' + contactIdentityMarkup(data.counterparty) + '</div>' +
+    '<section class="panel contact-operations"><header class="panel-header"><h3>' + escapeHtml(t("contacts.operations")) +
+    '</h3><label class="contact-period-label" for="contact-period">' + escapeHtml(t("toolbar.period")) +
+    '<select id="contact-period" aria-label="' + escapeHtml(t("toolbar.period")) + '"><option value="">' + escapeHtml(t("contacts.allPeriods")) + '</option>' +
+    periods.map(period => '<option value="' + escapeHtml(period) + '"' + (period === detail.period ? " selected" : "") +
+      '>' + escapeHtml(period) + '</option>').join("") + '</select></label></header>' +
+    '<div id="contact-operations-results" class="contact-panel-body"></div></section>' +
+    '<details class="panel contact-history" id="contact-history"><summary>' + escapeHtml(t("contacts.nameHistory")) +
+    '</summary><div id="contact-history-body" class="contact-panel-body"></div></details></div>';
+  document.querySelector("#contact-period").addEventListener("change", event =>
+    navigateToUrl(contactUrl(detail.id, event.target.value)));
+  document.querySelector("#contact-history").addEventListener("toggle", event => {
+    if (event.target.open && detail.history === null && activeContactDetail(detail, generation))
+      void loadContactHistory(detail, generation);
+  });
+  applyViewState();
+  await loadContactOperations(detail, generation);
 }
 
 function counterpartyNameCell(row) {
-  return '<div class="counterparty-name-cell"><strong>' + escapeHtml(row.display_name) +
-    '</strong><div class="counterparty-name-actions"><button type="button" class="secondary-button" data-rename-counterparty="' +
-    escapeHtml(row.counterparty_id) + '">' + escapeHtml(t("contacts.editName")) + '</button>' +
-    (row.name_is_manual ? '<small>' + escapeHtml(t("contacts.manualName")) + '</small>' : '') +
-    '</div></div>';
+  return '<a class="counterparty-link" data-spa href="' + escapeHtml(contactUrl(row.counterparty_id)) +
+    '"><strong>' + escapeHtml(row.display_name) + '</strong></a>';
 }
 
 function validCounterpartyName(value) {
@@ -3947,10 +4278,13 @@ function updateCounterpartyNameControls() {
   document.querySelector("#close-counterparty-name").disabled = busy;
 }
 
-function openCounterpartyNameEditor(id, trigger) {
-  const row = counterpartyRowsById.get(id);
+function openCounterpartyNameEditor(id, trigger, row = counterpartyRowsById.get(id)) {
   if (!row) return;
-  counterpartyNameEditor = {row: {...row}, trigger, busy: false, conflict: null, historyRequest: 0};
+  counterpartyNameEditor = {
+    row: {...row}, trigger, busy: false, conflict: null, historyRequest: 0,
+    pageUrl: window.location.pathname + (window.location.search || ""),
+    pageState: window.history?.state || null,
+  };
   document.querySelector("#counterparty-name-input").value = row.display_name;
   document.querySelector("#counterparty-name-input").removeAttribute("aria-invalid");
   document.querySelector("#counterparty-name-error").textContent = "";
@@ -3964,13 +4298,14 @@ function openCounterpartyNameEditor(id, trigger) {
 
 function closeCounterpartyNameEditor(force = false) {
   const edit = counterpartyNameEditor;
-  if (!edit) return;
-  if (!force && edit.busy) return;
+  if (!edit) return true;
+  if (!force && edit.busy) return false;
   if (!force && document.querySelector("#counterparty-name-input").value !== edit.row.display_name &&
-      !window.confirm(t("contacts.discardName"))) return;
+      !window.confirm(t("contacts.discardName"))) return false;
   counterpartyNameEditor = null;
   document.querySelector("#counterparty-name-dialog").close();
   if (edit.trigger?.isConnected) edit.trigger.focus();
+  return true;
 }
 
 async function loadCounterpartyNameHistory() {
@@ -4033,6 +4368,7 @@ async function submitCounterpartyName(event) {
       body: JSON.stringify({display_name: input.value, expected_row_version: edit.row.row_version}),
     });
   } catch (error) {
+    if (counterpartyNameEditor !== edit) return;
     if (error.status === 409 && error.code === "stale_counterparty" && error.current) {
       edit.conflict = error.current;
       document.querySelector("#counterparty-current-name").textContent = t("contacts.currentName", {name: error.current.display_name});
@@ -4045,25 +4381,36 @@ async function submitCounterpartyName(event) {
     }
   } finally {
     edit.busy = false;
-    updateCounterpartyNameControls();
+    if (counterpartyNameEditor === edit) updateCounterpartyNameControls();
   }
-  if (!result) return;
+  if (!result || counterpartyNameEditor !== edit) return;
   counterpartyRowsById.set(edit.row.counterparty_id, {...edit.row, ...result});
   closeCounterpartyNameEditor(true);
   showToast(t(result.changed ? "contacts.nameSaved" : "contacts.nameUnchanged"));
   if (state.view === "contacts") {
+    rememberContactsListPosition();
     try {
       await renderContacts();
-      Array.from(document.querySelectorAll("[data-rename-counterparty]"))
-        .find((button) => button.dataset.renameCounterparty === edit.row.counterparty_id)?.focus();
+      Array.from(document.querySelectorAll("[data-counterparty-menu]"))
+        .find((button) => button.dataset.counterpartyMenu === edit.row.counterparty_id)?.focus({preventScroll: true});
     } catch (_) {
       showToast(t("contacts.nameRefreshError"), true);
     }
+  } else if (state.view === "contact-detail" && state.contactDetail.id === edit.row.counterparty_id) {
+    const current = state.contactDetail;
+    current.data.counterparty = {...current.data.counterparty, ...result};
+    current.data.counterparty.ui_context = {...current.data.counterparty.ui_context, title: result.display_name};
+    document.querySelector("#contact-identity").innerHTML = contactIdentityMarkup(current.data.counterparty);
+    applyViewState();
+    current.history = null;
+    ++current.historyRequest;
+    if (document.querySelector("#contact-history").open) void loadContactHistory(current, currentRenderGeneration);
+    document.querySelector("#contact-identity [data-counterparty-menu]")?.focus({preventScroll: true});
   }
 }
 
 async function refreshDashboard() {
-  if (state.view === "expense-detail" || (state.view === "review" && state.review.selectedReviewId && !state.detailPeriodResolved)) {
+  if (state.view === "contact-detail" || state.view === "expense-detail" || (state.view === "review" && state.review.selectedReviewId && !state.detailPeriodResolved)) {
     await renderCurrentView();
     return;
   }
@@ -4820,23 +5167,26 @@ function applyStaticTranslations() {
 
 function applyViewState() {
   const expenseDetail = state.view === "expense-detail";
-  const detail = expenseDetail || (state.view === "review" && Boolean(state.review.selectedReviewId));
-  const navView = expenseDetail ? "expenses" : state.view;
+  const contactDetail = state.view === "contact-detail";
+  const detail = contactDetail || expenseDetail || (state.view === "review" && Boolean(state.review.selectedReviewId));
+  const navView = contactDetail ? "contacts" : expenseDetail ? "expenses" : state.view;
   document.querySelectorAll(".nav-item").forEach((button) => {
     button.classList.toggle("active", button.dataset.view === navView);
     button.setAttribute("href", buildRouteUrl(button.dataset.view));
   });
-  pageTitle.textContent = expenseDetail ? t("expense.title") : t(`titles.${state.view}`);
+  pageTitle.textContent = contactDetail ? t("contacts.cardTitle") : expenseDetail ? t("expense.title") : t(`titles.${state.view}`);
   if (periodSelect) {
+    const control = periodSelect.closest?.(".period-control");
+    if (control) control.hidden = contactDetail;
     periodSelect.disabled = Boolean(detail);
     periodSelect.value = detail && !state.detailPeriodResolved ? "" : state.period;
   }
   if (newEntryButton) newEntryButton.hidden = Boolean(detail);
   if (refreshButton) {
-    const label = t(expenseDetail ? "expense.refresh" : "toolbar.refresh");
+    const label = t(contactDetail ? "contacts.refresh" : expenseDetail ? "expense.refresh" : "toolbar.refresh");
     refreshButton.title = label;
     refreshButton.setAttribute("aria-label", label);
-    refreshButton.disabled = Boolean(detail && !state.detailPeriodResolved);
+    refreshButton.disabled = Boolean(detail && !contactDetail && !state.detailPeriodResolved);
   }
 }
 
@@ -4923,6 +5273,13 @@ if (hasDOM) {
 
   document.addEventListener("click", (event) => {
     if (!(event.target instanceof Element)) return;
+    closeCounterpartyMenuFromOutside(event.target);
+    if (event.target.closest("#counterparty-menu-rename")) {
+      const selected = counterpartyMenu;
+      closeCounterpartyMenu(false);
+      if (selected) openCounterpartyNameEditor(selected.row.counterparty_id, selected.trigger, selected.row);
+      return;
+    }
     if (event.target.closest("[data-reload-view]")) { window.location.reload(); return; }
     if (event.target.closest("[data-retry-view]")) { void renderCurrentView(); return; }
     if (event.target.closest("[data-refresh-calculation]")) { void refreshDashboard(); return; }
@@ -4932,6 +5289,23 @@ if (hasDOM) {
   window.addEventListener("popstate", () => {
     if (AccountingHelp.handlePopState()) return;
     applyRouteFromLocation();
+  });
+  document.addEventListener("keydown", event => {
+    if (!counterpartyMenu) return;
+    if (event.key === "Escape") { event.preventDefault(); closeCounterpartyMenu(); }
+    else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+      event.preventDefault();
+      document.querySelector("#counterparty-menu-rename").focus();
+    } else if (event.key === "Tab") closeCounterpartyMenu();
+  });
+  document.addEventListener("scroll", () => closeCounterpartyMenu(false), true);
+  window.addEventListener("resize", () => closeCounterpartyMenu(false));
+  window.addEventListener("beforeunload", event => {
+    const edit = counterpartyNameEditor;
+    if (edit && (edit.busy || document.querySelector("#counterparty-name-input").value !== edit.row.display_name)) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
   });
 
   periodSelect.addEventListener("change", () => {
@@ -5003,10 +5377,22 @@ if (hasDOM) {
 
   app.addEventListener("click", (event) => {
     if (!(event.target instanceof Element)) return;
-    const renameButton = event.target.closest("[data-rename-counterparty]");
-    if (renameButton) {
-      openCounterpartyNameEditor(renameButton.dataset.renameCounterparty, renameButton);
+    const menuButton = event.target.closest("[data-counterparty-menu]");
+    if (menuButton) {
+      event.preventDefault();
+      toggleCounterpartyMenu(menuButton);
       return;
+    }
+    if (event.target.closest("#contact-load-more")) {
+      void loadContactOperations(state.contactDetail, currentRenderGeneration); return;
+    }
+    if (event.target.closest("#contact-retry-history")) {
+      void loadContactHistory(state.contactDetail, currentRenderGeneration); return;
+    }
+    const contactRow = event.target.closest("[data-counterparty-row]");
+    if (contactRow && counterpartyRowClickAllowed(event)) {
+      contactRow.querySelector(".counterparty-link")?.focus({preventScroll: true});
+      navigateToUrl(contactUrl(contactRow.dataset.counterpartyRow)); return;
     }
     const viewButton = event.target.closest("[data-nav-view]");
     if (viewButton) {
