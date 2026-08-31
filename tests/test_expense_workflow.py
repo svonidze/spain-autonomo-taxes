@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 
 from autonomo_taxes.depreciation import schedule
-from autonomo_taxes.ledger_db import open as open_db
+from autonomo_taxes.ledger_db import LATEST_SCHEMA_VERSION, open as open_db
 from autonomo_taxes.expense_workflow import get_draft, save_draft, preview, confirm_and_post, recognize_period, ExpenseWorkflowError
 from autonomo_taxes.tax_row_loader import load_tax_rows
 from autonomo_taxes.tax_engine import calculate_modelo303_rows
@@ -398,7 +398,7 @@ def test_migration_adopts_only_unambiguous_matching_legacy_links(tmp_path,case):
             db.add_amortization_entry(asset_id=asset['asset_id'],period_key='2026-Q3',amount_minor=9900 if case=='different_amount' else 10000,source_hash='synthetic-legacy-row',source_book_line_id='transaction:'+journal['transaction_id'])
         before={table:[dict(row) for row in db.connection.execute('SELECT * FROM '+table)] for table in ('transactions','tax_treatments','assets')}
     with open_db(database,apply_migrations=True) as db:
-        assert db.connection.execute('PRAGMA user_version').fetchone()[0]==22
+        assert db.connection.execute('PRAGMA user_version').fetchone()[0]==LATEST_SCHEMA_VERSION
         for table,rows in before.items():assert [dict(row) for row in db.connection.execute('SELECT * FROM '+table)]==rows
         links=[row[0] for row in db.connection.execute('SELECT recognition_transaction_id FROM amortization_entries')]
         assert links==([journal['transaction_id']] if case=='exact' else [None]*len(links))

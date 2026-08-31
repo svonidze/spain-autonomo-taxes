@@ -38,6 +38,7 @@ except Exception:  # pragma: no cover - dependency guard
     yaml = None
 
 from .analytics_series import AnalyticsQuery, build_analytics
+from .account_settings import AccountSettingsError, read_settings, save_backups, save_profile
 from .fx_reference import FXReferenceError, fetch_eur_rate
 from .expense_view import enrich_expense_context, expense_page, expense_summary
 from .ledger_db import LedgerDB, LedgerDbError, StaleRowVersionError, open as open_ledger_db
@@ -47,6 +48,7 @@ from .status_context import StatusContext, reason as status_reason, simple_conte
 from .private_paths import (
     PrivatePathError,
     config_path as resolve_config_path,
+    configured_private_root,
     resolve_private_paths,
 )
 from .review_packet import (
@@ -77,7 +79,10 @@ SPA_TOP_LEVEL_ROUTES = {
     "/assets",
     "/taxes",
     "/contacts",
+    "/settings",
 }
+
+MAX_SETTINGS_BYTES = 16 * 1024
 
 
 def _is_spa_route(path: str) -> bool:
@@ -197,6 +202,7 @@ class LocalWebConfig:
     legacy_path_map_file: Path | None = None
     google_picker_developer_key: str | None = None
     google_picker_app_id: str | None = None
+    private_root: Path | None = None
 
 
 def load_config(
@@ -273,6 +279,14 @@ def load_config(
         )
         or private_paths.evidence
     )
+    # Ops uses this explicit environment root, including when --config points
+    # into a separately managed SOPS generation. Never derive it from config.
+    backup_root = None
+    if os.environ.get("AUTONOMO_PRIVATE_ROOT", "").strip():
+        try:
+            backup_root = configured_private_root()
+        except PrivatePathError:
+            pass
     return LocalWebConfig(
         project_root=root,
         database=resolved_database,
@@ -290,6 +304,7 @@ def load_config(
         legacy_path_map_file=legacy_path_map.resolve() if legacy_path_map else None,
         google_picker_developer_key=google_picker_developer_key,
         google_picker_app_id=google_picker_app_id,
+        private_root=backup_root,
     )
 
 
@@ -378,7 +393,7 @@ class LocalAccountingApp:
                 if QUARTER_RE.fullmatch(str(row["period_key"]))
             ]
             profile = connection.execute(
-                "SELECT full_name FROM taxpayer_profile ORDER BY created_at LIMIT 1"
+                "SELECT full_name FROM taxpayer_profile ORDER BY created_at, taxpayer_profile_id LIMIT 1"
             ).fetchone()
             counts = {
                 table: int(
@@ -2001,7 +2016,7 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             if parsed.path == "/":
                 self._serve_static("index.html", set_cookie=True, principal=principal)
                 return
-            if parsed.path in {"/app.js", "/charts.js", "/status-help.js", "/expense-workflow.js", "/styles.css"}:
+            if parsed.path in {"/app.js", "/charts.js", "/status-help.js", "/expense-workflow.js", "/settings.js", "/styles.css"}:
                 self._serve_static(parsed.path.removeprefix("/"))
                 return
             if parsed.path == "/favicon.ico":
@@ -2016,6 +2031,10 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             query = parse_qs(parsed.query)
             if parsed.path == "/api/bootstrap":
                 self._send_json(self.server.app.bootstrap())
+            elif parsed.path == "/api/settings":
+                self._send_json(read_settings(
+                    self.server.app.config.database, self.server.app.config.private_root,
+                ))
             elif parsed.path == "/api/google-picker/config":
                 self._send_json(self.server.app.google_picker_config())
             elif parsed.path == "/api/dashboard":
@@ -2105,7 +2124,7 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                 self._send_error_json(HTTPStatus.NOT_FOUND, "Unknown API endpoint")
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
-        except ExpenseWorkflowError as exc:
+        except (ExpenseWorkflowError, AccountSettingsError) as exc:
             self._send_error_json(HTTPStatus(exc.status), str(exc), code=exc.code)
         except LocalWebApiError as exc:
             self._send_error_json(exc.status, str(exc), code=exc.code, current=exc.current)
@@ -2146,6 +2165,17 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                 self._require_same_origin()
                 self._require_json_content_type()
                 self._send_json(self.server.app.depreciation_post(match.group(1), self._read_json(), principal or "local-session"))
+            elif parsed.path in {"/api/settings/profile", "/api/settings/backups"}:
+                self._require_same_origin()
+                self._require_json_content_type()
+                payload = self._read_json(max_bytes=MAX_SETTINGS_BYTES)
+                config = self.server.app.config
+                result = (
+                    save_profile(config.database, payload, actor=principal)
+                    if parsed.path.endswith("/profile")
+                    else save_backups(config.database, config.private_root, payload)
+                )
+                self._send_json(result)
             elif parsed.path == "/api/dashboard/refresh":
                 payload = self._read_json()
                 result = self.server.app.refresh_dashboard(
@@ -2242,7 +2272,7 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                 self._send_error_json(HTTPStatus.NOT_FOUND, "Unknown API endpoint")
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
-        except ExpenseWorkflowError as exc:
+        except (ExpenseWorkflowError, AccountSettingsError) as exc:
             self._send_error_json(HTTPStatus(exc.status), str(exc), code=exc.code)
         except LocalWebApiError as exc:
             self._send_error_json(exc.status, str(exc), code=exc.code, current=exc.current)

@@ -24,12 +24,13 @@
       <a class="nav-item" href="/assets" data-view="assets" data-spa><span aria-hidden="true">◇</span><span data-i18n="nav.assets">Активы</span></a>
       <a class="nav-item" href="/taxes" data-view="taxes" data-spa><span aria-hidden="true">%</span><span data-i18n="nav.taxes">Налоги</span></a>
       <a class="nav-item" href="/contacts" data-view="contacts" data-spa><span aria-hidden="true">◎</span><span data-i18n="nav.contacts">Контрагенты</span></a>
+      <a class="nav-item" href="/settings" data-view="settings" data-spa><span aria-hidden="true">⚙</span><span data-i18n="nav.settings">Настройки</span></a>
     </nav>
 
-    <div class="sidebar-footer">
-      <span class="status-dot"></span>
-      <span data-i18n="storage.local">Локальная SQLite</span>
-    </div>
+    <a class="sidebar-footer storage-settings-link" href="/settings" data-spa>
+      <span aria-hidden="true">⚙</span>
+      <span data-i18n="storage.settings">SQLite · Настройки</span>
+    </a>
   </aside>
 
   <main class="workspace">
@@ -203,6 +204,7 @@
   <script src="/status-help.js"></script>
   <script src="/charts.js"></script>
   <script src="/expense-workflow.js"></script>
+  <script src="/settings.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

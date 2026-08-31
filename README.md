@@ -73,6 +73,9 @@ Use [Understanding accounting statuses](docs/ACCOUNTING_STATUSES.md) for review
 versus posting readiness, blocking reasons, next actions, assets and filing
 evidence.
 
+See [Account settings](docs/ACCOUNT_SETTINGS.md) for taxpayer details, local backup
+retention, observed backup status and release requirements.
+
 ## Operating and recovering the service
 
 - [Correcting counterparty names](docs/COUNTERPARTY_NAMES.md): manual corrections,

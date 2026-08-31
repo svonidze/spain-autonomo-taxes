@@ -68,6 +68,8 @@ const messages = {
     "nav.assets": "Активы",
     "nav.taxes": "Налоги",
     "nav.contacts": "Контрагенты",
+    "nav.settings": "Настройки",
+    "storage.settings": "SQLite · Настройки",
     "storage.local": "Локальная SQLite",
     "locale.aria": "Язык интерфейса",
     "toolbar.period": "Период",
@@ -182,6 +184,7 @@ const messages = {
     "titles.assets": "Активы",
     "titles.taxes": "Налоги и сроки",
     "titles.contacts": "Контрагенты",
+    "titles.settings": "Настройки аккаунта",
     "contacts.cardTitle": "Карточка контрагента",
     "contacts.actionsFor": "Действия для {name}",
     "contacts.actions": "Дополнительные действия",
@@ -571,6 +574,8 @@ const messages = {
     "nav.assets": "Assets",
     "nav.taxes": "Taxes",
     "nav.contacts": "Counterparties",
+    "nav.settings": "Settings",
+    "storage.settings": "SQLite · Settings",
     "storage.local": "Local SQLite",
     "locale.aria": "Interface language",
     "toolbar.period": "Period",
@@ -685,6 +690,7 @@ const messages = {
     "titles.assets": "Assets",
     "titles.taxes": "Taxes and deadlines",
     "titles.contacts": "Counterparties",
+    "titles.settings": "Account settings",
     "contacts.cardTitle": "Counterparty details",
     "contacts.actionsFor": "Actions for {name}",
     "contacts.actions": "Additional actions",
@@ -1295,6 +1301,7 @@ const incomeCopyRowsById = new Map();
 const counterpartyRowsById = new Map();
 let counterpartyNameEditor = null;
 let counterpartyMenu = null;
+let settingsController = null;
 let currentRenderGeneration = 0;
 let currentReviewRequest = 0;
 
@@ -1324,6 +1331,7 @@ const ROUTE_VIEWS = {
   "/assets": "assets",
   "/taxes": "taxes",
   "/contacts": "contacts",
+  "/settings": "settings",
 };
 const REVIEW_DETAIL_RE = /^\/review\/([0-9a-fA-F-]{32,36})$/;
 const EXPENSE_DETAIL_RE = /^\/expenses\/([0-9a-fA-F-]{32,36})$/;
@@ -1439,8 +1447,20 @@ function selectedReviewTransactionId() {
   return reviewId.startsWith("transaction:") ? reviewId.slice("transaction:".length) : "";
 }
 
+function leaveSettings() {
+  if (!settingsController) return true;
+  if (!settingsController.canLeave()) return false;
+  settingsController.dispose();
+  settingsController = null;
+  return true;
+}
+
 function applyRouteFromLocation() {
   if (!state.bootstrap) return false;
+  if (settingsController && !leaveSettings()) {
+    window.history.pushState(null, "", "/settings");
+    return false;
+  }
   closeCounterpartyMenu(false);
   if (counterpartyNameEditor) {
     const edit = counterpartyNameEditor;
@@ -1519,6 +1539,7 @@ function applyRouteFromLocation() {
 }
 
 function navigateToUrl(url, {replace = false} = {}) {
+  if (!leaveSettings()) return;
   if (counterpartyNameEditor && !closeCounterpartyNameEditor()) return;
   rememberContactsListPosition();
   const nextView = parseRoute(url)?.view;
@@ -1755,10 +1776,11 @@ function currentReviewSignature() {
 async function changeLocale(locale) {
   if (!SUPPORTED_LOCALES.has(locale)) return;
   const changed = state.locale !== locale;
+  if (changed && !leaveSettings()) return;
   state.locale = locale;
   storeLocale(locale);
   applyStaticTranslations();
-  if (changed && state.period) await renderCurrentView();
+  if (changed && (state.period || state.view === "settings")) await renderCurrentView();
 }
 
 function t(key, variables = {}) {
@@ -2758,8 +2780,21 @@ async function init() {
   }
 }
 
+async function renderSettings(generation) {
+  const data = await fetchJSON("/api/settings");
+  if (generation !== currentRenderGeneration || state.view !== "settings") return;
+  settingsController = AutonomoSettings.mount(app, {
+    data, locale: state.locale, request: fetchJSON,
+    isCurrent: () => generation === currentRenderGeneration && state.view === "settings",
+    onProfile: (name) => { state.bootstrap.profile_name = name; profileName.textContent = name; },
+    onLocale: changeLocale,
+    onReload: () => { if (leaveSettings()) void renderCurrentView(); },
+    confirm: (message) => window.confirm(message),
+  });
+}
+
 async function renderCurrentView() {
-  if (!app || (!state.period && !state.expenseDetail.transactionId && !state.review.selectedReviewId && !state.contactDetail.id)) return;
+  if (!app || (state.view !== "settings" && !state.period && !state.expenseDetail.transactionId && !state.review.selectedReviewId && !state.contactDetail.id)) return;
   closeCounterpartyMenu(false);
   AccountingHelp.beforeRender();
   AccountingHelp.setLocale(state.locale);
@@ -2779,6 +2814,7 @@ async function renderCurrentView() {
     if (state.view === "taxes") await renderTaxes(renderGeneration);
     if (state.view === "contacts") await renderContacts(renderGeneration);
     if (state.view === "contact-detail") await renderContactDetail(renderGeneration);
+    if (state.view === "settings") await renderSettings(renderGeneration);
   } catch (error) {
     if (renderGeneration !== currentRenderGeneration) return;
     if (state.view === "expense-detail") {
@@ -5470,13 +5506,14 @@ function applyViewState() {
   pageTitle.textContent = contactDetail ? t("contacts.cardTitle") : expenseDetail ? t("expense.title") : t(`titles.${state.view}`);
   if (periodSelect) {
     const control = periodSelect.closest?.(".period-control");
-    if (control) control.hidden = contactDetail;
+    if (control) control.hidden = contactDetail || state.view === "settings";
     periodSelect.disabled = Boolean(detail);
     periodSelect.title = detail ? t("toolbar.periodLocked") : "";
     periodSelect.value = detail && !state.detailPeriodResolved ? "" : state.period;
   }
-  if (newEntryButton) newEntryButton.hidden = Boolean(detail);
+  if (newEntryButton) newEntryButton.hidden = Boolean(detail) || state.view === "settings";
   if (refreshButton) {
+    refreshButton.hidden = state.view === "settings";
     const label = t(contactDetail ? "contacts.refresh" : expenseDetail ? "expense.refresh" : "toolbar.refresh");
     refreshButton.title = label;
     refreshButton.setAttribute("aria-label", label);
@@ -5595,6 +5632,7 @@ if (hasDOM) {
   document.addEventListener("scroll", () => closeCounterpartyMenu(false), true);
   window.addEventListener("resize", () => closeCounterpartyMenu(false));
   window.addEventListener("beforeunload", event => {
+    if (settingsController && (settingsController.isDirty() || settingsController.isBusy())) { event.preventDefault(); event.returnValue = ""; }
     const edit = counterpartyNameEditor;
     if (edit && (edit.busy || document.querySelector("#counterparty-name-input").value !== edit.row.display_name)) {
       event.preventDefault();

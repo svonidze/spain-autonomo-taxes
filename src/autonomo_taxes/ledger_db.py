@@ -27,7 +27,7 @@ from .tax_rules import ALL_FORM_CODES
 from .vat_classification import is_vat_investment_good
 
 
-LATEST_SCHEMA_VERSION = 22
+LATEST_SCHEMA_VERSION = 23
 
 # Migrations that rebuild a table referenced by a foreign key. They must
 # run with foreign-key enforcement temporarily disabled, and that pragma
@@ -102,6 +102,10 @@ class LifecycleError(LedgerDbError):
 
 class StaleRowVersionError(LedgerDbError):
     """Raised when optimistic concurrency checks fail."""
+
+
+class TaxpayerIdentityLockedError(LedgerDbError):
+    """A filed or closed history requires an explicit identity migration."""
 
 
 class FxRateConflictError(LedgerDbError):
@@ -380,6 +384,84 @@ class LedgerDB:
             "SELECT * FROM taxpayer_profile WHERE taxpayer_profile_id = ?",
             (profile_id,),
         )
+
+    def taxpayer_identity_locked(self) -> bool:
+        return bool(self.connection.execute(
+            "SELECT EXISTS(SELECT 1 FROM periods WHERE status IN ('closed', 'amended'))"
+            " OR EXISTS(SELECT 1 FROM filing_snapshots)"
+        ).fetchone()[0])
+
+    def edit_taxpayer_profile(
+        self,
+        *,
+        taxpayer_profile_id: str | None,
+        expected_row_version: int,
+        tax_id: str,
+        full_name: str,
+        residency_country: str,
+        actor: str | None = None,
+    ) -> dict[str, Any]:
+        """Edit stable profile identity and record its audit in one transaction."""
+        if type(expected_row_version) is not int or expected_row_version < 0:
+            raise ValueError("Invalid expected profile version")
+        if not all(isinstance(value, str) for value in (tax_id, full_name, residency_country)):
+            raise ValueError("Profile fields must be strings")
+        if "/" in tax_id or "\\" in tax_id:
+            raise ValueError("Tax identifier must not contain path separators")
+        payload = {
+            "tax_id": validate_counterparty_name(tax_id).upper(),
+            "full_name": validate_counterparty_name(full_name),
+            "residency_country": residency_country.strip().upper(),
+        }
+        if not payload["tax_id"] or len(payload["tax_id"]) > 64 or not payload["full_name"] or len(payload["full_name"]) > 200:
+            raise ValueError("Invalid profile fields")
+        country = payload["residency_country"]
+        if len(country) != 2 or not country.isascii() or not country.isalpha():
+            raise ValueError("Country must be an alpha-2 code")
+        with self.transaction():
+            existing = self._fetch_optional(
+                "SELECT * FROM taxpayer_profile WHERE taxpayer_profile_id = ?",
+                (taxpayer_profile_id,),
+            ) if taxpayer_profile_id is not None else None
+            if taxpayer_profile_id is None:
+                if expected_row_version != 0 or self.connection.execute("SELECT 1 FROM taxpayer_profile LIMIT 1").fetchone():
+                    raise StaleRowVersionError("Profile changed; reload before saving")
+            elif existing is None or existing["row_version"] != expected_row_version:
+                raise StaleRowVersionError("Profile changed; reload before saving")
+            if existing and existing["tax_id"] != payload["tax_id"] and self.taxpayer_identity_locked():
+                raise TaxpayerIdentityLockedError("Tax identity is locked by accounting history")
+            if existing and all(existing[key] == value for key, value in payload.items()):
+                return existing
+            timestamp = _utc_now()
+            profile_id = taxpayer_profile_id or _new_id()
+            old_version = existing["row_version"] if existing else 0
+            if existing:
+                cursor = self.connection.execute(
+                    "UPDATE taxpayer_profile SET tax_id=?, full_name=?, residency_country=?,"
+                    " source_hash=?, row_version=?, updated_at=?"
+                    " WHERE taxpayer_profile_id=? AND row_version=?",
+                    (payload["tax_id"], payload["full_name"], country, _stable_hash(payload),
+                     old_version + 1, timestamp, profile_id, old_version),
+                )
+                if cursor.rowcount != 1:
+                    raise StaleRowVersionError("Profile changed; reload before saving")
+            else:
+                self.connection.execute(
+                    "INSERT INTO taxpayer_profile (taxpayer_profile_id,tax_id,full_name,"
+                    "residency_country,source_hash,row_version,created_at,updated_at)"
+                    " VALUES (?,?,?,?,?,1,?,?)",
+                    (profile_id, payload["tax_id"], payload["full_name"], country,
+                     _stable_hash(payload), timestamp, timestamp),
+                )
+            old = {key: existing[key] for key in payload} if existing else None
+            self.connection.execute(
+                "INSERT INTO taxpayer_profile_changes (change_id,taxpayer_profile_id,"
+                "old_values_json,new_values_json,actor,changed_at,from_row_version,to_row_version)"
+                " VALUES (?,?,?,?,?,?,?,?)",
+                (_new_id(), profile_id, json.dumps(old, sort_keys=True),
+                 json.dumps(payload, sort_keys=True), actor, timestamp, old_version, old_version + 1),
+            )
+            return self._fetch_one("SELECT * FROM taxpayer_profile WHERE taxpayer_profile_id=?", (profile_id,))
 
     def upsert_business_activity(
         self,
@@ -7189,6 +7271,22 @@ def _migration_22(connection: sqlite3.Connection) -> None:
     """)
 
 
+def _migration_23(connection: sqlite3.Connection) -> None:
+    connection.execute("""
+        CREATE TABLE taxpayer_profile_changes (
+            change_id TEXT PRIMARY KEY,
+            taxpayer_profile_id TEXT NOT NULL REFERENCES taxpayer_profile(taxpayer_profile_id),
+            old_values_json TEXT NOT NULL,
+            new_values_json TEXT NOT NULL,
+            actor TEXT,
+            changed_at TEXT NOT NULL,
+            from_row_version INTEGER NOT NULL,
+            to_row_version INTEGER NOT NULL CHECK (to_row_version = from_row_version + 1),
+            UNIQUE (taxpayer_profile_id, to_row_version)
+        )
+    """)
+
+
 _MIGRATIONS = {
     1: _migration_1,
     2: _migration_2,
@@ -7212,4 +7310,5 @@ _MIGRATIONS = {
     20: _migration_20,
     21: _migration_21,
     22: _migration_22,
+    23: _migration_23,
 }

@@ -16,6 +16,10 @@ require_absolute_directory "$data"
 [[ -d "$data" ]] || die "private root does not exist: $data"
 [[ -f "$data/autonomo.sqlite" ]] || die "database does not exist: $data/autonomo.sqlite"
 [[ ! -L "$data/autonomo.sqlite" ]] || die "database must not be a symlink"
+if [[ -e "$data/account-backup-settings.json" || -L "$data/account-backup-settings.json" ]]; then
+  [[ -f "$script_dir/../backup_settings.py" ]] || die "installed backup settings reader is missing"
+  python3 "$script_dir/../backup_settings.py" --private-root "$data"
+fi
 
 sync_required="${AUTONOMO_SECRET_SYNC_REQUIRED:-1}"
 [[ "$sync_required" == "0" || "$sync_required" == "1" ]] \
