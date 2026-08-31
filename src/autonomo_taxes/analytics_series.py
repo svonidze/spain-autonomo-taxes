@@ -564,6 +564,8 @@ def _ytd_comparison(
                 continue
             if through_month == 0 or transaction_date.month > through_month:
                 continue
+            if year == query.year and transaction_date > query.as_of:
+                continue
             if transaction["kind"] == "income":
                 value = _income_base_minor(transaction)
                 if value is None:

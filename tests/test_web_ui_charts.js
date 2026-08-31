@@ -615,6 +615,15 @@ function analyticsFixture(overrides) {
   assert.deepStrictEqual(plain(spec.series[0].values), [6500, 6500]);
 }
 
+// View chart mounts guard against superseded renders (stale-response races).
+{
+  const mountSource = extractFunction(appSource, "mountViewAnalyticsChart");
+  assert.ok(
+    mountSource.includes("currentRenderGeneration"),
+    "mountViewAnalyticsChart must capture and re-check the render generation"
+  );
+}
+
 // Empty-state taxonomy: FX gaps beat the generic message; review queue is named.
 {
   const fx = builderContext.transactionsEmptyMessage(

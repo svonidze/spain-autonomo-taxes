@@ -681,6 +681,33 @@ def test_ytd_comparison_previous_year_null_when_absent(tmp_path: Path) -> None:
     assert comparison["previous_year"]["taxable_income_minor"] == 50000
 
 
+def test_ytd_comparison_excludes_future_posted_within_the_as_of_month(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "autonomo.sqlite"
+    with LedgerDB.initialize(db_path) as db:
+        _add_transaction(
+            db,
+            external_key="income-before-as-of",
+            transaction_date="2026-08-10",
+            booking_date="2026-08-10",
+            amount_minor=40000,
+            amount_eur_minor=40000,
+        )
+        _add_transaction(
+            db,
+            external_key="income-posted-later-same-month",
+            transaction_date="2026-08-25",
+            booking_date="2026-08-25",
+            amount_minor=70000,
+            amount_eur_minor=70000,
+        )
+    analytics = _build(db_path, as_of=date(2026, 8, 15))
+    comparison = analytics["datasets"]["ytd_comparison"]
+    assert comparison["current_year"]["taxable_income_minor"] == 40000
+    assert analytics["quality"]["future_posted_transaction_count"] == 1
+
+
 def test_amortization_respects_include_in_books(tmp_path: Path) -> None:
     db_path = tmp_path / "autonomo.sqlite"
     with LedgerDB.initialize(db_path) as db:

@@ -2095,14 +2095,17 @@ function buildAmortizationSpec(analytics) {
 
 async function mountViewAnalyticsChart(slotId, buildSpec, renderer) {
   const render = renderer || AutonomoCharts.renderCartesian;
+  const generation = currentRenderGeneration;
   try {
     const analytics = await fetchJSON(
       `/api/analytics?period=${encodeURIComponent(state.period)}`
     );
+    if (generation !== currentRenderGeneration) return;
     const slot = document.querySelector(`#${slotId}`);
     if (!slot) return;
     render(slot, buildSpec(analytics));
   } catch (error) {
+    if (generation !== currentRenderGeneration) return;
     const slot = document.querySelector(`#${slotId}`);
     if (!slot) return;
     const failure = document.createElement("div");
