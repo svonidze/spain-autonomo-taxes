@@ -254,6 +254,9 @@ const messages = {
     "review.formDisabledHint": "Поля решений заблокированы, пока операцию нельзя провести — причина объяснена выше.",
     "intake.draftRestored": "Черновик восстановлен — проверьте поля перед приёмом.",
     "intake.consistencyHint": "База + IVA = {expected}, а итого — {total}. Проверьте суммы.",
+    "intake.disabledReason": "Приём документов отключён: на сервере не настроен каталог входящих.",
+    "toolbar.periodLocked": "Период зафиксирован, пока открыта карточка записи.",
+    "tables.actions": "Действия",
     "review.summaryLater": "Можно будет провести позже",
     "review.summaryBlocked": "Блокировки после проверки",
     "review.workspaceBack": "К списку операций",
@@ -754,6 +757,9 @@ const messages = {
     "review.formDisabledHint": "Decision fields are locked while this transaction cannot be posted — the reason is explained above.",
     "intake.draftRestored": "Draft restored — review the fields before accepting.",
     "intake.consistencyHint": "Base + IVA = {expected}, but the total is {total}. Check the amounts.",
+    "intake.disabledReason": "Document intake is disabled: the server inbox folders are not configured.",
+    "toolbar.periodLocked": "The period is locked while a record card is open.",
+    "tables.actions": "Actions",
     "review.summaryLater": "Can post later",
     "review.summaryBlocked": "Blocked after review",
     "review.workspaceBack": "Back to transactions",
@@ -1277,6 +1283,8 @@ const intakeNotice = hasDOM ? document.querySelector("#intake-notice") : null;
 const intakeStatus = hasDOM ? document.querySelector("#intake-status") : null;
 const submitIntake = hasDOM ? document.querySelector("#submit-intake") : null;
 const toast = hasDOM ? document.querySelector("#toast") : null;
+const toastMessage = hasDOM ? document.querySelector("#toast-message") : null;
+const toastClose = hasDOM ? document.querySelector("#toast-close") : null;
 const localeButtons = hasDOM ? document.querySelectorAll("[data-locale]") : [];
 const postingConfirmDialog = hasDOM ? document.querySelector("#posting-confirm-dialog") : null;
 const postingConfirmPeriod = hasDOM ? document.querySelector("#posting-confirm-period") : null;
@@ -2000,11 +2008,17 @@ function looksLikeJsonResponse(contentType, body) {
 
 function showToast(message, error = false) {
   if (!toast) return;
-  toast.textContent = message;
+  (toastMessage || toast).textContent = message;
   toast.classList.toggle("error", error);
   toast.classList.add("visible");
   clearTimeout(showToast.timer);
-  showToast.timer = setTimeout(() => toast.classList.remove("visible"), 3200);
+  if (!error) showToast.timer = setTimeout(() => toast.classList.remove("visible"), 3200);
+}
+
+function hideToast() {
+  if (!toast) return;
+  clearTimeout(showToast.timer);
+  toast.classList.remove("visible");
 }
 
 function emptyRow(columns, message) {
@@ -2086,7 +2100,7 @@ function transactionTable(rows, {copyable = false, sourceUrl = null, emptyMessag
   return `
     <div class="table-wrap">
       <table>
-        <thead><tr><th>${escapeHtml(t("transactions.date"))}</th><th>${escapeHtml(t("transactions.counterpartyDocument"))}</th><th>${escapeHtml(t("transactions.status"))} ${AccountingHelp.term("posting")}</th><th>${escapeHtml(t("transactions.amount"))}</th><th>${escapeHtml(t("transactions.irpfDeduction"))} ${AccountingHelp.term("IRPF")}</th><th>IVA ${AccountingHelp.term("IVA")}</th><th></th></tr></thead>
+        <thead><tr><th>${escapeHtml(t("transactions.date"))}</th><th>${escapeHtml(t("transactions.counterpartyDocument"))}</th><th>${escapeHtml(t("transactions.status"))} ${AccountingHelp.term("posting")}</th><th>${escapeHtml(t("transactions.amount"))}</th><th>${escapeHtml(t("transactions.irpfDeduction"))} ${AccountingHelp.term("IRPF")}</th><th>IVA ${AccountingHelp.term("IVA")}</th><th><span class="visually-hidden">${escapeHtml(t("tables.actions"))}</span></th></tr></thead>
         <tbody>
           ${rows.map((row) => `
             <tr data-transaction-id="${escapeHtml(row.transaction_id)}">
@@ -2366,7 +2380,7 @@ function documentTable(rows) {
   return `
     <div class="table-wrap">
       <table>
-        <thead><tr><th>${escapeHtml(t("transactions.date"))}</th><th>${escapeHtml(t("documents.counterparty"))}</th><th>${escapeHtml(t("fields.number"))}</th><th>${escapeHtml(t("documents.type"))}</th><th>${escapeHtml(t("transactions.status"))} ${AccountingHelp.term("posting")}</th><th>${escapeHtml(t("transactions.amount"))}</th><th></th></tr></thead>
+        <thead><tr><th>${escapeHtml(t("transactions.date"))}</th><th>${escapeHtml(t("documents.counterparty"))}</th><th>${escapeHtml(t("fields.number"))}</th><th>${escapeHtml(t("documents.type"))}</th><th>${escapeHtml(t("transactions.status"))} ${AccountingHelp.term("posting")}</th><th>${escapeHtml(t("transactions.amount"))}</th><th><span class="visually-hidden">${escapeHtml(t("tables.actions"))}</span></th></tr></thead>
         <tbody>
           ${rows.map((row) => `
             <tr>
@@ -2734,6 +2748,7 @@ async function init() {
       .join("");
     periodSelect.value = state.period;
     newEntryButton.disabled = !state.bootstrap.intake_enabled;
+    newEntryButton.title = state.bootstrap.intake_enabled ? "" : t("intake.disabledReason");
     if (window.location.pathname === "/" || window.location.pathname === "") {
       window.history.replaceState(null, "", buildRouteUrl("dashboard"));
     }
@@ -3247,7 +3262,7 @@ function reviewTransactionTable(rows) {
   return `
     <div class="table-wrap">
       <table>
-        <thead><tr><th>${escapeHtml(t("transactions.date"))}</th><th>${escapeHtml(t("transactions.counterpartyDocument"))}</th><th>${escapeHtml(t("review.taxDecision"))}</th><th>${escapeHtml(t("review.result"))}</th><th>${escapeHtml(t("transactions.amount"))}</th><th></th></tr></thead>
+        <thead><tr><th>${escapeHtml(t("transactions.date"))}</th><th>${escapeHtml(t("transactions.counterpartyDocument"))}</th><th>${escapeHtml(t("review.taxDecision"))}</th><th>${escapeHtml(t("review.result"))}</th><th>${escapeHtml(t("transactions.amount"))}</th><th><span class="visually-hidden">${escapeHtml(t("tables.actions"))}</span></th></tr></thead>
         <tbody>
           ${rows.map((row) => {
             const reviewId = reviewIdFromTransaction(row.transaction_id);
@@ -4563,7 +4578,7 @@ async function refreshDashboard() {
     return;
   }
   refreshButton.disabled = true;
-  refreshButton.textContent = "…";
+  refreshButton.classList.add("busy");
   const period = state.period;
   const generation = currentRenderGeneration;
   try {
@@ -4575,7 +4590,7 @@ async function refreshDashboard() {
   } catch (error) {
     if (generation === currentRenderGeneration) showToast(error.message, true);
   } finally {
-    refreshButton.textContent = "↻";
+    refreshButton.classList.remove("busy");
     applyViewState();
   }
 }
@@ -5406,6 +5421,7 @@ function applyViewState() {
     const control = periodSelect.closest?.(".period-control");
     if (control) control.hidden = contactDetail;
     periodSelect.disabled = Boolean(detail);
+    periodSelect.title = detail ? t("toolbar.periodLocked") : "";
     periodSelect.value = detail && !state.detailPeriodResolved ? "" : state.period;
   }
   if (newEntryButton) newEntryButton.hidden = Boolean(detail);
@@ -5534,6 +5550,8 @@ if (hasDOM) {
       event.returnValue = "";
     }
   });
+
+  toastClose?.addEventListener("click", hideToast);
 
   periodSelect.addEventListener("change", () => {
     state.period = periodSelect.value;
