@@ -988,7 +988,7 @@ function between(start, end) {
 }
 const snippet = [
   between("const FORM_KEYS", "const state"),
-  between("function obligationMap", "function intlLocale"),
+  between("function obligationMap", "function statusLabel"),
 ].join("\\n");
 const translations = {
   "dashboard.filed": "filed",

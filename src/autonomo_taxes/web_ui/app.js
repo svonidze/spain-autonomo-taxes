@@ -1436,10 +1436,8 @@ async function changeLocale(locale) {
   const changed = state.locale !== locale;
   state.locale = locale;
   storeLocale(locale);
-  if (hasDOM) {
-    applyStaticTranslations();
-    if (changed && state.period) await renderCurrentView();
-  }
+  applyStaticTranslations();
+  if (changed && state.period) await renderCurrentView();
 }
 
 function t(key, variables = {}) {
@@ -1554,12 +1552,16 @@ function formSubtitle(form, obligation) {
   return stateText;
 }
 
-function showApprovedActivityBanner(actual, forecast) {
-  const hasApprovedOnly = Number(actual?.income_transaction_count) === 0
-    && Number(actual?.expense_transaction_count) === 0
-    && Number(forecast?.transaction_count) > 0;
-  if (!hasApprovedOnly) return "";
-  return `<div class="period-note">${escapeHtml(t("dashboard.approvedNotPosted"))}</div>`;
+function showApprovedActivityBanner(summary) {
+  if (!summary.approvedCount) return "";
+  return `
+    <div class="period-note posting-banner">
+      <div>
+        <strong>${escapeHtml(t("dashboard.postingBannerTitle", {count: summary.approvedCount}))}</strong>
+        <p>${escapeHtml(t("dashboard.approvedNotPosted"))}</p>
+      </div>
+      <button type="button" class="secondary-button" data-nav-view="review">${escapeHtml(t("dashboard.postingBannerCta"))}</button>
+    </div>`;
 }
 
 function formEmptyState(form) {
@@ -3990,148 +3992,6 @@ function updateFilePrompt() {
   fileLabel.textContent = state.intakeKind === "income_invoice"
     ? t("intake.incomeFile")
     : t("intake.expenseFile");
-}
-
-function countNoun(value, noun) {
-  const count = Number(value) || 0;
-  const category = new Intl.PluralRules(intlLocale()).select(count);
-  const forms = nounMessages[state.locale][noun];
-  const label = forms[category] || forms.other;
-  return `${count} ${label}`;
-}
-
-function waitingForPeriod(value) {
-  const count = Number(value) || 0;
-  const category = new Intl.PluralRules(intlLocale()).select(count);
-  const key = category === "one"
-    ? "dashboard.waitingForPeriodOne"
-    : "dashboard.waitingForPeriodOther";
-  return t(key, {count});
-}
-
-function obligationMap(obligations) {
-  const map = {};
-  (obligations || []).forEach((row) => {
-    map[Number(row?.obligation_code)] = row;
-  });
-  return map;
-}
-
-function formCardData(form, obligation, {warnOnMissingHeadline = false} = {}) {
-  const fallback = form || {
-    form_code: "",
-    display_state: "unavailable",
-    filed_on: null,
-    values: {},
-    headline_value: null,
-    headline_detail: null,
-    preview_as_of: null,
-    extraction_status: null,
-  };
-  const zeroSafeHeadline = fallback.headline_value !== null && fallback.headline_value !== undefined;
-  const needsUnavailableWarning = warnOnMissingHeadline
-    && !zeroSafeHeadline
-    && fallback.display_state === "filed";
-  return {
-    ...fallback,
-    display_state: needsUnavailableWarning ? "filed_without_values" : fallback.display_state,
-    obligationFiled: obligation?.filing_status === "filed",
-  };
-}
-
-function formCardValue(form) {
-  return form.headline_value !== null && form.headline_value !== undefined
-    ? eur(form.headline_value)
-    : "—";
-}
-
-function formAccentClass(form) {
-  return ["filed", "snapshot_only"].includes(form.display_state) ? "" : "warning";
-}
-
-function formSubtitle(form, obligation) {
-  const date = form.filed_on ? formatDate(form.filed_on) : null;
-  const previewDate = form.preview_as_of ? formatDate(form.preview_as_of) : null;
-  let stateText = "";
-  if (form.display_state === "filed") {
-    stateText = date ? t("dashboard.filedOn", {date}) : t("dashboard.filed");
-  } else if (form.display_state === "filed_without_values") {
-    const filedLabel = date ? t("dashboard.filedOn", {date}) : t("dashboard.filed");
-    stateText = `${filedLabel} · ${t("dashboard.valuesUnavailable")}`;
-  } else if (form.display_state === "snapshot_only") {
-    stateText = t("dashboard.snapshotAvailable");
-  } else if (form.display_state === "preview") {
-    stateText = previewDate ? t("dashboard.calculatedAsOf", {date: previewDate}) : t("dashboard.notCalculated");
-  } else {
-    stateText = t("dashboard.notCalculated");
-  }
-  if (obligation?.filing_status === "filed" && ["preview", "unavailable"].includes(form.display_state)) {
-    stateText = `${t("dashboard.filed")} · ${stateText}`;
-  }
-  if (form.headline_detail !== null && form.headline_detail !== undefined && !["filed_without_values", "unavailable"].includes(form.display_state)) {
-    return `${stateText} · ${t("dashboard.carryForward", {amount: eur(form.headline_detail)})}`;
-  }
-  return stateText;
-}
-
-function showApprovedActivityBanner(summary) {
-  if (!summary.approvedCount) return "";
-  return `
-    <div class="period-note posting-banner">
-      <div>
-        <strong>${escapeHtml(t("dashboard.postingBannerTitle", {count: summary.approvedCount}))}</strong>
-        <p>${escapeHtml(t("dashboard.approvedNotPosted"))}</p>
-      </div>
-      <button type="button" class="secondary-button" data-nav-view="review">${escapeHtml(t("dashboard.postingBannerCta"))}</button>
-    </div>`;
-}
-
-function formEmptyState(form) {
-  if (form.display_state === "filed_without_values") {
-    if (form.extraction_status === "values_unavailable") return t("taxes.filedValuesUnavailableExtract");
-    if (form.extraction_status === "pdf_unreadable") return t("taxes.filedValuesUnavailablePdf");
-    return t("taxes.filedValuesUnavailable");
-  }
-  return t("taxes.calculationMissing");
-}
-
-function intlLocale() {
-  return state.locale === "en" ? "en-GB" : "ru-RU";
-}
-
-function t(key, variables = {}) {
-  const template = messages[state.locale][key] || messages.ru[key] || key;
-  return Object.entries(variables).reduce(
-    (result, [name, value]) => result.replaceAll(`{${name}}`, String(value)),
-    template
-  );
-}
-
-function loadLocale() {
-  try {
-    const stored = localStorage.getItem(LOCALE_STORAGE_KEY);
-    if (SUPPORTED_LOCALES.has(stored)) return stored;
-  } catch {
-    // The UI remains usable when browser storage is disabled.
-  }
-  return "ru";
-}
-
-function storeLocale(locale) {
-  try {
-    localStorage.setItem(LOCALE_STORAGE_KEY, locale);
-  } catch {
-    // Locale still applies for the current page when storage is unavailable.
-  }
-}
-
-async function changeLocale(locale) {
-  if (!SUPPORTED_LOCALES.has(locale)) return;
-  const changed = state.locale !== locale;
-  state.locale = locale;
-  storeLocale(locale);
-  applyStaticTranslations();
-  if (changed && state.period) await renderCurrentView();
 }
 
 function applyStaticTranslations() {
