@@ -1740,3 +1740,189 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 }
+
+.charts-panel {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  margin-top: 18px;
+}
+
+.chart-slot {
+  min-width: 0;
+}
+
+.chart-figure {
+  margin: 0;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.chart-figure figcaption {
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.chart-host {
+  min-width: 0;
+}
+
+.chart-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.chart-tone-info {
+  color: var(--info);
+}
+
+.chart-tone-warning {
+  color: var(--warning);
+}
+
+.chart-tone-accent {
+  color: var(--accent);
+}
+
+.chart-tone-danger {
+  color: var(--danger);
+}
+
+.chart-tone-muted {
+  color: var(--muted);
+}
+
+.chart-mark {
+  fill: currentColor;
+}
+
+.chart-mark-outline {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.chart-band {
+  fill: currentColor;
+  opacity: 0.22;
+}
+
+.chart-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chart-line-dashed {
+  stroke-dasharray: 5 4;
+}
+
+.chart-hatch-line {
+  stroke: currentColor;
+  stroke-width: 1.6;
+}
+
+.chart-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.chart-baseline {
+  stroke: var(--muted);
+  stroke-width: 1;
+}
+
+.chart-axis-text {
+  fill: var(--muted);
+  font-size: 10.5px;
+}
+
+.chart-value-text {
+  fill: var(--text);
+  font-size: 10.5px;
+}
+
+.chart-legend {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  list-style: none;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.chart-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chart-swatch {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 3px;
+  background: currentColor;
+}
+
+.chart-swatch-hatched {
+  background: repeating-linear-gradient(
+    135deg,
+    currentColor 0 2px,
+    transparent 2px 5px
+  );
+}
+
+.chart-swatch-outline {
+  background: transparent;
+  border: 1.5px solid currentColor;
+}
+
+.chart-swatch-dashed {
+  height: 3px;
+  border-radius: 2px;
+  background: repeating-linear-gradient(
+    90deg,
+    currentColor 0 5px,
+    transparent 5px 9px
+  );
+}
+
+.chart-dot {
+  fill: currentColor;
+}
+
+.chart-swatch-line {
+  height: 3px;
+  border-radius: 2px;
+}
+
+.chart-note {
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.chart-empty-state {
+  min-height: 84px;
+}
+
+.chart-data summary {
+  color: var(--muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.chart-data table {
+  font-size: 0.8rem;
+}

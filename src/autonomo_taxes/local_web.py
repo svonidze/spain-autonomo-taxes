@@ -1525,7 +1525,7 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             if parsed.path == "/":
                 self._serve_static("index.html", set_cookie=True, principal=principal)
                 return
-            if parsed.path in {"/app.js", "/styles.css"}:
+            if parsed.path in {"/app.js", "/charts.js", "/styles.css"}:
                 self._serve_static(parsed.path.removeprefix("/"))
                 return
             if parsed.path == "/favicon.ico":
