@@ -68,6 +68,45 @@
 
 ## Open questions
 - None for this iteration. Creating new depreciation operations is a separate accounting workflow.
+
+## Accounting status explanations
+
+This contract also covers the read-only context
+from `src/autonomo_taxes/status_context.py` and its presentation in
+`src/autonomo_taxes/web_ui/status-help.js`. For operator-facing meanings and
+actions, see [Understanding accounting statuses](docs/ACCOUNTING_STATUSES.md).
+
+- Present the short reason beside the status and make the next action readable
+  in the explanation panel without hover. Tooltips define terms only; neither
+  a required action nor the only explanation of a blocker belongs in a tooltip.
+- Keep review lifecycle, posting readiness and permission to apply a review
+  separate. The server posting preview is authoritative: `approved` is not
+  `ready`. An approved transaction can be blocked or deferred. A future date
+  must not hide other blockers or make the client infer readiness.
+- Preserve structured blocker codes and subject references. Translate known
+  reasons explicitly in RU and EN; unknown reasons retain an honest fallback.
+  Do not infer a tax decision from free text, a missing decision or a generic
+  status belonging to another domain.
+- Distinguish a known zero, unknown/missing data and an inapplicable value.
+  Do not format missing amounts as zero. Posting, schedule inclusion, annual
+  evidence and confirmed filing remain distinct facts; the period scopes in
+  [Documented deltas](#documented-deltas) apply to the asset table and chart.
+- Viewing explanations and copying a question must not mutate accounting data
+  or send messages. Only server-supported review links are offered; navigation
+  does not grant permission to apply a change. Available local/catalog originals
+  may be linked, while unavailable files need explicit recovery guidance.
+- Keep the explanation dialog outside the rerendered app container. Escape
+  and close restore focus; Back closes the panel before leaving the page.
+  A page or period change must not leave stale record details open.
+
+When resolving overlapping UI changes, preserve both status explanations and
+analytics. A textual merge without conflicts is not evidence that shared
+helpers or mounted components survived. Check the effective loaded scripts,
+single helper declarations, combined asset status/chart rendering and stale
+render handling using `tests/test_status_help.js`, `tests/test_status_context.py`
+and `tests/test_web_ui_guided.py`. Keyboard, mobile reflow and browser-native
+zoom are separate checks; equivalent-width reflow does not certify 200% zoom.
+
 ## Analytics and charts
 
 This file is the source of truth for measure definitions, status policy, chart
