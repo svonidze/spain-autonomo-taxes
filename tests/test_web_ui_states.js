@@ -136,4 +136,60 @@ for (const name of [
   assert.ok(markup.includes("review.irpfPreview:€-25.00"));
 }
 
+// Intake drafts round-trip through versioned storage, a pristine form clears
+// the stored draft, and foreign schema versions are discarded.
+{
+  const storage = new Map();
+  const intakeContext = vm.createContext({
+    JSON,
+    Object,
+    localStorage: {
+      getItem: (key) => (storage.has(key) ? storage.get(key) : null),
+      setItem: (key, value) => storage.set(key, String(value)),
+      removeItem: (key) => storage.delete(key),
+    },
+  });
+  const keyMatch = appSource.match(/const INTAKE_DRAFT_STORAGE_KEY = [^\n]+/);
+  const fieldsMatch = appSource.match(/const INTAKE_DRAFT_FIELDS = [^\n]+/);
+  if (!keyMatch || !fieldsMatch) throw new Error("Could not find intake draft constants in app.js");
+  vm.runInContext(keyMatch[0], intakeContext);
+  vm.runInContext(fieldsMatch[0], intakeContext);
+  for (const name of [
+    "readIntakeDraftValues",
+    "intakeDraftIsEmpty",
+    "persistIntakeDraft",
+    "loadIntakeDraft",
+    "clearIntakeDraft",
+    "applyIntakeDraft",
+  ]) {
+    vm.runInContext(extractFunction(appSource, name), intakeContext);
+  }
+  const makeForm = (values) => {
+    const elements = {};
+    for (const name of ["issued_on", "counterparty_name", "document_number", "currency", "gross", "taxable_base", "vat", "drive_url"]) {
+      elements[name] = {value: values[name] ?? ""};
+    }
+    return {elements};
+  };
+  intakeContext.intakeForm = makeForm({issued_on: "2026-07-01", counterparty_name: "ACME Test", currency: "EUR", gross: "121.00"});
+  vm.runInContext("persistIntakeDraft()", intakeContext);
+  const stored = JSON.parse(storage.get("autonomo.intake-draft"));
+  assert.equal(stored.schema, 1);
+  assert.equal(stored.values.counterparty_name, "ACME Test");
+  const target = makeForm({});
+  intakeContext.__target = target;
+  assert.equal(vm.runInContext("applyIntakeDraft(__target.elements)", intakeContext), true);
+  assert.equal(target.elements.gross.value, "121.00");
+  assert.equal(target.elements.issued_on.value, "2026-07-01");
+  intakeContext.intakeForm = makeForm({currency: "EUR"});
+  vm.runInContext("persistIntakeDraft()", intakeContext);
+  assert.equal(storage.has("autonomo.intake-draft"), false);
+  storage.set("autonomo.intake-draft", JSON.stringify({schema: 2, values: {gross: "5"}}));
+  assert.equal(vm.runInContext("loadIntakeDraft()", intakeContext), null);
+  const untouched = makeForm({});
+  intakeContext.__target = untouched;
+  assert.equal(vm.runInContext("applyIntakeDraft(__target.elements)", intakeContext), false);
+  assert.equal(untouched.elements.gross.value, "");
+}
+
 console.log(JSON.stringify({ok: true}));

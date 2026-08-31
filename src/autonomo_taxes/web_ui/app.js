@@ -1,5 +1,6 @@
 const LOCALE_STORAGE_KEY = "autonomo.locale";
 const REVIEW_DRAFT_STORAGE_PREFIX = "autonomo.review-draft";
+const INTAKE_DRAFT_STORAGE_KEY = "autonomo.intake-draft";
 const SUPPORTED_LOCALES = new Set(["ru", "en"]);
 const KNOWN_REVIEW_TAX_CODES = new Set([
   "domestic_input",
@@ -251,6 +252,8 @@ const messages = {
     "reviewTabs.documents": "Документы и вопросы",
     "review.submitting": "Отправка…",
     "review.formDisabledHint": "Поля решений заблокированы, пока операцию нельзя провести — причина объяснена выше.",
+    "intake.draftRestored": "Черновик восстановлен — проверьте поля перед приёмом.",
+    "intake.consistencyHint": "База + IVA = {expected}, а итого — {total}. Проверьте суммы.",
     "review.summaryLater": "Можно будет провести позже",
     "review.summaryBlocked": "Блокировки после проверки",
     "review.workspaceBack": "К списку операций",
@@ -749,6 +752,8 @@ const messages = {
     "reviewTabs.documents": "Documents and issues",
     "review.submitting": "Submitting…",
     "review.formDisabledHint": "Decision fields are locked while this transaction cannot be posted — the reason is explained above.",
+    "intake.draftRestored": "Draft restored — review the fields before accepting.",
+    "intake.consistencyHint": "Base + IVA = {expected}, but the total is {total}. Check the amounts.",
     "review.summaryLater": "Can post later",
     "review.summaryBlocked": "Blocked after review",
     "review.workspaceBack": "Back to transactions",
@@ -5139,6 +5144,9 @@ function openIntake(kind, {targetPeriodKey = state.period, prefill = null, notic
   formElements.currency.value = prefill?.currency || "EUR";
   formElements.gross.value = prefill?.gross || "";
   setIntakeNotice(noticeLines);
+  formElements.issued_on.max = localDateKey();
+  if (!prefill && applyIntakeDraft(formElements)) setIntakeNotice([t("intake.draftRestored")]);
+  updateIntakeConsistencyHint();
   updateFilePrompt();
   void refreshGooglePickerAvailability();
   if (!dialog.open) dialog.showModal();
@@ -5148,6 +5156,66 @@ function closeIntake() {
   if (dialog.open) dialog.close();
   state.googleFolder = null;
   renderGoogleFolderSelection();
+}
+
+const INTAKE_DRAFT_FIELDS = ["issued_on", "counterparty_name", "document_number", "currency", "gross", "taxable_base", "vat", "drive_url"];
+
+function readIntakeDraftValues(formElements) {
+  const values = {};
+  INTAKE_DRAFT_FIELDS.forEach((name) => {
+    const element = formElements[name];
+    if (element && typeof element.value === "string" && element.value !== "") values[name] = element.value;
+  });
+  return values;
+}
+
+function intakeDraftIsEmpty(values) {
+  const names = Object.keys(values);
+  return names.length === 0 || (names.length === 1 && values.currency === "EUR");
+}
+
+function persistIntakeDraft() {
+  try {
+    const values = readIntakeDraftValues(intakeForm.elements);
+    if (intakeDraftIsEmpty(values)) {
+      localStorage.removeItem(INTAKE_DRAFT_STORAGE_KEY);
+      return;
+    }
+    localStorage.setItem(INTAKE_DRAFT_STORAGE_KEY, JSON.stringify({schema: 1, values}));
+  } catch {
+    // Draft persistence is a convenience; the form keeps working without it.
+  }
+}
+
+function loadIntakeDraft() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(INTAKE_DRAFT_STORAGE_KEY) || "null");
+    if (!parsed || parsed.schema !== 1 || typeof parsed.values !== "object" || parsed.values === null) return null;
+    return parsed.values;
+  } catch {
+    return null;
+  }
+}
+
+function clearIntakeDraft() {
+  try {
+    localStorage.removeItem(INTAKE_DRAFT_STORAGE_KEY);
+  } catch {
+    // A store that refuses deletes only means the draft survives longer.
+  }
+}
+
+function applyIntakeDraft(formElements) {
+  const values = loadIntakeDraft();
+  if (!values || intakeDraftIsEmpty(values)) return false;
+  let applied = false;
+  INTAKE_DRAFT_FIELDS.forEach((name) => {
+    const element = formElements[name];
+    if (!element || typeof values[name] !== "string") return;
+    element.value = values[name];
+    applied = true;
+  });
+  return applied;
 }
 
 function setIntakeKind(kind) {
@@ -5280,6 +5348,22 @@ function updateFilePrompt() {
   fileLabel.textContent = state.intakeKind === "income_invoice"
     ? t("intake.incomeFile")
     : t("intake.expenseFile");
+}
+
+function updateIntakeConsistencyHint() {
+  const hint = document.querySelector("#intake-consistency-hint");
+  if (!hint) return;
+  const formElements = intakeForm.elements;
+  const gross = Number.parseFloat(formElements.gross?.value || "");
+  const base = Number.parseFloat(formElements.taxable_base?.value || "");
+  const vat = Number.parseFloat(formElements.vat?.value || "");
+  const mismatch = state.intakeKind === "expense_invoice"
+    && Number.isFinite(gross) && Number.isFinite(base) && Number.isFinite(vat)
+    && Math.abs(gross - (base + vat)) > 0.01;
+  hint.hidden = !mismatch;
+  hint.textContent = mismatch
+    ? t("intake.consistencyHint", {expected: (base + vat).toFixed(2), total: gross.toFixed(2)})
+    : "";
 }
 
 function applyStaticTranslations() {
@@ -5625,6 +5709,7 @@ if (hasDOM) {
       intakeStatus.textContent = t("intake.accepted", {
         id: shortId(result.system_marker),
       });
+      clearIntakeDraft();
       showToast(t("intake.acceptedToast", {period: result.period}));
       setTimeout(() => {
         closeIntake();
@@ -5632,11 +5717,15 @@ if (hasDOM) {
       }, 700);
     } catch (error) {
       intakeStatus.textContent = error.message;
-      showToast(t("intake.failed"), true);
     } finally {
       submitIntake.disabled = false;
     }
   });
+
+  intakeForm.addEventListener("input", debounce(() => {
+    persistIntakeDraft();
+    updateIntakeConsistencyHint();
+  }, 250));
 
   applyStaticTranslations();
   init();
