@@ -249,6 +249,8 @@ const messages = {
     "reviewTabs.queue": "Очередь",
     "reviewTabs.posting": "Проведение",
     "reviewTabs.documents": "Документы и вопросы",
+    "review.submitting": "Отправка…",
+    "review.formDisabledHint": "Поля решений заблокированы, пока операцию нельзя провести — причина объяснена выше.",
     "review.summaryLater": "Можно будет провести позже",
     "review.summaryBlocked": "Блокировки после проверки",
     "review.workspaceBack": "К списку операций",
@@ -745,6 +747,8 @@ const messages = {
     "reviewTabs.queue": "Queue",
     "reviewTabs.posting": "Posting",
     "reviewTabs.documents": "Documents and issues",
+    "review.submitting": "Submitting…",
+    "review.formDisabledHint": "Decision fields are locked while this transaction cannot be posted — the reason is explained above.",
     "review.summaryLater": "Can post later",
     "review.summaryBlocked": "Blocked after review",
     "review.workspaceBack": "Back to transactions",
@@ -3629,10 +3633,6 @@ function renderReviewWorkspace() {
   const originalAmount = transaction.amount_original_minor != null
     ? `${new Intl.NumberFormat(intlLocale(), {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(transaction.amount_original_minor / 100)} ${escapeHtml(transaction.original_currency || transaction.currency || "")}`
     : "—";
-  const irpfValue = decision.tax_treatment?.deductible_irpf_minor;
-  const irpfPreview = irpfValue != null
-    ? `<small class="review-irpf-preview">${escapeHtml(t("review.irpfPreview", {amount: eur(Number(irpfValue) / 100)}))}</small>`
-    : "";
   const counterpartyCountryNeeded = Boolean(counterparty) &&
     ["", "ZZ"].includes(String(counterparty.country_code || ""));
 
@@ -3659,6 +3659,12 @@ function renderReviewWorkspace() {
         <div class="review-alert warning" role="alert">
           <strong>${escapeHtml(t("review.summaryLater"))}</strong>
           <p>${escapeHtml(t("review.future", {date: formatDate(evaluation.availableOn)}))}</p>
+          <p>${escapeHtml(t("review.formDisabledHint"))}</p>
+        </div>` : ""}
+      ${evaluation.supported && evaluation.category === "blocked" ? `
+        <div class="review-alert warning" role="alert">
+          <strong>${escapeHtml(t("review.category.blocked"))}</strong>
+          <p>${escapeHtml(evaluation.reason || t("review.formDisabledHint"))}</p>
         </div>` : ""}
       ${state.review.confirmError?.target === "general" ? `
         <div class="review-alert error" role="alert">${escapeHtml(state.review.confirmError.message)}</div>` : ""}
@@ -3709,7 +3715,7 @@ function renderReviewWorkspace() {
               </label>` : ""}
             ${transaction.entry_type === "expense" ? `
               <label class="review-guided-field">
-                <span>${escapeHtml(t("fields.deductibleIrpfMinor"))} ${irpfPreview}</span>
+                <span>${escapeHtml(t("fields.deductibleIrpfMinor"))} ${minorUnitEurPreview(decision.tax_treatment?.deductible_irpf_minor)}</span>
                 <input type="number" inputmode="numeric" data-decision-path="tax_treatment.deductible_irpf_minor" data-value-type="integer" value="${escapeHtml(decision.tax_treatment?.deductible_irpf_minor ?? "")}">
                 ${inlineErrorFor("deductible_irpf_minor")}
               </label>` : ""}
@@ -3776,19 +3782,19 @@ function renderReviewWorkspace() {
                 <input type="text" data-decision-path="tax_treatment.aeat_expense_concept" data-value-type="nullable-string" value="${escapeHtml(decision.tax_treatment?.aeat_expense_concept || "")}">
               </label>
               <label>
-                <span>${escapeHtml(t("fields.taxableBaseMinor"))}</span>
+                <span>${escapeHtml(t("fields.taxableBaseMinor"))} ${minorUnitEurPreview(decision.tax_treatment?.taxable_base_minor)}</span>
                 <input type="number" inputmode="numeric" data-decision-path="tax_treatment.taxable_base_minor" data-value-type="integer" value="${escapeHtml(decision.tax_treatment?.taxable_base_minor ?? "")}">
               </label>
               <label>
-                <span>${escapeHtml(t("fields.vatMinor"))}</span>
+                <span>${escapeHtml(t("fields.vatMinor"))} ${minorUnitEurPreview(decision.tax_treatment?.vat_minor)}</span>
                 <input type="number" inputmode="numeric" data-decision-path="tax_treatment.vat_minor" data-value-type="integer" value="${escapeHtml(decision.tax_treatment?.vat_minor ?? "")}">
               </label>
               <label>
-                <span>${escapeHtml(t("fields.deductibleVatMinor"))}</span>
+                <span>${escapeHtml(t("fields.deductibleVatMinor"))} ${minorUnitEurPreview(decision.tax_treatment?.deductible_vat_minor)}</span>
                 <input type="number" inputmode="numeric" data-decision-path="tax_treatment.deductible_vat_minor" data-value-type="integer" value="${escapeHtml(decision.tax_treatment?.deductible_vat_minor ?? "")}">
               </label>
               <label>
-                <span>${escapeHtml(t("fields.withholdingMinor"))}</span>
+                <span>${escapeHtml(t("fields.withholdingMinor"))} ${minorUnitEurPreview(decision.tax_treatment?.withholding_minor)}</span>
                 <input type="number" inputmode="numeric" data-decision-path="tax_treatment.withholding_minor" data-value-type="integer" value="${escapeHtml(decision.tax_treatment?.withholding_minor ?? "")}">
               </label>
               <label>
@@ -3866,7 +3872,7 @@ function renderReviewWorkspace() {
           </details>
           <div class="review-actions">
             <button type="button" class="secondary-button" id="review-refresh-button">${escapeHtml(t("common.refresh"))}</button>
-            <button type="submit" class="primary-button" id="review-primary-button"${disabledWorkspace ? " disabled" : ""}>${escapeHtml(t("review.confirmAction"))}</button>
+            <button type="submit" class="primary-button" id="review-primary-button"${disabledWorkspace ? ' disabled data-locked="true"' : ""}>${escapeHtml(t("review.confirmAction"))}</button>
           </div>
         </section>
       </form>
@@ -3877,11 +3883,19 @@ function renderReviewWorkspace() {
     void loadReviewWorkspace(packet.review_id, {factsOnly: true});
   });
 
+  if (disabledWorkspace) {
+    document.querySelectorAll("#review-form input, #review-form select, #review-form textarea").forEach((element) => {
+      if (!element.closest(".review-reject-panel")) element.disabled = true;
+    });
+  }
+
   document.querySelectorAll("[data-decision-path]").forEach((element) => {
     const eventName = element.tagName === "SELECT" || element.type === "checkbox" ? "change" : "input";
+    const eurPreview = element.closest("label")?.querySelector("[data-eur-preview]");
     element.addEventListener(eventName, () => {
       updateReviewDecision(element.dataset.decisionPath, readDecisionFieldValue(element));
       state.review.confirmError = null;
+      if (eurPreview) eurPreview.textContent = minorUnitEurPreviewText(element.value);
     });
   });
 
@@ -3923,6 +3937,30 @@ function renderReviewWorkspace() {
   });
 }
 
+function minorUnitEurPreviewText(value) {
+  if (value === null || value === undefined || String(value).trim() === "") return "";
+  const minor = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(minor)) return "";
+  return t("review.irpfPreview", {amount: eur(minor / 100)});
+}
+
+function minorUnitEurPreview(value) {
+  return `<output class="review-irpf-preview" data-eur-preview>${escapeHtml(minorUnitEurPreviewText(value))}</output>`;
+}
+
+function setReviewSubmitBusy(busy) {
+  const submit = document.querySelector("#review-primary-button");
+  const reject = document.querySelector("#review-reject-button");
+  if (submit) {
+    submit.disabled = busy || Boolean(submit.dataset.locked);
+    submit.textContent = t(busy ? "review.submitting" : "review.confirmAction");
+  }
+  if (reject) {
+    reject.disabled = busy;
+    reject.textContent = t(busy ? "review.submitting" : "review.rejectConfirm");
+  }
+}
+
 async function submitReviewConfirm() {
   const packet = currentReviewPacket();
   if (!packet || state.review.busy) return;
@@ -3950,6 +3988,7 @@ async function submitReviewConfirm() {
   const fxSpec = fxChoiceNeeded(transaction) ? buildConfirmFxSpec(state.review.fxChoice, suggestion) : null;
   state.review.busy = true;
   state.review.confirmError = null;
+  setReviewSubmitBusy(true);
   try {
     await fetchJSON("/api/review/confirm", {
       method: "POST",
@@ -3958,6 +3997,7 @@ async function submitReviewConfirm() {
     });
     clearReviewDraft(transaction.transaction_id);
     state.review.busy = false;
+    setReviewSubmitBusy(false);
     if (!detailRouteActive("review", transaction.transaction_id, generation)) return;
     showToast(t("review.confirmSuccess"));
     state.review.selectedReviewId = null;
@@ -3966,6 +4006,7 @@ async function submitReviewConfirm() {
     navigateToRoute("review");
   } catch (error) {
     state.review.busy = false;
+    setReviewSubmitBusy(false);
     if (!detailRouteActive("review", transaction.transaction_id, generation)) return;
     state.review.confirmError = {message: error.message, target: mapConfirmErrorToQuestion(error.message)};
     renderReviewWorkspace();
@@ -3997,6 +4038,7 @@ async function submitReviewReject() {
   decision.tax_treatment = {...(decision.tax_treatment || {}), tax_code: null};
   state.review.busy = true;
   state.review.confirmError = null;
+  setReviewSubmitBusy(true);
   try {
     await fetchJSON("/api/review/confirm", {
       method: "POST",
@@ -4005,6 +4047,7 @@ async function submitReviewReject() {
     });
     clearReviewDraft(transactionId);
     state.review.busy = false;
+    setReviewSubmitBusy(false);
     if (!detailRouteActive("review", transactionId, generation)) return;
     showToast(t("review.rejectSuccess"));
     state.review.selectedReviewId = null;
@@ -4013,6 +4056,7 @@ async function submitReviewReject() {
     navigateToRoute("review");
   } catch (error) {
     state.review.busy = false;
+    setReviewSubmitBusy(false);
     if (!detailRouteActive("review", transactionId, generation)) return;
     state.review.confirmError = {message: error.message, target: "reject"};
     renderReviewWorkspace();

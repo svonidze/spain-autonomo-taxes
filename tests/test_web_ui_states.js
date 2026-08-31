@@ -32,8 +32,9 @@ function extractFunction(source, name) {
 }
 
 const context = vm.createContext({
-  t: (key) => key,
+  t: (key, vars) => (vars && vars.amount !== undefined ? `${key}:${vars.amount}` : key),
   statusLabel: (value) => `label:${value}`,
+  eur: (value) => `€${value.toFixed(2)}`,
 });
 const tonesMatch = appSource.match(/const REVIEW_CATEGORY_TONES = \{[^}]+\};/);
 if (!tonesMatch) throw new Error("Could not find REVIEW_CATEGORY_TONES in app.js");
@@ -44,6 +45,8 @@ for (const name of [
   "errorState",
   "uiLoadingSkeleton",
   "reviewCategoryBadge",
+  "minorUnitEurPreviewText",
+  "minorUnitEurPreview",
 ]) {
   vm.runInContext(extractFunction(appSource, name), context);
 }
@@ -114,6 +117,23 @@ for (const name of [
   const missing = vm.runInContext("reviewCategoryBadge(undefined)", context);
   assert.ok(missing.includes("status-neutral"));
   assert.ok(missing.includes("label:unknown"));
+}
+
+// Minor-unit inputs render a live euro preview: cents divide by 100, blank
+// and non-numeric input produce no preview text, and zero stays a preview
+// (a known zero is not missing data).
+{
+  assert.equal(
+    vm.runInContext('minorUnitEurPreviewText("12345")', context),
+    "review.irpfPreview:€123.45"
+  );
+  assert.equal(vm.runInContext('minorUnitEurPreviewText("0")', context), "review.irpfPreview:€0.00");
+  assert.equal(vm.runInContext('minorUnitEurPreviewText("")', context), "");
+  assert.equal(vm.runInContext("minorUnitEurPreviewText(null)", context), "");
+  assert.equal(vm.runInContext('minorUnitEurPreviewText("abc")', context), "");
+  const markup = vm.runInContext('minorUnitEurPreview("-2500")', context);
+  assert.ok(markup.includes("data-eur-preview"));
+  assert.ok(markup.includes("review.irpfPreview:€-25.00"));
 }
 
 console.log(JSON.stringify({ok: true}));
