@@ -37,6 +37,7 @@ The secrets repository is a ciphertext distribution and recovery layer, not an a
 - Use explicit non-production identifiers such as `TEST-TAX-ID-001`.
 - Keep amounts, dates, document numbers, names, and combinations independent from operational records.
 - Do not add binary fixtures unless the privacy guard is deliberately extended with an exact reviewed hash and the review explains why the binary is necessary.
+- Write commit messages without email addresses; name tools in `Co-Authored-By` trailers without an address. The only reviewed exception is the digest-allowlisted Anthropic no-reply service address that already appears in merged history.
 - Any new default output path must resolve under the private root, independent of the current working directory.
 
 ## Before sharing

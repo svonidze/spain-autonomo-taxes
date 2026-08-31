@@ -84,6 +84,10 @@ ALLOWED_SYNTHETIC_VALUE_SHA256 = frozenset(
         "b1ec61e341a488d3b65e3f59e4e6415c33354f2475dd9a80f05d8ce2a22c2977",
         "cd4d2a0e38a205e5cc3581e09f149ca1a30af3057e9dd6a6671ae351fcfdc24e",
         "faa296d58b7dcae9eec26d1991a5e3cc322ea91f0e668c0a720642817d7b0469",
+        # Anthropic no-reply service address from Co-Authored-By commit
+        # trailers: a public tool identity, not personal data. The digest is
+        # pinned to the exact address by tests/test_privacy_guard.py.
+        "cd29c5ac348a026a3ec5286890908fffb5bf6ab77f20672171be323a70c95026",
     }
 )
 ALLOWED_BINARY_SHA256: frozenset[str] = frozenset()
