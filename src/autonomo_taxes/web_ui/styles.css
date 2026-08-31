@@ -850,6 +850,71 @@ tbody tr:hover td {
   box-shadow: var(--shadow);
 }
 
+.counterparty-name-dialog {
+  max-width: 600px;
+}
+
+.counterparty-name-dialog form > p,
+.counterparty-name-dialog form > details,
+.counterparty-name-dialog form > .counterparty-name-conflict {
+  margin-inline: 18px;
+}
+
+.counterparty-name-dialog form > details {
+  margin-bottom: 12px;
+}
+
+.counterparty-name-dialog input {
+  min-height: 44px;
+  font-size: 16px;
+}
+
+.counterparty-name-cell {
+  display: grid;
+  gap: 8px;
+}
+
+.counterparty-name-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.counterparty-name-actions button,
+.counterparty-name-dialog button,
+.counterparty-name-dialog summary {
+  min-height: 44px;
+}
+
+.counterparty-name-dialog .counterparty-name-fields {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.counterparty-name-error {
+  color: var(--danger);
+  margin: 0;
+}
+
+.counterparty-name-conflict {
+  padding: 12px;
+  border: 1px solid var(--warning);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+
+.counterparty-name-history-list {
+  display: grid;
+  gap: 12px;
+  padding-left: 24px;
+  overflow-wrap: anywhere;
+}
+
+.counterparty-name-dialog summary {
+  cursor: pointer;
+  padding-block: 12px;
+}
+
 .intake-dialog::backdrop {
   background: rgba(19, 28, 25, 0.52);
 }

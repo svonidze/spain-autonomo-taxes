@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .counterparty_names import CounterpartyMatchError, find_name_candidates
+
 import argparse
 import csv
 from dataclasses import asdict
@@ -4409,7 +4411,7 @@ def _cmd_sheet_reconcile(args: argparse.Namespace) -> int:
 
 def _cmd_sheet_apply(args: argparse.Namespace) -> int:
     remote = _read_sheet_rows(args.remote_csv, tab=args.tab, editable_only=True)
-    with open_ledger_db(args.db) as db:
+    with open_ledger_db(args.db) as db, db.transaction():
         local = [
             SheetRow(
                 uuid=row.uuid,
@@ -4449,19 +4451,10 @@ def _cmd_sheet_apply(args: argparse.Namespace) -> int:
             _emit({"ok": False, "tab": args.tab, "applied": [], "conflicts": blockers})
             return 2
 
-        rollback = sqlite3.connect(":memory:")
-        db.connection.backup(rollback)
-        try:
-            applied: list[dict[str, Any]] = []
-            for row in plan.pull_update:
-                local_row = local_by_uuid[row.uuid]
-                applied.append(_apply_reviewed_sheet_row(db, args.tab, local_row, row))
-        except Exception:
-            db.connection.rollback()
-            rollback.backup(db.connection)
-            raise
-        finally:
-            rollback.close()
+        applied: list[dict[str, Any]] = []
+        for row in plan.pull_update:
+            local_row = local_by_uuid[row.uuid]
+            applied.append(_apply_reviewed_sheet_row(db, args.tab, local_row, row))
     _emit({"ok": True, "tab": args.tab, "applied": applied, "conflicts": []})
     return 0
 
@@ -6385,12 +6378,11 @@ def _upsert_intake_counterparty(
         counterparty_name = suggestion.counterparty
     if not counterparty_name or counterparty_name == "Unknown":
         return None
-    matches = db.connection.execute(
-        "SELECT * FROM counterparties WHERE display_name = ? COLLATE NOCASE",
-        (counterparty_name,),
-    ).fetchall()
+    matches = find_name_candidates(db.connection, counterparty_name)
     if len(matches) == 1:
         return matches[0]["counterparty_id"]
+    if len(matches) > 1:
+        raise CounterpartyMatchError("Counterparty name is ambiguous; pass --counterparty-id")
     normalized = "".join(character for character in counterparty_name.casefold() if character.isalnum())
     row = db.upsert_counterparty(
         external_key=f"intake-name:{normalized}",

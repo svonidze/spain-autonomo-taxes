@@ -286,6 +286,28 @@ const messages = {
     "contacts.country": "Страна",
     "contacts.transactions": "Операций",
     "contacts.last": "Последняя",
+    "contacts.editName": "Исправить имя",
+    "contacts.nameLabel": "Имя",
+    "contacts.renameHint": "Имя изменится в приложении и новых выгрузках. Исходные документы останутся без изменений.",
+    "contacts.manualName": "Исправлено вручную",
+    "contacts.saveName": "Сохранить",
+    "contacts.savingName": "Сохранение…",
+    "contacts.nameSaved": "Имя исправлено",
+    "contacts.nameUnchanged": "Имя не изменилось",
+    "contacts.invalidName": "Введите непустое имя в одну строку без управляющих символов.",
+    "contacts.nameHistory": "История изменений",
+    "contacts.noNameHistory": "Ручных исправлений пока нет.",
+    "contacts.historyError": "Не удалось загрузить историю.",
+    "contacts.retryHistory": "Повторить загрузку",
+    "contacts.localActor": "Локальная сессия",
+    "contacts.sheetActor": "Правка из таблицы",
+    "contacts.nameConflict": "Контрагент изменился после открытия формы. Проверьте актуальное имя перед сохранением.",
+    "contacts.currentName": "Актуальное имя: {name}",
+    "contacts.acceptCurrentName": "Проверил: использовать текущую версию",
+    "contacts.discardName": "Закрыть форму без сохранения исправленного имени?",
+    "contacts.nameBusy": "База временно занята. Повторите сохранение.",
+    "contacts.nameMissing": "Контрагент больше недоступен. Закройте форму и обновите список.",
+    "contacts.nameRefreshError": "Имя сохранено, но список не обновился. Откройте раздел заново.",
     "refresh.done": "Расчет {period} обновлен",
     "documents.counterparty": "Контрагент",
     "documents.type": "Тип",
@@ -678,6 +700,28 @@ const messages = {
     "contacts.country": "Country",
     "contacts.transactions": "Transactions",
     "contacts.last": "Latest",
+    "contacts.editName": "Correct name",
+    "contacts.nameLabel": "Name",
+    "contacts.renameHint": "The name will change throughout the app and in new exports. Original documents will remain unchanged.",
+    "contacts.manualName": "Manually corrected",
+    "contacts.saveName": "Save",
+    "contacts.savingName": "Saving…",
+    "contacts.nameSaved": "Name corrected",
+    "contacts.nameUnchanged": "Name unchanged",
+    "contacts.invalidName": "Enter a non-empty, single-line name without control characters.",
+    "contacts.nameHistory": "Change history",
+    "contacts.noNameHistory": "No manual corrections yet.",
+    "contacts.historyError": "Could not load change history.",
+    "contacts.retryHistory": "Retry loading",
+    "contacts.localActor": "Local session",
+    "contacts.sheetActor": "Spreadsheet correction",
+    "contacts.nameConflict": "The counterparty changed after this form was opened. Review the current name before saving.",
+    "contacts.currentName": "Current name: {name}",
+    "contacts.acceptCurrentName": "Reviewed: use the current version",
+    "contacts.discardName": "Close without saving the corrected name?",
+    "contacts.nameBusy": "The database is temporarily busy. Try saving again.",
+    "contacts.nameMissing": "This counterparty is no longer available. Close the form and refresh the list.",
+    "contacts.nameRefreshError": "The name was saved, but the list could not refresh. Reopen this section.",
     "refresh.done": "{period} calculation refreshed",
     "documents.counterparty": "Counterparty",
     "documents.type": "Type",
@@ -1059,6 +1103,8 @@ const postingConfirmBody = hasDOM ? document.querySelector("#posting-confirm-bod
 const postingConfirmStatus = hasDOM ? document.querySelector("#posting-confirm-status") : null;
 const confirmPostingButton = hasDOM ? document.querySelector("#confirm-posting-button") : null;
 const incomeCopyRowsById = new Map();
+const counterpartyRowsById = new Map();
+let counterpartyNameEditor = null;
 let currentRenderGeneration = 0;
 let currentReviewRequest = 0;
 
@@ -1606,7 +1652,13 @@ async function fetchJSON(url, options = {}) {
   const parsed = parseJSONText(trimmedBody);
 
   if (parsed.ok) {
-    if (!response.ok) { const error = new Error(parsed.value?.error || fallbackMessage || `HTTP ${response.status}`); error.code = parsed.value?.code; throw error; }
+    if (!response.ok) {
+      const error = new Error(parsed.value?.error || fallbackMessage || `HTTP ${response.status}`);
+      error.status = response.status;
+      error.code = parsed.value?.code;
+      error.current = parsed.value?.current;
+      throw error;
+    }
     return parsed.value;
   }
 
@@ -3244,6 +3296,8 @@ async function renderTaxes(renderGeneration = currentRenderGeneration) {
 async function renderContacts(renderGeneration = currentRenderGeneration) {
   const rows = await fetchJSON("/api/counterparties");
   if (renderGeneration !== currentRenderGeneration) return;
+  counterpartyRowsById.clear();
+  rows.forEach((row) => counterpartyRowsById.set(row.counterparty_id, row));
   app.innerHTML = `
     <div class="table-toolbar"><h2>${escapeHtml(t("contacts.title"))}</h2></div>
     <section class="panel">
@@ -3253,7 +3307,7 @@ async function renderContacts(renderGeneration = currentRenderGeneration) {
           <tbody>
             ${rows.map((row) => `
               <tr>
-                <td class="cell-primary"><strong>${escapeHtml(row.display_name)}</strong></td>
+                <td class="cell-primary">${counterpartyNameCell(row)}</td>
                 <td>${escapeHtml(row.country_code || "—")}</td>
                 <td>${escapeHtml(row.vat_id || row.tax_id || "—")}</td>
                 <td>${AccountingHelp.cell(row.ui_context)}</td>
@@ -3273,6 +3327,145 @@ async function renderContacts(renderGeneration = currentRenderGeneration) {
     buildCounterpartySpec,
     AutonomoCharts.renderHorizontalBars
   );
+}
+
+function counterpartyNameCell(row) {
+  return '<div class="counterparty-name-cell"><strong>' + escapeHtml(row.display_name) +
+    '</strong><div class="counterparty-name-actions"><button type="button" class="secondary-button" data-rename-counterparty="' +
+    escapeHtml(row.counterparty_id) + '">' + escapeHtml(t("contacts.editName")) + '</button>' +
+    (row.name_is_manual ? '<small>' + escapeHtml(t("contacts.manualName")) + '</small>' : '') +
+    '</div></div>';
+}
+
+function validCounterpartyName(value) {
+  return typeof value === "string" && value.trim().length > 0 &&
+    !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(value);
+}
+
+function updateCounterpartyNameControls() {
+  const edit = counterpartyNameEditor;
+  const busy = Boolean(edit?.busy);
+  document.querySelector("#counterparty-name-form").setAttribute("aria-busy", String(busy));
+  document.querySelector("#counterparty-name-input").disabled = busy;
+  document.querySelector("#save-counterparty-name").disabled = busy || Boolean(edit?.conflict);
+  document.querySelector("#save-counterparty-name").textContent = t(busy ? "contacts.savingName" : "contacts.saveName");
+  document.querySelector("#cancel-counterparty-name").disabled = busy;
+  document.querySelector("#close-counterparty-name").disabled = busy;
+}
+
+function openCounterpartyNameEditor(id, trigger) {
+  const row = counterpartyRowsById.get(id);
+  if (!row) return;
+  counterpartyNameEditor = {row: {...row}, trigger, busy: false, conflict: null, historyRequest: 0};
+  document.querySelector("#counterparty-name-input").value = row.display_name;
+  document.querySelector("#counterparty-name-input").removeAttribute("aria-invalid");
+  document.querySelector("#counterparty-name-error").textContent = "";
+  document.querySelector("#counterparty-name-conflict").hidden = true;
+  document.querySelector("#counterparty-name-history").open = false;
+  updateCounterpartyNameControls();
+  document.querySelector("#counterparty-name-dialog").showModal();
+  document.querySelector("#counterparty-name-input").focus();
+  void loadCounterpartyNameHistory();
+}
+
+function closeCounterpartyNameEditor(force = false) {
+  const edit = counterpartyNameEditor;
+  if (!edit) return;
+  if (!force && edit.busy) return;
+  if (!force && document.querySelector("#counterparty-name-input").value !== edit.row.display_name &&
+      !window.confirm(t("contacts.discardName"))) return;
+  counterpartyNameEditor = null;
+  document.querySelector("#counterparty-name-dialog").close();
+  if (edit.trigger?.isConnected) edit.trigger.focus();
+}
+
+async function loadCounterpartyNameHistory() {
+  const edit = counterpartyNameEditor;
+  if (!edit) return;
+  const request = ++edit.historyRequest;
+  const body = document.querySelector("#counterparty-name-history-body");
+  const retry = document.querySelector("#retry-counterparty-name-history");
+  body.textContent = t("common.loading");
+  retry.hidden = true;
+  try {
+    const result = await fetchJSON("/api/counterparties/" + encodeURIComponent(edit.row.counterparty_id) + "/name-history");
+    if (counterpartyNameEditor !== edit || request !== edit.historyRequest) return;
+    body.innerHTML = result.changes.length ? '<ol class="counterparty-name-history-list">' +
+      result.changes.map((change) => {
+        const actor = change.actor || t(change.change_source === "sheet" ? "contacts.sheetActor" : "contacts.localActor");
+        const time = new Intl.DateTimeFormat(intlLocale(), {dateStyle: "medium", timeStyle: "short"}).format(new Date(change.changed_at));
+        return '<li><div>' + escapeHtml(change.old_name) + ' → <strong>' + escapeHtml(change.new_name) +
+          '</strong></div><small>' + escapeHtml(time) + ' · ' + escapeHtml(actor) + '</small></li>';
+      }).join("") + '</ol>' : '<p>' + escapeHtml(t("contacts.noNameHistory")) + '</p>';
+  } catch (_) {
+    if (counterpartyNameEditor !== edit || request !== edit.historyRequest) return;
+    body.textContent = t("contacts.historyError");
+    retry.hidden = false;
+  }
+}
+
+function acceptCurrentCounterpartyName() {
+  const edit = counterpartyNameEditor;
+  if (!edit?.conflict || edit.busy) return;
+  edit.row = {...edit.row, ...edit.conflict};
+  edit.conflict = null;
+  document.querySelector("#counterparty-name-conflict").hidden = true;
+  document.querySelector("#counterparty-name-error").textContent = "";
+  updateCounterpartyNameControls();
+  document.querySelector("#counterparty-name-input").focus();
+  void loadCounterpartyNameHistory();
+}
+
+async function submitCounterpartyName(event) {
+  event.preventDefault();
+  const edit = counterpartyNameEditor;
+  if (!edit || edit.busy || edit.conflict) return;
+  const input = document.querySelector("#counterparty-name-input");
+  const errorLabel = document.querySelector("#counterparty-name-error");
+  errorLabel.textContent = "";
+  input.removeAttribute("aria-invalid");
+  if (!validCounterpartyName(input.value)) {
+    errorLabel.textContent = t("contacts.invalidName");
+    input.setAttribute("aria-invalid", "true");
+    input.focus();
+    return;
+  }
+  edit.busy = true;
+  updateCounterpartyNameControls();
+  let result;
+  try {
+    result = await fetchJSON("/api/counterparties/" + encodeURIComponent(edit.row.counterparty_id) + "/rename", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({display_name: input.value, expected_row_version: edit.row.row_version}),
+    });
+  } catch (error) {
+    if (error.status === 409 && error.code === "stale_counterparty" && error.current) {
+      edit.conflict = error.current;
+      document.querySelector("#counterparty-current-name").textContent = t("contacts.currentName", {name: error.current.display_name});
+      document.querySelector("#counterparty-name-conflict").hidden = false;
+      errorLabel.textContent = t("contacts.nameConflict");
+    } else {
+      errorLabel.textContent = error.code === "invalid_name" ? t("contacts.invalidName")
+        : error.code === "counterparty_busy" ? t("contacts.nameBusy")
+        : error.status === 404 ? t("contacts.nameMissing") : error.message;
+    }
+  } finally {
+    edit.busy = false;
+    updateCounterpartyNameControls();
+  }
+  if (!result) return;
+  counterpartyRowsById.set(edit.row.counterparty_id, {...edit.row, ...result});
+  closeCounterpartyNameEditor(true);
+  showToast(t(result.changed ? "contacts.nameSaved" : "contacts.nameUnchanged"));
+  if (state.view === "contacts") {
+    try {
+      await renderContacts();
+      Array.from(document.querySelectorAll("[data-rename-counterparty]"))
+        .find((button) => button.dataset.renameCounterparty === edit.row.counterparty_id)?.focus();
+    } catch (_) {
+      showToast(t("contacts.nameRefreshError"), true);
+    }
+  }
 }
 
 async function refreshDashboard() {
@@ -4110,6 +4303,15 @@ if (hasDOM) {
   });
 
   refreshButton.addEventListener("click", refreshDashboard);
+  document.querySelector("#counterparty-name-form").addEventListener("submit", submitCounterpartyName);
+  document.querySelector("#cancel-counterparty-name").addEventListener("click", () => closeCounterpartyNameEditor());
+  document.querySelector("#close-counterparty-name").addEventListener("click", () => closeCounterpartyNameEditor());
+  document.querySelector("#counterparty-name-dialog").addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeCounterpartyNameEditor();
+  });
+  document.querySelector("#accept-counterparty-current-name").addEventListener("click", acceptCurrentCounterpartyName);
+  document.querySelector("#retry-counterparty-name-history").addEventListener("click", () => void loadCounterpartyNameHistory());
   document.querySelector("#close-dialog").addEventListener("click", closeIntake);
   document.querySelector("#cancel-dialog").addEventListener("click", closeIntake);
   document.querySelector("#close-posting-dialog").addEventListener("click", closePostingConfirmDialog);
@@ -4159,6 +4361,11 @@ if (hasDOM) {
 
   app.addEventListener("click", (event) => {
     if (!(event.target instanceof Element)) return;
+    const renameButton = event.target.closest("[data-rename-counterparty]");
+    if (renameButton) {
+      openCounterpartyNameEditor(renameButton.dataset.renameCounterparty, renameButton);
+      return;
+    }
     const viewButton = event.target.closest("[data-nav-view]");
     if (viewButton) {
       navigateToRoute(viewButton.dataset.navView);

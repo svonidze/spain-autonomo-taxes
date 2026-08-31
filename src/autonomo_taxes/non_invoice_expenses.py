@@ -11,6 +11,7 @@ from typing import Any, Mapping
 import uuid
 
 from .ledger_db import LedgerDB
+from .counterparty_names import accepts_counterparty_name, find_name_candidates, identity_conflicts
 from .money import cents
 from .storage_service import register_local_source_replica
 
@@ -540,7 +541,7 @@ def _resolve_counterparty(
             "SELECT * FROM counterparties WHERE counterparty_id = ?",
             (existing_id,),
         ).fetchone()
-        _validate_counterparty(counterparty, request)
+        _validate_counterparty(connection, counterparty, request)
         _require_book_identity(connection, counterparty, request)
         return counterparty
 
@@ -561,25 +562,22 @@ def _resolve_counterparty(
             raise NonInvoiceExpenseError("Counterparty tax identity is ambiguous")
         counterparty = candidates[0] if candidates else None
     if counterparty is None and request.counterparty_name:
-        candidates = connection.execute(
-            """
-            SELECT * FROM counterparties
-            WHERE lower(display_name) = lower(?)
-              AND (? IS NULL OR country_code = ?)
-            ORDER BY counterparty_id
-            """,
-            (
-                request.counterparty_name,
-                request.counterparty_country,
-                request.counterparty_country,
-            ),
-        ).fetchall()
+        name_candidates = find_name_candidates(connection, request.counterparty_name)
+        candidates = [
+            candidate for candidate in name_candidates
+            if not identity_conflicts(
+                candidate, country_code=request.counterparty_country, tax_id=request.counterparty_tax_id,
+                connection=connection,
+            )
+        ]
+        if not candidates and any(candidate["name_is_manual"] for candidate in name_candidates):
+            raise NonInvoiceExpenseError("Counterparty name conflicts with reviewed identity")
         if len(candidates) > 1:
             raise NonInvoiceExpenseError("Counterparty name is ambiguous; pass --counterparty-id")
         counterparty = candidates[0] if candidates else None
 
     if counterparty is not None:
-        _validate_counterparty(counterparty, request)
+        _validate_counterparty(connection, counterparty, request)
         _require_book_identity(connection, counterparty, request)
         return counterparty
 
@@ -635,10 +633,11 @@ def _resolve_counterparty(
 
 
 def _validate_counterparty(
+    connection: sqlite3.Connection,
     counterparty: Mapping[str, Any],
     request: NonInvoiceExpenseInput,
 ) -> None:
-    if request.counterparty_name and str(counterparty["display_name"]).casefold() != request.counterparty_name.casefold():
+    if request.counterparty_name and not accepts_counterparty_name(connection, counterparty, request.counterparty_name):
         raise NonInvoiceExpenseError("Counterparty name conflicts with the existing ledger identity")
     if request.counterparty_country and counterparty["country_code"] != request.counterparty_country:
         raise NonInvoiceExpenseError("Counterparty country conflicts with the existing ledger identity")
@@ -646,6 +645,11 @@ def _validate_counterparty(
         existing_ids = {str(counterparty["tax_id"] or "").upper(), str(counterparty["vat_id"] or "").upper()}
         if request.counterparty_tax_id not in existing_ids:
             raise NonInvoiceExpenseError("Counterparty tax ID conflicts with the existing ledger identity")
+    if identity_conflicts(
+        counterparty, country_code=request.counterparty_country,
+        tax_id=request.counterparty_tax_id, connection=connection,
+    ):
+        raise NonInvoiceExpenseError("Counterparty facts conflict with the primary VAT identity")
 
 
 def _require_book_identity(

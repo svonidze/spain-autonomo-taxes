@@ -57,6 +57,9 @@ The migration copies files, verifies SHA-256 hashes, and transactionally rewrite
 
 ## Operating and recovering the service
 
+- [Correcting counterparty names](docs/COUNTERPARTY_NAMES.md): manual corrections,
+  history, import protection, conflicts and schema compatibility.
+
 - [Operations](ops/README.md): safe diagnostics, exact-SHA deployment, migration, rollback, and backup scheduling.
 - [Provisioning](ops/PROVISIONING.md): Google originals versus new uploads, optional Picker, OAuth renewal, and Yandex configuration.
 - [Disaster recovery](docs/DISASTER_RECOVERY.md): backup coverage, isolated restore drill, five failure scenarios, and separately marked production cutover.

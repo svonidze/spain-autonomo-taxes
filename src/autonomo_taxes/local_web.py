@@ -26,7 +26,8 @@ import subprocess
 import sys
 import threading
 from typing import Any, Mapping
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, unquote, urlencode, urlparse
+from uuid import UUID
 
 try:
     import yaml
@@ -35,7 +36,7 @@ except Exception:  # pragma: no cover - dependency guard
 
 from .analytics_series import AnalyticsQuery, build_analytics
 from .fx_reference import FXReferenceError, fetch_eur_rate
-from .ledger_db import LedgerDB, LedgerDbError, open as open_ledger_db
+from .ledger_db import LedgerDB, LedgerDbError, StaleRowVersionError, open as open_ledger_db
 from .legacy_paths import LegacyPathResolver
 from .posting import build_posting_preview
 from .status_context import StatusContext, reason as status_reason, simple_context
@@ -136,10 +137,33 @@ class LocalWebError(ValueError):
 
 
 class LocalWebApiError(LocalWebError):
-    def __init__(self, status: HTTPStatus, code: str, message: str) -> None:
+    def __init__(
+        self, status: HTTPStatus, code: str, message: str, *,
+        current: Mapping[str, Any] | None = None,
+    ) -> None:
         super().__init__(message)
         self.status = status
         self.code = code
+        self.current = current
+
+
+def _validated_counterparty_id(value: str) -> str:
+    try:
+        return str(UUID(value))
+    except (ValueError, AttributeError) as exc:
+        raise LocalWebApiError(
+            HTTPStatus.BAD_REQUEST, "invalid_counterparty_id", "Counterparty ID must be a UUID",
+        ) from exc
+
+
+def _counterparty_api_state(connection: sqlite3.Connection, counterparty_id: str) -> dict[str, Any]:
+    row = connection.execute(
+        """SELECT counterparty_id, display_name, row_version, name_is_manual
+           FROM counterparties WHERE counterparty_id = ?""", (counterparty_id,),
+    ).fetchone()
+    if row is None:
+        raise LocalWebApiError(HTTPStatus.NOT_FOUND, "counterparty_not_found", "Counterparty not found")
+    return {**dict(row), "name_is_manual": bool(row["name_is_manual"])}
 
 
 class LocalWebPostingCommandError(LocalWebError):
@@ -697,6 +721,8 @@ class LocalAccountingApp:
                 SELECT
                     c.counterparty_id,
                     c.display_name,
+                    c.row_version,
+                    c.name_is_manual,
                     c.country_code,
                     c.tax_id,
                     c.vat_id,
@@ -726,6 +752,51 @@ class LocalAccountingApp:
                 context["actions"] = actions_by_counterparty.get(row["counterparty_id"], [])
                 result.append(row | {"ui_context": context})
             return result
+
+    def counterparty_name_history(self, counterparty_id: str) -> dict[str, Any]:
+        counterparty_id = _validated_counterparty_id(counterparty_id)
+        with open_ledger_db(self.config.database, read_only=True) as db:
+            _counterparty_api_state(db.connection, counterparty_id)
+            return {
+                "counterparty_id": counterparty_id,
+                "changes": db.counterparty_name_history(counterparty_id),
+            }
+
+    def rename_counterparty(
+        self, counterparty_id: str, payload: Mapping[str, Any], *, actor: str | None = None,
+    ) -> dict[str, Any]:
+        counterparty_id = _validated_counterparty_id(counterparty_id)
+        _exact_object_fields(payload, {"display_name", "expected_row_version"}, "rename request")
+        version = payload["expected_row_version"]
+        if type(version) is not int or version < 1:
+            raise LocalWebApiError(
+                HTTPStatus.BAD_REQUEST, "invalid_request", "expected_row_version must be a positive integer",
+            )
+        try:
+            with open_ledger_db(self.config.database) as db, db.transaction():
+                _counterparty_api_state(db.connection, counterparty_id)
+                try:
+                    updated = db.rename_counterparty(
+                        counterparty_id, display_name=payload["display_name"],
+                        expected_row_version=version, change_source="web", actor=actor,
+                    )
+                except StaleRowVersionError as exc:
+                    raise LocalWebApiError(
+                        HTTPStatus.CONFLICT, "stale_counterparty", "Counterparty has changed; review the current name",
+                        current=_counterparty_api_state(db.connection, counterparty_id),
+                    ) from exc
+                except ValueError as exc:
+                    raise LocalWebApiError(HTTPStatus.BAD_REQUEST, "invalid_name", str(exc)) from exc
+                return {
+                    **_counterparty_api_state(db.connection, counterparty_id),
+                    "changed": updated["row_version"] != version,
+                }
+        except sqlite3.OperationalError as exc:
+            if "locked" in str(exc).lower() or "busy" in str(exc).lower():
+                raise LocalWebApiError(
+                    HTTPStatus.SERVICE_UNAVAILABLE, "counterparty_busy", "Database is busy; retry saving",
+                ) from exc
+            raise
 
     def refresh_dashboard(self, period_key: str, *, as_of: str | None = None) -> dict[str, Any]:
         period = _validate_period(period_key)
@@ -1629,6 +1700,8 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                 )
             elif parsed.path == "/api/counterparties":
                 self._send_json(self.server.app.counterparties())
+            elif match := re.fullmatch(r"/api/counterparties/([^/]+)/name-history", parsed.path):
+                self._send_json(self.server.app.counterparty_name_history(unquote(match.group(1))))
             elif parsed.path == "/api/review/work-item":
                 self._send_json(
                     self.server.app.review_work_item(_single_query(query, "review_id"))
@@ -1643,7 +1716,7 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
         except LocalWebApiError as exc:
-            self._send_error_json(exc.status, str(exc), code=exc.code)
+            self._send_error_json(exc.status, str(exc), code=exc.code, current=exc.current)
         except FileNotFoundError as exc:
             self._send_error_json(HTTPStatus.NOT_FOUND, str(exc))
         except (LocalWebError, ValueError) as exc:
@@ -1674,6 +1747,13 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                         "as_of": result.get("as_of"),
                     }
                 )
+            elif match := re.fullmatch(r"/api/counterparties/([^/]+)/rename", parsed.path):
+                self._require_same_origin()
+                self._require_json_content_type()
+                self._send_json(self.server.app.rename_counterparty(
+                    unquote(match.group(1)), self._read_json(max_bytes=MAX_REVIEW_PACKET_BYTES),
+                    actor=principal,
+                ))
             elif parsed.path == "/api/intake":
                 fields, filename, content = self._read_multipart()
                 google_folder_id = _optional_google_folder_id(
@@ -1751,7 +1831,7 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
         except LocalWebApiError as exc:
-            self._send_error_json(exc.status, str(exc), code=exc.code)
+            self._send_error_json(exc.status, str(exc), code=exc.code, current=exc.current)
         except FileNotFoundError as exc:
             self._send_error_json(HTTPStatus.NOT_FOUND, str(exc))
         except LocalWebPostingCommandError as exc:
@@ -2032,12 +2112,15 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
         message: str,
         *,
         code: str | None = None,
+        current: Mapping[str, Any] | None = None,
     ) -> None:
         if self.wfile.closed:
             return
         payload: dict[str, Any] = {"error": message}
         if code is not None:
             payload["code"] = code
+        if current is not None:
+            payload["current"] = dict(current)
         self._send_json(payload, status=status)
 
     def _security_headers(self) -> None:
