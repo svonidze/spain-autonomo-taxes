@@ -436,7 +436,7 @@ const messages = {
     "review.autoFilledExtraction": "из извлечённых значений",
     "review.autoFilledDefault": "значение по умолчанию",
     "review.issueAutoResolveHint": "Закроется автоматически: подтверждены ответы {labels}.",
-    "review.irpfPreview": "≈ {amount} EUR",
+    "review.irpfPreview": "≈ {amount}",
     "review.technicalDetails": "Технические поля AEAT и центы",
     "review.errorGeneral": "Не удалось применить решение. Проверьте подсвеченные поля.",
     "taxCodeLabels.domestic_output": "Доход в Испании (облагаемый)",
@@ -939,7 +939,7 @@ const messages = {
     "review.autoFilledExtraction": "from extracted values",
     "review.autoFilledDefault": "default value",
     "review.issueAutoResolveHint": "Will close automatically: {labels} are confirmed.",
-    "review.irpfPreview": "≈ {amount} EUR",
+    "review.irpfPreview": "≈ {amount}",
     "review.technicalDetails": "Technical AEAT and cents fields",
     "review.errorGeneral": "The decision could not be applied. Check the highlighted fields.",
     "taxCodeLabels.domestic_output": "Income in Spain (taxable)",
@@ -3279,7 +3279,7 @@ function reviewTransactionTable(rows) {
                 </td>
                 <td class="cell-primary">
                   <strong>${escapeHtml(formatReviewRowPostingStatus(row))}</strong>
-                  <small>${escapeHtml(t(`taxCodeLabels.${row.tax_code || "unknown"}`))}</small>
+                  <small>${escapeHtml(row.tax_code ? taxCodeLabel(row.tax_code) : t("taxCodeLabels.unknown"))}</small>
                 </td>
                 <td class="amount">${row.amount_eur ? eur(row.amount_eur) : `${escapeHtml(row.amount_original || "—")} ${escapeHtml(row.currency || "")}`}</td>
                 <td class="table-actions">
