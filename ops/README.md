@@ -27,7 +27,8 @@ paths into public issues. Read each section before running its commands.
 
 Prerequisites: Linux user-systemd, Git, Python 3.11+, venv support, `flock`, a
 reviewed code checkout, and an initialized private database/config. Install
-rclone for cloud backup. Configure Tailscale Serve separately for the loopback
+rclone for cloud backup and the [local OCR dependency](PROVISIONING.md#local-ocr-dependency).
+Configure Tailscale Serve separately for the loopback
 listener at port 8765. These steps create files and enable backup timers.
 
 In a fresh shell, select the reviewed checkout and create the runtime file only
@@ -65,6 +66,54 @@ copies `ops/sops/` without activating SOPS. Run the installer **from a source
 checkout or release**, not from its installed destination, because it reads
 the checkout's `scripts/` directory. Repeat installation only as an intentional
 control-plane update after a healthy code rollout.
+
+### Updating the OCR deployment checks in an existing ops installation
+
+This is a scoped production control-plane change, not a reason to rerun the
+general installer: that installer also renders units and activates backup timers.
+Use an approved full Git SHA with passing tests, and retain the previous installed
+copies privately. Publishing or merging code does not update installed ops.
+
+1. Confirm the installed ops directory and active mode from the private host
+   inventory. Serialize this update with deployments/backups using the existing
+   operations lock. Save the old `deploy.sh`, `sops/deploy.sh` when present,
+   and `ocr-readiness.py` when present, with their permissions, in a new private
+   backup directory. Record the source SHA and precisely which files existed.
+2. Test the candidate helper **from the reviewed checkout** using the actual
+   service runtime file (the validated candidate generation in SOPS mode).
+   Missing OCR must be fixed before updating the callers. Never disable the
+   readiness gate merely to make this check pass.
+3. Copy `ops/ocr-readiness.py` to a temporary sibling of the installed
+   `ocr-readiness.py` with mode `0644`, then atomically rename it into place.
+   Both modes use this one helper in the parent ops directory.
+4. Only after the helper exists, install the changed default deploy script and
+   installed SOPS deploy script with mode `0755`, using a temporary sibling and
+   atomic rename for each file. Preserve their one-SHA and two-SHA interfaces.
+   Do not replace lib/preflight files, units, runtime configuration, or
+   timers as a side effect of this update.
+5. Run the **installed** base preflight and OCR helper before any deployment.
+   Default: `"$ops_root/preflight.sh"`, then the helper with the service runtime
+   file. SOPS: `"$ops_root/sops/preflight.sh" "$secret_sha"`, passing the full
+   **staged** secret-config SHA, then the helper with that validated generation's
+   `runtime.env`. Use `python3 "$ops_root/ocr-readiness.py" --runtime-env
+   "$runtime_env_file"` with that exact file; do not substitute the current
+   generation. Both deploy scripts repeat OCR readiness after base preflight
+   and before Git fetch or service stop.
+6. If validation fails, stop the rollout. Restore the saved calling deploy scripts
+   first, then the previous helper if it existed, using atomic replacements.
+   A newly added unreferenced helper may remain. Recheck the previous control
+   plane and live service. Do not restore the accounting database or run the
+   general installer as compensation.
+
+The helper uses Python subprocess timeouts, not the platform-specific shell
+`timeout` program. Each query is bounded to ten seconds; image-recognition
+accuracy is verified separately. OCR is a **new-deployment** gate, not part of
+the base preflight shared with recovery. Default and SOPS rollback/restore
+remain available when OCR is missing. These checks do not disable a live web
+service, add startup hooks, or authorize posting accounting entries.
+An optional-mode config-only reversion performed through its two-SHA `deploy.sh`
+is still a deployment and requires OCR readiness; it is not the `rollback.sh`
+recovery path described above.
 
 ## Read-only operating checklist
 

@@ -22,12 +22,24 @@ application SHA, schema, missing material, and observed result.
 | Session principal secret | `AUTONOMO_SESSION_PRINCIPAL_SECRET_FILE`, or private runtime configuration | Coverage depends on its real location; replacement invalidates existing sessions |
 | S3 access and crypt configuration | `AUTONOMO_RCLONE_CONFIG`, often outside private-root | Separate recoverable copy required if outside the root |
 | Application release, installed ops, unit definitions | Code Git plus release/ops roots and user-systemd directory | Not normally in the archive; record SHA and rebuild from reviewed code |
+| Tesseract executable and English model | Ubuntu `tesseract-ocr` / `tesseract-ocr-eng` packages | Not in private-root backups; reinstall and verify in the service environment |
 
 The [backup helper](../scripts/backup_private_root.py) produces a pair:
 `private-root-<timestamp>.tar.gz` and `private-root-<timestamp>.manifest.json`.
 The manifest records format version, creation timestamp, archive basename and
 SHA-256, and every member's relative path, size, and SHA-256. It does **not**
 record application SHA or database schema. Record those separately.
+
+On a replacement server, restore the [OCR dependency](../ops/PROVISIONING.md#local-ocr-dependency)
+before the new-release OCR readiness check. Deliver the shared `ocr-readiness.py` with the
+installed ops files; restoring the database alone neither installs OCR nor
+clears earlier document-review issues. Readiness must pass under the intended
+service runtime, followed by a private extraction-only image check. Do not
+reimport documents or waive accounting checks to compensate for missing packages.
+OCR readiness does not gate rollback or restore of an existing release; repair
+the dependency before a subsequent new deployment or image intake.
+A SOPS config-only reversion using paired `deploy.sh` also remains OCR-gated;
+this differs from the dedicated rollback/restore commands.
 
 The helper snapshots SQLite through its backup API and verifies integrity and
 foreign keys. It archives regular files from private-root, with these exclusions:

@@ -239,7 +239,14 @@ def test_sync_fails_closed_without_sops_or_age_identity(tmp_path: Path) -> None:
     fake_sops = Path(env["PATH"].split(os.pathsep)[0]) / "sops"
     fake_sops.rename(fake_sops.with_suffix(".disabled"))
 
-    missing_sops = _run(CONFIG_SYNC, "--stage-only", sha, env=env)
+    # Do not accidentally discover a real sops installed on the test host.
+    no_sops_bin = tmp_path / "no-sops-bin"
+    no_sops_bin.mkdir()
+    for command in ("bash", "dirname", "python3", "git"):
+        executable = shutil.which(command)
+        assert executable is not None
+        (no_sops_bin / command).symlink_to(executable)
+    missing_sops = _run(CONFIG_SYNC, "--stage-only", sha, env={**env, "PATH": str(no_sops_bin)})
 
     assert missing_sops.returncode != 0
     assert "required command is unavailable: sops" in missing_sops.stderr

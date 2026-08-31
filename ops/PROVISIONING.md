@@ -13,6 +13,60 @@ token's additional `workflow` scope; do not expand permissions for a docs-only
 change. Follow the [deployment runbook](README.md#deploy-a-reviewed-release-production-change)
 for merge SHAs or explicitly approved unmerged PR SHAs.
 
+## Local OCR dependency
+
+Image intake uses the local Tesseract executable and its default English model.
+On Ubuntu, an authorized administrator installs the distribution packages:
+
+```bash
+sudo apt-get update
+sudo apt-get install --no-install-recommends tesseract-ocr tesseract-ocr-eng
+```
+
+Do not install development libraries, add third-party repositories, change sudo
+policy, or send documents to an external OCR service for this setup. If the
+operator cannot run the approved administrative command, stop installation and
+arrange administrator access; local code/test work can continue independently.
+See the [upstream installation guide](https://tesseract-ocr.github.io/tessdoc/Installation.html).
+
+As the **service user**, run `python3 /absolute/installed-ops/ocr-readiness.py
+--runtime-env /absolute/private/runtime.env` using the file selected by the web
+unit's `EnvironmentFile`. Expected output is `ocr=ready language=eng`. This
+checks executable lookup, successful version/language queries, and `eng`, with
+a ten-second limit per query. It does not establish recognition accuracy.
+
+Set an explicit plain `PATH=/usr/local/bin:/usr/bin:/bin` in runtime.env (extend
+only for intentional service dependencies) so an interactive shell's PATH
+cannot mask a broken service PATH. With `--runtime-env`, the check builds a clean
+environment from that file and requires a non-empty PATH; operator-only settings
+such as `TESSDATA_PREFIX` are not inherited. In both ordinary and SOPS modes,
+use plain `NAME=value` assignments without quotes, backslashes, or surrounding
+whitespace; ambiguous values are rejected, not interpreted as shell/systemd
+syntax. Values are never evaluated or printed. Without `--runtime-env`, the
+standalone diagnostic uses the caller's environment, not a service-readiness
+proof. Verify the actual running unit separately, including
+any environment changes or drop-ins. Do not dump its environment or secrets.
+If runtime.env changed, restart only the active web unit and recheck health;
+package installation alone does not require a web restart.
+
+For SOPS, check the **validated candidate generation's** runtime.env before
+switching releases, not the currently active generation. Do not edit a decrypted
+generation in place: publish the intended encrypted configuration revision.
+
+Finally, run the current release's `inspect_document` on an explicitly selected
+private image as the service user, without running `ingest`. Check its extraction
+status and compare date, currency and total to the original privately. Image OCR
+has a sixty-second execution limit; failure/timeout leaves the document in
+review and never posts it. This change takes effect only after deploying the
+application release containing that limit, not by copying ops helpers alone.
+
+Installing OCR does not resolve old validation issues. A human review or a
+successful fresh extraction must support any targeted issue resolution, with
+its reason and current row version. A manual review must not be described as
+successful automatic recognition. OCR readiness is not fiscal-document validity;
+do not infer an invoice issue date from a payment date or invent required tax
+fields to pass review. Do not reimport evidence merely to clear an old error.
+
 ## Yandex Object Storage
 
 For the private `spain-autonomo-taxes` bucket:
