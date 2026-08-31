@@ -522,6 +522,7 @@ const messages = {
     "charts.amortization.perQuarter": "Амортизация за квартал",
     "charts.amortization.note": "На графике — включённые в книги строки по кварталам года. В таблице — выбранный квартал, с отдельными суммами вне книг. Годовые подтверждения не прибавляются.",
     "charts.amortization.empty": "Начислений амортизации нет",
+    "charts.expand": "Увеличить",
   },
   en: {
     "expense.purchase": "Purchases, services and other expenses",
@@ -1028,6 +1029,7 @@ const messages = {
     "charts.amortization.perQuarter": "Amortization per quarter",
     "charts.amortization.note": "The chart shows book-included entries across the year. The table shows the selected quarter, separating entries outside the books. Annual evidence is not added.",
     "charts.amortization.empty": "No amortization charges",
+    "charts.expand": "Expand",
   },
 };
 
@@ -1297,6 +1299,12 @@ const postingConfirmPeriod = hasDOM ? document.querySelector("#posting-confirm-p
 const postingConfirmBody = hasDOM ? document.querySelector("#posting-confirm-body") : null;
 const postingConfirmStatus = hasDOM ? document.querySelector("#posting-confirm-status") : null;
 const confirmPostingButton = hasDOM ? document.querySelector("#confirm-posting-button") : null;
+const chartDialog = hasDOM ? document.querySelector("#chart-dialog") : null;
+const chartDialogTitle = hasDOM ? document.querySelector("#chart-dialog-title") : null;
+const chartDialogSlot = hasDOM ? document.querySelector("#chart-dialog-slot") : null;
+const chartDialogClose = hasDOM ? document.querySelector("#chart-dialog-close") : null;
+let chartDialogEntry = null;
+let chartDialogOpener = null;
 const incomeCopyRowsById = new Map();
 const counterpartyRowsById = new Map();
 let counterpartyNameEditor = null;
@@ -2730,7 +2738,8 @@ async function mountViewAnalyticsChart(slotId, buildSpec, renderer) {
     const spec = buildSpec(analytics);
     const width = chartHostWidth(slot);
     if (width) spec.width = width;
-    viewChartRegistry.set(slotId, {render, spec});
+    const entry = withChartExpandAction({render, spec});
+    viewChartRegistry.set(slotId, entry);
     render(slot, spec);
   } catch (error) {
     if (generation !== currentRenderGeneration) return;
@@ -2741,6 +2750,39 @@ async function mountViewAnalyticsChart(slotId, buildSpec, renderer) {
     failure.textContent = t("charts.loadError");
     slot.replaceChildren(failure);
   }
+}
+
+function openChartDialog(entry, trigger) {
+  if (!chartDialog || !chartDialogSlot) return;
+  chartDialogEntry = entry;
+  chartDialogOpener = trigger || null;
+  chartDialogTitle.textContent = entry.spec.title;
+  if (!chartDialog.open) chartDialog.showModal();
+  renderChartDialogFigure();
+  chartDialogClose?.focus();
+}
+
+function renderChartDialogFigure() {
+  if (!chartDialogEntry || !chartDialogSlot) return;
+  const copy = Object.assign({}, chartDialogEntry.spec);
+  delete copy.expandAction;
+  const width = chartHostWidth(chartDialogSlot);
+  if (width) copy.width = width;
+  chartDialogEntry.render(chartDialogSlot, copy);
+}
+
+function closeChartDialog() {
+  if (chartDialog?.open) chartDialog.close();
+  chartDialogEntry = null;
+  chartDialogOpener = null;
+}
+
+function withChartExpandAction(entry) {
+  entry.spec.expandAction = {
+    label: t("charts.expand"),
+    handler: (trigger) => openChartDialog(entry, trigger),
+  };
+  return entry;
 }
 
 function renderDashboardCharts(analyticsResult) {
@@ -2759,7 +2801,7 @@ function renderDashboardCharts(analyticsResult) {
     if (!slot) return;
     const width = chartHostWidth(slot);
     if (width) spec.width = width;
-    viewChartRegistry.set(slotId, {render: renderChart, spec});
+    viewChartRegistry.set(slotId, withChartExpandAction({render: renderChart, spec}));
     renderChart(slot, spec);
   };
   mount("chart-business-result", AutonomoCharts.renderCartesian, buildBusinessResultSpec(analytics));
@@ -2813,6 +2855,7 @@ async function renderCurrentView() {
   refreshCopyTargetState();
   incomeCopyRowsById.clear();
   if (state.view !== "review") closePostingConfirmDialog();
+  closeChartDialog();
   viewChartRegistry.clear();
   app.innerHTML = uiLoadingSkeleton();
   try {
@@ -5601,11 +5644,12 @@ if (typeof globalThis !== "undefined") {
 
 if (hasDOM) {
   const refreshVisibleExpenseData = () => {
-    if (document.visibilityState !== "visible" || dialog?.open || postingConfirmDialog?.open || document.querySelector("#status-help-dialog")?.open) return;
+    if (document.visibilityState !== "visible" || dialog?.open || postingConfirmDialog?.open || chartDialog?.open || document.querySelector("#status-help-dialog")?.open) return;
     if (state.view === "expenses") refreshExpenseView?.();
     if (state.view === "dashboard") void refreshDashboardExpenses();
   };
   const handleChartResize = debounce(() => {
+    if (chartDialog?.open) renderChartDialogFigure();
     for (const [slotId, entry] of [...viewChartRegistry]) {
       const slot = document.querySelector(`#${slotId}`);
       if (!slot) {
@@ -5619,6 +5663,13 @@ if (hasDOM) {
     }
   }, 200);
   window.addEventListener("resize", handleChartResize);
+  chartDialogClose?.addEventListener("click", () => closeChartDialog());
+  chartDialog?.addEventListener("close", () => {
+    const opener = chartDialogOpener;
+    chartDialogEntry = null;
+    chartDialogOpener = null;
+    if (opener?.isConnected) opener.focus({preventScroll: true});
+  });
   document.addEventListener("visibilitychange", refreshVisibleExpenseData);
   document.addEventListener("visibilitychange", handleChartResize);
   window.setInterval(refreshVisibleExpenseData, 60000);

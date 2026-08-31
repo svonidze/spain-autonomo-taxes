@@ -200,6 +200,13 @@
     <header><h2 id="status-help-title"></h2><button type="button" id="status-help-close" aria-label="Закрыть пояснение">×</button></header>
     <div id="status-help-body"></div>
   </dialog>
+  <dialog id="chart-dialog" class="intake-dialog chart-dialog" aria-labelledby="chart-dialog-title">
+    <header class="dialog-header">
+      <h2 id="chart-dialog-title"></h2>
+      <button type="button" class="icon-button" id="chart-dialog-close" aria-label="Закрыть" data-i18n-aria="common.close">×</button>
+    </header>
+    <div class="chart-dialog-body" id="chart-dialog-slot"></div>
+  </dialog>
   <div id="accounting-tooltip" class="accounting-tooltip" role="tooltip" hidden></div>
   <script src="/status-help.js"></script>
   <script src="/charts.js"></script>

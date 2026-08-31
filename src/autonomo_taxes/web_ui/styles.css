@@ -2116,7 +2116,7 @@ textarea:focus {
   .term-help { width: 44px; }
 }
 @media (forced-colors: active) {
-  .status-context .badge, .status-reason, .term-help, .accounting-tooltip { border: 1px solid CanvasText; }
+  .status-context .badge, .status-reason, .term-help, .accounting-tooltip, .chart-expand-button { border: 1px solid CanvasText; }
 }
 
 .charts-panel {
@@ -2155,9 +2155,59 @@ textarea:focus {
 }
 
 .chart-figure figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   color: var(--text);
   font-size: 0.92rem;
   font-weight: 600;
+}
+
+.chart-expand-button {
+  flex: none;
+  padding: 4px 10px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.chart-expand-button:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+.chart-expand-button:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.chart-dialog {
+  width: min(1200px, calc(100vw - 48px));
+  overflow-y: auto;
+}
+
+.chart-dialog-body {
+  padding: 0 18px 18px;
+}
+
+.chart-dialog .chart-figure {
+  border: 0;
+}
+
+@media (max-width: 700px) {
+  .chart-dialog {
+    width: calc(100vw - 16px);
+  }
+}
+
+@media print {
+  .chart-expand-button {
+    display: none;
+  }
 }
 
 .chart-host {
