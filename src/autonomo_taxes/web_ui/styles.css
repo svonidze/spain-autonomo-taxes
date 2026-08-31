@@ -1502,17 +1502,6 @@ textarea:focus {
   outline-offset: 2px;
 }
 
-.review-technical-details {
-  margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
-}
-
-.review-technical-details summary {
-  cursor: pointer;
-  font-weight: 700;
-}
-
 .review-issues-grid {
   display: grid;
   gap: 14px;
@@ -1891,6 +1880,7 @@ textarea:focus {
 .review-technical-details {
   margin-top: 16px;
   padding: 0;
+  border-top: 1px solid var(--line);
 }
 
 .review-technical-details summary {
