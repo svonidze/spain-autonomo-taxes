@@ -418,6 +418,9 @@ def test_posting_summary_keeps_review_ready_later_and_blocked_exclusive() -> Non
         },
     ]
 
+    for row, code in zip(rows, ("needs_review", "ready", "deferred", "blocked")):
+        row["ui_context"] = {"state": code}
+
     assert _review_summary(rows) == {
         "needs_review": 1,
         "ready": 1,

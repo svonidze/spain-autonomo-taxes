@@ -38,6 +38,7 @@ from .fx_reference import FXReferenceError, fetch_eur_rate
 from .ledger_db import LedgerDB, LedgerDbError, open as open_ledger_db
 from .legacy_paths import LegacyPathResolver
 from .posting import build_posting_preview
+from .status_context import StatusContext, reason as status_reason, simple_context
 from .private_paths import (
     PrivatePathError,
     config_path as resolve_config_path,
@@ -378,16 +379,17 @@ class LocalAccountingApp:
         cached = self._load_cached_dashboard(period)
         with closing(self._connect()) as connection:
             period_row = self._period_row(connection, period)
+            context_builder = self._status_context(connection)
             totals = self._transaction_totals(connection, period_row["period_id"])
             recent = self._transactions(
                 connection,
                 period_id=period_row["period_id"],
-                limit=8,
+                limit=8, context_builder=context_builder,
             )
             open_issues = self._issues(
                 connection,
                 period_id=period_row["period_id"],
-                limit=6,
+                limit=6, context_builder=context_builder,
             )
             obligations = self._obligations(
                 connection,
@@ -399,7 +401,7 @@ class LocalAccountingApp:
                 obligations=obligations,
                 cached=cached,
             )
-            posting_preview = self._build_posting_preview(period)
+            posting_preview = context_builder.preview_payload(period)
             document_counts = {
                 row["lifecycle_status"]: int(row["count"])
                 for row in connection.execute(
@@ -416,7 +418,7 @@ class LocalAccountingApp:
                 connection,
                 period_id=period_row["period_id"],
                 lifecycle_status="review",
-                limit=500,
+                limit=500, context_builder=context_builder,
             )
             review_summary = _review_summary(review_rows)
         return {
@@ -570,9 +572,12 @@ class LocalAccountingApp:
                 """,
                 parameters,
             ).fetchall()
+            builder = self._status_context(connection)
+            contexts = {r["document_id"]: builder.document(dict(r)) for r in rows}
         return [
             {
                 **_row_dict(row),
+                "ui_context": contexts[row["document_id"]],
                 "total_eur": _minor_to_text(row["total_minor"])
                 if row["currency"] == "EUR"
                 else None,
@@ -595,47 +600,39 @@ class LocalAccountingApp:
                 limit=250,
             )
 
-    def assets(self) -> list[dict[str, Any]]:
+    def _status_context(self, connection: sqlite3.Connection) -> StatusContext:
+        return StatusContext(connection, inbox_root=self.config.inbox_root,
+                             archive_root=self.config.archive_root, resolve_path=self.resolve_document_path)
+
+    def assets(self, period_key: str | None = None) -> list[dict[str, Any]]:
         with closing(self._connect()) as connection:
-            rows = connection.execute(
-                """
-                SELECT
-                    a.asset_id,
-                    a.asset_code,
-                    a.description,
-                    a.placed_in_service_on,
-                    a.currency,
-                    a.cost_minor,
-                    a.amortizable_base_minor,
-                    a.business_use_ratio,
-                    a.annual_rate_basis_points,
-                    a.depreciation_method,
-                    a.advisor_decision,
-                    a.source_invoice_number,
-                    c.display_name AS counterparty_name,
-                    COUNT(am.amortization_entry_id) AS schedule_rows,
-                    COALESCE(SUM(am.amount_minor), 0) AS scheduled_minor
-                FROM assets a
-                LEFT JOIN documents d ON d.document_id = a.document_id
-                LEFT JOIN counterparties c ON c.counterparty_id = d.counterparty_id
-                LEFT JOIN amortization_entries am ON am.asset_id = a.asset_id
-                GROUP BY a.asset_id
-                ORDER BY a.placed_in_service_on DESC, a.asset_code
-                """
-            ).fetchall()
-        return [
-            {
-                **_row_dict(row),
-                "cost": _minor_to_text(row["cost_minor"]),
-                "amortizable_base": _minor_to_text(row["amortizable_base_minor"]),
-                "scheduled": _minor_to_text(row["scheduled_minor"]),
-                "business_use_percent": _ratio_percent(row["business_use_ratio"]),
-                "annual_rate_percent": _basis_points_percent(
-                    row["annual_rate_basis_points"]
-                ),
-            }
-            for row in rows
-        ]
+            periods = [r[0] for r in connection.execute(
+                "SELECT period_key FROM periods WHERE period_type='quarter' AND period_key LIKE '%-Q_' ORDER BY period_key DESC")]
+            period = _validate_period(period_key) if period_key is not None else _current_or_latest_period(periods)
+            if period is not None and period not in periods:
+                raise LocalWebApiError(HTTPStatus.NOT_FOUND, "period_not_found", "Unknown quarter")
+            rows = connection.execute("""
+                SELECT a.*, d.counterparty_id, c.display_name AS counterparty_name
+                FROM assets a LEFT JOIN documents d ON d.document_id=a.document_id
+                LEFT JOIN counterparties c ON c.counterparty_id=d.counterparty_id
+                ORDER BY a.placed_in_service_on DESC,a.asset_code
+            """).fetchall()
+            contexts = self._status_context(connection)
+            result = []
+            for raw in rows:
+                row = dict(raw)
+                context = contexts.asset(row, period)
+                schedule = context["amortization"]
+                scheduled = schedule["book_minor"] + schedule["excluded_minor"]
+                result.append({**{k: row[k] for k in ("asset_id", "asset_code", "description", "placed_in_service_on", "currency", "cost_minor", "amortizable_base_minor", "business_use_ratio", "annual_rate_basis_points", "depreciation_method", "advisor_decision", "source_invoice_number", "counterparty_name")}, "period": period,
+                    "schedule_rows": schedule["count"], "scheduled_minor": scheduled,
+                    "scheduled": _minor_to_text(scheduled),
+                    "cost": _minor_to_text(row["cost_minor"]),
+                    "amortizable_base": _minor_to_text(row["amortizable_base_minor"]),
+                    "business_use_percent": _ratio_percent(row["business_use_ratio"]),
+                    "annual_rate_percent": _basis_points_percent(row["annual_rate_basis_points"]),
+                    "ui_context": context})
+            return result
 
     def taxes(self, period_key: str) -> dict[str, Any]:
         period = _validate_period(period_key)
@@ -714,7 +711,21 @@ class LocalAccountingApp:
                 ORDER BY c.display_name COLLATE NOCASE
                 """
             ).fetchall()
-        return [_row_dict(row) for row in rows]
+            builder = self._status_context(connection)
+            actions_by_counterparty: dict[str, list[dict[str, Any]]] = {}
+            for transaction in connection.execute(
+                "SELECT t.transaction_id,t.counterparty_id,p.period_key FROM transactions t JOIN periods p USING(period_id) WHERE t.lifecycle_status='needs_review' ORDER BY t.transaction_date DESC"):
+                actions = actions_by_counterparty.setdefault(transaction['counterparty_id'], [])
+                if len(actions) < 10:
+                    actions.extend(builder.review_actions(transaction['transaction_id'], transaction['period_key']))
+            result = []
+            for raw in rows:
+                row = dict(raw)
+                context = simple_context("counterparty", row)
+                context["reasons"] = builder.issues([("counterparties", row["counterparty_id"])])
+                context["actions"] = actions_by_counterparty.get(row["counterparty_id"], [])
+                result.append(row | {"ui_context": context})
+            return result
 
     def refresh_dashboard(self, period_key: str, *, as_of: str | None = None) -> dict[str, Any]:
         period = _validate_period(period_key)
@@ -965,7 +976,13 @@ class LocalAccountingApp:
             with open_ledger_db(self.config.database, read_only=True) as db:
                 packet = prepare_review_packet(db, review_id)
                 fx_suggestion = self._fx_suggestion_for(db, packet)
-                return prepare_review_work_item(db, review_id, fx_suggestion=fx_suggestion)
+                result = prepare_review_work_item(db, review_id, fx_suggestion=fx_suggestion)
+                context = self._status_context(db.connection).transaction(packet["state"]["transaction"]["transaction_id"])
+                result["ui_context"] = context
+                result["posting_context"] = context.get("posting")
+                result["review_allowed"] = result["supported"] and packet["state"]["period"]["status"] == "open" and not any(
+                    r["code"] == "future_dated" for r in (context.get("posting") or {}).get("blockers", []))
+                return result
         except ReviewPacketError as exc:
             raise self._review_api_error(exc) from exc
 
@@ -1186,12 +1203,13 @@ class LocalAccountingApp:
         lifecycle_status: str | None = None,
         query: str | None = None,
         limit: int,
+        context_builder: StatusContext | None = None,
     ) -> list[dict[str, Any]]:
         where = ["t.period_id = ?"]
         parameters: list[Any] = [period_id]
         if entry_type:
-            where.append("t.entry_type = ?")
-            parameters.append(entry_type)
+            where.append("(t.entry_type = ? OR t.entry_type LIKE ?)")
+            parameters.extend((entry_type, entry_type + "_%"))
         if lifecycle_status == "review":
             where.append(
                 "t.lifecycle_status IN ('received', 'extracted', 'needs_review', 'approved')"
@@ -1210,6 +1228,7 @@ class LocalAccountingApp:
             f"""
             SELECT
                 t.transaction_id,
+                t.counterparty_id,
                 t.transaction_date,
                 t.entry_type,
                 t.description,
@@ -1229,16 +1248,20 @@ class LocalAccountingApp:
                 tt.deductible_vat_minor,
                 tt.include_modelo130,
                 tt.include_modelo303,
-                SUM(
-                    CASE
-                        WHEN i.issue_status = 'open' THEN 1
-                        ELSE 0
-                    END
-                ) AS open_issue_count
+                COUNT(DISTINCT i.validation_issue_id) AS open_issue_count,
+                COUNT(DISTINCT CASE WHEN i.blocking=1 THEN i.validation_issue_id END) AS blocking_issue_count
             FROM transactions t
             LEFT JOIN counterparties c ON c.counterparty_id = t.counterparty_id
             LEFT JOIN documents d ON d.document_id = t.document_id
-            LEFT JOIN tax_treatments tt ON tt.transaction_id = t.transaction_id
+            LEFT JOIN (
+                SELECT transaction_id,
+                  CASE WHEN COUNT(DISTINCT tax_code)=1 THEN MAX(tax_code) ELSE 'unknown' END AS tax_code,
+                  CASE WHEN COUNT(DISTINCT deductible_irpf_minor)<=1 THEN MAX(deductible_irpf_minor) END AS deductible_irpf_minor,
+                  CASE WHEN COUNT(DISTINCT deductible_vat_minor)<=1 THEN MAX(deductible_vat_minor) END AS deductible_vat_minor,
+                  MAX(include_modelo130) AS include_modelo130, MAX(include_modelo303) AS include_modelo303
+                FROM tax_treatments x WHERE treatment_type <> 'invoice_review' OR NOT EXISTS (SELECT 1 FROM tax_treatments preferred WHERE preferred.transaction_id=x.transaction_id AND preferred.treatment_type <> 'invoice_review')
+                GROUP BY transaction_id
+            ) tt ON tt.transaction_id=t.transaction_id
             LEFT JOIN validation_issues i
                 ON i.issue_status = 'open'
                 AND (
@@ -1253,9 +1276,12 @@ class LocalAccountingApp:
             """,
             parameters,
         ).fetchall()
+        builder = context_builder or self._status_context(connection)
+        builder.prime_transactions([row["transaction_id"] for row in rows])
         return [
             {
                 **_row_dict(row),
+                "ui_context": builder.transaction(row["transaction_id"]),
                 "amount_original": _minor_to_text(row["amount_minor"]),
                 "amount_eur": _minor_to_text(
                     row["amount_eur_minor"]
@@ -1280,6 +1306,7 @@ class LocalAccountingApp:
         *,
         period_id: str,
         limit: int,
+        context_builder: StatusContext | None = None,
     ) -> list[dict[str, Any]]:
         rows = connection.execute(
             """
@@ -1300,7 +1327,24 @@ class LocalAccountingApp:
             """,
             (period_id, limit),
         ).fetchall()
-        return [_row_dict(row) for row in rows]
+        builder = context_builder or self._status_context(connection)
+        result = []
+        for raw in rows:
+            row = dict(raw)
+            context = {"domain": "issue", "state": "blocked" if row["blocking"] else "warning",
+                       "subject_id": row["validation_issue_id"], "reasons": [status_reason(row)], "actions": []}
+            if row["subject_table"] == "transactions":
+                context = dict(builder.transaction(row["subject_id"]))
+            elif row["subject_table"] == "documents":
+                document = connection.execute("SELECT * FROM documents WHERE document_id=?", (row["subject_id"],)).fetchone()
+                if document is not None:
+                    context = builder.document(dict(document))
+            context.update({"domain": "issue", "subject_id": row["validation_issue_id"],
+                            "state": "blocked" if row["blocking"] else "warning",
+                            "reasons": [status_reason(row)]})
+            row["ui_context"] = context
+            result.append(row)
+        return result
 
     def _obligations(
         self,
@@ -1338,7 +1382,7 @@ class LocalAccountingApp:
             """,
             (period_id,),
         ).fetchall()
-        return [_row_dict(row) for row in rows]
+        return [dict(row) | {"ui_context": simple_context("obligation", dict(row))} for row in rows]
 
     def _load_cached_dashboard(self, period_key: str) -> dict[str, Any]:
         candidates = (self.config.cache_root / period_key / "dashboard.json",)
@@ -1525,7 +1569,7 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             if parsed.path == "/":
                 self._serve_static("index.html", set_cookie=True, principal=principal)
                 return
-            if parsed.path in {"/app.js", "/charts.js", "/styles.css"}:
+            if parsed.path in {"/app.js", "/charts.js", "/status-help.js", "/styles.css"}:
                 self._serve_static(parsed.path.removeprefix("/"))
                 return
             if parsed.path == "/favicon.ico":
@@ -1567,7 +1611,7 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                     self.server.app.issues(_single_query(query, "period"))
                 )
             elif parsed.path == "/api/assets":
-                self._send_json(self.server.app.assets())
+                self._send_json(self.server.app.assets(_optional_query(query, "period")))
             elif parsed.path == "/api/taxes":
                 self._send_json(
                     self.server.app.taxes(_single_query(query, "period"))
@@ -1829,7 +1873,7 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                 "session_forbidden",
                 "Session is missing or expired",
             )
-        raise LocalWebError("Local session is missing or expired")
+        raise LocalWebApiError(HTTPStatus.BAD_REQUEST, "session_forbidden", "Local session is missing or expired")
 
     def _serve_static(
         self,
@@ -2248,28 +2292,10 @@ def _empty_scope() -> dict[str, Any]:
 
 def _review_summary(rows: list[Mapping[str, Any]]) -> dict[str, int]:
     summary = {"needs_review": 0, "ready": 0, "later": 0, "blocked": 0}
-    today = date.today().isoformat()
     for row in rows:
-        lifecycle_status = str(row.get("lifecycle_status") or "")
-        if lifecycle_status != "approved":
-            summary["needs_review"] += 1
-            continue
-        document_status = row.get("document_status")
-        blocked = (
-            int(row.get("open_issue_count") or 0) > 0
-            or str(row.get("tax_code") or "unknown") == "unknown"
-            or document_status not in {None, "approved", "posted", "included_in_snapshot"}
-            or (
-                str(row.get("currency") or "EUR").upper() != "EUR"
-                and not row.get("amount_eur")
-            )
-        )
-        if blocked:
-            summary["blocked"] += 1
-        elif str(row.get("transaction_date") or "") > today:
-            summary["later"] += 1
-        else:
-            summary["ready"] += 1
+        state = (row.get("ui_context") or {}).get("state", "blocked")
+        key = "later" if state == "deferred" else state if state in summary else "blocked"
+        summary[key] += 1
     return summary
 
 

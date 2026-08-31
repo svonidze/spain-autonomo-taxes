@@ -17,6 +17,10 @@ const KNOWN_REVIEW_TAX_CODES = new Set([
 
 const messages = {
   ru: {
+    "common.loadFailed": "Не удалось загрузить данные. Проверьте подключение и повторите попытку.",
+    "common.retry": "Повторить",
+    "common.sessionExpired": "Сессия истекла. Перезагрузите страницу, чтобы восстановить доступ.",
+    "common.reload": "Перезагрузить страницу",
     "app.title": "Учет autónomo",
     "brand.subtitle": "Бухгалтерия в Испании",
     "nav.aria": "Основная навигация",
@@ -170,7 +174,7 @@ const messages = {
     "review.summaryReady": "Можно провести сейчас",
     "review.summaryNeedsReview": "Нужно проверить",
     "review.summaryLater": "Можно будет провести позже",
-    "review.summaryBlocked": "Нельзя провести",
+    "review.summaryBlocked": "Блокировки после проверки",
     "review.workspaceBack": "К списку операций",
     "review.workspaceTitle": "Проверка счета",
     "review.openWorkspace": "Открыть проверку",
@@ -264,7 +268,7 @@ const messages = {
     "assets.businessUse": "Использование",
     "assets.rate": "Ставка",
     "assets.schedule": "График",
-    "assets.decision": "Решение",
+    "assets.decision": "Состояние учёта",
     "taxes.obligations": "Обязательства",
     "taxes.form": "Форма",
     "taxes.applicability": "Применимость",
@@ -400,10 +404,14 @@ const messages = {
     "charts.amortization.title": "Амортизация по кварталам",
     "charts.amortization.aria": "Начисления амортизации по кварталам",
     "charts.amortization.perQuarter": "Амортизация за квартал",
-    "charts.amortization.note": "Учтены только строки, включённые в книги",
+    "charts.amortization.note": "На графике — включённые в книги строки по кварталам года. В таблице — выбранный квартал, с отдельными суммами вне книг. Годовые подтверждения не прибавляются.",
     "charts.amortization.empty": "Начислений амортизации нет",
   },
   en: {
+    "common.loadFailed": "Could not load data. Check the connection and try again.",
+    "common.retry": "Retry",
+    "common.sessionExpired": "The session expired. Reload the page to restore access.",
+    "common.reload": "Reload page",
     "app.title": "Autónomo accounting",
     "brand.subtitle": "Accounting in Spain",
     "nav.aria": "Primary navigation",
@@ -557,7 +565,7 @@ const messages = {
     "review.summaryReady": "Can post now",
     "review.summaryNeedsReview": "Needs review",
     "review.summaryLater": "Can post later",
-    "review.summaryBlocked": "Cannot post",
+    "review.summaryBlocked": "Blocked after review",
     "review.workspaceBack": "Back to transactions",
     "review.workspaceTitle": "Invoice review",
     "review.openWorkspace": "Open review",
@@ -651,7 +659,7 @@ const messages = {
     "assets.businessUse": "Business use",
     "assets.rate": "Rate",
     "assets.schedule": "Schedule",
-    "assets.decision": "Decision",
+    "assets.decision": "Accounting status",
     "taxes.obligations": "Obligations",
     "taxes.form": "Form",
     "taxes.applicability": "Applicability",
@@ -787,7 +795,7 @@ const messages = {
     "charts.amortization.title": "Amortization by quarter",
     "charts.amortization.aria": "Amortization charges by quarter",
     "charts.amortization.perQuarter": "Amortization per quarter",
-    "charts.amortization.note": "Only rows included in the books are counted",
+    "charts.amortization.note": "The chart shows book-included entries across the year. The table shows the selected quarter, separating entries outside the books. Annual evidence is not added.",
     "charts.amortization.empty": "No amortization charges",
   },
 };
@@ -883,6 +891,7 @@ const documentTypeMessages = {
     bank_statement: "банковская выписка",
     tax_report: "налоговый отчет",
     other_document: "другой документ",
+    other: "другой документ",
   },
   en: {
     expense_invoice: "supplier invoice",
@@ -891,6 +900,7 @@ const documentTypeMessages = {
     bank_statement: "bank statement",
     tax_report: "tax report",
     other_document: "other document",
+    other: "other document",
   },
 };
 
@@ -1077,7 +1087,7 @@ const ROUTE_VIEWS = {
   "/contacts": "contacts",
 };
 const REVIEW_DETAIL_RE = /^\/review\/([0-9a-fA-F-]{32,36})$/;
-const PERIOD_ROUTE_PATHS = new Set(["/dashboard", "/income", "/expenses", "/review"]);
+const PERIOD_ROUTE_PATHS = new Set(["/dashboard", "/income", "/expenses", "/review", "/assets", "/taxes"]);
 
 function parseRoute(pathname) {
   const path = String(pathname || "/").split("?")[0].split("#")[0];
@@ -1089,7 +1099,7 @@ function parseRoute(pathname) {
 }
 
 function routePathFor(view, reviewId = null) {
-  if (view === "review" && reviewId) return `/review/${encodeURIComponent(reviewId)}`;
+  if (view === "review" && reviewId) return `/review/${encodeURIComponent(String(reviewId).replace(/^transaction:/, ""))}`;
   if (view === "review") return "/review";
   return `/${view}`;
 }
@@ -1134,7 +1144,7 @@ function applyRouteFromLocation() {
     app.innerHTML = unknownRoutePanel();
     return false;
   }
-  if (PERIOD_ROUTE_PATHS.has(routePathFor(route.view, route.reviewId))) {
+  if (PERIOD_ROUTE_PATHS.has(routePathFor(route.view, route.reviewId)) || (route.view === "review" && route.reviewId)) {
     const period = routePeriodFromQuery(window.location.search);
     if (period && period !== state.period) {
       state.period = period;
@@ -1283,64 +1293,16 @@ function buildRequirementSteps(requirements) {
 }
 
 function evaluateWorkItemPosting(workItem, today = todayIso()) {
-  const packet = workItem?.packet || {};
-  const transaction = packet.state?.transaction || {};
-  const requirements = (workItem?.requirements || []).map(normalizeReviewRequirement);
-  const unsupportedRequirement = requirements.find((row) => row.supported === false);
-  const unavailableReason = workItem?.unavailable_reason || (unsupportedRequirement?.reason || unsupportedRequirement?.message) || null;
-
-  if (isFutureDateValue(transaction.transaction_date, today)) {
-    return {
-      category: "later",
-      supported: false,
-      canApply: false,
-      availableOn: transaction.transaction_date,
-      reason: null,
-    };
-  }
-  if (workItem?.supported === false || unavailableReason) {
-    return {
-      category: "blocked",
-      supported: false,
-      canApply: false,
-      availableOn: null,
-      reason: unavailableReason || t("review.unsupported"),
-    };
-  }
-  if (unsupportedRequirement) {
-    return {
-      category: "blocked",
-      supported: false,
-      canApply: false,
-      availableOn: null,
-      reason: unsupportedRequirement.reason || unsupportedRequirement.message || unsupportedRequirement.code,
-    };
-  }
-  if (transaction.lifecycle_status !== "approved") {
-    return {
-      category: "needs_review",
-      supported: true,
-      canApply: true,
-      availableOn: null,
-      reason: null,
-    };
-  }
-  if (packet.decision?.tax_treatment?.tax_code === "unknown") {
-    return {
-      category: "blocked",
-      supported: false,
-      canApply: false,
-      availableOn: null,
-      reason: t("review.unknownSupport"),
-    };
-  }
-  return {
-    category: "ready",
-    supported: true,
-    canApply: true,
-    availableOn: null,
-    reason: null,
-  };
+  const projection = workItem?.posting_context || workItem?.ui_context?.posting;
+  if (!projection) return {category: "blocked", supported: false, canApply: false,
+    availableOn: null, reason: t("review.unknownSupport")};
+  const supported = workItem.supported !== false;
+  const stateCode = workItem.ui_context?.state || projection.preview_bucket;
+  const category = !supported ? "blocked" : stateCode === "deferred" ? "later"
+    : ["ready", "blocked", "needs_review"].includes(stateCode) ? stateCode : "blocked";
+  return {category, supported, canApply: workItem.review_allowed === true,
+    availableOn: projection.posting_deferred_until || null,
+    reason: supported ? null : t("review.unsupported")};
 }
 
 function postingStatusLabelForWorkItem(workItem, locale = state.locale, today = todayIso()) {
@@ -1363,33 +1325,21 @@ function postingStatusLabelForWorkItem(workItem, locale = state.locale, today = 
 
 function summarizeReviewRows(rows, today = todayIso()) {
   return rows.reduce((summary, row) => {
-    if (row.lifecycle_status !== "approved") {
-      summary.needsReview += 1;
-      return summary;
-    }
-    const isBlocked = Number(row.open_issue_count || 0) > 0
-      || !row.tax_code
-      || row.tax_code === "unknown"
-      || ![null, undefined, "approved", "posted", "included_in_snapshot"].includes(row.document_status)
-      || ((row.currency || "EUR").toUpperCase() !== "EUR" && !row.amount_eur);
-    if (isBlocked) {
-      summary.blocked += 1;
-    } else if (isFutureDateValue(row.transaction_date, today)) {
-      summary.later += 1;
-    } else {
-      summary.ready += 1;
-    }
+    const code = row.ui_context?.state || "blocked";
+    if (code === "needs_review") summary.needsReview += 1;
+    else if (code === "ready") summary.ready += 1;
+    else if (code === "deferred") summary.later += 1;
+    else summary.blocked += 1;
     return summary;
   }, {needsReview: 0, ready: 0, later: 0, blocked: 0});
 }
 
 function formatReviewRowPostingStatus(row, today = todayIso()) {
-  if (row.lifecycle_status === "approved") {
-    return isFutureDateValue(row.transaction_date, today)
-      ? t("review.postingLater", {date: formatDate(row.transaction_date)})
-      : t("review.postingReady");
-  }
-  return t("review.needsReview");
+  const posting = row.ui_context?.posting;
+  if (!posting) return t("review.postingBlocked");
+  if (posting.preview_bucket === "deferred") return t("review.postingLater", {date: formatDate(posting.posting_deferred_until)});
+  if (posting.preview_bucket === "ready") return t("review.postingReady");
+  return row.ui_context?.state === "needs_review" ? t("review.needsReview") : t("review.postingBlocked");
 }
 
 function issueBadge(row) {
@@ -1591,6 +1541,7 @@ function issueMessage(issueCode) {
 }
 
 function eur(value) {
+  if (value === null || value === undefined || value === "") return "—";
   const number = Number(value);
   if (!Number.isFinite(number)) return "—";
   return new Intl.NumberFormat(intlLocale(), {
@@ -1640,7 +1591,7 @@ async function fetchJSON(url, options = {}) {
   const parsed = parseJSONText(trimmedBody);
 
   if (parsed.ok) {
-    if (!response.ok) throw new Error(parsed.value?.error || fallbackMessage || `HTTP ${response.status}`);
+    if (!response.ok) { const error = new Error(parsed.value?.error || fallbackMessage || `HTTP ${response.status}`); error.code = parsed.value?.code; throw error; }
     return parsed.value;
   }
 
@@ -1692,9 +1643,9 @@ function emptyRow(columns) {
 }
 
 function errorState(error) {
-  return `<div class="empty-state">${escapeHtml(error.message || String(error))}</div>`;
+  const sessionExpired = error.code === "session_forbidden";
+  return `<div class="empty-state" role="alert"><p>${escapeHtml(t(sessionExpired ? "common.sessionExpired" : "common.loadFailed"))}</p><button type="button" class="secondary-button" ${sessionExpired ? "data-reload-view" : "data-retry-view"}>${escapeHtml(t(sessionExpired ? "common.reload" : "common.retry"))}</button><details><summary>${escapeHtml(t("issues.sourceDetails"))}</summary><p>${escapeHtml(error.message || String(error))}</p></details></div>`;
 }
-
 function shortId(value) {
   return value ? String(value).slice(0, 8) : t("common.noId");
 }
@@ -1747,7 +1698,7 @@ function transactionTable(rows, {copyable = false} = {}) {
   return `
     <div class="table-wrap">
       <table>
-        <thead><tr><th>${escapeHtml(t("transactions.date"))}</th><th>${escapeHtml(t("transactions.counterpartyDocument"))}</th><th>${escapeHtml(t("transactions.status"))}</th><th>${escapeHtml(t("transactions.amount"))}</th><th>${escapeHtml(t("transactions.irpfDeduction"))}</th><th>IVA</th><th></th></tr></thead>
+        <thead><tr><th>${escapeHtml(t("transactions.date"))}</th><th>${escapeHtml(t("transactions.counterpartyDocument"))}</th><th>${escapeHtml(t("transactions.status"))} ${AccountingHelp.term("posting")}</th><th>${escapeHtml(t("transactions.amount"))}</th><th>${escapeHtml(t("transactions.irpfDeduction"))} ${AccountingHelp.term("IRPF")}</th><th>IVA ${AccountingHelp.term("IVA")}</th><th></th></tr></thead>
         <tbody>
           ${rows.map((row) => `
             <tr>
@@ -1756,10 +1707,10 @@ function transactionTable(rows, {copyable = false} = {}) {
                 <strong>${escapeHtml(row.counterparty_name || row.description || t("transactions.noCounterparty"))}</strong>
                 <small>${escapeHtml(row.document_number || row.description || "")}</small>
               </td>
-              <td>${badge(row.lifecycle_status)}${row.open_issue_count ? ` ${issueBadge(row)}` : ""}</td>
+              <td>${AccountingHelp.cell(row.ui_context)}</td>
               <td class="amount">${row.amount_eur ? eur(row.amount_eur) : `${escapeHtml(row.amount_original || "—")} ${escapeHtml(row.currency || "")}`}</td>
-              <td class="amount">${row.deductible_irpf_eur ? eur(row.deductible_irpf_eur) : "—"}</td>
-              <td class="amount">${row.deductible_vat_eur ? eur(row.deductible_vat_eur) : "—"}</td>
+              <td class="amount">${AccountingHelp.money(row.deductible_irpf_minor)}</td>
+              <td class="amount">${AccountingHelp.money(row.deductible_vat_minor)}</td>
               <td>${transactionActions(row, copyable)}</td>
             </tr>`).join("") || emptyRow(7)}
         </tbody>
@@ -1782,7 +1733,7 @@ function documentTable(rows) {
   return `
     <div class="table-wrap">
       <table>
-        <thead><tr><th>${escapeHtml(t("transactions.date"))}</th><th>${escapeHtml(t("documents.counterparty"))}</th><th>${escapeHtml(t("fields.number"))}</th><th>${escapeHtml(t("documents.type"))}</th><th>${escapeHtml(t("transactions.status"))}</th><th>${escapeHtml(t("transactions.amount"))}</th><th></th></tr></thead>
+        <thead><tr><th>${escapeHtml(t("transactions.date"))}</th><th>${escapeHtml(t("documents.counterparty"))}</th><th>${escapeHtml(t("fields.number"))}</th><th>${escapeHtml(t("documents.type"))}</th><th>${escapeHtml(t("transactions.status"))} ${AccountingHelp.term("posting")}</th><th>${escapeHtml(t("transactions.amount"))}</th><th></th></tr></thead>
         <tbody>
           ${rows.map((row) => `
             <tr>
@@ -1790,7 +1741,7 @@ function documentTable(rows) {
               <td>${escapeHtml(row.counterparty_name || "—")}</td>
               <td>${escapeHtml(row.document_number || "—")}</td>
               <td>${escapeHtml(documentTypeLabel(row.document_type))}</td>
-              <td>${badge(row.lifecycle_status)}${row.open_issue_count ? ` ${issueBadge(row)}` : ""}</td>
+              <td>${AccountingHelp.cell(row.ui_context)}</td>
               <td class="amount">${row.total_eur ? eur(row.total_eur) : "—"}</td>
               <td>${row.source_available ? `<a class="text-button" href="/api/document/${encodeURIComponent(row.document_id)}/content" target="_blank" rel="noreferrer">${escapeHtml(t("common.file"))}</a>` : ""}</td>
             </tr>`).join("") || emptyRow(7)}
@@ -1801,18 +1752,7 @@ function documentTable(rows) {
 
 function issuesList(rows) {
   if (!rows.length) return `<div class="empty-state">${escapeHtml(t("issues.none"))}</div>`;
-  return `
-    <ul class="issues-list">
-      ${rows.map((row) => `
-        <li>
-          <strong>${badge(row.blocking ? "blocking" : row.severity)} ${escapeHtml(issueMessage(row.issue_code))}</strong>
-          <details class="issue-details">
-            <summary>${escapeHtml(t("issues.sourceDetails"))}</summary>
-            <code>${escapeHtml(row.issue_code)}</code>
-            <span>${escapeHtml(row.message)}</span>
-          </details>
-        </li>`).join("")}
-    </ul>`;
+  return `<ul class="issues-list">${rows.map(row => `<li>${AccountingHelp.cell(row.ui_context)}</li>`).join("")}</ul>`;
 }
 
 function formatMinorEur(minor) {
@@ -2172,6 +2112,9 @@ async function init() {
 
 async function renderCurrentView() {
   if (!state.period || !app) return;
+  AccountingHelp.beforeRender();
+  AccountingHelp.setLocale(state.locale);
+  app.setAttribute("aria-busy", "true");
   const renderGeneration = ++currentRenderGeneration;
   refreshCopyTargetState();
   incomeCopyRowsById.clear();
@@ -2182,11 +2125,13 @@ async function renderCurrentView() {
     if (state.view === "income") await renderTransactions("income", renderGeneration);
     if (state.view === "expenses") await renderTransactions("expense", renderGeneration);
     if (state.view === "review") await renderReview(renderGeneration);
-    if (state.view === "assets") await renderAssets();
-    if (state.view === "taxes") await renderTaxes();
-    if (state.view === "contacts") await renderContacts();
+    if (state.view === "assets") await renderAssets(renderGeneration);
+    if (state.view === "taxes") await renderTaxes(renderGeneration);
+    if (state.view === "contacts") await renderContacts(renderGeneration);
   } catch (error) {
     app.innerHTML = errorState(error);
+  } finally {
+    if (renderGeneration === currentRenderGeneration) { app.setAttribute("aria-busy", "false"); AccountingHelp.labelTables(app); }
   }
 }
 
@@ -2315,6 +2260,11 @@ async function fetchReviewWorkItem(reviewId, options = {}) {
   const workItem = await fetchJSON(`/api/review/work-item?review_id=${encodeURIComponent(reviewId)}`);
   const packet = deepClone(workItem.packet || {});
   const transactionId = packet.state?.transaction?.transaction_id;
+  const packetPeriod = packet.state?.period?.period_key;
+  if (packetPeriod && (state.bootstrap?.periods || []).some(row => row.period_key === packetPeriod)) {
+    state.period = packetPeriod;
+    if (periodSelect) periodSelect.value = packetPeriod;
+  }
   const draft = loadReviewDraft(transactionId);
   const mode = options.factsOnly ? "facts" : (draft && draft.snapshot_hash === packet.snapshot_hash ? "full" : "facts");
   const mergedPacket = mergeReviewDecisionFromDraft(packet, draft, mode);
@@ -2432,12 +2382,11 @@ function reviewTransactionTable(rows) {
                   <small>${escapeHtml(row.document_number || row.description || "")}</small>
                 </td>
                 <td>
-                  ${badge(row.lifecycle_status)}
-                  ${row.open_issue_count ? `<div class="inline-meta">${issueBadge(row)}</div>` : ""}
+                  ${AccountingHelp.cell(row.ui_context)}
                 </td>
                 <td class="cell-primary">
                   <strong>${escapeHtml(formatReviewRowPostingStatus(row))}</strong>
-                  <small>${escapeHtml(row.tax_code || "—")}</small>
+                  <small>${escapeHtml(t(`taxCodeLabels.${row.tax_code || "unknown"}`))}</small>
                 </td>
                 <td class="amount">${row.amount_eur ? eur(row.amount_eur) : `${escapeHtml(row.amount_original || "—")} ${escapeHtml(row.currency || "")}`}</td>
                 <td class="table-actions">
@@ -2794,7 +2743,7 @@ function renderReviewWorkspace() {
   const fxSuggestion = workItem.fx_suggestion || null;
   const guidance = workItem.guidance || null;
   const evaluation = evaluateWorkItemPosting(workItem);
-  const disabledWorkspace = evaluation.category === "later" || evaluation.category === "blocked";
+  const disabledWorkspace = !evaluation.canApply;
   const fxChoice = state.review.fxChoice;
   const sourceHref = documentState.document_id
     ? `/api/document/${encodeURIComponent(documentState.document_id)}/content`
@@ -2812,6 +2761,7 @@ function renderReviewWorkspace() {
 
   app.innerHTML = `
     <div class="review-workspace">
+      ${AccountingHelp.cell(workItem.ui_context)}
       <div class="review-workspace-header">
         <a class="secondary-button review-back-link" href="${escapeHtml(buildRouteUrl("review"))}" data-spa>${escapeHtml(t("review.workspaceBack"))}</a>
         <div class="review-workspace-title">
@@ -2823,7 +2773,7 @@ function renderReviewWorkspace() {
           <strong>${escapeHtml(postingStatusLabelForWorkItem(workItem))}</strong>
         </div>
       </div>
-      ${evaluation.category === "blocked" ? `
+      ${!evaluation.supported ? `
         <div class="review-alert error" role="alert">
           <strong>${escapeHtml(t("review.unsupported"))}</strong>
           <p>${escapeHtml(evaluation.reason || workItem.unavailable_reason || t("review.unknownSupport"))}</p>
@@ -2835,6 +2785,7 @@ function renderReviewWorkspace() {
         </div>` : ""}
       ${state.review.confirmError?.target === "general" ? `
         <div class="review-alert error" role="alert">${escapeHtml(state.review.confirmError.message)}</div>` : ""}
+      ${!evaluation.canApply && evaluation.availableOn ? `<p class="review-alert warning">${escapeHtml(t("review.future", {date: formatDate(evaluation.availableOn)}))}</p>` : ""}
       <form id="review-form" class="review-form">
         <section class="panel review-panel">
           <header class="panel-header"><h2>${escapeHtml(t("review.factsTitle"))}</h2><small>${escapeHtml(state.period)}</small></header>
@@ -3182,39 +3133,30 @@ async function submitReviewReject() {
   }
 }
 
-async function renderAssets() {
-  const rows = await fetchJSON("/api/assets");
+async function renderAssets(renderGeneration = currentRenderGeneration) {
+  const rows = await fetchJSON(`/api/assets?period=${encodeURIComponent(state.period)}`);
+  if (renderGeneration !== currentRenderGeneration) return;
   app.innerHTML = `
-    <div class="table-toolbar"><h2>${escapeHtml(t("assets.title"))}</h2></div>
-    <section class="panel">
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>${escapeHtml(t("assets.asset"))}</th><th>${escapeHtml(t("assets.inService"))}</th><th>${escapeHtml(t("assets.cost"))}</th><th>${escapeHtml(t("assets.base"))}</th><th>${escapeHtml(t("assets.businessUse"))}</th><th>${escapeHtml(t("assets.rate"))}</th><th>${escapeHtml(t("assets.schedule"))}</th><th>${escapeHtml(t("assets.decision"))}</th></tr></thead>
-          <tbody>
-            ${rows.map((row) => `
-              <tr>
-                <td class="cell-primary"><strong>${escapeHtml(row.description || row.asset_code)}</strong><small>${escapeHtml(row.source_invoice_number || "")}</small></td>
-                <td>${formatDate(row.placed_in_service_on)}</td>
-                <td class="amount">${eur(row.cost)}</td>
-                <td class="amount">${eur(row.amortizable_base)}</td>
-                <td>${row.business_use_percent ? `${escapeHtml(row.business_use_percent)}%` : "—"}</td>
-                <td>${row.annual_rate_percent ? `${escapeHtml(row.annual_rate_percent)}%` : "—"}</td>
-                <td>${row.schedule_rows} · ${eur(row.scheduled)}</td>
-                <td>${badge(row.advisor_decision || "unknown")}</td>
-              </tr>`).join("") || emptyRow(8)}
-          </tbody>
-        </table>
-      </div>
-    </section>
+    <div class="table-toolbar"><div><h2>${escapeHtml(t("assets.title"))}</h2><p>${escapeHtml(AccountingHelp.word("allAssets"))}: ${escapeHtml(state.period)}</p></div></div>
+    <section class="panel"><div class="table-wrap"><table class="asset-explanations-table">
+      <thead><tr><th>${escapeHtml(t("assets.asset"))}</th><th>${escapeHtml(t("assets.inService"))}</th><th>${escapeHtml(t("assets.cost"))} ${AccountingHelp.term("cost")} / ${escapeHtml(t("assets.base"))} ${AccountingHelp.term("base")}</th><th>${escapeHtml(t("assets.businessUse"))} ${AccountingHelp.term("use")} / ${escapeHtml(t("assets.rate"))} ${AccountingHelp.term("rate")}</th><th>${escapeHtml(AccountingHelp.word("scope"))} ${escapeHtml(state.period)} ${AccountingHelp.term("forecast")}</th><th>${escapeHtml(t("assets.decision"))}</th></tr></thead>
+      <tbody>${rows.map(row => `<tr>
+        <td class="cell-primary" data-label="${escapeHtml(t("assets.asset"))}"><strong>${escapeHtml(row.description || row.asset_code)}</strong><small>${escapeHtml(row.source_invoice_number || "")}</small></td>
+        <td data-label="${escapeHtml(t("assets.inService"))}">${formatDate(row.placed_in_service_on)}</td>
+        <td data-label="${escapeHtml(t("assets.cost"))}">${AccountingHelp.money(row.cost_minor)}<small class="value-detail">${escapeHtml(t("assets.base"))}: ${AccountingHelp.money(row.amortizable_base_minor)}</small></td>
+        <td data-label="${escapeHtml(t("assets.businessUse"))}">${row.business_use_percent == null ? "—" : escapeHtml(row.business_use_percent)+"%"}<small class="value-detail">${escapeHtml(t("assets.rate"))}: ${row.annual_rate_percent == null ? "—" : escapeHtml(row.annual_rate_percent)+"%"}</small></td>
+        <td data-label="${escapeHtml(AccountingHelp.word("scope"))}">${AccountingHelp.schedule(row)}</td>
+        <td data-label="${escapeHtml(t("assets.decision"))}">${AccountingHelp.cell(row.ui_context)}</td>
+      </tr>`).join("") || emptyRow(6)}</tbody></table></div></section>
     <section class="panel">
       <div class="chart-slot" id="chart-amortization"></div>
-    </section>
-  `;
+    </section>`;
   mountViewAnalyticsChart("chart-amortization", buildAmortizationSpec);
 }
 
-async function renderTaxes() {
+async function renderTaxes(renderGeneration = currentRenderGeneration) {
   const data = await fetchJSON(`/api/taxes?period=${encodeURIComponent(state.period)}`);
+  if (renderGeneration !== currentRenderGeneration) return;
   const obligations = obligationMap(data.obligations);
   const m130 = formCardData(data.tax_forms?.[FORM_KEYS[130]], obligations[130]);
   const m303 = formCardData(data.tax_forms?.[FORM_KEYS[303]], obligations[303]);
@@ -3224,13 +3166,13 @@ async function renderTaxes() {
         <header class="panel-header"><h2>${escapeHtml(t("taxes.obligations"))}</h2><small>${escapeHtml(data.period)}</small></header>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>${escapeHtml(t("taxes.form"))}</th><th>${escapeHtml(t("taxes.applicability"))}</th><th>${escapeHtml(t("taxes.status"))}</th><th>${escapeHtml(t("taxes.directDebit"))}</th><th>${escapeHtml(t("taxes.deadline"))}</th></tr></thead>
+            <thead><tr><th>${escapeHtml(t("taxes.form"))}</th><th>${escapeHtml(t("taxes.applicability"))}</th><th>${escapeHtml(t("taxes.status"))}</th><th>${escapeHtml(t("taxes.directDebit"))} ${AccountingHelp.term("paymentDeadline")}</th><th>${escapeHtml(t("taxes.deadline"))}</th></tr></thead>
             <tbody>
               ${data.obligations.map((row) => `
                 <tr>
                   <td><strong>Modelo ${escapeHtml(row.obligation_code)}</strong></td>
-                  <td>${badge(row.determination)}</td>
-                  <td>${badge(row.filing_status)}</td>
+                  <td>${escapeHtml(row.determination === "due" ? (state.locale === "ru" ? "Обязательна" : "Required") : statusLabel(row.determination))}</td>
+                  <td>${AccountingHelp.cell(row.ui_context)}</td>
                   <td>${formatDate(row.direct_debit_cutoff_on)}</td>
                   <td>${formatDate(row.statutory_due_on)}</td>
                 </tr>`).join("") || emptyRow(5)}
@@ -3242,10 +3184,12 @@ async function renderTaxes() {
         <section class="panel">
           <header class="panel-header"><h2>Modelo 130</h2><small>${escapeHtml(formSubtitle(m130, obligations[130]))}</small></header>
           ${casillas(m130.values || {}, ["01", "02", "03", "04", "05", "07", "19", "difficult_expenses"], formEmptyState(m130))}
+          ${calculationHelp(m130)}
         </section>
         <section class="panel">
           <header class="panel-header"><h2>Modelo 303</h2><small>${escapeHtml(formSubtitle(m303, obligations[303]))}</small></header>
           ${casillas(m303.values || {}, ["29", "45", "64", "69", "71", "72", "result", "compensation_carryforward"], formEmptyState(m303))}
+          ${calculationHelp(m303)}
         </section>
         <section class="panel">
           <div class="chart-slot" id="chart-ytd-comparison"></div>
@@ -3256,21 +3200,22 @@ async function renderTaxes() {
   mountViewAnalyticsChart("chart-ytd-comparison", buildYearComparisonSpec);
 }
 
-async function renderContacts() {
+async function renderContacts(renderGeneration = currentRenderGeneration) {
   const rows = await fetchJSON("/api/counterparties");
+  if (renderGeneration !== currentRenderGeneration) return;
   app.innerHTML = `
     <div class="table-toolbar"><h2>${escapeHtml(t("contacts.title"))}</h2></div>
     <section class="panel">
       <div class="table-wrap">
         <table>
-          <thead><tr><th>${escapeHtml(t("contacts.name"))}</th><th>${escapeHtml(t("contacts.country"))}</th><th>NIF / VAT ID</th><th>ROI</th><th>${escapeHtml(t("contacts.transactions"))}</th><th>${escapeHtml(t("contacts.last"))}</th></tr></thead>
+          <thead><tr><th>${escapeHtml(t("contacts.name"))}</th><th>${escapeHtml(t("contacts.country"))}</th><th>NIF / VAT ID</th><th>ROI ${AccountingHelp.term("ROI")}</th><th>${escapeHtml(t("contacts.transactions"))}</th><th>${escapeHtml(t("contacts.last"))}</th></tr></thead>
           <tbody>
             ${rows.map((row) => `
               <tr>
                 <td class="cell-primary"><strong>${escapeHtml(row.display_name)}</strong></td>
                 <td>${escapeHtml(row.country_code || "—")}</td>
                 <td>${escapeHtml(row.vat_id || row.tax_id || "—")}</td>
-                <td>${badge(row.roi_status || "unknown")}</td>
+                <td>${AccountingHelp.cell(row.ui_context)}</td>
                 <td>${row.transaction_count}</td>
                 <td>${formatDate(row.last_transaction_on)}</td>
               </tr>`).join("") || emptyRow(6)}
@@ -3409,7 +3354,11 @@ function normalizePostingItem(raw = {}) {
     amountEur: raw.amount_eur == null && detail.amount_eur == null
       ? (effectiveAmountMinor == null ? "" : String(effectiveAmountMinor / 100))
       : String(raw.amount_eur ?? detail.amount_eur).trim(),
-    rowStatus: String(raw.outcome || raw.status || raw.state || detail.outcome || detail.status || "").trim(),
+    rowStatus: String(raw.outcome || raw.status || raw.state || detail.outcome || detail.status || raw.preview_bucket || "unknown").trim(),
+    previewBucket: raw.preview_bucket || detail.preview_bucket || null,
+    postingDeferredUntil: raw.posting_deferred_until || detail.posting_deferred_until || null,
+    structuredReasons: [...(raw.blockers || []), ...(detail.blockers || []), ...(raw.blocking_issues || [])].filter(r => r && typeof r === "object"),
+    documentId: raw.document_id || detail.document_id || null,
     message,
     reasons: reasonMessages,
     cleanupApplied: Boolean(raw.cleanup_applies ?? detail.cleanup_applies ?? raw.cleanup?.applicable ?? detail.cleanup?.applicable),
@@ -3590,15 +3539,15 @@ function renderPostingQueueSection(title, rows) {
       <h3 class="posting-section-label">${escapeHtml(title)}</h3>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>${escapeHtml(t("transactions.date"))}</th><th>${escapeHtml(t("transactions.counterpartyDocument"))}</th><th>${escapeHtml(t("transactions.status"))}</th><th>${escapeHtml(t("transactions.amount"))}</th><th>${escapeHtml(t("review.postingResultMessage"))}</th></tr></thead>
+          <thead><tr><th>${escapeHtml(t("transactions.date"))}</th><th>${escapeHtml(t("transactions.counterpartyDocument"))}</th><th>${escapeHtml(t("transactions.status"))} ${AccountingHelp.term("posting")}</th><th>${escapeHtml(t("transactions.amount"))}</th><th>${escapeHtml(t("review.postingResultMessage"))}</th></tr></thead>
           <tbody>
             ${rows.map((row) => `
               <tr>
                 <td>${formatDate(row.transactionDate)}</td>
                 <td class="cell-primary"><strong>${escapeHtml(row.description || row.reviewId || row.transactionId || t("common.noId"))}</strong><small>${escapeHtml(row.entryType || "—")}</small></td>
-                <td>${badge(row.rowStatus || "unknown")}</td>
+                <td>${AccountingHelp.cell(postingHelpContext(row))}</td>
                 <td class="amount">${row.amountEur ? eur(row.amountEur) : "—"}</td>
-                <td class="posting-result-message">${escapeHtml(row.message || row.reasons?.join(" · ") || "—")}</td>
+                <td class="posting-result-message">${row.structuredReasons.length ? row.structuredReasons.map(reason => escapeHtml(AccountingHelp.reasonInfo(reason)[0][state.locale === "en" ? 1 : 0])).join(" · ") : escapeHtml(t("issues.default"))}</td>
               </tr>`).join("")}
           </tbody>
         </table>
@@ -4083,6 +4032,9 @@ if (hasDOM) {
 
   document.addEventListener("click", (event) => {
     if (!(event.target instanceof Element)) return;
+    if (event.target.closest("[data-reload-view]")) { window.location.reload(); return; }
+    if (event.target.closest("[data-retry-view]")) { void renderCurrentView(); return; }
+    if (event.target.closest("[data-refresh-calculation]")) { void refreshDashboard(); return; }
     const link = event.target.closest("a[data-spa]");
     if (!link) return;
     const route = parseRoute(link.getAttribute("href") || "/");
@@ -4092,6 +4044,7 @@ if (hasDOM) {
   });
 
   window.addEventListener("popstate", () => {
+    if (AccountingHelp.handlePopState()) return;
     applyRouteFromLocation();
   });
 
@@ -4253,4 +4206,16 @@ if (hasDOM) {
 
   applyStaticTranslations();
   init();
+}
+
+function postingHelpContext(row) {
+  return {domain: "transaction", title: row.description, state: row.previewBucket || row.rowStatus || "unknown",
+    posting: {preview_bucket: row.previewBucket, posting_deferred_until: row.postingDeferredUntil, blockers: row.structuredReasons || []},
+    reasons: [], actions: row.transactionId ? [{kind: "review", transaction_id: row.transactionId}] : [],
+    facts: {transaction_date: row.transactionDate}};
+}
+
+function calculationHelp(form) {
+  if (form.display_state !== "unavailable") return "";
+  return `<p>${escapeHtml(AccountingHelp.word("refreshHint"))}</p><button type="button" class="secondary-button" data-refresh-calculation>${escapeHtml(AccountingHelp.word("refresh"))}</button>`;
 }

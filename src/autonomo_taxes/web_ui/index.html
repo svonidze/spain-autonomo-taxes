@@ -52,7 +52,7 @@
       </div>
     </header>
 
-    <section id="app" class="content" aria-live="polite">
+    <section id="app" class="content" aria-busy="false">
       <div class="loading-state" data-i18n="common.loading">Загрузка данных…</div>
     </section>
   </main>
@@ -162,6 +162,12 @@
   </dialog>
 
   <div id="toast" class="toast" role="status"></div>
+  <dialog id="status-help-dialog" class="status-help-dialog" aria-labelledby="status-help-title">
+    <header><h2 id="status-help-title"></h2><button type="button" id="status-help-close" aria-label="Закрыть пояснение">×</button></header>
+    <div id="status-help-body"></div>
+  </dialog>
+  <div id="accounting-tooltip" class="accounting-tooltip" role="tooltip" hidden></div>
+  <script src="/status-help.js"></script>
   <script src="/charts.js"></script>
   <script src="/app.js"></script>
 </body>

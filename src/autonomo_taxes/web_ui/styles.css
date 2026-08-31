@@ -24,6 +24,43 @@
   line-height: 1.45;
 }
 
+/* Contextual status controls use the existing palette and remain readable
+   without relying on color or a hover-only interaction. */
+.status-context { display: grid; gap: 6px; justify-items: start; min-width: 0; }
+.status-context small { color: var(--muted); line-height: 1.4; max-width: 34ch; }
+.status-context .badge { white-space: normal; text-align: left; }
+.status-details-button { padding: 3px 0; text-decoration: underline; text-underline-offset: 3px; }
+.badge.status-neutral { color: var(--text); background: var(--surface-muted); }
+.badge.status-pending { color: #714307; background: var(--warning-soft); }
+.badge.status-attention { color: #812525; background: var(--danger-soft); }
+.badge.status-positive { color: #07573f; background: var(--accent-soft); }
+.value-detail, .amortization-summary span, .amortization-summary small { display: block; }
+.value-detail, .amortization-summary small { margin-top: 5px; color: var(--muted); }
+.term-help { display: inline-grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: var(--surface); color: var(--accent-dark); font-size: 13px; vertical-align: middle; }
+.accounting-tooltip { position: fixed; z-index: 1000; width: min(320px, calc(100vw - 16px)); padding: 12px; background: var(--text); color: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); font-size: 14px; line-height: 1.5; font-weight: normal; text-transform: none; }
+.accounting-tooltip[hidden] { display: none; }
+.status-help-dialog { position: fixed; inset: 0 0 0 auto; margin: 0 0 0 auto; padding: 0; width: min(640px, 100vw); height: 100dvh; max-width: 100vw; max-height: 100dvh; border: 0; border-left: 1px solid var(--line); color: var(--text); background: var(--surface); box-shadow: var(--shadow); }
+.status-help-dialog[open] { display: flex; flex-direction: column; }
+.status-help-dialog::backdrop { background: rgb(0 0 0 / 35%); }
+.status-help-dialog > header { display: flex; align-items: start; gap: 16px; padding: 20px 24px; border-bottom: 1px solid var(--line); }
+.status-help-dialog h2 { margin: 0; font-size: 1.2rem; overflow-wrap: anywhere; }
+#status-help-close { flex: 0 0 44px; width: 44px; height: 44px; margin-left: auto; border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius); color: var(--text); font-size: 26px; }
+#status-help-body { overflow-y: auto; min-height: 0; padding: 20px 24px 40px; overflow-wrap: anywhere; }
+#status-help-body section { margin: 24px 0; }
+#status-help-body h3 { font-size: 1rem; margin: 0 0 12px; }
+.status-facts { margin: 0; }
+.status-facts > div { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.status-facts dt { color: var(--muted); }
+.status-facts dd { margin: 0; }
+.status-reason { padding: 14px; margin: 12px 0; border: 1px solid var(--line); border-radius: var(--radius); }
+.status-reason h4 { margin: 0 0 8px; }
+.status-reason summary, #status-help-body summary { cursor: pointer; padding: 6px 0; }
+.status-sources { list-style: none; padding: 0; }
+.status-sources li { display: grid; gap: 5px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.status-sources a { color: var(--accent-dark); }
+.status-safety-note { color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; }
+.status-help-dialog a:focus-visible, .term-help:focus-visible, .status-details-button:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+
 * {
   box-sizing: border-box;
 }
@@ -1739,6 +1776,33 @@ textarea:focus {
   .review-issues-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* Keep record identity, status and its action together instead of clipping
+   either edge of the table. On narrow screens each native row becomes a card. */
+.table-wrap th, .table-wrap td { white-space: normal; overflow-wrap: anywhere; }
+.table-wrap .cell-primary, .table-wrap .cell-primary small { overflow: visible; text-overflow: clip; white-space: normal; }
+.table-wrap .status-context { min-width: 145px; }
+.asset-explanations-table { table-layout: fixed; }
+.asset-explanations-table th:first-child { width: 22%; }
+.asset-explanations-table th:last-child { width: 23%; }
+.asset-explanations-table td { vertical-align: top; }
+@media (max-width: 760px) {
+  .status-help-dialog { width: 100vw; border: 0; }
+  .status-help-dialog > header, #status-help-body { padding-left: 16px; padding-right: 16px; }
+  .table-wrap { overflow: visible; }
+  .table-wrap table, .table-wrap tbody, .table-wrap tr, .table-wrap td { display: block; width: 100%; }
+  .table-wrap thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .table-wrap tbody tr { padding: 12px; border-bottom: 2px solid var(--line); }
+  .table-wrap td { padding: 7px 0; border: 0; max-width: none; text-align: left; }
+  .table-wrap td[data-label]:not([data-label=""])::before { content: attr(data-label); display: block; margin-bottom: 4px; color: var(--muted); font-size: .75rem; }
+  .table-wrap .cell-primary { max-width: none; }
+  .status-context small { max-width: none; }
+  .status-details-button, .term-help { min-height: 44px; }
+  .term-help { width: 44px; }
+}
+@media (forced-colors: active) {
+  .status-context .badge, .status-reason, .term-help, .accounting-tooltip { border: 1px solid CanvasText; }
 }
 
 .charts-panel {

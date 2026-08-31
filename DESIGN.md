@@ -108,17 +108,20 @@ not an empty state.
 
 ## Documented deltas
 
-- The assets table's "schedule" column sums all amortization entries, while
-  the amortization chart counts only `include_in_books = 1` rows (annual
-  evidence rows are excluded); the chart carries a note saying so.
+- The assets table scopes schedule amounts to the selected quarter and shows
+  book-included and excluded rows separately. Annual evidence is displayed
+  separately in the explanation panel and is never added to quarterly totals.
+  The amortization chart shows the year's quarters using only
+  `include_in_books = 1` schedule/adjustment rows, excluding annual evidence;
+  its note explains why its scope differs from the table.
 - `src/autonomo_taxes/amortization_chain.py` is a CSV audit tool for Xolo
   artifacts and does not back the web analytics; the chart reads
   `amortization_entries` directly.
 - The tax reserve bullet reports `not_checked` when no explicit available-cash
   figure exists (`cash_check.py` receives `available_eur=None`); available
   cash is never inferred from payment rows.
-- `app.js` historically carried a duplicated declaration block (`t`,
-  `intlLocale`, …); it has been removed, and
-  `test_web_ui_helpers_declared_exactly_once` keeps each of those helpers
-  declared exactly once. All chart logic lives in `charts.js` and uniquely
-  named `build*Spec` helpers.
+- Shared UI helpers in `app.js` have one declaration each, guarded by
+  `test_web_ui_helpers_declared_exactly_once`. Chart rendering lives in
+  `charts.js`, contextual explanations in `status-help.js`, and uniquely named
+  `build*Spec` helpers adapt analytics data to charts. Both supporting scripts
+  load before `app.js`; adding a chart must not replace status explanations.
