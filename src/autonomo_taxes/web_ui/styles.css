@@ -2122,7 +2122,7 @@ textarea:focus {
 .charts-panel {
   display: grid;
   gap: 18px;
-  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
   margin-top: 18px;
 }
 
@@ -2196,6 +2196,12 @@ textarea:focus {
 
 .chart-dialog .chart-figure {
   border: 0;
+  padding: 0;
+}
+
+/* The dialog header already names the chart. */
+.chart-dialog .chart-figure figcaption {
+  display: none;
 }
 
 @media (max-width: 700px) {
