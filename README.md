@@ -73,6 +73,9 @@ Use [Understanding accounting statuses](docs/ACCOUNTING_STATUSES.md) for review
 versus posting readiness, blocking reasons, next actions, assets and filing
 evidence.
 
+Use [Foreign-currency exchange rates](docs/FX_RATES.md) for the ECB rate
+convention, date selection, EUR rounding, provenance and settlement fallback.
+
 See [Account settings](docs/ACCOUNT_SETTINGS.md) for taxpayer details, local backup
 retention, observed backup status and release requirements.
 

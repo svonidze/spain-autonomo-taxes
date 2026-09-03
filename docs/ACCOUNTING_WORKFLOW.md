@@ -95,6 +95,11 @@ without posting. Their **Post ready** action is a separate batch action: inspect
 all listed rows before confirming it. It may include more than the last opened
 entry. Routine new expense posting should use the scoped wizard above.
 
+For a foreign-currency income entry, check the proposed rate, observation date,
+converted EUR amount and provenance before confirming the review. See
+[Foreign-currency exchange rates](FX_RATES.md) for the ECB quote convention,
+weekend fallback, rounding, settlement alternative and failure boundaries.
+
 ## What the statuses mean
 
 This table describes transaction statuses for ordinary current accounting.
