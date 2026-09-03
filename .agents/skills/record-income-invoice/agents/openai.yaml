@@ -1,0 +1,7 @@
+interface:
+  display_name: "Провести доходный счёт"
+  short_description: "Загрузка и точечное проведение доходного счёта"
+  default_prompt: "Use $record-income-invoice to upload, review, and post this customer invoice as income."
+
+policy:
+  allow_implicit_invocation: true
