@@ -31,6 +31,13 @@ def test_default_deploy_is_single_sha_and_has_no_sops_dependency() -> None:
     assert "@SECRET_" not in unit
 
 
+def test_default_installer_delivers_service_environment_wrapper() -> None:
+    installer = (OPS / "install-systemd-user-units.sh").read_text(encoding="utf-8")
+
+    assert (OPS / "run-with-service-env.sh").is_file()
+    assert 'install -m 755 "$script_dir"/*.sh "$ops_root/"' in installer
+
+
 def test_sops_deploy_remains_an_explicit_two_sha_mode() -> None:
     deploy = (OPS / "sops" / "deploy.sh").read_text(encoding="utf-8")
     installer = (OPS / "install-systemd-user-units.sh").read_text(encoding="utf-8")
