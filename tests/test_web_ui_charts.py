@@ -10,6 +10,7 @@ WEB_UI = REPO_ROOT / "src" / "autonomo_taxes" / "web_ui"
 CHARTS_JS = WEB_UI / "charts.js"
 APP_JS = WEB_UI / "app.js"
 INDEX_HTML = WEB_UI / "index.html"
+STYLES_CSS = WEB_UI / "styles.css"
 LOCAL_WEB = REPO_ROOT / "src" / "autonomo_taxes" / "local_web.py"
 
 
@@ -166,3 +167,15 @@ def test_charts_js_respects_csp_and_determinism_rules() -> None:
         assert forbidden not in source, forbidden
     assert "style=" not in source
     assert re.search(r"\bon[a-z]+\s*=", source) is None
+
+
+def test_expense_chart_keeps_labels_when_tables_reflow() -> None:
+    chart_source = CHARTS_JS.read_text(encoding="utf-8")
+    assert 'cell.setAttribute("data-label", headers[index] || "")' in chart_source
+    assert "tableInitiallyOpen" in chart_source
+    assert "chart-table-primary-on-narrow" in chart_source
+
+    styles = STYLES_CSS.read_text(encoding="utf-8")
+    narrow_rule = styles[styles.index("@media (max-width: 760px)") :]
+    assert ".chart-table-primary-on-narrow .chart-host" in narrow_rule
+    assert ".chart-table-primary-on-narrow .chart-legend" in narrow_rule

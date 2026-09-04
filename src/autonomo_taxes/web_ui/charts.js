@@ -279,6 +279,8 @@
     const rows = (spec.rows || []).map((row) => ({
       key: String(row.key),
       label: String(row.label),
+      secondaryLabel: row.secondaryLabel ? String(row.secondaryLabel) : "",
+      total: row.total,
       segments: (row.segments || []).map((segment) => ({
         key: String(segment.key),
         label: String(segment.label),
@@ -304,7 +306,11 @@
     const totals = rows.map((row) =>
       row.segments.reduce((sum, segment) => sum + (isValue(segment.value) ? Math.max(segment.value, 0) : 0), 0)
     );
-    const height = MARGIN.top + rows.length * ROW_HEIGHT + 24;
+    const requestedRowHeight = Number(spec.rowHeight);
+    const rowHeight = Number.isFinite(requestedRowHeight)
+      ? Math.min(Math.max(Math.round(requestedRowHeight), ROW_HEIGHT), 56)
+      : ROW_HEIGHT;
+    const height = MARGIN.top + rows.length * rowHeight + 24;
     const viewWidth = sceneWidth(spec);
     const scene = {
       chartId: String(spec.chartId),
@@ -319,24 +325,42 @@
       empty: rows.length === 0 || !rows.some((row) => row.segments.some((segment) => isValue(segment.value))),
     };
     if (scene.empty) return scene;
-    const labelWidth = Math.min(150, Math.max(90, Math.round(viewWidth * 0.28)));
+    const requestedLabelWidth = Number(spec.rowLabelWidth);
+    const maxLabelWidth = Number.isFinite(requestedLabelWidth)
+      ? Math.min(Math.max(Math.round(requestedLabelWidth), 90), 320)
+      : 150;
+    const labelWidth = Math.min(maxLabelWidth, Math.max(90, Math.round(viewWidth * 0.28)));
     const plotLeft = labelWidth + 8;
-    const plotRight = viewWidth - MARGIN.right - 64;
+    const valueLabelWidth = (spec.totalValueLabel || spec.totalLabel) ? 112 : 64;
+    const plotRight = Math.max(plotLeft + 2, viewWidth - MARGIN.right - valueLabelWidth);
     const maxTotal = Math.max(...totals, 1);
     const xScale = scaleFactory(0, maxTotal, plotLeft, plotRight);
     rows.forEach((row, index) => {
-      const y = MARGIN.top + index * ROW_HEIGHT;
-      const barHeight = ROW_HEIGHT - 10;
+      const y = MARGIN.top + index * rowHeight;
+      const hasSecondaryLabel = Boolean(row.secondaryLabel);
+      const barHeight = rowHeight === ROW_HEIGHT ? ROW_HEIGHT - 10 : 20;
+      const barY = rowHeight === ROW_HEIGHT ? y : round2(y + (rowHeight - barHeight) / 2);
       // The label column is right-anchored, so an overlong name would be
       // clipped at its start; shorten the end and keep the full text as a title.
       const maxChars = Math.max(6, Math.floor(labelWidth / 6.5));
       const clipped = row.label.length > maxChars;
+      const rowTitle = hasSecondaryLabel ? `${row.label} (${row.secondaryLabel})` : row.label;
       scene.rowLabels.push({
         x: labelWidth,
-        y: round2(y + barHeight / 2 + 4),
+        y: round2(y + rowHeight / 2 + (hasSecondaryLabel ? -2 : 4)),
         label: clipped ? `${row.label.slice(0, maxChars - 1)}…` : row.label,
-        title: clipped ? row.label : null,
+        title: clipped ? rowTitle : null,
+        className: "chart-axis-text",
       });
+      if (hasSecondaryLabel) {
+        scene.rowLabels.push({
+          x: labelWidth,
+          y: round2(y + rowHeight / 2 + 11),
+          label: row.secondaryLabel,
+          title: null,
+          className: "chart-axis-subtext",
+        });
+      }
       let base = 0;
       row.segments.forEach((segment) => {
         if (!isValue(segment.value)) return;
@@ -353,16 +377,20 @@
           className: markClass(segment),
           hatchTone: segment.pattern === "hatched" ? segment.tone : null,
           x: xStart,
-          y: round2(y),
+          y: barY,
           width: round2(Math.max(xEnd - xStart - FILL_GAP / 2, 0)),
           height: barHeight,
-          title: seriesTitle(segment, row.label, segment.value, spec.formatValue),
+          title: seriesTitle(segment, rowTitle, segment.value, spec.formatValue),
         });
       });
+      const displayedTotal = isValue(row.total) ? row.total : totals[index];
+      const totalValue = spec.formatValue(displayedTotal);
       scene.valueLabels.push({
         x: round2(xScale(base) + 6),
-        y: round2(y + barHeight / 2 + 4),
-        label: spec.formatValue(totals[index]),
+        y: round2(barY + barHeight / 2 + 4),
+        label: (spec.totalValueLabel || spec.totalLabel)
+          ? `${spec.totalValueLabel || spec.totalLabel}: ${totalValue}`
+          : totalValue,
       });
     });
     return scene;
@@ -557,7 +585,7 @@
     });
     (scene.rowLabels || []).forEach((entry) => {
       const label = createSvgElement(doc, "text", {
-        class: "chart-axis-text",
+        class: entry.className || "chart-axis-text",
         x: entry.x,
         y: entry.y,
         "text-anchor": "end",
@@ -608,6 +636,7 @@
   function buildDataTable(doc, spec, headers, rows) {
     const details = doc.createElement("details");
     details.className = "chart-data";
+    details.open = Boolean(spec.tableInitiallyOpen);
     const summary = doc.createElement("summary");
     summary.textContent = spec.tableLabel || "Data";
     details.appendChild(summary);
@@ -629,6 +658,7 @@
       cells.forEach((value, index) => {
         const cell = doc.createElement("td");
         if (index > 0) cell.className = "amount";
+        cell.setAttribute("data-label", headers[index] || "");
         cell.textContent = value;
         bodyRow.appendChild(cell);
       });
@@ -644,7 +674,9 @@
     const doc = container.ownerDocument;
     while (container.firstChild) container.removeChild(container.firstChild);
     const figure = doc.createElement("figure");
-    figure.className = "chart-figure";
+    figure.className = spec.tablePrimaryOnNarrow
+      ? "chart-figure chart-table-primary-on-narrow"
+      : "chart-figure";
     const caption = doc.createElement("figcaption");
     if (scene.empty || !spec.expandAction) {
       caption.textContent = spec.title;
@@ -697,6 +729,35 @@
     return isValue(value) ? spec.formatValue(value) : "—";
   }
 
+  function horizontalRowTotal(row) {
+    if (isValue(row.total)) return row.total;
+    return (row.segments || []).reduce(
+      (sum, segment) => sum + (isValue(segment.value) ? segment.value : 0),
+      0
+    );
+  }
+
+  function horizontalRowHasShares(row) {
+    const total = horizontalRowTotal(row);
+    const segments = row.segments || [];
+    return total > 0
+      && segments.length > 0
+      && segments.every((segment) => isValue(segment.value) && segment.value >= 0)
+      && segments.reduce((sum, segment) => sum + segment.value, 0) === total;
+  }
+
+  function formatHorizontalSegment(spec, row, segment) {
+    const amount = formatCell(spec, segment ? segment.value : null);
+    if (!spec.showSegmentShares) return amount;
+    if (!segment || !horizontalRowHasShares(row)) {
+      return `${amount} · ${spec.shareUnavailableLabel || "—"}`;
+    }
+    const formatPercent = typeof spec.formatPercent === "function"
+      ? spec.formatPercent
+      : (ratio) => `${round2(ratio * 100)}%`;
+    return `${amount} · ${formatPercent(segment.value / horizontalRowTotal(row))}`;
+  }
+
   function renderCartesian(container, spec) {
     const scene = buildCartesianScene(spec);
     const headers = [spec.bucketLabel || ""].concat(
@@ -715,14 +776,16 @@
     const headers = [spec.bucketLabel || ""].concat(
       scene.legend.map((entry) => entry.label)
     );
+    if (spec.totalLabel) headers.push(spec.totalLabel);
     const rows = (spec.rows || []).map((row) =>
-      [row.label].concat(
+      [row.secondaryLabel ? `${row.label} · ${row.secondaryLabel}` : row.label].concat(
         scene.legend.map((entry) => {
           const segment = (row.segments || []).find(
             (candidate) => String(candidate.key) === entry.key
           );
-          return formatCell(spec, segment ? segment.value : null);
-        })
+          return formatHorizontalSegment(spec, row, segment);
+        }),
+        spec.totalLabel ? [formatCell(spec, horizontalRowTotal(row))] : []
       )
     );
     return renderFigure(container, spec, scene, headers, rows);

@@ -16,6 +16,114 @@ const KNOWN_REVIEW_TAX_CODES = new Set([
   "unknown",
 ]);
 
+// Source: AEAT's 2026 normalized registry-book design (LSI.xlsx),
+// RECIBIDAS_GASTOS / Concepto de Gasto. These labels are display-only: the
+// original code remains visible and continues to be sent through every API.
+const AEAT_EXPENSE_CONCEPT_LABELS = {
+  ru: {
+    G01: "Закупка товаров и материалов",
+    G02: "Уменьшение товарных запасов",
+    G03: "Прочие расходы на ведение деятельности",
+    G04: "Зарплата сотрудников",
+    G05: "Соцстрахование сотрудников за счёт работодателя",
+    G06: "Соцстрахование и альтернативное страхование autónomo (до I кв. 2024)",
+    G07: "Компенсации сотрудникам",
+    G08: "Командировочные сотрудников",
+    G09: "Взносы в пенсионные системы сотрудников",
+    G10: "Прочие расходы на сотрудников",
+    G11: "Питание autónomo",
+    G12: "Аренда и лицензионные платежи",
+    G13: "Ремонт и обслуживание",
+    G14: "Электроэнергия",
+    G15: "Вода",
+    G16: "Газ",
+    G17: "Телефон и интернет",
+    G18: "Прочие коммунальные услуги",
+    G19: "Услуги сторонних специалистов",
+    G20: "Страховые взносы",
+    G22: "Прочие внешние услуги",
+    G23: "Проценты по долгам",
+    G24: "Прочие финансовые расходы",
+    G25: "Входной IVA при специальных режимах",
+    G26: "Прочие вычитаемые налоги и сборы",
+    G27: "Амортизация зданий",
+    G28: "Амортизация оборудования, мебели и прочих материальных активов",
+    G29: "Амортизация машин и механизмов",
+    G30: "Амортизация транспорта",
+    G31: "Амортизация компьютеров и электроники",
+    G32: "Амортизация инструментов",
+    G33: "Амортизация скота и сельскохозяйственных культур",
+    G34: "Потери по безнадёжным долгам",
+    G35: "Меценатство: соглашения о сотрудничестве",
+    G36: "Меценатство: общественно полезные мероприятия",
+    G37: "Прочие налогово вычитаемые расходы",
+    G38: "Амортизация нематериальных активов",
+    G39: "Налогово вычитаемые резервы",
+    G40: "Оформление договоров",
+    G41: "Юридическая защита",
+    G42: "Прочие персональные услуги третьих лиц",
+    G43: "Сомнительная дебиторская задолженность",
+    G44: "Взносы сообществу собственников",
+    G45: "Соцстрахование autónomo",
+    G46: "Взносы autónomo в альтернативные страховые системы",
+    G47: "Корректировка RETA: к доплате",
+    G48: "Корректировка RETA: к возврату",
+    GY4: "Коммунальные услуги и связь",
+    GY8: "Амортизация материальных активов",
+  },
+  en: {
+    G01: "Purchases of goods and materials",
+    G02: "Decrease in inventory",
+    G03: "Other operating expenses",
+    G04: "Employee salaries",
+    G05: "Employer Social Security contributions",
+    G06: "Owner Social Security and alternative insurance (through Q1 2024)",
+    G07: "Employee compensation",
+    G08: "Employee travel allowances",
+    G09: "Employee pension contributions",
+    G10: "Other employee expenses",
+    G11: "Owner meal expenses",
+    G12: "Rent and licence fees",
+    G13: "Repairs and maintenance",
+    G14: "Electricity",
+    G15: "Water",
+    G16: "Gas",
+    G17: "Telephone and internet",
+    G18: "Other utilities",
+    G19: "Independent professional services",
+    G20: "Insurance premiums",
+    G22: "Other external services",
+    G23: "Interest on debt",
+    G24: "Other financial expenses",
+    G25: "Input IVA under special regimes",
+    G26: "Other deductible taxes and levies",
+    G27: "Depreciation of buildings",
+    G28: "Depreciation of equipment, furniture and other tangible assets",
+    G29: "Depreciation of machinery",
+    G30: "Depreciation of vehicles",
+    G31: "Depreciation of computers and electronics",
+    G32: "Depreciation of tools",
+    G33: "Depreciation of livestock and agricultural crops",
+    G34: "Bad-debt losses",
+    G35: "Patronage: collaboration agreements",
+    G36: "Patronage: public-interest activities",
+    G37: "Other tax-deductible expenses",
+    G38: "Amortization of intangible assets",
+    G39: "Tax-deductible provisions",
+    G40: "Contract formalization",
+    G41: "Legal defence",
+    G42: "Other personal services supplied by third parties",
+    G43: "Doubtful receivables",
+    G44: "Property community fees",
+    G45: "Owner Social Security contributions",
+    G46: "Owner contributions to alternative insurance schemes",
+    G47: "RETA adjustment: amount payable",
+    G48: "RETA adjustment: refund",
+    GY4: "Utilities and communications",
+    GY8: "Depreciation of tangible assets",
+  },
+};
+
 const messages = {
   ru: {
     "expense.purchase": "Покупки, услуги и прочие расходы",
@@ -545,12 +653,17 @@ const messages = {
     "charts.yoy.deductible": "Вычеты",
     "charts.yoy.net": "Результат",
     "charts.yoy.empty": "Недостаточно данных для сравнения",
-    "charts.expenses.title": "Структура расходов по концептам AEAT",
-    "charts.expenses.aria": "Расходы по концептам AEAT: вычитаемая и невычитаемая части",
-    "charts.expenses.concept": "Концепт",
-    "charts.expenses.deductible": "Вычитаемая часть",
-    "charts.expenses.nonDeductible": "Невычитаемая часть",
-    "charts.expenses.unclassified": "Без концепта",
+    "charts.expenses.title": "Расходы: что уменьшает базу IRPF",
+    "charts.expenses.aria": "Расходы по категориям: суммы, которые уменьшают и не уменьшают базу IRPF",
+    "charts.expenses.concept": "Категория расхода",
+    "charts.expenses.deductible": "Уменьшает базу IRPF",
+    "charts.expenses.nonDeductible": "Не уменьшает базу IRPF",
+    "charts.expenses.unclassified": "Категория не указана",
+    "charts.expenses.unknownConcept": "Неизвестная категория AEAT",
+    "charts.expenses.total": "Всего расходов",
+    "charts.expenses.totalValue": "Всего",
+    "charts.expenses.table": "Суммы по категориям",
+    "charts.expenses.shareUnavailable": "доля не рассчитывается",
     "charts.expenses.empty": "Расходы за период не найдены",
     "charts.aging.title": "Очередь разбора по срокам",
     "charts.aging.aria": "Число операций в очереди по возрасту и статусу",
@@ -1098,12 +1211,17 @@ const messages = {
     "charts.yoy.deductible": "Deductibles",
     "charts.yoy.net": "Result",
     "charts.yoy.empty": "Not enough data for a comparison",
-    "charts.expenses.title": "Expense structure by AEAT concept",
-    "charts.expenses.aria": "Expenses by AEAT concept: deductible and non-deductible parts",
-    "charts.expenses.concept": "Concept",
-    "charts.expenses.deductible": "Deductible part",
-    "charts.expenses.nonDeductible": "Non-deductible part",
-    "charts.expenses.unclassified": "No concept",
+    "charts.expenses.title": "Expenses: what reduces the IRPF tax base",
+    "charts.expenses.aria": "Expenses by category: amounts that reduce and do not reduce the IRPF tax base",
+    "charts.expenses.concept": "Expense category",
+    "charts.expenses.deductible": "Reduces the IRPF tax base",
+    "charts.expenses.nonDeductible": "Does not reduce the IRPF tax base",
+    "charts.expenses.unclassified": "Category not assigned",
+    "charts.expenses.unknownConcept": "Unknown AEAT category",
+    "charts.expenses.total": "Total expenses",
+    "charts.expenses.totalValue": "Total",
+    "charts.expenses.table": "Amounts by category",
+    "charts.expenses.shareUnavailable": "share not available",
     "charts.expenses.empty": "No expenses found for the period",
     "charts.aging.title": "Review queue by age",
     "charts.aging.aria": "Queued transactions by age bucket and status",
@@ -2581,6 +2699,26 @@ function formatMinorEur(minor) {
   return eur(minor / 100);
 }
 
+function formatChartPercent(ratio) {
+  return new Intl.NumberFormat(intlLocale(), {
+    style: "percent",
+    maximumFractionDigits: 1,
+  }).format(ratio);
+}
+
+function expenseConceptPresentation(concept) {
+  const raw = String(concept || "").trim();
+  if (!raw || raw.toLowerCase() === "unclassified") {
+    return {label: t("charts.expenses.unclassified"), secondaryLabel: ""};
+  }
+  const code = raw.toUpperCase();
+  const labels = AEAT_EXPENSE_CONCEPT_LABELS[state.locale] || AEAT_EXPENSE_CONCEPT_LABELS.ru;
+  return {
+    label: labels[code] || t("charts.expenses.unknownConcept"),
+    secondaryLabel: code,
+  };
+}
+
 function chartMonthLabel(bucket) {
   const parsed = new Date(`${bucket}-01T12:00:00`);
   if (Number.isNaN(parsed.getTime())) return String(bucket);
@@ -2760,17 +2898,29 @@ function buildExpenseStructureSpec(analytics) {
     transactionsEmptyMessage(analytics)
   );
   spec.bucketLabel = t("charts.expenses.concept");
-  spec.rows = buckets.map((bucket) => ({
-    key: bucket.concept,
-    label:
-      bucket.concept === "unclassified"
-        ? t("charts.expenses.unclassified")
-        : bucket.concept,
-    segments: [
-      {key: "deductible", label: t("charts.expenses.deductible"), tone: "warning", pattern: "solid", value: bucket.deductible_minor},
-      {key: "non-deductible", label: t("charts.expenses.nonDeductible"), tone: "warning", pattern: "hatched", value: bucket.non_deductible_minor},
-    ],
-  }));
+  spec.tableLabel = t("charts.expenses.table");
+  spec.totalLabel = t("charts.expenses.total");
+  spec.totalValueLabel = t("charts.expenses.totalValue");
+  spec.shareUnavailableLabel = t("charts.expenses.shareUnavailable");
+  spec.formatPercent = formatChartPercent;
+  spec.showSegmentShares = true;
+  spec.tableInitiallyOpen = true;
+  spec.tablePrimaryOnNarrow = true;
+  spec.rowLabelWidth = 280;
+  spec.rowHeight = 42;
+  spec.rows = buckets.map((bucket) => {
+    const presentation = expenseConceptPresentation(bucket.concept);
+    return {
+      key: bucket.concept,
+      label: presentation.label,
+      secondaryLabel: presentation.secondaryLabel,
+      total: bucket.gross_minor,
+      segments: [
+        {key: "deductible", label: t("charts.expenses.deductible"), tone: "accent", pattern: "solid", value: bucket.deductible_minor},
+        {key: "non-deductible", label: t("charts.expenses.nonDeductible"), tone: "warning", pattern: "hatched", value: bucket.non_deductible_minor},
+      ],
+    };
+  });
   return spec;
 }
 

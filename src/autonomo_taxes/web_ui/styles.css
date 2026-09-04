@@ -2419,6 +2419,15 @@ textarea:focus {
   }
 }
 
+@media (max-width: 760px) {
+  /* Detailed expense rows survive narrow screens and browser zoom without
+     relying on clipped SVG labels or hover-only titles. */
+  .chart-table-primary-on-narrow .chart-host,
+  .chart-table-primary-on-narrow .chart-legend {
+    display: none;
+  }
+}
+
 @media print {
   .chart-expand-button {
     display: none;
@@ -2502,6 +2511,13 @@ textarea:focus {
   font-size: 12px;
 }
 
+.chart-axis-subtext {
+  fill: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
 .chart-value-text {
   fill: var(--text);
   font-size: 12px;
@@ -2579,8 +2595,16 @@ textarea:focus {
   cursor: pointer;
 }
 
+.chart-data[open] summary {
+  margin-bottom: 6px;
+}
+
 .chart-data table {
   font-size: 0.8rem;
+}
+
+.chart-data .amount {
+  font-variant-numeric: tabular-nums;
 }
 .expense-document-link {
   text-decoration: underline;
