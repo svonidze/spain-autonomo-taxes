@@ -22,6 +22,14 @@ The private-root resolver uses this precedence:
 
 Canonical config wins as a whole; configurations are not merged across roots. This avoids split-brain reads and writes.
 
+## Outbound network use
+
+| Destination | Purpose | Payload |
+|---|---|---|
+| `data-api.ecb.europa.eu` | Official daily rate for a foreign-currency review | Currency code and a seven-day date window only |
+
+The request contains no amount, counterparty, document, identifier or other local accounting data. The currency and approximate transaction date remain observable by the public service.
+
 ## Backup model
 
 Use client-side authenticated encryption such as `age` for private-data and forensic Git backups. Keep at least two independently stored ciphertext copies and verify each by restoring it to an isolated directory. Store the private decryption identity outside the repository, preferably in a password manager.

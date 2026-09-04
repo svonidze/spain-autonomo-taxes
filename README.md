@@ -55,6 +55,10 @@ python scripts/migrate_private_root.py `
 
 The migration copies files, verifies SHA-256 hashes, and transactionally rewrites supported SQLite evidence paths. It does not delete the source data.
 
+## Outbound network use
+
+Routine bookkeeping and tax calculation are local. Guided review of a foreign-currency transaction requests the ECB daily reference-rate CSV for the currency and a seven-day date window. No amount, counterparty, document, identifier or local record is sent. If the service is unavailable, the review offers documented settlement evidence instead; there is no setting that disables the lookup.
+
 ## Using the accounting workflow
 
 Posting makes an approved income or expense transaction eligible for the

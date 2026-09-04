@@ -47,9 +47,12 @@ linked rate must preserve the provenance relationship.
 
 The normal guided-review confirmation sends the selected rate and the invoice
 decision together. For ECB selections, the server fetches the official rate
-again and requires an exact match. It also checks the current review snapshot,
-the archived source and all decision fields. Any failure rolls back both the FX
-write and the accounting decision.
+again, stores its own provenance rather than browser-supplied evidence, and
+requires an exact match. The chosen ECB observation must be dated on the
+transaction date or within the same seven-day prior window used for the
+suggestion. It also checks the current review snapshot, the archived source and
+all decision fields. Any failure rolls back both the FX write and the accounting
+decision.
 
 ## Workflow boundaries
 
@@ -71,4 +74,3 @@ Implementation source of truth:
   atomic confirmation.
 - `src/autonomo_taxes/fx_policy.py` defines sources allowed in production
   calculations.
-
