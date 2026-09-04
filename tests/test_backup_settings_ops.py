@@ -126,6 +126,77 @@ def test_no_policy_does_not_need_installed_reader(installed):
     assert marker["keep"] == "12"
 
 
+def test_offsite_marker_requires_remote_objects_with_matching_sizes(installed, tmp_path):
+    private, _, ops, env = installed
+    config = tmp_path / "rclone.conf"
+    config.write_text("[crypt]\ntype = crypt\n")
+    config.chmod(0o600)
+    rclone_state = tmp_path / "rclone-state"
+    rclone_state.mkdir()
+    rclone = Path(env["PATH"].split(":", 1)[0]) / "rclone"
+    rclone.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = --config ]; then shift 2; fi\n"
+        "case \"$1\" in\n"
+        "  config) printf 'type = crypt\\n' ;;\n"
+        "  copyto) printf '%s' \"$3\" > \"$FAKE_RCLONE_STATE/$(basename \"$4\")\" ;;\n"
+        "  size) bytes=$(wc -c < \"$(cat \"$FAKE_RCLONE_STATE/$(basename \"$3\")\")\" | tr -d ' '); "
+        "[ \"${FAKE_RCLONE_SIZE_MISMATCH:-0}\" = 1 ] && bytes=0; "
+        "printf '{\"count\":1,\"bytes\":%s}\\n' \"$bytes\" ;;\n"
+        "  *) exit 2 ;;\n"
+        "esac\n"
+    )
+    rclone.chmod(0o755)
+    runtime = Path(env["AUTONOMO_RUNTIME_ENV_PATH"])
+    runtime.write_text(
+        runtime.read_text()
+        + f"AUTONOMO_RCLONE_CONFIG={config}\nAUTONOMO_RCLONE_REMOTE=crypt:daily\n"
+    )
+    env["FAKE_RCLONE_STATE"] = str(rclone_state)
+
+    result = _run(ops / "backup.sh", env)
+
+    assert result.returncode == 0, result.stderr
+    marker = json.loads((private / "backups" / "last-backup-daily.json").read_text())
+    assert marker["offsite"] == "yes"
+
+
+def test_offsite_marker_is_not_written_when_remote_size_verification_fails(installed, tmp_path):
+    private, _, ops, env = installed
+    config = tmp_path / "rclone.conf"
+    config.write_text("[crypt]\ntype = crypt\n")
+    config.chmod(0o600)
+    rclone_state = tmp_path / "rclone-state"
+    rclone_state.mkdir()
+    rclone = Path(env["PATH"].split(":", 1)[0]) / "rclone"
+    rclone.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = --config ]; then shift 2; fi\n"
+        "case \"$1\" in\n"
+        "  config) printf 'type = crypt\\n' ;;\n"
+        "  copyto) printf '%s' \"$3\" > \"$FAKE_RCLONE_STATE/$(basename \"$4\")\" ;;\n"
+        "  size) printf '{\"count\":1,\"bytes\":0}\\n' ;;\n"
+        "  *) exit 2 ;;\n"
+        "esac\n"
+    )
+    rclone.chmod(0o755)
+    runtime = Path(env["AUTONOMO_RUNTIME_ENV_PATH"])
+    runtime.write_text(
+        runtime.read_text()
+        + f"AUTONOMO_RCLONE_CONFIG={config}\nAUTONOMO_RCLONE_REMOTE=crypt:daily\n"
+    )
+    marker = private / "backups" / "last-backup-daily.json"
+    marker.parent.mkdir(exist_ok=True)
+    marker.write_text("previous marker")
+    env["FAKE_RCLONE_STATE"] = str(rclone_state)
+
+    result = _run(ops / "backup.sh", env)
+
+    assert result.returncode != 0
+    assert "uploaded backup object did not match" in result.stderr
+    assert marker.read_text() == "previous marker"
+
+
 @pytest.mark.parametrize("sops", [False, True])
 def test_both_preflights_fail_closed_for_invalid_policy(installed, sops):
     private, _, ops, env = installed
