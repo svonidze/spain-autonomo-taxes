@@ -1,9 +1,12 @@
 # Design
 
 ## Source of truth
-- Status: Active; refreshed 2026-08-31.
+- Status: Active; refreshed 2026-09-04.
 - Surfaces: Expenses, dashboard expense metrics, recent operations, and the analytics charts documented below.
-- Evidence: `local_web.py`, `web_ui/app.js`, `web_ui/styles.css`, and the accepted expense-clarity plan in `docs/plans/expense-clarity.md`.
+- Evidence: `local_web.py`, `web_ui/app.js`, `web_ui/styles.css`, the accepted
+  expense-clarity plan in `docs/plans/expense-clarity.md`, the user-supplied
+  expense-chart screenshot dated 2026-09-04, and AEAT's 2026 `LSI.xlsx`
+  registry-book design.
 
 ## Brand
 - Calm, readable bookkeeping; preserve the existing green palette and system fonts.
@@ -320,15 +323,30 @@ re-render, returns focus to the control that opened it, and pauses the
 periodic refresh while open. Empty charts show no control, and the control is
 hidden in print. No animation accompanies the expansion.
 
+The expense-structure chart uses plain-language category names from the
+versioned [2026 AEAT registry-book list](https://sede.agenciatributaria.gob.es/static_files/AEAT/LSI.xlsx),
+with the original G-code as a secondary label for audit and export
+cross-checking. Unknown future codes remain visible
+beside an honest "unknown AEAT category" label; an absent code is "category not
+assigned". The table is initially expanded, adds the gross total, and shows
+each deductible/non-deductible amount with its share of a positive gross total.
+Shares are unavailable for zero or negative totals, negative components, or a
+component sum that does not equal the gross total. On narrow screens and at
+browser zoom that triggers the same breakpoint, the labelled table replaces
+the dense SVG plot as the primary view. Every table cell retains its column
+label when rows reflow into cards.
+
 ### Color and pattern semantics
 
 Chart series colors bind to the existing CSS custom properties via
 `chart-tone-*` classes; meaning is never carried by color alone.
 
-- Income → `--info`; expense/deductible → `--warning`; primary result lines
-  and current-year values → `--accent`; `--danger` is reserved for alert
+- Income → `--info`; ordinary expense series → `--warning`; primary result
+  lines and current-year values → `--accent`; `--danger` is reserved for alert
   states (overdue approved rows), never an ordinary series; `--muted` is for
-  annotations and bands only.
+  annotations and bands only. The expense-structure breakdown is the explicit
+  exception: the portion that reduces the IRPF base is solid `--accent`, while
+  the portion that does not is hatched `--warning`.
 - Actual = solid fill. Approved-not-posted = hatched fill (SVG `<pattern>`
   keyed by chart id). Forecast = outlined fill. Projected lines = dashed.
 - Validated with the color-vision checks: the pair `--info`/`--warning` and
@@ -343,6 +361,8 @@ Chart series colors bind to the existing CSS custom properties via
 Every chart is a `<figure>` with a visible `<figcaption>`, an SVG with
 `role="img"` and an `aria-label`, and a `<details>` data table with the same
 numbers, so the content survives screen readers, printing, and forced colors.
+Chart data cells carry their column header through `data-label` so the mobile
+card layout does not turn amounts into unidentified numbers.
 Marks carry native `<title>` tooltips. The renderer builds DOM exclusively via
 `createElementNS`/`textContent` with an attribute allowlist: no inline styles,
 no inline handlers, no `innerHTML`, no `Date.now`/`Math.random` (scene output

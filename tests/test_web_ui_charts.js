@@ -491,6 +491,7 @@ function geometryOnly(scene) {
       textContent: "",
       children: [],
       listeners: {},
+      attributes: {},
       appendChild(child) {
         this.children.push(child);
         return child;
@@ -499,7 +500,9 @@ function geometryOnly(scene) {
         this.children = this.children.filter((entry) => entry !== child);
         return child;
       },
-      setAttribute() {},
+      setAttribute(name, value) {
+        this.attributes[name] = String(value);
+      },
       addEventListener(name, handler) {
         this.listeners[name] = handler;
       },
@@ -548,6 +551,78 @@ function geometryOnly(scene) {
   const emptyCaption = emptyContainer.children[0].children[0];
   assert.strictEqual(emptyCaption.children.length, 0);
   assert.strictEqual(emptyCaption.textContent, "Test");
+
+  const tableContainer = Object.assign(fakeElement("div"), {ownerDocument: doc});
+  AutonomoCharts.renderHorizontalBars(tableContainer, {
+    chartId: "expense-structure",
+    title: "Expenses",
+    ariaLabel: "Expense breakdown",
+    bucketLabel: "Category",
+    tableLabel: "Amounts by category",
+    totalLabel: "Total expenses",
+    shareUnavailableLabel: "share not available",
+    showSegmentShares: true,
+    tableInitiallyOpen: true,
+    tablePrimaryOnNarrow: true,
+    formatValue: eur,
+    formatPercent: (ratio) => `${(ratio * 100).toFixed(1)}%`,
+    rows: [
+      {
+        key: "G03",
+        label: "Other operating expenses",
+        secondaryLabel: "G03",
+        total: 10000,
+        segments: [
+          {key: "deductible", label: "Reduces the tax base", tone: "accent", value: 520},
+          {key: "non-deductible", label: "Does not reduce the tax base", tone: "warning", pattern: "hatched", value: 9480},
+        ],
+      },
+      {
+        key: "G31",
+        label: "Depreciation of computers and electronics",
+        secondaryLabel: "G31",
+        total: 2500,
+        segments: [
+          {key: "deductible", label: "Reduces the tax base", tone: "accent", value: 2500},
+          {key: "non-deductible", label: "Does not reduce the tax base", tone: "warning", pattern: "hatched", value: 0},
+        ],
+      },
+      {
+        key: "zero",
+        label: "Zero total",
+        total: 0,
+        segments: [
+          {key: "deductible", label: "Reduces the tax base", tone: "accent", value: 0},
+          {key: "non-deductible", label: "Does not reduce the tax base", tone: "warning", pattern: "hatched", value: 0},
+        ],
+      },
+      {
+        key: "correction",
+        label: "Signed correction",
+        total: -1000,
+        segments: [
+          {key: "deductible", label: "Reduces the tax base", tone: "accent", value: -800},
+          {key: "non-deductible", label: "Does not reduce the tax base", tone: "warning", pattern: "hatched", value: -200},
+        ],
+      },
+    ],
+  });
+  const tableFigure = tableContainer.children[0];
+  assert.ok(tableFigure.className.includes("chart-table-primary-on-narrow"));
+  const details = tableFigure.children.find((child) => child.tag === "details");
+  assert.strictEqual(details.open, true);
+  const table = details.children[1].children[0];
+  const tableRows = table.children[1].children;
+  const firstRow = tableRows[0];
+  assert.strictEqual(firstRow.children[0].textContent, "Other operating expenses · G03");
+  assert.strictEqual(firstRow.children[1].textContent, "5.20 · 5.2%");
+  assert.strictEqual(firstRow.children[2].textContent, "94.80 · 94.8%");
+  assert.strictEqual(firstRow.children[3].textContent, "100.00");
+  assert.strictEqual(firstRow.children[2].attributes["data-label"], "Does not reduce the tax base");
+  assert.strictEqual(tableRows[1].children[1].textContent, "25.00 · 100.0%");
+  assert.strictEqual(tableRows[1].children[2].textContent, "0.00 · 0.0%");
+  assert.strictEqual(tableRows[2].children[1].textContent, "0.00 · share not available");
+  assert.strictEqual(tableRows[3].children[1].textContent, "-8.00 · share not available");
 }
 
 // ---- app.js spec builders (extracted with stubbed i18n) --------------------
@@ -570,6 +645,23 @@ function extractFunction(appSource, name) {
   throw new Error(`Could not parse ${name} in app.js`);
 }
 
+function extractConstObject(appSource, name) {
+  const marker = `const ${name} = `;
+  const start = appSource.indexOf(marker);
+  if (start === -1) throw new Error(`Could not find ${name} in app.js`);
+  const braceIndex = appSource.indexOf("{", start);
+  let depth = 0;
+  for (let index = braceIndex; index < appSource.length; index += 1) {
+    const char = appSource[index];
+    if (char === "{") depth += 1;
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return appSource.slice(start, index + 2);
+    }
+  }
+  throw new Error(`Could not parse ${name} in app.js`);
+}
+
 const appPath = path.join(__dirname, "..", "src", "autonomo_taxes", "web_ui", "app.js");
 const appSource = fs.readFileSync(appPath, "utf8");
 const builderContext = {
@@ -582,14 +674,21 @@ const builderContext = {
   Math,
   Date,
   Intl,
+  state: {locale: "en"},
   t: (key) => key,
   eur: (value) => String(value),
   intlLocale: () => "en",
   statusLabel: (value) => `status:${value}`,
 };
 vm.createContext(builderContext);
+vm.runInContext(
+  extractConstObject(appSource, "AEAT_EXPENSE_CONCEPT_LABELS"),
+  builderContext
+);
 [
   "formatMinorEur",
+  "formatChartPercent",
+  "expenseConceptPresentation",
   "chartMonthLabel",
   "chartSpecBase",
   "chartHostWidth",
@@ -617,6 +716,40 @@ vm.createContext(builderContext);
   assert.strictEqual(builderContext.chartHostWidth({clientWidth: 348}), 320);
   assert.strictEqual(builderContext.chartHostWidth({}), 0);
   assert.strictEqual(builderContext.chartHostWidth(null), 0);
+}
+
+// The versioned AEAT expense dictionary covers every 2026 registry-book code
+// in both locales, while preserving honest fallbacks for future codes.
+{
+  const labels = vm.runInContext("AEAT_EXPENSE_CONCEPT_LABELS", builderContext);
+  const expectedCodes = [
+    "G01", "G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09", "G10",
+    "G11", "G12", "G13", "G14", "G15", "G16", "G17", "G18", "G19", "G20",
+    "G22", "G23", "G24", "G25", "G26", "G27", "G28", "G29", "G30", "G31",
+    "G32", "G33", "G34", "G35", "G36", "G37", "G38", "G39", "G40", "G41",
+    "G42", "G43", "G44", "G45", "G46", "G47", "G48", "GY4", "GY8",
+  ].sort();
+  assert.deepStrictEqual(plain(Object.keys(labels.ru).sort()), expectedCodes);
+  assert.deepStrictEqual(plain(Object.keys(labels.en).sort()), expectedCodes);
+
+  assert.deepStrictEqual(
+    plain(builderContext.expenseConceptPresentation("g03")),
+    {label: "Other operating expenses", secondaryLabel: "G03"}
+  );
+  assert.deepStrictEqual(
+    plain(builderContext.expenseConceptPresentation("G99")),
+    {label: "charts.expenses.unknownConcept", secondaryLabel: "G99"}
+  );
+  assert.deepStrictEqual(
+    plain(builderContext.expenseConceptPresentation("unclassified")),
+    {label: "charts.expenses.unclassified", secondaryLabel: ""}
+  );
+  builderContext.state.locale = "ru";
+  assert.strictEqual(
+    builderContext.expenseConceptPresentation("G45").label,
+    "Соцстрахование autónomo"
+  );
+  builderContext.state.locale = "en";
 }
 
 function analyticsFixture(overrides) {
@@ -778,16 +911,35 @@ function analyticsFixture(overrides) {
   assert.ok(spec.series[0].label.includes("2025"));
 }
 
-// Expense structure keeps API order and translates the unclassified bucket.
+// Expense structure keeps API order, explains AEAT codes, and exposes its
+// accessible amount/share table without changing the analytics values.
 {
   const spec = builderContext.buildExpenseStructureSpec(analyticsFixture());
   assert.deepStrictEqual(
     plain(spec.rows.map((row) => row.label)),
-    ["G45", "charts.expenses.unclassified"]
+    ["Owner Social Security contributions", "charts.expenses.unclassified"]
   );
+  assert.deepStrictEqual(
+    plain(spec.rows.map((row) => row.secondaryLabel)),
+    ["G45", ""]
+  );
+  assert.deepStrictEqual(plain(spec.rows.map((row) => row.total)), [30000, 5000]);
+  assert.strictEqual(spec.rows[0].segments[0].tone, "accent");
+  assert.strictEqual(spec.rows[0].segments[1].tone, "warning");
   assert.strictEqual(spec.rows[0].segments[1].pattern, "hatched");
-  const scene = AutonomoCharts.buildHorizontalBarsScene(spec);
+  assert.strictEqual(spec.showSegmentShares, true);
+  assert.strictEqual(spec.tableInitiallyOpen, true);
+  assert.strictEqual(spec.tablePrimaryOnNarrow, true);
+  assert.strictEqual(spec.totalLabel, "charts.expenses.total");
+  assert.strictEqual(spec.totalValueLabel, "charts.expenses.totalValue");
+  assert.strictEqual(spec.formatPercent(0.052), "5.2%");
+  const scene = AutonomoCharts.buildHorizontalBarsScene(
+    Object.assign({}, spec, {width: 1200})
+  );
   assert.strictEqual(scene.empty, false);
+  assert.strictEqual(scene.rowLabels[0].label, "Owner Social Security contributions");
+  assert.strictEqual(scene.rowLabels[1].label, "G45");
+  assert.strictEqual(scene.valueLabels[0].label, "charts.expenses.totalValue: 300");
 }
 
 // Review aging: an empty queue collapses to the empty state; counts are not money.
