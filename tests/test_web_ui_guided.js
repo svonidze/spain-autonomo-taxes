@@ -136,14 +136,14 @@ assert.equal(context.reviewTabFromQuery(new URLSearchParams("")), "queue");
 const packet = {
   decision: {
     issue_resolutions: [
-      {action: "", reason: ""},
-      {action: "keep_open", reason: ""},
+      {issue_id: "tax-issue", action: "", reason: ""},
+      {issue_id: "manual-issue", action: "keep_open", reason: ""},
     ],
   },
   state: {
     issues: [
-      {issue_code: "transaction_tax_review", message: "one"},
-      {issue_code: "manual_review", message: "two"},
+      {validation_issue_id: "manual-issue", issue_code: "manual_review", message: "two"},
+      {validation_issue_id: "tax-issue", issue_code: "transaction_tax_review", message: "one"},
     ],
   },
 };
@@ -178,9 +178,9 @@ const ecbSpec = context.buildConfirmFxSpec({mode: "ecb"}, suggestion);
 assert.equal(ecbSpec.rate_date, "2026-08-18");
 assert.equal(ecbSpec.rate, "0.9216");
 assert.equal(ecbSpec.rate_source, "ecb");
-assert.equal(ecbSpec.source_reference, suggestion.source_reference);
-assert.equal(ecbSpec.raw_observation, suggestion.raw_observation);
-assert.equal(ecbSpec.raw_observation_hash, "abc123");
+assert.equal(ecbSpec.source_reference, null);
+assert.equal(ecbSpec.raw_observation, null);
+assert.equal(ecbSpec.raw_observation_hash, null);
 assert.equal(ecbSpec.supersedes_rate_id, null);
 const settlementSpec = context.buildConfirmFxSpec(
   {mode: "settlement", rate: "0.91", rateDate: "2026-08-18", sourceReference: "Bank advice 4"},
