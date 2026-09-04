@@ -68,12 +68,41 @@ def _last_success(root: Path, backup_class: str) -> dict | None:
         count = marker.get("keep")
         keep = int(count) if isinstance(count, str) and count.isascii() and count.isdigit() and len(count) < 10 and int(count) > 0 else None
         settings_format = marker.get("settings_format")
-        return {
+        result = {
             "recorded_at": recorded.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "offsite": marker["offsite"] == "yes",
             "keep": keep,
             "settings_format": 1 if settings_format == "1" or type(settings_format) is int and settings_format == 1 else None,
         }
+        if marker.get("format") == 2 and marker.get("offsite_status") in {"disabled", "pending", "acknowledged", "failed"}:
+            result["offsite_status"] = marker["offsite_status"]
+        return result
+    except (OSError, ValueError, TypeError, KeyError, UnicodeError, RecursionError):
+        return None
+
+
+def _verification_marker(root: Path, name: str) -> dict | None:
+    path = root / "backups" / name
+    try:
+        if path.parent.is_symlink():
+            return None
+        marker = json.loads(read_private_bytes(path))
+        if not isinstance(marker, dict) or marker.get("class") != "monthly":
+            return None
+        recorded = datetime.strptime(marker["recorded_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        if recorded > datetime.now(timezone.utc) or marker.get("status") not in {"running", "success", "failed"}:
+            return None
+        result = {"recorded_at": recorded.strftime("%Y-%m-%dT%H:%M:%SZ"), "status": marker["status"]}
+        if marker.get("status") == "failed" and marker.get("failure_code") in {
+            "invalid_monthly_marker", "monthly_marker_not_current", "monthly_upload_not_acknowledged",
+            "unsafe_backup_name", "insufficient_scratch_space", "remote_download_failed",
+            "download_hash_mismatch", "archive_validation_failed", "sqlite_validation_failed",
+            "sqlite_schema_mismatch", "internal_error",
+        }:
+            result["failure_code"] = marker["failure_code"]
+        if marker.get("status") == "success" and type(marker.get("sqlite_schema")) is int:
+            result["sqlite_schema"] = marker["sqlite_schema"]
+        return result
     except (OSError, ValueError, TypeError, KeyError, UnicodeError, RecursionError):
         return None
 
@@ -90,6 +119,10 @@ def _backups(private_root: Path | None) -> dict:
         "available": True, "revision": revision,
         "daily_keep": policy["daily_keep"], "monthly_keep": policy["monthly_keep"],
         "last_success": {kind: _last_success(root, kind) for kind in ("daily", "monthly")},
+        "recovery_verification": {"monthly": {
+            "last_attempt": _verification_marker(root, "last-backup-verification-attempt-monthly.json"),
+            "last_success": _verification_marker(root, "last-backup-verified-monthly.json"),
+        }},
     }
 
 

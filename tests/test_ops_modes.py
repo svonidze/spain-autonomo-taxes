@@ -36,6 +36,8 @@ def test_default_installer_delivers_service_environment_wrapper() -> None:
 
     assert (OPS / "run-with-service-env.sh").is_file()
     assert 'install -m 755 "$script_dir"/*.sh "$ops_root/"' in installer
+    assert "autonomo-backup-verification-monthly.timer" in installer
+    assert "backup_readiness.py" in installer
 
 
 def test_sops_deploy_remains_an_explicit_two_sha_mode() -> None:
@@ -56,6 +58,33 @@ def test_sops_deploy_remains_an_explicit_two_sha_mode() -> None:
             "Environment=AUTONOMO_RUNTIME_ENV_PATH="
             "@SECRET_CONFIG_ROOT@/current/runtime.env"
         ) in template
+    assert "autonomo-backup-verification-monthly.timer" in installer
+    assert "backup_readiness.py" in installer
+
+
+def test_backup_readiness_is_deploy_only_and_remote_free() -> None:
+    default_deploy = (OPS / "deploy.sh").read_text()
+    sops_deploy = (OPS / "sops" / "deploy.sh").read_text()
+    readiness = (OPS / "backup_readiness.py").read_text()
+    for deploy in (default_deploy, sops_deploy):
+        assert "backup_readiness.py" in deploy
+    for recovery in (OPS / "rollback.sh", OPS / "restore.sh", OPS / "preflight.sh", OPS / "sops" / "rollback.sh", OPS / "sops" / "restore.sh", OPS / "sops" / "preflight.sh"):
+        assert "backup_readiness" not in recovery.read_text()
+    assert "rclone" not in readiness
+    assert "with_lock" not in readiness
+
+
+def test_monthly_verification_units_are_sandboxed_and_distinct() -> None:
+    timer = (OPS / "systemd" / "autonomo-backup-verification-monthly.timer").read_text()
+    assert "*-*-02 05:23:00 UTC" in timer
+    assert "Persistent=true" in timer
+    for root in (OPS / "systemd", OPS / "sops" / "systemd"):
+        service = (root / "autonomo-backup-verification-monthly.service.template").read_text()
+        alert = (root / "autonomo-backup-verification-alert.service.template").read_text()
+        assert "PrivateTmp=yes" in service
+        assert "ProtectSystem=strict" in service
+        assert "autonomo-backup-verification-alert.service" in service
+        assert "backup-verification-failed" in alert
 
 
 def test_default_recovery_scripts_keep_compensation_before_commit() -> None:
@@ -325,6 +354,8 @@ def _deployment_harness(tmp_path: Path, env: dict[str, str], sha: str, *, sops: 
         staged_sops = staged_ops / "sops"
         staged_sops.mkdir(parents=True)
         shutil.copy2(OPS / "ocr-readiness.py", staged_ops / "ocr-readiness.py")
+        shutil.copy2(OPS / "backup_readiness.py", staged_ops / "backup_readiness.py")
+        shutil.copy2(OPS / "backup_state.py", staged_ops / "backup_state.py")
         for name in ("deploy.sh", "lib.sh", "preflight.sh"):
             shutil.copy2(OPS / "sops" / name, staged_sops / name)
         sync = staged_sops / "config-sync.sh"

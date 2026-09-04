@@ -34,6 +34,7 @@ def installed(tmp_path):
     ops.mkdir()
     for filename in ("lib.sh", "backup.sh", "preflight.sh"):
         shutil.copy2(ROOT / "ops" / filename, ops / filename)
+    shutil.copy2(ROOT / "ops" / "backup_state.py", ops / "backup_state.py")
     shutil.copy2(ROOT / "scripts" / "backup_private_root.py", ops / "backup_private_root.py")
     shutil.copy2(ROOT / "src" / "autonomo_taxes" / "backup_settings.py", ops / "backup_settings.py")
     (ops / "sops").mkdir()
@@ -95,9 +96,12 @@ def test_installed_ops_applies_saved_policy_and_prunes_only_when_run(installed, 
     with sqlite3.connect(restored) as db:
         assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     marker = json.loads((private / "backups" / f"last-backup-{backup_class}.json").read_text())
-    assert marker["keep"] == str(keep)
-    assert marker["settings_format"] == "1"
+    assert marker["format"] == 2
+    assert marker["local_status"] == "verified"
+    assert marker["keep"] == keep
+    assert marker["settings_format"] == 1
     assert marker["offsite"] == "no"
+    assert marker["offsite_status"] == "disabled"
 
 
 def test_invalid_saved_policy_leaves_archives_and_success_marker_untouched(installed):
@@ -123,10 +127,10 @@ def test_no_policy_does_not_need_installed_reader(installed):
     result = _run(ops / "backup.sh", env)
     assert result.returncode == 0, result.stderr
     marker = json.loads((private / "backups" / "last-backup-daily.json").read_text())
-    assert marker["keep"] == "12"
+    assert marker["keep"] == 12
 
 
-def test_offsite_marker_requires_remote_objects_with_matching_sizes(installed, tmp_path):
+def test_offsite_marker_records_upload_acknowledgement_without_readback(installed, tmp_path):
     private, _, ops, env = installed
     config = tmp_path / "rclone.conf"
     config.write_text("[crypt]\ntype = crypt\n")
@@ -139,10 +143,7 @@ def test_offsite_marker_requires_remote_objects_with_matching_sizes(installed, t
         "if [ \"$1\" = --config ]; then shift 2; fi\n"
         "case \"$1\" in\n"
         "  config) printf 'type = crypt\\n' ;;\n"
-        "  copyto) printf '%s' \"$3\" > \"$FAKE_RCLONE_STATE/$(basename \"$4\")\" ;;\n"
-        "  size) bytes=$(wc -c < \"$(cat \"$FAKE_RCLONE_STATE/$(basename \"$3\")\")\" | tr -d ' '); "
-        "[ \"${FAKE_RCLONE_SIZE_MISMATCH:-0}\" = 1 ] && bytes=0; "
-        "printf '{\"count\":1,\"bytes\":%s}\\n' \"$bytes\" ;;\n"
+        "  copyto) printf '%s\\n' \"$*\" >> \"$FAKE_RCLONE_STATE\" ;;\n"
         "  *) exit 2 ;;\n"
         "esac\n"
     )
@@ -152,16 +153,20 @@ def test_offsite_marker_requires_remote_objects_with_matching_sizes(installed, t
         runtime.read_text()
         + f"AUTONOMO_RCLONE_CONFIG={config}\nAUTONOMO_RCLONE_REMOTE=crypt:daily\n"
     )
-    env["FAKE_RCLONE_STATE"] = str(rclone_state)
+    env["FAKE_RCLONE_STATE"] = str(rclone_state / "commands")
 
     result = _run(ops / "backup.sh", env)
 
     assert result.returncode == 0, result.stderr
     marker = json.loads((private / "backups" / "last-backup-daily.json").read_text())
     assert marker["offsite"] == "yes"
+    assert marker["offsite_status"] == "acknowledged"
+    commands = (rclone_state / "commands").read_text()
+    assert commands.count("copyto") == 2
+    assert "size" not in commands
 
 
-def test_offsite_marker_is_not_written_when_remote_size_verification_fails(installed, tmp_path):
+def test_upload_failure_preserves_local_readiness_and_records_failure(installed, tmp_path):
     private, _, ops, env = installed
     config = tmp_path / "rclone.conf"
     config.write_text("[crypt]\ntype = crypt\n")
@@ -174,8 +179,7 @@ def test_offsite_marker_is_not_written_when_remote_size_verification_fails(insta
         "if [ \"$1\" = --config ]; then shift 2; fi\n"
         "case \"$1\" in\n"
         "  config) printf 'type = crypt\\n' ;;\n"
-        "  copyto) printf '%s' \"$3\" > \"$FAKE_RCLONE_STATE/$(basename \"$4\")\" ;;\n"
-        "  size) printf '{\"count\":1,\"bytes\":0}\\n' ;;\n"
+        "  copyto) exit 3 ;;\n"
         "  *) exit 2 ;;\n"
         "esac\n"
     )
@@ -185,16 +189,13 @@ def test_offsite_marker_is_not_written_when_remote_size_verification_fails(insta
         runtime.read_text()
         + f"AUTONOMO_RCLONE_CONFIG={config}\nAUTONOMO_RCLONE_REMOTE=crypt:daily\n"
     )
-    marker = private / "backups" / "last-backup-daily.json"
-    marker.parent.mkdir(exist_ok=True)
-    marker.write_text("previous marker")
-    env["FAKE_RCLONE_STATE"] = str(rclone_state)
-
     result = _run(ops / "backup.sh", env)
 
     assert result.returncode != 0
-    assert "uploaded backup object did not match" in result.stderr
-    assert marker.read_text() == "previous marker"
+    marker = json.loads((private / "backups" / "last-backup-daily.json").read_text())
+    assert marker["local_status"] == "verified"
+    assert marker["offsite"] == "no"
+    assert marker["offsite_status"] == "failed"
 
 
 @pytest.mark.parametrize("sops", [False, True])
