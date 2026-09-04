@@ -58,6 +58,8 @@ def test_wrapper_uses_runtime_path_and_passes_one_shot_overrides(tmp_path: Path)
         "#!/bin/sh\n"
         "printf 'rclone='\n"
         "rclone\n"
+        "IFS= read -r payload\n"
+        "printf 'stdin=%s\\n' \"$payload\"\n"
         "printf 'deploy_ref=%s\\n' \"$AUTONOMO_DEPLOY_REF\"\n"
         "printf 'runtime_env=%s\\n' \"$AUTONOMO_RUNTIME_ENV_PATH\"\n",
     )
@@ -82,6 +84,7 @@ def test_wrapper_uses_runtime_path_and_passes_one_shot_overrides(tmp_path: Path)
             str(consumer),
         ],
         env=env,
+        input="stdin-roundtrip\n",
         capture_output=True,
         text=True,
         check=False,
@@ -90,6 +93,7 @@ def test_wrapper_uses_runtime_path_and_passes_one_shot_overrides(tmp_path: Path)
     assert result.returncode == 0, result.stderr
     assert result.stdout == (
         "rclone=runtime-rclone\n"
+        "stdin=stdin-roundtrip\n"
         "deploy_ref=master\n"
         f"runtime_env={runtime}\n"
     )
