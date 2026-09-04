@@ -1314,6 +1314,8 @@ def _apply_confirmed_fx(db: LedgerDB, state: Mapping[str, Any], resolved_fx: Map
     rate_source = str(resolved_fx["rate_source"])
     rate_date: date = resolved_fx["rate_date"]
     transaction_date = date.fromisoformat(str(transaction["transaction_date"])[:10])
+    # _validate_snapshot makes this a defense-in-depth check: the ECB lookup
+    # happens before the write lock, whereas the live state is checked after it.
     if rate_source == "ecb" and (
         rate_date > transaction_date or (transaction_date - rate_date).days > FALLBACK_WINDOW_DAYS
     ):
@@ -1330,7 +1332,10 @@ def _apply_confirmed_fx(db: LedgerDB, state: Mapping[str, Any], resolved_fx: Map
         rate=format(resolved_fx["rate"], "f"),
         rate_source=rate_source,
         source_reference=str(resolved_fx["source_reference"]),
-        provenance={"raw_observation": str(resolved_fx["raw_observation"]), "supersedes_rate_id": supersedes_rate_id},
+        provenance={
+            "raw_observation": str(resolved_fx["raw_observation"]),
+            "supersedes_rate_id": supersedes_rate_id,
+        },
     )
 
 

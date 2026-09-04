@@ -463,7 +463,7 @@ def test_ecb_confirmation_ignores_client_provenance(tmp_path: Path) -> None:
         assert provenance["raw_observation"] != fx_spec["raw_observation"]
 
 
-def test_fx_rate_cannot_be_dated_after_the_transaction(tmp_path: Path) -> None:
+def test_fx_rate_cannot_be_dated_in_the_future(tmp_path: Path) -> None:
     fixture = _invoice_fixture(tmp_path, currency="USD")
     packet = _packet(fixture)
     _approve_decision(packet)
@@ -472,6 +472,27 @@ def test_fx_rate_cannot_be_dated_after_the_transaction(tmp_path: Path) -> None:
     with open_ledger_db(fixture["database"]) as db:
         with pytest.raises(ReviewPacketError, match="future"):
             confirm_review_packet(db, packet, fx_spec)
+
+
+def test_ecb_rate_cannot_be_dated_after_a_past_transaction(tmp_path: Path) -> None:
+    transaction_date = date.today() - timedelta(days=30)
+    fixture = _invoice_fixture(
+        tmp_path, currency="USD", transaction_date=transaction_date.isoformat()
+    )
+    packet = _packet(fixture)
+    _approve_decision(packet)
+    fx_spec = _ecb_fx_spec()
+    fx_spec["rate_date"] = date.today().isoformat()
+    calls: list[tuple[str, date]] = []
+
+    def verify(currency: str, rate_date: date) -> ECBRateObservation:
+        calls.append((currency, rate_date))
+        return _ecb_observation("0.9216", currency, rate_date)
+
+    with open_ledger_db(fixture["database"]) as db:
+        with pytest.raises(ReviewPacketError, match="after the transaction"):
+            confirm_review_packet(db, packet, fx_spec, ecb_verify=verify)
+    assert calls == []
 
 
 def test_ecb_rate_cannot_be_more_than_the_fallback_window_before_transaction(tmp_path: Path) -> None:

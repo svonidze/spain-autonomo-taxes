@@ -4167,7 +4167,12 @@ function renderReviewWorkspace() {
           ${needsFx && !fxChoice ? `<p class="review-inline-error fx-needed" role="alert">${escapeHtml(t("review.fxNeeded"))}</p>` : ""}
           ${issues.length ? `
             <div class="review-issues-grid">
-              ${issues.map((issue, index) => renderGuidedIssueCard(issue, index, decision.issue_resolutions?.[index], guidance)).join("")}
+              ${issues.map((issue, index) => {
+                const resolution = issue.validation_issue_id
+                  ? decision.issue_resolutions?.find((row) => row?.issue_id === issue.validation_issue_id)
+                  : decision.issue_resolutions?.[index];
+                return renderGuidedIssueCard(issue, index, resolution, guidance);
+              }).join("")}
             </div>` : ""}
           <details class="review-technical-details">
             <summary>${escapeHtml(t("review.technicalDetails"))}</summary>

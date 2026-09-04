@@ -54,6 +54,10 @@ suggestion. It also checks the current review snapshot, the archived source and
 all decision fields. Any failure rolls back both the FX write and the accounting
 decision.
 
+The normalized raw observation is immutable evidence. Its hash intentionally
+does not include `source_reference`: that reference may be filled in later on
+an existing rate row, while the provenance record preserves it separately.
+
 ## Workflow boundaries
 
 Confirming the rate and review leaves the transaction approved. Posting is a

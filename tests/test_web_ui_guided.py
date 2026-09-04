@@ -27,6 +27,7 @@ def test_web_ui_guided_markers_exist_in_app() -> None:
     for expected in (
         'fetchJSON("/api/review/confirm", {',
         'body: JSON.stringify({packet: submitted, fx: fxSpec}),',
+        'row?.issue_id === issue.validation_issue_id',
         'id="review-primary-button"',
         'id="review-reject-button"',
         'class="secondary-button review-back-link"',
