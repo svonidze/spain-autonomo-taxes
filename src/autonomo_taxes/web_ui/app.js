@@ -3819,7 +3819,9 @@ function autoResolveCoveredIssues(packet, coverage = {}, answered = {}) {
   const issues = packet?.state?.issues || [];
   decision.issue_resolutions.forEach((resolution, index) => {
     if (!resolution) return;
-    const issue = issues[index];
+    const issue = resolution.issue_id
+      ? issues.find((row) => row?.validation_issue_id === resolution.issue_id)
+      : issues[index];
     const covering = coverage?.[issue?.issue_code];
     if (!Array.isArray(covering) || covering.length === 0) return;
     if (covering.every((questionId) => Boolean(answered[questionId]))) {
@@ -3860,9 +3862,9 @@ function buildConfirmFxSpec(fxChoice, suggestion) {
       rate_date: suggestion.rate_date,
       rate: suggestion.eur_per_unit,
       rate_source: "ecb",
-      source_reference: suggestion.source_reference,
-      raw_observation: suggestion.raw_observation,
-      raw_observation_hash: suggestion.raw_observation_hash || null,
+      source_reference: null,
+      raw_observation: null,
+      raw_observation_hash: null,
       supersedes_rate_id: null,
     };
   }
@@ -4165,7 +4167,12 @@ function renderReviewWorkspace() {
           ${needsFx && !fxChoice ? `<p class="review-inline-error fx-needed" role="alert">${escapeHtml(t("review.fxNeeded"))}</p>` : ""}
           ${issues.length ? `
             <div class="review-issues-grid">
-              ${issues.map((issue, index) => renderGuidedIssueCard(issue, index, decision.issue_resolutions?.[index], guidance)).join("")}
+              ${issues.map((issue, index) => {
+                const resolution = issue.validation_issue_id
+                  ? decision.issue_resolutions?.find((row) => row?.issue_id === issue.validation_issue_id)
+                  : decision.issue_resolutions?.[index];
+                return renderGuidedIssueCard(issue, index, resolution, guidance);
+              }).join("")}
             </div>` : ""}
           <details class="review-technical-details">
             <summary>${escapeHtml(t("review.technicalDetails"))}</summary>
@@ -4391,24 +4398,24 @@ async function submitReviewConfirm() {
   const workItem = state.review.workItem;
   const transaction = packet.state?.transaction || {};
   const suggestion = workItem?.fx_suggestion || null;
-  if (fxChoiceNeeded(transaction)) {
-    const fxSpec = buildConfirmFxSpec(state.review.fxChoice, suggestion);
-    if (!fxSpec) {
-      state.review.confirmError = {message: t("review.fxNeeded"), target: "fx_rate"};
-      renderReviewWorkspace();
-      return;
-    }
+  const fxSpec = fxChoiceNeeded(transaction)
+    ? buildConfirmFxSpec(state.review.fxChoice, suggestion)
+    : null;
+  if (fxChoiceNeeded(transaction) && !fxSpec) {
+    state.review.confirmError = {message: t("review.fxNeeded"), target: "fx_rate"};
+    renderReviewWorkspace();
+    return;
   }
-  const decision = packet.decision;
+  const submitted = {...packet, decision: deepClone(packet.decision)};
+  const decision = submitted.decision;
   decision.outcome = "approve";
   decision.document_valid = true;
   if (decision.counterparty_changes == null) decision.counterparty_changes = {};
   autoResolveCoveredIssues(
-    packet,
+    submitted,
     workItem?.guidance?.issue_coverage || {},
-    questionAnswerMap(decision, packet.state, state.review.fxChoice),
+    questionAnswerMap(decision, submitted.state, state.review.fxChoice),
   );
-  const fxSpec = fxChoiceNeeded(transaction) ? buildConfirmFxSpec(state.review.fxChoice, suggestion) : null;
   state.review.busy = true;
   state.review.confirmError = null;
   setReviewSubmitBusy(true);
@@ -4416,7 +4423,7 @@ async function submitReviewConfirm() {
     await fetchJSON("/api/review/confirm", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({packet, fx: fxSpec}),
+      body: JSON.stringify({packet: submitted, fx: fxSpec}),
     });
     clearReviewDraft(transaction.transaction_id);
     state.review.busy = false;
@@ -4453,7 +4460,8 @@ async function submitReviewReject() {
     renderReviewWorkspace();
     return;
   }
-  const decision = packet.decision;
+  const submitted = {...packet, decision: deepClone(packet.decision)};
+  const decision = submitted.decision;
   decision.outcome = "reject";
   decision.document_valid = documentValidRaw === "true";
   decision.reason = reasonRaw;
@@ -4466,7 +4474,7 @@ async function submitReviewReject() {
     await fetchJSON("/api/review/confirm", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({packet, fx: null}),
+      body: JSON.stringify({packet: submitted, fx: null}),
     });
     clearReviewDraft(transactionId);
     state.review.busy = false;

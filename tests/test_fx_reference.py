@@ -244,6 +244,24 @@ def test_fetch_caches_result_per_currency_and_date() -> None:
     assert first == second
 
 
+def test_todays_lookup_is_not_cached_before_ecb_can_publish() -> None:
+    today = date(2026, 7, 6)
+    calls: list[str] = []
+    getter = _getter(_ecb_body({today.isoformat(): "1.0500"}), calls)
+    fetch_eur_rate("USD", today, http_get=getter, today=today)
+    fetch_eur_rate("USD", today, http_get=getter, today=today)
+    assert len(calls) == 2
+
+
+def test_provisional_prior_rate_is_not_cached() -> None:
+    today = date(2026, 7, 8)
+    as_of = date(2026, 7, 5)
+    calls: list[str] = []
+    getter = _getter(_ecb_body({"2026-07-03": "1.0500"}), calls)
+    fetch_eur_rate("USD", as_of, http_get=getter, today=today)
+    fetch_eur_rate("USD", as_of, http_get=getter, today=today)
+    assert len(calls) == 2
+
 def test_clear_cache_allows_refetch() -> None:
     as_of = date(2026, 7, 6)
     calls: list[str] = []

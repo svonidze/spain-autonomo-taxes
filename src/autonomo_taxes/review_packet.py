@@ -9,7 +9,8 @@ import sqlite3
 from typing import Any, Callable, Mapping
 
 from .fx_policy import ALLOWED_PRODUCTION_SOURCES, XOLO_RECORDED_PRODUCTION_THROUGH
-from .ledger_db import LedgerDB, VALID_LIFECYCLE_TRANSITIONS
+from .fx_reference import ECBRateObservation, FALLBACK_WINDOW_DAYS
+from .ledger_db import FxRateConflictError, LedgerDB, VALID_LIFECYCLE_TRANSITIONS
 from .vat_classification import is_vat_investment_good
 from .tax_engine import MODELO303_SUPPORTED_CODES, WITHHOLDING_TYPE_BY_TAX_CODE
 
@@ -164,6 +165,7 @@ def build_fx_suggestion(
     state: Mapping[str, Any],
     *,
     provenance: Mapping[str, Any] | None = None,
+    verification: Mapping[str, Any] | None = None,
     ecb_result: Any = None,
     ecb_error: str | None = None,
 ) -> dict[str, Any] | None:
@@ -193,6 +195,7 @@ def build_fx_suggestion(
         "raw_observation": None,
         "raw_observation_hash": None,
         "provenance": dict(provenance) if provenance else None,
+        "verification": dict(verification) if verification else None,
         "amount_eur": None,
         "note": None,
     }
@@ -204,6 +207,10 @@ def build_fx_suggestion(
             base["eur_per_unit"] = str(fx["rate"])
             base["rate_source"] = fx["rate_source"]
             base["source_reference"] = fx.get("source_reference")
+            if verification:
+                base["source_reference"] = verification["source_url"]
+                base["raw_observation"] = verification["raw_observation"]
+                base["raw_observation_hash"] = verification["raw_observation_hash"]
             base["source_label"] = FX_SOURCE_LABELS.get(fx["rate_source"], fx["rate_source"])
             if transaction["amount_eur_minor"] is not None:
                 base["amount_eur"] = _minor_to_eur_text(transaction["amount_eur_minor"])
@@ -240,7 +247,7 @@ def confirm_review_packet(
     packet: Mapping[str, Any],
     fx_spec: Mapping[str, Any] | None = None,
     *,
-    ecb_verify: Callable[[str, date], Decimal] | None = None,
+    ecb_verify: Callable[[str, date], Any] | None = None,
 ) -> dict[str, Any]:
     """Confirm a guided review: FX and decision commit in one transaction.
 
@@ -252,17 +259,29 @@ def confirm_review_packet(
     """
 
     _validate_packet_shape(packet)
+    resolved_fx: dict[str, Any] | None = None
     if fx_spec is not None:
         _validate_fx_spec_shape(fx_spec)
-    connection = db.connection
+        snapshot = packet["state"]
+        transaction = snapshot.get("transaction") if isinstance(snapshot, Mapping) else None
+        if not isinstance(transaction, Mapping):
+            raise ReviewPacketError("Review packet state is missing its transaction")
+        try:
+            transaction_date = date.fromisoformat(str(transaction["transaction_date"])[:10])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ReviewPacketError("Review packet transaction_date must be an ISO date") from exc
+        resolved_fx = _resolve_confirmed_fx(
+            fx_spec,
+            snapshot_currency=_original_currency(transaction),
+            transaction_date=transaction_date,
+            ecb_verify=ecb_verify,
+        )
     with db.transaction():
         live_packet = _build_packet(db, str(packet["review_id"]))
         _validate_snapshot(packet, live_packet)
         _verify_archived_document(db, live_packet["state"])
-        if fx_spec is not None:
-            _apply_confirmed_fx(
-                db, live_packet["state"], fx_spec, ecb_verify=ecb_verify
-            )
+        if resolved_fx is not None:
+            _apply_confirmed_fx(db, live_packet["state"], resolved_fx)
             live_packet = _build_packet(db, str(packet["review_id"]))
         decision = _validate_decision(packet["decision"], live_packet["state"])
         result = _apply_decision(db, live_packet["state"], decision)
@@ -1194,26 +1213,72 @@ def _validate_fx_spec_shape(fx_spec: Mapping[str, Any]) -> None:
         raise ReviewPacketError("Invalid FX confirmation fields: " + "; ".join(details))
 
 
-def _apply_confirmed_fx(
-    db: LedgerDB,
-    state: Mapping[str, Any],
+def _original_currency(transaction: Mapping[str, Any]) -> str:
+    return str(
+        transaction.get("original_currency") or transaction.get("currency") or "EUR"
+    ).upper()
+
+
+def _observation_attribute(observation: Any, name: str) -> Any:
+    value = observation.get(name) if isinstance(observation, Mapping) else getattr(observation, name, None)
+    if value is None:
+        raise ReviewPacketError(f"ECB rate verification failed: observation is missing {name}")
+    return value
+
+
+def _verified_ecb_observation(
+    *,
+    currency: str,
+    rate_date: date,
+    rate: Decimal,
+    ecb_verify: Callable[[str, date], Any] | None,
+) -> ECBRateObservation:
+    if ecb_verify is None:
+        raise ReviewPacketError("ECB rate verification is not available on this server")
+    try:
+        observation = ecb_verify(currency, rate_date)
+    except ReviewPacketError:
+        raise
+    except Exception as exc:
+        raise ReviewPacketError(f"ECB rate verification failed: {exc}") from exc
+    if observation is None:
+        raise ReviewPacketError(
+            "ECB rate verification failed: no official observation for "
+            f"{rate_date.isoformat()} {currency}"
+        )
+    if not isinstance(observation, ECBRateObservation):
+        raise ReviewPacketError("ECB rate verification failed: expected an official observation")
+    try:
+        verified_rate = Decimal(str(_observation_attribute(observation, "eur_per_unit")))
+    except (InvalidOperation, ValueError) as exc:
+        raise ReviewPacketError("ECB rate verification failed: the official rate is not a decimal") from exc
+    if verified_rate != rate:
+        raise ReviewPacketError(
+            "ECB rate verification failed: the official rate does not match the submitted rate"
+        )
+    if str(_observation_attribute(observation, "currency")).upper() != currency:
+        raise ReviewPacketError("ECB rate verification failed: the official observation is for another currency")
+    if str(_observation_attribute(observation, "rate_date"))[:10] != rate_date.isoformat():
+        raise ReviewPacketError("ECB rate verification failed: the official observation has another date")
+    source_reference = str(_observation_attribute(observation, "source_url")).strip()
+    raw_observation = str(_observation_attribute(observation, "raw_observation")).strip()
+    if not source_reference or not raw_observation:
+        raise ReviewPacketError("ECB rate verification failed: the official observation carries no provenance")
+    return observation
+
+
+def _resolve_confirmed_fx(
     fx_spec: Mapping[str, Any],
     *,
-    ecb_verify: Callable[[str, date], Decimal] | None = None,
-) -> None:
-    """Validate and apply the chosen FX inside the caller's transaction."""
-
-    transaction = state["transaction"]
-    original_currency = str(
-        transaction["original_currency"] or transaction["currency"] or "EUR"
-    ).upper()
-    if original_currency == "EUR":
+    snapshot_currency: str,
+    transaction_date: date,
+    ecb_verify: Callable[[str, date], Any] | None = None,
+) -> dict[str, Any]:
+    if snapshot_currency == "EUR":
         raise ReviewPacketError("EUR transactions do not require FX confirmation")
     rate_source = str(fx_spec["rate_source"]).strip()
     if rate_source not in CONFIRM_FX_SOURCES:
-        raise ReviewPacketError(
-            "FX confirmation requires rate_source 'ecb' or 'actual_settlement'"
-        )
+        raise ReviewPacketError("FX confirmation requires rate_source 'ecb' or 'actual_settlement'")
     try:
         rate = Decimal(str(fx_spec["rate"]).strip())
     except (InvalidOperation, ValueError) as exc:
@@ -1224,71 +1289,81 @@ def _apply_confirmed_fx(
         rate_date = date.fromisoformat(str(fx_spec["rate_date"])[:10])
     except ValueError as exc:
         raise ReviewPacketError("FX rate_date must be an ISO date") from exc
-    source_reference = str(fx_spec["source_reference"] or "").strip()
-    if not source_reference:
-        raise ReviewPacketError(
-            "FX confirmation requires a documented source reference"
-        )
-    raw_observation = str(fx_spec["raw_observation"] or "").strip()
-    if not raw_observation:
-        raise ReviewPacketError("FX confirmation requires the raw observation")
-    provided_hash = str(fx_spec.get("raw_observation_hash") or "").strip()
-    if provided_hash and provided_hash.lower() != hashlib.sha256(
-        raw_observation.encode("utf-8")
-    ).hexdigest():
-        raise ReviewPacketError(
-            "raw_observation_hash does not match raw_observation"
-        )
+    if rate_date > date.today():
+        raise ReviewPacketError("FX rate cannot be dated in the future")
     supersedes_rate_id = fx_spec.get("supersedes_rate_id")
     if supersedes_rate_id is not None and not str(supersedes_rate_id).strip():
         raise ReviewPacketError("supersedes_rate_id must be a rate ID or null")
 
-    transaction_date = date.fromisoformat(str(transaction["transaction_date"])[:10])
-    if rate_source != "actual_settlement" and rate_date > transaction_date:
-        raise ReviewPacketError("FX rate cannot be dated after the transaction")
-
+    observation = None
     if rate_source == "ecb":
-        if ecb_verify is None:
-            raise ReviewPacketError(
-                "ECB rate verification is not available on this server"
-            )
-        try:
-            verified = ecb_verify(original_currency, rate_date)
-        except ReviewPacketError:
-            raise
-        except Exception as exc:  # noqa: PERF203 - defensive boundary
-            raise ReviewPacketError(
-                f"ECB rate verification failed: {exc}"
-            ) from exc
-        if verified is None:
-            raise ReviewPacketError(
-                "ECB rate verification failed: no official observation for "
-                f"{rate_date.isoformat()} {original_currency}"
-            )
-        if Decimal(str(verified)) != rate:
-            raise ReviewPacketError(
-                "ECB rate verification failed: the official rate does not match "
-                "the submitted rate"
-            )
-
-    if transaction["amount_original_minor"] is None:
-        raise ReviewPacketError(
-            "Foreign-currency transaction is missing its original amount"
+        if rate_date > transaction_date:
+            raise ReviewPacketError("FX rate cannot be dated after the transaction")
+        if (transaction_date - rate_date).days > FALLBACK_WINDOW_DAYS:
+            raise ReviewPacketError(f"ECB FX rate must be within {FALLBACK_WINDOW_DAYS} days before the transaction")
+        observation = _verified_ecb_observation(
+            currency=snapshot_currency, rate_date=rate_date, rate=rate, ecb_verify=ecb_verify
         )
-    db._apply_review_fx_rate(
-        transaction["transaction_id"],
-        expected_row_version=int(transaction["row_version"]),
-        rate_date=rate_date.isoformat(),
-        rate=format(rate, "f"),
-        rate_source=rate_source,
-        source_reference=source_reference,
-        provenance={
-            "raw_observation": raw_observation,
-            "supersedes_rate_id": (
-                str(supersedes_rate_id).strip() if supersedes_rate_id else None
-            ),
-        },
-    )
+        source_reference, raw_observation = observation.source_url, observation.raw_observation
+    else:
+        source_reference = str(fx_spec["source_reference"] or "").strip()
+        if not source_reference:
+            raise ReviewPacketError("FX confirmation requires a documented source reference")
+        raw_observation = str(fx_spec["raw_observation"] or "").strip()
+        if not raw_observation:
+            raise ReviewPacketError("FX confirmation requires the raw observation")
+        provided_hash = str(fx_spec.get("raw_observation_hash") or "").strip()
+        if provided_hash and provided_hash.lower() != hashlib.sha256(raw_observation.encode("utf-8")).hexdigest():
+            raise ReviewPacketError("raw_observation_hash does not match raw_observation")
+    return {
+        "currency": snapshot_currency,
+        "rate": rate,
+        "rate_date": rate_date,
+        "rate_source": rate_source,
+        "source_reference": source_reference,
+        "raw_observation": raw_observation,
+        "verified_ecb": observation,
+        "supersedes_rate_id": str(supersedes_rate_id).strip() if supersedes_rate_id else None,
+    }
+
+
+def _apply_confirmed_fx(db: LedgerDB, state: Mapping[str, Any], resolved_fx: Mapping[str, Any]) -> None:
+    transaction = state["transaction"]
+    original_currency = _original_currency(transaction)
+    if original_currency == "EUR":
+        raise ReviewPacketError("EUR transactions do not require FX confirmation")
+    if original_currency != str(resolved_fx["currency"]).upper():
+        raise ReviewPacketError("Review packet is stale: the transaction currency changed after the rate was verified")
+    rate_source = str(resolved_fx["rate_source"])
+    rate_date: date = resolved_fx["rate_date"]
+    transaction_date = date.fromisoformat(str(transaction["transaction_date"])[:10])
+    # _validate_snapshot makes this a defense-in-depth check: the ECB lookup
+    # happens before the write lock, whereas the live state is checked after it.
+    if rate_source == "ecb" and (
+        rate_date > transaction_date or (transaction_date - rate_date).days > FALLBACK_WINDOW_DAYS
+    ):
+        raise ReviewPacketError(f"ECB FX rate must be within {FALLBACK_WINDOW_DAYS} days before the transaction")
+    if transaction["amount_original_minor"] is None:
+        raise ReviewPacketError("Foreign-currency transaction is missing its original amount")
+    supersedes_rate_id = resolved_fx["supersedes_rate_id"]
+    if supersedes_rate_id is not None and db.fx_provenance_for_rate(str(supersedes_rate_id)) is None:
+        raise ReviewPacketError(f"FX confirmation cannot supersede unknown rate {supersedes_rate_id}")
+    try:
+        db._apply_review_fx_rate(
+            transaction["transaction_id"],
+            expected_row_version=int(transaction["row_version"]),
+            rate_date=rate_date.isoformat(),
+            rate=format(resolved_fx["rate"], "f"),
+            rate_source=rate_source,
+            source_reference=str(resolved_fx["source_reference"]),
+            provenance={
+                "raw_observation": str(resolved_fx["raw_observation"]),
+                "supersedes_rate_id": supersedes_rate_id,
+            },
+            verified_ecb=resolved_fx["verified_ecb"],
+        )
+    except FxRateConflictError as exc:
+        raise ReviewPacketError(f"FX confirmation conflicts with the stored rate: {exc}") from exc
 
 
 def _minor_to_eur_text(value: int) -> str:

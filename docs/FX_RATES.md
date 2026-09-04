@@ -47,9 +47,30 @@ linked rate must preserve the provenance relationship.
 
 The normal guided-review confirmation sends the selected rate and the invoice
 decision together. For ECB selections, the server fetches the official rate
-again and requires an exact match. It also checks the current review snapshot,
-the archived source and all decision fields. Any failure rolls back both the FX
-write and the accounting decision.
+again, records its own observation rather than browser-supplied evidence, and
+requires an exact match. The chosen ECB observation must be dated on the
+transaction date or within the same seven-day prior window used for the
+suggestion. It also checks the current review snapshot, the archived source and
+all decision fields. Any failure rolls back both the FX write and the accounting
+decision.
+
+Each confirmed ECB selection records an immutable verification for that
+transaction and rate. Reusing a rate records the server observation and the
+actual retrieval URL even if the original rate was saved with a different
+date window. A conflicting numeric value is rejected.
+
+The rate's original provenance and retrieval URL remain intact. Older records
+may contain browser-supplied evidence, including `source_reference` in their
+raw JSON; upgrading does not relabel or rewrite them as server-verified. The
+review response exposes this original `provenance` separately from the latest
+`verification` for the transaction's currently linked rate. The displayed
+source reference and raw observation use that verification when it exists.
+
+This requires schema **24**, applied through the normal explicit database
+migration before starting the updated service. Migration adds an empty
+`fx_verifications` table; it performs no network calls or retrospective
+verification. Preview writes, including verification records, are rolled back;
+confirmation commits the verification with the accounting decision.
 
 ## Workflow boundaries
 
@@ -71,4 +92,3 @@ Implementation source of truth:
   atomic confirmation.
 - `src/autonomo_taxes/fx_policy.py` defines sources allowed in production
   calculations.
-
