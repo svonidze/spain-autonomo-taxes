@@ -46,11 +46,25 @@ verify_crypt_remote() {
   rclone "${rclone_args[@]}" config show "$name" | grep -Eq '^type = crypt$' \
     || die "rclone remote is not configured as crypt: $name"
 }
+verify_uploaded_pair() {
+  local archive_file="$1" archive_remote="$2" manifest_file="$3" manifest_remote="$4" verify_dir
+  verify_dir="$(mktemp -d "$backup_dir/.remote-verify.XXXXXX")"
+  trap 'rm -rf "$verify_dir"' RETURN
+  rclone "${rclone_args[@]}" copyto "$archive_remote" "$verify_dir/$(basename "$archive_file")"
+  rclone "${rclone_args[@]}" copyto "$manifest_remote" "$verify_dir/$(basename "$manifest_file")"
+  cmp -s "$archive_file" "$verify_dir/$(basename "$archive_file")" \
+    || die "uploaded backup archive did not match after remote readback"
+  cmp -s "$manifest_file" "$verify_dir/$(basename "$manifest_file")" \
+    || die "uploaded backup manifest did not match after remote readback"
+}
 if [[ -n "$remote" ]]; then
   require_command rclone
   verify_crypt_remote "$remote"
-  rclone "${rclone_args[@]}" copyto --immutable "$backup_file" "${remote%/}/$(basename "$backup_file")"
-  rclone "${rclone_args[@]}" copyto --immutable "$manifest_file" "${remote%/}/$(basename "$manifest_file")"
+  backup_remote_file="${remote%/}/$(basename "$backup_file")"
+  manifest_remote_file="${remote%/}/$(basename "$manifest_file")"
+  rclone "${rclone_args[@]}" copyto --immutable "$backup_file" "$backup_remote_file"
+  rclone "${rclone_args[@]}" copyto --immutable "$manifest_file" "$manifest_remote_file"
+  verify_uploaded_pair "$backup_file" "$backup_remote_file" "$manifest_file" "$manifest_remote_file"
 fi
 if [[ -n "${AUTONOMO_RCLONE_EVIDENCE_REMOTE:-}" && -d "$data/evidence" ]]; then
   require_command rclone
