@@ -190,6 +190,29 @@ strict non-shell loader accepts `AUTONOMO_*`, `TZ`, `LANG`, `LC_ALL`, `PYTHONUTF
 and `PATH`. Non-empty one-shot environment overrides take precedence. Never
 `source runtime.env`.
 
+### Run manual operations in the service environment
+
+The web and backup units receive `PATH` from their `EnvironmentFile`. The
+runtime loader deliberately preserves a non-empty caller value, so loading the
+file in an SSH shell does **not** prove that a tool such as `rclone` is available
+to the service (or vice versa). In default mode, use the installed wrapper for
+every manual operation that depends on runtime tools:
+
+```bash
+read -r -p 'Absolute installed ops directory: ' ops_root
+run="$ops_root/run-with-service-env.sh"
+test -x "$run"
+"$run" -- /bin/sh -c 'command -v rclone'
+```
+
+It runs one absolute command in a transient user-systemd unit with the same
+runtime file and keeps standard input attached. To pass a temporary deployment
+control, use `--setenv AUTONOMO_NAME=value` before `--`; the wrapper rejects
+other names and always supplies the selected `AUTONOMO_RUNTIME_ENV_PATH` itself.
+For a nonstandard runtime file, export `AUTONOMO_RUNTIME_ENV_PATH` before
+calling the wrapper. This is a **default-mode** helper; do not use it to mix
+the optional SOPS control plane with default units.
+
 After provisioning and checking the backup destinations, continue in the same
 shell. This installs default units and enables daily/monthly timers; lingering
 keeps user services running after logout and may require host administrator help.
@@ -265,6 +288,8 @@ absolute file path. No secret contents are printed.
 set -euo pipefail
 read -r -p 'Absolute installed ops directory: ' ops_root
 test -f "$ops_root/lib.sh"
+run="$ops_root/run-with-service-env.sh"
+test -x "$run"
 source "$ops_root/lib.sh"
 load_runtime_env
 data="$(private_root)"
@@ -291,6 +316,7 @@ systemctl --user is-enabled autonomo-backup.timer autonomo-backup-monthly.timer
 systemctl --user list-timers --all autonomo-backup.timer autonomo-backup-monthly.timer
 systemctl --user show autonomo-backup.service autonomo-backup-monthly.service \
   -p Result -p ExecMainStatus -p ExecMainStartTimestamp -p ExecMainExitTimestamp
+"$run" -- /bin/sh -c 'command -v rclone'
 ```
 
 Expected: active web unit, current SHA matching the selected release, successful
@@ -320,7 +346,7 @@ database. Expected final output: `deployed_sha` and `previous_sha`.
 ```bash
 read -r -p 'Reviewed merge commit, full SHA: ' app_sha
 validate_sha "$app_sha"
-AUTONOMO_DEPLOY_REF=master "$ops_root/deploy.sh" "$app_sha"
+"$run" --setenv AUTONOMO_DEPLOY_REF=master -- "$ops_root/deploy.sh" "$app_sha"
 ```
 
 ### Explicitly authorized unmerged PR
@@ -335,7 +361,7 @@ Side effects and expected output are the same as merged deployment.
 read -r -p 'Approved remote PR branch: ' deploy_ref
 read -r -p 'Approved PR head, full SHA: ' app_sha
 validate_sha "$app_sha"
-AUTONOMO_DEPLOY_REF="$deploy_ref" "$ops_root/deploy.sh" "$app_sha"
+"$run" --setenv "AUTONOMO_DEPLOY_REF=$deploy_ref" -- "$ops_root/deploy.sh" "$app_sha"
 ```
 
 ### Schema migration
@@ -351,8 +377,8 @@ without the storage migration command.
 read -r -p 'Reviewed transport ref (master or approved PR branch): ' deploy_ref
 read -r -p 'Reviewed migration release, full SHA: ' app_sha
 validate_sha "$app_sha"
-AUTONOMO_DEPLOY_REF="$deploy_ref" AUTONOMO_ENABLE_STORAGE_MIGRATION=1 \
-  "$ops_root/deploy.sh" "$app_sha"
+"$run" --setenv "AUTONOMO_DEPLOY_REF=$deploy_ref" \
+  --setenv AUTONOMO_ENABLE_STORAGE_MIGRATION=1 -- "$ops_root/deploy.sh" "$app_sha"
 ```
 
 The default script creates a verified SQLite snapshot under
@@ -385,7 +411,7 @@ safety snapshot, and changes the active release. Expect `rolled_back_to`.
 ```bash
 read -r -p 'Installed rollback target, full SHA: ' target_sha
 validate_sha "$target_sha"
-"$ops_root/rollback.sh" "$target_sha"
+"$run" -- "$ops_root/rollback.sh" "$target_sha"
 ```
 
 If the target schema is older, use this alternative with the previously recorded
@@ -399,8 +425,8 @@ the active database.** Preserve them separately before proceeding.
 read -r -p 'Installed older release, full SHA: ' target_sha
 read -r -p 'Absolute verified pre-migration SQLite snapshot: ' rollback_snapshot
 validate_sha "$target_sha"
-AUTONOMO_ROLLBACK_SNAPSHOT="$rollback_snapshot" \
-  "$ops_root/rollback.sh" "$target_sha"
+"$run" --setenv "AUTONOMO_ROLLBACK_SNAPSHOT=$rollback_snapshot" \
+  -- "$ops_root/rollback.sh" "$target_sha"
 ```
 
 After any deployment or rollback, rerun the checklist in a fresh shell so it
@@ -423,7 +449,7 @@ without a configured remote a successful job can be local-only.
 For a deliberate fresh backup, after the checklist setup:
 
 ```bash
-"$ops_root/backup.sh"
+"$run" -- "$ops_root/backup.sh"
 ```
 
 Expect `archive=` and `manifest=` plus exit status 0. Verify the pair remotely,
@@ -435,6 +461,17 @@ It downloads through crypt, validates the pair, extracts to an empty directory,
 and checks SQLite. **Do not run `restore.sh --yes-restore` for a drill.** That
 mode replaces the live database. Production replacement is described only in
 [production cutover](../docs/DISASTER_RECOVERY.md#production-cutover-dangerous).
+
+### Adding the manual-operation wrapper to an existing default installation
+
+Publishing an application release does not add this helper to an already
+installed ops root. After the helper's reviewed source commit passes tests, take
+the shared operations lock in a short separate process, retain the prior state
+privately, install `run-with-service-env.sh` as a temporary sibling with mode
+`0755`, and atomically replace the installed helper. Then run its `rclone`
+readiness command against the actual runtime file. Do not rerun the general
+installer: it also rewrites units and enables timers. Leave SOPS callers
+untouched in this default-only update.
 
 ## Optional SOPS control plane
 
