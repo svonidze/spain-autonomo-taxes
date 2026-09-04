@@ -366,13 +366,59 @@ const messages = {
     "taxes.form": "Форма",
     "taxes.applicability": "Применимость",
     "taxes.status": "Статус",
-    "taxes.directDebit": "Домицилиация",
+    "taxes.directDebit": "Автосписание оформить до",
     "taxes.deadline": "Срок",
     "taxes.noCalculation": "нет расчета",
     "taxes.calculationMissing": "Расчет не сформирован",
     "taxes.filedValuesUnavailable": "Декларация подана, но значения filing snapshot недоступны.",
     "taxes.filedValuesUnavailableExtract": "Декларация подана, но значения не удалось извлечь из filing snapshot.",
     "taxes.filedValuesUnavailablePdf": "Декларация подана, но PDF filing snapshot не удалось прочитать.",
+    "taxes.headlinePlanned": "Планируется к оплате",
+    "taxes.headlinePaid": "Заплачено",
+    "taxes.headlineConfirmed": "Подтверждено оплачено",
+    "taxes.headlineNoPayment": "Платить не нужно",
+    "taxes.headlineNotStarted": "Квартал ещё не начался",
+    "taxes.headlineUndetermined": "Сумма пока не определена",
+    "taxes.currentDetail": "Расчёт на {date} До конца квартала сумма может измениться.",
+    "taxes.currentDetailNoDate": "Предварительный расчёт. До конца квартала сумма может измениться.",
+    "taxes.paidDetail": "Банковское списание подтверждено.",
+    "taxes.unconfirmedDetail": "По декларациям к уплате {amount}. Банковское списание не подтверждено.",
+    "taxes.previewUnconfirmedDetail": "По предварительному расчёту к уплате {amount}. Сумма поданной декларации недоступна, списание не подтверждено.",
+    "taxes.partialDetail": "Осталось подтвердить или доплатить {amount}.",
+    "taxes.overpaidDetail": "Списано на {amount} больше суммы к уплате.",
+    "taxes.evidenceUnavailableDetail": "Запись об оплате есть, но её подтверждение неполное.",
+    "taxes.unfiledDetail": "Квартал завершён, но декларация ещё не подтверждена. Показан предварительный расчёт.",
+    "taxes.notStartedDetail": "Налоговый прогноз появится с первого дня квартала.",
+    "taxes.undeterminedDetail": "Не хватает расчёта или решения по обязательной декларации.",
+    "taxes.payable": "К оплате",
+    "taxes.confirmedDebit": "Подтверждено списано",
+    "taxes.remaining": "Осталось",
+    "taxes.overpayment": "Переплата",
+    "taxes.irpf": "Подоходный налог",
+    "taxes.iva": "Налог на добавленную стоимость",
+    "taxes.details": "Детали расчёта",
+    "taxes.filing": "Подача",
+    "taxes.filed": "Подана",
+    "taxes.notFiled": "Ещё не подана",
+    "taxes.filingNotRequired": "Подача не требуется",
+    "taxes.carryforward": "Всего IVA к переносу",
+    "taxes.generatedCredit": "Добавлено в этом квартале",
+    "taxes.refundRequested": "Запрошен возврат",
+    "taxes.noTaxPayment": "По этой декларации платить не нужно.",
+    "taxes.otherForms": "Остальные декларации — подача не требуется",
+    "taxes.additionalDueForms": "Дополнительные обязательные декларации",
+    "taxes.additionalAnalytics": "Дополнительная аналитика",
+    "taxes.amendedNotice": "Период был исправлен. Суммы оплаты требуют сверки с актуальной декларацией.",
+    "taxes.status.planned": "Предварительный расчёт",
+    "taxes.status.unfiled": "Декларация не подана",
+    "taxes.status.paymentUnconfirmed": "Оплата не подтверждена",
+    "taxes.status.evidenceUnavailable": "Подтверждение оплаты неполное",
+    "taxes.status.partiallyPaid": "Оплачено частично",
+    "taxes.status.paid": "Оплачено",
+    "taxes.status.overpaid": "Обнаружена переплата",
+    "taxes.status.noPaymentRequired": "Оплата не требуется",
+    "taxes.status.undetermined": "Сумма не определена",
+    "taxes.status.notStarted": "Квартал не начался",
     "contacts.title": "Контрагенты",
     "contacts.name": "Название",
     "contacts.country": "Страна",
@@ -873,13 +919,59 @@ const messages = {
     "taxes.form": "Form",
     "taxes.applicability": "Applicability",
     "taxes.status": "Status",
-    "taxes.directDebit": "Direct debit cutoff",
+    "taxes.directDebit": "Arrange direct debit by",
     "taxes.deadline": "Deadline",
     "taxes.noCalculation": "not calculated",
     "taxes.calculationMissing": "Calculation not available",
     "taxes.filedValuesUnavailable": "The return was filed, but filing-snapshot values are unavailable.",
     "taxes.filedValuesUnavailableExtract": "The return was filed, but values could not be extracted from the filing snapshot.",
     "taxes.filedValuesUnavailablePdf": "The return was filed, but the filing-snapshot PDF could not be read.",
+    "taxes.headlinePlanned": "Planned tax payment",
+    "taxes.headlinePaid": "Paid",
+    "taxes.headlineConfirmed": "Confirmed paid",
+    "taxes.headlineNoPayment": "No payment required",
+    "taxes.headlineNotStarted": "The quarter has not started",
+    "taxes.headlineUndetermined": "Amount not determined yet",
+    "taxes.currentDetail": "Calculated as of {date}. The amount may change before quarter end.",
+    "taxes.currentDetailNoDate": "Preliminary calculation. The amount may change before quarter end.",
+    "taxes.paidDetail": "The bank debit is confirmed.",
+    "taxes.unconfirmedDetail": "Filed amount due: {amount}. The bank debit is not confirmed.",
+    "taxes.previewUnconfirmedDetail": "Preliminary amount due: {amount}. The filed amount is unavailable and the bank debit is not confirmed.",
+    "taxes.partialDetail": "Still to confirm or pay: {amount}.",
+    "taxes.overpaidDetail": "The confirmed debit exceeds the amount due by {amount}.",
+    "taxes.evidenceUnavailableDetail": "A payment record exists, but its evidence is incomplete.",
+    "taxes.unfiledDetail": "The quarter has ended, but filing is not confirmed. This is a preliminary calculation.",
+    "taxes.notStartedDetail": "A tax forecast will be available from the first day of the quarter.",
+    "taxes.undeterminedDetail": "A calculation or decision for a required return is missing.",
+    "taxes.payable": "Amount due",
+    "taxes.confirmedDebit": "Confirmed debit",
+    "taxes.remaining": "Remaining",
+    "taxes.overpayment": "Overpayment",
+    "taxes.irpf": "Income tax",
+    "taxes.iva": "Value added tax",
+    "taxes.details": "Calculation details",
+    "taxes.filing": "Filing",
+    "taxes.filed": "Filed",
+    "taxes.notFiled": "Not filed yet",
+    "taxes.filingNotRequired": "Filing not required",
+    "taxes.carryforward": "Total IVA carry-forward",
+    "taxes.generatedCredit": "Added this quarter",
+    "taxes.refundRequested": "Refund requested",
+    "taxes.noTaxPayment": "No payment is required for this return.",
+    "taxes.otherForms": "Other returns — filing not required",
+    "taxes.additionalDueForms": "Additional required returns",
+    "taxes.additionalAnalytics": "Additional analytics",
+    "taxes.amendedNotice": "This period was amended. Reconcile payments against the current filed return.",
+    "taxes.status.planned": "Preliminary calculation",
+    "taxes.status.unfiled": "Return not filed",
+    "taxes.status.paymentUnconfirmed": "Payment not confirmed",
+    "taxes.status.evidenceUnavailable": "Payment evidence incomplete",
+    "taxes.status.partiallyPaid": "Partially paid",
+    "taxes.status.paid": "Paid",
+    "taxes.status.overpaid": "Overpayment detected",
+    "taxes.status.noPaymentRequired": "No payment required",
+    "taxes.status.undetermined": "Amount not determined",
+    "taxes.status.notStarted": "Quarter not started",
     "contacts.title": "Counterparties",
     "contacts.name": "Name",
     "contacts.country": "Country",
@@ -1139,14 +1231,50 @@ const documentTypeMessages = {
 
 const casillaMessages = {
   ru: {
-    difficult_expenses: "Труднообосновываемые расходы",
-    result: "Результат",
-    compensation_carryforward: "Перенос компенсации",
+    "130": {
+      "01": "Доход с начала года",
+      "02": "Вычитаемые расходы с начала года",
+      "03": "Чистый доход с начала года",
+      "04": "20% от чистого дохода",
+      "05": "Положительные платежи прошлых кварталов",
+      "07": "Промежуточный результат",
+      "19": "Итог декларации",
+      difficult_expenses: "Труднообосновываемые расходы",
+    },
+    "303": {
+      "29": "IVA к вычету по текущим расходам",
+      "45": "Всего IVA к вычету",
+      "64": "Разница начисленного и вычитаемого IVA",
+      "69": "Результат после зачётов и корректировок",
+      "71": "Итог декларации",
+      "72": "IVA к переносу из этого квартала",
+      "73": "Запрошенный возврат",
+      result: "Итог декларации",
+      compensation_carryforward: "Всего IVA к переносу",
+    },
   },
   en: {
-    difficult_expenses: "Difficult-to-justify expenses",
-    result: "Result",
-    compensation_carryforward: "Compensation carry-forward",
+    "130": {
+      "01": "Year-to-date income",
+      "02": "Year-to-date deductible expenses",
+      "03": "Year-to-date net income",
+      "04": "20% of net income",
+      "05": "Positive instalments from earlier quarters",
+      "07": "Intermediate result",
+      "19": "Return result",
+      difficult_expenses: "Difficult-to-justify expenses",
+    },
+    "303": {
+      "29": "Deductible IVA on current expenses",
+      "45": "Total deductible IVA",
+      "64": "Accrued less deductible IVA",
+      "69": "Result after credits and adjustments",
+      "71": "Return result",
+      "72": "IVA credit generated this quarter",
+      "73": "Refund requested",
+      result: "Return result",
+      compensation_carryforward: "Total IVA carry-forward",
+    },
   },
 };
 
@@ -1933,8 +2061,8 @@ function documentTypeLabel(value) {
   return documentTypeMessages[state.locale][text] || text.replaceAll("_", " ");
 }
 
-function casillaLabel(value) {
-  return casillaMessages[state.locale][value] || value;
+function casillaLabel(formCode, value) {
+  return casillaMessages[state.locale]?.[String(formCode)]?.[value] || value;
 }
 
 function issueMessage(issueCode) {
@@ -2127,14 +2255,18 @@ function metric(label, value, detail, className = "") {
     </div>`;
 }
 
-function casillas(values, keys, emptyMessage = t("taxes.calculationMissing")) {
+function casillas(formCode, values, keys, emptyMessage = t("taxes.calculationMissing")) {
   if (!Object.keys(values).length) {
     return `<div class="empty-state">${escapeHtml(emptyMessage)}</div>`;
   }
   return `
     <div class="casilla-grid">
       ${keys.filter((key) => values[key] !== undefined).map((key) => `
-        <div class="casilla"><span>${escapeHtml(casillaLabel(key))}</span><strong>${eur(values[key])}</strong></div>
+        <div class="casilla">
+          <span>${escapeHtml(casillaLabel(formCode, key))}</span>
+          <strong>${eur(values[key])}</strong>
+          <small>${/^\d+$/.test(key) ? `casilla ${escapeHtml(key)}` : ""}</small>
+        </div>
       `).join("")}
     </div>`;
 }
@@ -4250,47 +4382,189 @@ async function renderAssets(renderGeneration = currentRenderGeneration, selected
   mountViewAnalyticsChart("chart-amortization", buildAmortizationSpec);
 }
 
+function taxSettlementLabel(status) {
+  const keys = {
+    planned: "taxes.status.planned",
+    unfiled: "taxes.status.unfiled",
+    payment_unconfirmed: "taxes.status.paymentUnconfirmed",
+    evidence_unavailable: "taxes.status.evidenceUnavailable",
+    partially_paid: "taxes.status.partiallyPaid",
+    paid: "taxes.status.paid",
+    overpaid: "taxes.status.overpaid",
+    no_payment_required: "taxes.status.noPaymentRequired",
+    undetermined: "taxes.status.undetermined",
+    not_started: "taxes.status.notStarted",
+  };
+  return t(keys[status] || "taxes.status.undetermined");
+}
+
+function taxStatusTone(status) {
+  if (["paid", "no_payment_required"].includes(status)) return "positive";
+  if (["overpaid", "evidence_unavailable", "undetermined"].includes(status)) return "attention";
+  if (["planned", "unfiled", "payment_unconfirmed", "partially_paid"].includes(status)) return "pending";
+  return "neutral";
+}
+
+function taxHeadlineModel(periodState, summary) {
+  const status = summary?.settlement_status || "undetermined";
+  const phase = periodState?.phase || "current";
+  const payable = summary?.total_payable_minor;
+  const paid = Number(summary?.total_confirmed_paid_minor || 0);
+  const remaining = summary?.outstanding_minor;
+  const overpaid = summary?.overpaid_minor;
+  const calculated = summary?.calculated_as_of ? formatDate(summary.calculated_as_of) : null;
+
+  if (status === "not_started") {
+    return {label: t("taxes.headlineNotStarted"), amount: null, detail: t("taxes.notStartedDetail"), tone: "neutral"};
+  }
+  if (status === "undetermined") {
+    return {label: t("taxes.headlineUndetermined"), amount: null, detail: t("taxes.undeterminedDetail"), tone: "attention"};
+  }
+  if (status === "no_payment_required") {
+    return {label: t("taxes.headlineNoPayment"), amount: 0, detail: t("taxes.noTaxPayment"), tone: "positive"};
+  }
+  if (status === "paid") {
+    return {label: t("taxes.headlinePaid"), amount: paid, detail: t("taxes.paidDetail"), tone: "positive"};
+  }
+  if (status === "partially_paid") {
+    return {label: t("taxes.headlineConfirmed"), amount: paid, detail: t("taxes.partialDetail", {amount: formatMinorEur(remaining)}), tone: "pending"};
+  }
+  if (status === "overpaid") {
+    return {label: t("taxes.headlineConfirmed"), amount: paid, detail: t("taxes.overpaidDetail", {amount: formatMinorEur(overpaid)}), tone: "attention"};
+  }
+  if (phase === "current" && status === "planned") {
+    return {
+      label: t("taxes.headlinePlanned"),
+      amount: payable,
+      detail: calculated ? t("taxes.currentDetail", {date: calculated}) : t("taxes.currentDetailNoDate"),
+      tone: "accent",
+    };
+  }
+  if (status === "evidence_unavailable") {
+    return {label: t("taxes.headlineConfirmed"), amount: paid, detail: t("taxes.evidenceUnavailableDetail"), tone: "attention"};
+  }
+  if (status === "unfiled") {
+    return {label: t("taxes.headlineConfirmed"), amount: paid, detail: t("taxes.unfiledDetail"), tone: "pending"};
+  }
+  return {
+    label: t("taxes.headlineConfirmed"),
+    amount: paid,
+    detail: t(
+      summary?.calculation_source === "filed" ? "taxes.unconfirmedDetail" : "taxes.previewUnconfirmedDetail",
+      {amount: payable == null ? "—" : formatMinorEur(payable)}
+    ),
+    tone: "pending",
+  };
+}
+
+function taxSummaryFacts(summary, phase) {
+  if (!summary || phase === "future") return "";
+  const payable = summary.total_payable_minor;
+  const paid = Number(summary.total_confirmed_paid_minor || 0);
+  const hasOverpayment = Number(summary.overpaid_minor || 0) > 0;
+  const balanceLabel = hasOverpayment ? t("taxes.overpayment") : t("taxes.remaining");
+  const balance = hasOverpayment ? summary.overpaid_minor : summary.outstanding_minor;
+  return `
+    <div class="tax-summary-facts">
+      <div><span>${escapeHtml(t("taxes.payable"))}</span><strong>${payable == null ? "—" : formatMinorEur(payable)}</strong></div>
+      <div><span>${escapeHtml(t("taxes.confirmedDebit"))}</span><strong>${formatMinorEur(paid)}</strong></div>
+      <div><span>${escapeHtml(balanceLabel)}</span><strong>${balance == null ? "—" : formatMinorEur(balance)}</strong></div>
+    </div>`;
+}
+
+function taxFormCard(formCode, formView, summary) {
+  const isIrpf = formCode === "130";
+  const values = formView.values || {};
+  const resultKey = values["71"] !== undefined ? "71" : "result";
+  const keys = isIrpf
+    ? ["01", "02", "03", "04", "05", "07", "19", "difficult_expenses"]
+    : ["29", "45", "64", "69", resultKey, "72", "73", "compensation_carryforward"];
+  const status = summary?.settlement_status || "undetermined";
+  const filed = summary?.filing_status === "filed";
+  const title = t(isIrpf ? "taxes.irpf" : "taxes.iva");
+  const filingText = summary?.determination !== "due"
+    ? t("taxes.filingNotRequired")
+    : filed
+      ? `${t("taxes.filed")}${summary.filed_on ? ` · ${formatDate(summary.filed_on)}` : ""}`
+      : t("taxes.notFiled");
+  const secondaryLines = [];
+  if (!isIrpf && summary?.disposition === "carryforward") {
+    if (summary.carryforward_minor != null) secondaryLines.push(`${t("taxes.carryforward")}: ${formatMinorEur(summary.carryforward_minor)}`);
+    if (summary.generated_credit_minor != null && summary.generated_credit_minor !== summary.carryforward_minor) secondaryLines.push(`${t("taxes.generatedCredit")}: ${formatMinorEur(summary.generated_credit_minor)}`);
+  }
+  if (!isIrpf && summary?.disposition === "refund" && summary.refund_requested_minor != null) {
+    secondaryLines.push(`${t("taxes.refundRequested")}: ${formatMinorEur(summary.refund_requested_minor)}`);
+  }
+  return `
+    <section class="panel tax-form-card">
+      <header>
+        <div><span>${escapeHtml(title)}</span><h2>Modelo ${escapeHtml(formCode)}</h2></div>
+        <span class="badge status-${taxStatusTone(status)}">${escapeHtml(taxSettlementLabel(status))}</span>
+      </header>
+      <div class="tax-form-amount">
+        <span>${escapeHtml(t("taxes.payable"))}</span>
+        <strong>${summary?.payable_minor == null ? "—" : formatMinorEur(summary.payable_minor)}</strong>
+        ${summary?.payable_minor === 0 ? `<p>${escapeHtml(t("taxes.noTaxPayment"))}</p>` : ""}
+        ${secondaryLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
+      </div>
+      <dl class="tax-form-facts">
+        <div><dt>${escapeHtml(t("taxes.filing"))}</dt><dd>${escapeHtml(filingText)}</dd></div>
+        <div><dt>${escapeHtml(t("taxes.deadline"))}</dt><dd>${formatDate(summary?.statutory_due_on)}</dd></div>
+        ${summary?.direct_debit_cutoff_on ? `<div><dt>${escapeHtml(t("taxes.directDebit"))}</dt><dd>${formatDate(summary.direct_debit_cutoff_on)}</dd></div>` : ""}
+      </dl>
+      <details class="tax-calculation-details">
+        <summary>${escapeHtml(t("taxes.details"))}</summary>
+        ${casillas(formCode, values, keys, formEmptyState(formView))}
+        ${calculationHelp(formView)}
+      </details>
+    </section>`;
+}
+
+function taxObligationList(rows, title, open = false) {
+  if (!rows.length) return "";
+  return `
+    <details class="panel tax-other-forms"${open ? " open" : ""}>
+      <summary>${escapeHtml(title)}</summary>
+      <ul>${rows.map((row) => `
+        <li>
+          <strong>Modelo ${escapeHtml(row.obligation_code)}</strong>
+          <span>${escapeHtml(row.determination === "due" ? taxSettlementLabel("undetermined") : statusLabel(row.determination))}</span>
+          <time datetime="${escapeHtml(row.statutory_due_on || "")}">${formatDate(row.statutory_due_on)}</time>
+        </li>`).join("")}</ul>
+    </details>`;
+}
+
 async function renderTaxes(renderGeneration = currentRenderGeneration) {
   const data = await fetchJSON(`/api/taxes?period=${encodeURIComponent(state.period)}`);
   if (renderGeneration !== currentRenderGeneration || state.view !== "taxes") return;
   const obligations = obligationMap(data.obligations);
   const m130 = formCardData(data.tax_forms?.[FORM_KEYS[130]], obligations[130]);
   const m303 = formCardData(data.tax_forms?.[FORM_KEYS[303]], obligations[303]);
+  const headline = taxHeadlineModel(data.period_state, data.tax_summary);
+  const extraDue = data.obligations.filter((row) => row.determination === "due" && !["130", "303"].includes(String(row.obligation_code)));
+  const otherForms = data.obligations.filter((row) => row.determination !== "due");
   app.innerHTML = `
-    <div class="tax-layout">
-      <section class="panel">
-        <header class="panel-header"><h2>${escapeHtml(t("taxes.obligations"))}</h2><small>${escapeHtml(data.period)}</small></header>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>${escapeHtml(t("taxes.form"))}</th><th>${escapeHtml(t("taxes.applicability"))}</th><th>${escapeHtml(t("taxes.status"))}</th><th>${escapeHtml(t("taxes.directDebit"))} ${AccountingHelp.term("paymentDeadline")}</th><th>${escapeHtml(t("taxes.deadline"))}</th></tr></thead>
-            <tbody>
-              ${data.obligations.map((row) => `
-                <tr>
-                  <td><strong>Modelo ${escapeHtml(row.obligation_code)}</strong></td>
-                  <td>${escapeHtml(row.determination === "due" ? (state.locale === "ru" ? "Обязательна" : "Required") : statusLabel(row.determination))}</td>
-                  <td>${AccountingHelp.cell(row.ui_context)}</td>
-                  <td>${formatDate(row.direct_debit_cutoff_on)}</td>
-                  <td>${formatDate(row.statutory_due_on)}</td>
-                </tr>`).join("") || emptyRow(5)}
-            </tbody>
-          </table>
+    <div class="tax-page">
+      <section class="tax-hero tax-hero-${escapeHtml(headline.tone)}">
+        <div class="tax-hero-copy">
+          <span>${escapeHtml(data.period)}</span>
+          <h2>${escapeHtml(headline.label)}</h2>
+          ${headline.amount == null ? "" : `<strong>${formatMinorEur(headline.amount)}</strong>`}
+          <p>${escapeHtml(headline.detail)}</p>
         </div>
+        ${taxSummaryFacts(data.tax_summary, data.period_state?.phase)}
       </section>
-      <div class="section-stack">
-        <section class="panel">
-          <header class="panel-header"><h2>Modelo 130</h2><small>${escapeHtml(formSubtitle(m130, obligations[130]))}</small></header>
-          ${casillas(m130.values || {}, ["01", "02", "03", "04", "05", "07", "19", "difficult_expenses"], formEmptyState(m130))}
-          ${calculationHelp(m130)}
-        </section>
-        <section class="panel">
-          <header class="panel-header"><h2>Modelo 303</h2><small>${escapeHtml(formSubtitle(m303, obligations[303]))}</small></header>
-          ${casillas(m303.values || {}, ["29", "45", "64", "69", "71", "72", "result", "compensation_carryforward"], formEmptyState(m303))}
-          ${calculationHelp(m303)}
-        </section>
-        <section class="panel">
-          <div class="chart-slot" id="chart-ytd-comparison"></div>
-        </section>
+      ${data.tax_summary?.requires_reconciliation ? `<p class="period-note posting-warning">${escapeHtml(t("taxes.amendedNotice"))}</p>` : ""}
+      <div class="tax-form-grid">
+        ${taxFormCard("130", m130, data.tax_summary?.forms?.["130"])}
+        ${taxFormCard("303", m303, data.tax_summary?.forms?.["303"])}
       </div>
+      ${taxObligationList(extraDue, t("taxes.additionalDueForms"), true)}
+      ${taxObligationList(otherForms, t("taxes.otherForms"))}
+      <section class="panel tax-analytics-panel">
+        <header class="panel-header"><h2>${escapeHtml(t("taxes.additionalAnalytics"))}</h2></header>
+        <div class="chart-slot" id="chart-ytd-comparison"></div>
+      </section>
     </div>
   `;
   mountViewAnalyticsChart("chart-ytd-comparison", buildYearComparisonSpec);

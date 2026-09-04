@@ -63,8 +63,10 @@ from .review_packet import (
 from .storage_service import resolve_verified_filesystem_replica, resolve_verified_replica
 from .storage_migration import StorageMigrationError, assert_storage_startup_ready
 from .tax_result_view import (
+    build_tax_summary,
     compact_tax_preview as _compact_tax_preview,
     form_results as _dashboard_tax_forms,
+    period_status as _tax_period_status,
     year_form_results,
 )
 
@@ -844,7 +846,7 @@ class LocalAccountingApp:
                     "ui_context": context})
             return result
 
-    def taxes(self, period_key: str) -> dict[str, Any]:
+    def taxes(self, period_key: str, *, as_of: date | None = None) -> dict[str, Any]:
         period = _validate_period(period_key)
         cached = self._load_cached_dashboard(period)
         with closing(self._connect()) as connection:
@@ -859,11 +861,24 @@ class LocalAccountingApp:
                 obligations=obligations,
                 cached=cached,
             )
+            period_details = _tax_period_status(connection, period)
+            if period_details is None:  # pragma: no cover - guarded by _period_row
+                raise LocalWebError(f"Unknown quarter: {period}")
+            period_state, tax_summary = build_tax_summary(
+                connection,
+                period=period_details,
+                obligations=obligations,
+                tax_forms=tax_forms,
+                cached=cached,
+                as_of=as_of or date.today(),
+            )
         return {
             "period": period,
+            "period_state": period_state,
             "obligations": obligations,
             "tax_preview": _compact_tax_preview(cached),
             "tax_forms": tax_forms,
+            "tax_summary": tax_summary,
             "forecast_as_of": cached.get("as_of") if cached else None,
             "warnings": list(cached.get("warnings", [])) if cached else [],
         }
