@@ -46,11 +46,29 @@ verify_crypt_remote() {
   rclone "${rclone_args[@]}" config show "$name" | grep -Eq '^type = crypt$' \
     || die "rclone remote is not configured as crypt: $name"
 }
+verify_uploaded_file() {
+  local local_file="$1" remote_file="$2" expected_bytes result
+  expected_bytes="$(wc -c < "$local_file" | tr -d '[:space:]')"
+  result="$(rclone "${rclone_args[@]}" size --json "$remote_file")"
+  python3 - "$expected_bytes" "$result" <<'PY'
+import json
+import sys
+
+expected_bytes = int(sys.argv[1])
+payload = json.loads(sys.argv[2])
+if payload.get("count") != 1 or payload.get("bytes") != expected_bytes:
+    raise SystemExit("uploaded backup object did not match the local file")
+PY
+}
 if [[ -n "$remote" ]]; then
   require_command rclone
   verify_crypt_remote "$remote"
-  rclone "${rclone_args[@]}" copyto --immutable "$backup_file" "${remote%/}/$(basename "$backup_file")"
-  rclone "${rclone_args[@]}" copyto --immutable "$manifest_file" "${remote%/}/$(basename "$manifest_file")"
+  backup_remote_file="${remote%/}/$(basename "$backup_file")"
+  manifest_remote_file="${remote%/}/$(basename "$manifest_file")"
+  rclone "${rclone_args[@]}" copyto --immutable "$backup_file" "$backup_remote_file"
+  rclone "${rclone_args[@]}" copyto --immutable "$manifest_file" "$manifest_remote_file"
+  verify_uploaded_file "$backup_file" "$backup_remote_file"
+  verify_uploaded_file "$manifest_file" "$manifest_remote_file"
 fi
 if [[ -n "${AUTONOMO_RCLONE_EVIDENCE_REMOTE:-}" && -d "$data/evidence" ]]; then
   require_command rclone
