@@ -843,10 +843,186 @@ tbody tr:hover td {
   white-space: normal;
 }
 
-.tax-layout {
+.tax-page {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
   gap: 18px;
+}
+
+.tax-hero {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(360px, 0.9fr);
+  align-items: center;
+  gap: 28px;
+  padding: 24px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-top: 4px solid var(--accent);
+  border-radius: var(--radius);
+}
+
+.tax-hero-pending { border-top-color: var(--warning); }
+.tax-hero-attention { border-top-color: var(--danger); }
+.tax-hero-positive { border-top-color: var(--accent); }
+.tax-hero-neutral { border-top-color: var(--muted); }
+
+.tax-hero-copy > span,
+.tax-form-card header span,
+.tax-form-amount > span,
+.tax-summary-facts span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.tax-hero-copy h2 {
+  margin: 5px 0 2px;
+  font-size: 1.05rem;
+}
+
+.tax-hero-copy > strong {
+  display: block;
+  margin-top: 4px;
+  font-size: clamp(2rem, 4vw, 3.1rem);
+  line-height: 1.08;
+  font-variant-numeric: tabular-nums;
+}
+
+.tax-hero-copy p {
+  max-width: 58ch;
+  margin: 10px 0 0;
+  color: var(--muted);
+}
+
+.tax-summary-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.tax-summary-facts div {
+  min-width: 0;
+  padding: 13px;
+  background: var(--surface-muted);
+  border-radius: var(--radius);
+}
+
+.tax-summary-facts span,
+.tax-summary-facts strong {
+  display: block;
+}
+
+.tax-summary-facts strong {
+  margin-top: 5px;
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.tax-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.tax-form-card {
+  padding: 18px;
+}
+
+.tax-form-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.tax-form-card h2 {
+  margin: 2px 0 0;
+  font-size: 1.15rem;
+}
+
+.tax-form-amount {
+  margin-top: 22px;
+}
+
+.tax-form-amount > strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 2rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.tax-form-amount p {
+  margin: 7px 0 0;
+  color: var(--muted);
+}
+
+.tax-form-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 20px 0 0;
+}
+
+.tax-form-facts div {
+  min-width: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.tax-form-facts dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.tax-form-facts dd {
+  margin: 4px 0 0;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.tax-calculation-details {
+  margin-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.tax-calculation-details summary,
+.tax-other-forms > summary {
+  min-height: 44px;
+  padding: 12px 0;
+  cursor: pointer;
+  color: var(--accent-dark);
+  font-weight: 650;
+}
+
+.tax-calculation-details[open] summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.tax-other-forms {
+  padding: 0 18px;
+}
+
+.tax-other-forms ul {
+  margin: 0;
+  padding: 0 0 14px;
+  list-style: none;
+}
+
+.tax-other-forms li {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.5fr) 1fr auto;
+  gap: 14px;
+  padding: 11px 0;
+  border-top: 1px solid var(--line);
+}
+
+.tax-other-forms span,
+.tax-other-forms time {
+  color: var(--muted);
+}
+
+.tax-analytics-panel .chart-slot {
+  margin: 0;
 }
 
 .casilla-grid {
@@ -876,6 +1052,13 @@ tbody tr:hover td {
 .casilla strong {
   margin-top: 4px;
   font-variant-numeric: tabular-nums;
+}
+
+.casilla small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 0.66rem;
 }
 
 .text-button {
@@ -1718,8 +1901,12 @@ textarea:focus {
   }
 
   .dashboard-grid,
-  .tax-layout,
+  .tax-form-grid,
   .review-facts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tax-hero {
     grid-template-columns: 1fr;
   }
 
@@ -1831,6 +2018,19 @@ textarea:focus {
   .review-banner {
     align-items: flex-start;
   }
+
+  .tax-form-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .tax-other-forms li {
+    grid-template-columns: 1fr auto;
+  }
+
+  .tax-other-forms li span {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
 }
 
 @media (max-width: 440px) {
@@ -1849,6 +2049,15 @@ textarea:focus {
 
   .posting-summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .tax-summary-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .tax-hero,
+  .tax-form-card {
+    padding: 16px;
   }
 
   .primary-button {

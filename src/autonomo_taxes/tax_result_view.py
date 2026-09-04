@@ -7,6 +7,8 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
+from .tax_payments import tax_settlement_payment_summary
+
 
 TAX_FORM_KEYS = {
     "130": "modelo130",
@@ -338,6 +340,345 @@ def form_results(
             continue
         result[form_key] = preview_form
     return result
+
+
+def _money_to_minor(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    if not amount.is_finite():
+        return None
+    return int((amount * 100).to_integral_value())
+
+
+def _form_result_minor(form_code: str, values: Mapping[str, Any]) -> int | None:
+    if form_code == "130":
+        return _money_to_minor(values.get("19"))
+    return _money_to_minor(
+        values.get("71") or values.get("result") or values.get("69")
+    )
+
+
+def _payment_evidence_by_obligation(
+    connection: sqlite3.Connection,
+    *,
+    period_key: str,
+) -> dict[str, dict[str, Any]]:
+    rows = connection.execute(
+        """
+        SELECT
+            pay.payment_id,
+            pay.obligation_id,
+            pay.paid_on,
+            pay.amount_minor,
+            pay.currency,
+            pay.match_status,
+            pay.source_system,
+            pay.external_id,
+            pay.source_row_json
+        FROM payments pay
+        JOIN obligations o ON o.obligation_id = pay.obligation_id
+        JOIN periods p ON p.period_id = o.period_id
+        WHERE p.period_key = ?
+        ORDER BY pay.paid_on, pay.payment_id
+        """,
+        (period_key,),
+    ).fetchall()
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        grouped.setdefault(str(row["obligation_id"]), []).append(
+            tax_settlement_payment_summary(row)
+        )
+
+    result: dict[str, dict[str, Any]] = {}
+    for obligation_id, payments in grouped.items():
+        confirmed = [row for row in payments if row["evidence_ready"]]
+        result[obligation_id] = {
+            "confirmed_paid_minor": sum(int(row["amount_minor"]) for row in confirmed),
+            "latest_confirmed_paid_on": max(
+                (str(row["paid_on"]) for row in confirmed),
+                default=None,
+            ),
+            "unconfirmed_payment_count": len(payments) - len(confirmed),
+        }
+    return result
+
+
+def _period_phase(period: Mapping[str, Any], as_of: date) -> str:
+    starts_on = date.fromisoformat(str(period["starts_on"]))
+    ends_on = date.fromisoformat(str(period["ends_on"]))
+    if as_of < starts_on:
+        return "future"
+    if as_of <= ends_on:
+        return "current"
+    return "past"
+
+
+def _settlement_status(
+    *,
+    phase: str,
+    payable_minor: int | None,
+    confirmed_paid_minor: int,
+    unconfirmed_payment_count: int,
+    filed: bool,
+) -> str:
+    if phase == "future":
+        return "not_started"
+    if payable_minor is None:
+        return "undetermined"
+    if confirmed_paid_minor > payable_minor:
+        return "overpaid"
+    if payable_minor == 0:
+        return "no_payment_required"
+    if confirmed_paid_minor == payable_minor:
+        return "paid"
+    if confirmed_paid_minor > 0:
+        return "partially_paid"
+    if unconfirmed_payment_count:
+        return "evidence_unavailable"
+    if filed:
+        return "payment_unconfirmed"
+    return "unfiled" if phase == "past" else "planned"
+
+
+def _tax_form_summary(
+    *,
+    form_code: str,
+    form: Mapping[str, Any],
+    preview_form: Mapping[str, Any],
+    obligation: Mapping[str, Any] | None,
+    payment_evidence: Mapping[str, Mapping[str, Any]],
+    phase: str,
+) -> dict[str, Any]:
+    determination = str((obligation or {}).get("determination") or "unknown")
+    filing_status = str((obligation or {}).get("filing_status") or "unknown")
+    preview_values = preview_form.get("values") or {}
+    filed_values = (
+        form.get("values") or {}
+        if filing_status == "filed" and form.get("display_state") == "filed"
+        else {}
+    )
+    preview_result_minor = _form_result_minor(form_code, preview_values)
+    filed_result_minor = _form_result_minor(form_code, filed_values)
+
+    if phase == "future":
+        result_minor = None
+        calculation_source = "not_started"
+    elif phase == "past" and filed_result_minor is not None:
+        result_minor = filed_result_minor
+        calculation_source = "filed"
+    elif preview_result_minor is not None:
+        result_minor = preview_result_minor
+        calculation_source = "preview"
+    elif filed_result_minor is not None:
+        result_minor = filed_result_minor
+        calculation_source = "filed"
+    else:
+        result_minor = None
+        calculation_source = "unavailable"
+
+    if determination in {"not_due", "waived"}:
+        payable_minor = 0
+        calculation_source = "not_required"
+    elif determination != "due":
+        payable_minor = None
+        calculation_source = "unavailable"
+    else:
+        payable_minor = max(result_minor, 0) if result_minor is not None else None
+
+    obligation_id = str((obligation or {}).get("obligation_id") or "")
+    payment = payment_evidence.get(obligation_id) or {}
+    confirmed_paid_minor = int(payment.get("confirmed_paid_minor") or 0)
+    unconfirmed_payment_count = int(payment.get("unconfirmed_payment_count") or 0)
+    selected_values = (
+        filed_values if calculation_source == "filed" else preview_values
+    )
+    generated_credit_minor = _money_to_minor(selected_values.get("72"))
+    carryforward_minor = _money_to_minor(
+        selected_values.get("compensation_carryforward")
+        or selected_values.get("72")
+    )
+    refund_requested_minor = _money_to_minor(selected_values.get("73"))
+    if form_code != "303" or result_minor is None:
+        disposition = None
+    elif result_minor > 0:
+        disposition = "payable"
+    elif (refund_requested_minor or 0) > 0:
+        disposition = "refund"
+    elif result_minor < 0 or (carryforward_minor or 0) > 0:
+        disposition = "carryforward"
+    else:
+        disposition = "none"
+
+    outstanding_minor = (
+        max(payable_minor - confirmed_paid_minor, 0)
+        if payable_minor is not None
+        else None
+    )
+    overpaid_minor = (
+        max(confirmed_paid_minor - payable_minor, 0)
+        if payable_minor is not None
+        else None
+    )
+    return {
+        "form_code": form_code,
+        "determination": determination,
+        "filing_status": filing_status,
+        "calculation_source": calculation_source,
+        "preview_minor": preview_result_minor,
+        "filed_minor": filed_result_minor,
+        "result_minor": result_minor,
+        "payable_minor": payable_minor,
+        "confirmed_paid_minor": confirmed_paid_minor,
+        "outstanding_minor": outstanding_minor,
+        "overpaid_minor": overpaid_minor,
+        "settlement_status": _settlement_status(
+            phase=phase,
+            payable_minor=payable_minor,
+            confirmed_paid_minor=confirmed_paid_minor,
+            unconfirmed_payment_count=unconfirmed_payment_count,
+            filed=filing_status == "filed",
+        ),
+        "unconfirmed_payment_count": unconfirmed_payment_count,
+        "latest_confirmed_paid_on": payment.get("latest_confirmed_paid_on"),
+        "filed_on": form.get("filed_on"),
+        "direct_debit_cutoff_on": (obligation or {}).get("direct_debit_cutoff_on"),
+        "statutory_due_on": (obligation or {}).get("statutory_due_on"),
+        "generated_credit_minor": generated_credit_minor,
+        "carryforward_minor": carryforward_minor,
+        "refund_requested_minor": refund_requested_minor,
+        "disposition": disposition,
+    }
+
+
+def build_tax_summary(
+    connection: sqlite3.Connection,
+    *,
+    period: Mapping[str, Any],
+    obligations: list[dict[str, Any]],
+    tax_forms: Mapping[str, Mapping[str, Any]],
+    cached: Mapping[str, Any],
+    as_of: date,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    phase = _period_phase(period, as_of)
+    obligation_by_code = {
+        str(row.get("obligation_code") or ""): row for row in obligations
+    }
+    preview_forms = form_preview_from_cache(cached)
+    payment_evidence = _payment_evidence_by_obligation(
+        connection,
+        period_key=str(period["period_key"]),
+    )
+    forms = {
+        form_code: _tax_form_summary(
+            form_code=form_code,
+            form=tax_forms.get(form_key) or {},
+            preview_form=preview_forms.get(form_key) or {},
+            obligation=obligation_by_code.get(form_code),
+            payment_evidence=payment_evidence,
+            phase=phase,
+        )
+        for form_code, form_key in TAX_FORM_KEYS.items()
+    }
+    due_obligations = [
+        row for row in obligations if row.get("determination") == "due"
+    ]
+    unsupported_due_forms = sorted(
+        str(row.get("obligation_code"))
+        for row in due_obligations
+        if str(row.get("obligation_code")) not in TAX_FORM_KEYS
+    )
+    unresolved_obligations = sorted(
+        str(row.get("obligation_code"))
+        for row in obligations
+        if row.get("determination") == "unknown"
+    )
+    due_forms = [
+        forms[str(row["obligation_code"])]
+        for row in due_obligations
+        if str(row.get("obligation_code")) in forms
+    ]
+    complete = (
+        phase != "future"
+        and not unsupported_due_forms
+        and not unresolved_obligations
+        and all(row["payable_minor"] is not None for row in due_forms)
+    )
+    total_payable_minor = (
+        sum(int(row["payable_minor"]) for row in due_forms)
+        if complete
+        else None
+    )
+    total_confirmed_paid_minor = sum(
+        int((payment_evidence.get(str(row["obligation_id"])) or {}).get("confirmed_paid_minor") or 0)
+        for row in due_obligations
+    )
+    total_unconfirmed_payments = sum(
+        int((payment_evidence.get(str(row["obligation_id"])) or {}).get("unconfirmed_payment_count") or 0)
+        for row in due_obligations
+    )
+    all_due_filed = bool(due_obligations) and all(
+        row.get("filing_status") == "filed" for row in due_obligations
+    )
+    settlement_status = _settlement_status(
+        phase=phase,
+        payable_minor=total_payable_minor,
+        confirmed_paid_minor=total_confirmed_paid_minor,
+        unconfirmed_payment_count=total_unconfirmed_payments,
+        filed=all_due_filed,
+    )
+    sources = {
+        str(row["calculation_source"])
+        for row in due_forms
+        if row["calculation_source"] != "not_required"
+    }
+    calculation_source = (
+        "not_started"
+        if phase == "future"
+        else "not_required"
+        if not due_forms and not unsupported_due_forms and not unresolved_obligations
+        else next(iter(sources))
+        if len(sources) == 1
+        else "mixed"
+        if sources
+        else "unavailable"
+    )
+    outstanding_minor = (
+        max(total_payable_minor - total_confirmed_paid_minor, 0)
+        if total_payable_minor is not None
+        else None
+    )
+    overpaid_minor = (
+        max(total_confirmed_paid_minor - total_payable_minor, 0)
+        if total_payable_minor is not None
+        else None
+    )
+    period_state = {
+        "period_key": str(period["period_key"]),
+        "phase": phase,
+        "accounting_status": str(period["status"]),
+        "starts_on": period["starts_on"],
+        "ends_on": period["ends_on"],
+        "amendment_period_key": period.get("amendment_period_key"),
+        "amendment_reason": period.get("amendment_reason"),
+    }
+    return period_state, {
+        "currency": "EUR",
+        "calculation_source": calculation_source,
+        "calculated_as_of": cached.get("as_of") if "preview" in sources else None,
+        "total_payable_minor": total_payable_minor,
+        "total_confirmed_paid_minor": total_confirmed_paid_minor,
+        "outstanding_minor": outstanding_minor,
+        "overpaid_minor": overpaid_minor,
+        "settlement_status": settlement_status,
+        "requires_reconciliation": str(period["status"]) == "amended",
+        "unsupported_due_forms": unsupported_due_forms,
+        "unresolved_obligations": unresolved_obligations,
+        "forms": forms,
+    }
 
 
 def period_status(

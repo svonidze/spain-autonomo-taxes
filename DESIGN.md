@@ -228,6 +228,13 @@ decides. Change the definitions here first, then the code.
 - **Tax cash due**: positive payables per form — Modelo 130 casilla `19`,
   Modelo 303 casilla `71` — never merged into a single "tax burden" number,
   and no effective-rate line (a VAT settlement is not an income-tax rate).
+- **Taxes-page headline**: the large amount is the cash expected to leave for
+  AEAT in the selected quarter, with IRPF and IVA kept as separate components
+  immediately below it. A negative IVA result never offsets positive IRPF in
+  this headline. For a current quarter the headline is explicitly a dated
+  preview; for a past quarter it says `paid` only for evidence-backed EUR
+  payments linked to the filed obligation. Filed, payable and confirmed-paid
+  amounts remain separate values.
 - **Money encoding**: every API money field ends in `_minor` and is an integer
   of EUR cents or `null`. `0` means a known zero; `null` means
   unavailable/not calculated. Rates use basis points. The API returns machine
@@ -263,6 +270,20 @@ Additional rules:
   A quarter absent from the `periods` table reports `status: "missing"`.
 - `GET /api/analytics` is strictly read-only: it opens SQLite in `mode=ro` and
   never launches CLI subprocesses or refreshes caches.
+- `GET /api/taxes` adds `period_state` and `tax_summary` without removing the
+  legacy form fields. `period_state.phase` is calendar-derived (`future`,
+  `current`, `past`) and stays separate from the ledger period status
+  (`open`, `closed`, `amended`). Each supported form exposes preview, filed,
+  payable and confirmed-paid minor-unit amounts, plus outstanding/overpaid and
+  IVA carry-forward/refund disposition where applicable.
+- A future quarter has no payable total (`null`), not a known zero. Missing or
+  unsupported required calculations also make the total unavailable. Partial
+  payment and overpayment are explicit states. A direct-debit cutoff is only a
+  deadline; the UI must not infer that a debit is scheduled without explicit
+  payment-method evidence.
+- Modelo 303 distinguishes credit generated in the quarter (casilla `72`),
+  total credit carried forward, and a requested refund (casilla `73`). These
+  are explanatory amounts and do not increase the cash-payment headline.
 
 ### Chart placement
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import date
 import errno
 import hashlib
 from http.client import HTTPConnection
@@ -547,6 +548,234 @@ def test_taxes_endpoint_marks_filed_without_values_explicitly(tmp_path: Path) ->
     assert taxes["tax_forms"]["modelo303"]["display_state"] == "filed_without_values"
     assert taxes["tax_forms"]["modelo303"]["values"] == {}
     assert taxes["tax_forms"]["modelo303"]["extraction_status"] == "output_and_deductible"
+
+
+def test_taxes_summary_leads_with_current_quarter_cash_plan(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    _write_dashboard_cache(
+        config,
+        "2026-Q3",
+        as_of="2026-09-03",
+        modelo130_values={"19": "3204.27"},
+        modelo303_values={
+            "71": "-1297.90",
+            "72": "1297.90",
+            "compensation_carryforward": "2681.11",
+        },
+    )
+    with LedgerDB.initialize(config.database) as db:
+        db.add_obligation(
+            period_key="2026-Q3",
+            obligation_code="130",
+            filing_status="due",
+            determination="due",
+        )
+        db.add_obligation(
+            period_key="2026-Q3",
+            obligation_code="303",
+            filing_status="due",
+            determination="due",
+        )
+
+    summary = LocalAccountingApp(config).taxes(
+        "2026-Q3", as_of=date(2026, 9, 4)
+    )
+
+    assert summary["period_state"]["phase"] == "current"
+    assert summary["tax_summary"]["calculation_source"] == "preview"
+    assert summary["tax_summary"]["total_payable_minor"] == 320427
+    assert summary["tax_summary"]["settlement_status"] == "planned"
+    assert summary["tax_summary"]["forms"]["130"]["payable_minor"] == 320427
+    iva = summary["tax_summary"]["forms"]["303"]
+    assert iva["preview_minor"] == -129790
+    assert iva["payable_minor"] == 0
+    assert iva["generated_credit_minor"] == 129790
+    assert iva["carryforward_minor"] == 268111
+    assert iva["disposition"] == "carryforward"
+
+
+def test_taxes_summary_never_calls_a_filed_return_paid_without_evidence(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    with LedgerDB.initialize(config.database) as db:
+        obligation = db.add_obligation(
+            period_key="2026-Q2",
+            obligation_code="130",
+            filing_status="filed",
+            determination="due",
+        )
+        db.add_obligation(
+            period_key="2026-Q2",
+            obligation_code="303",
+            filing_status="filed",
+            determination="due",
+        )
+        db.create_filing_snapshot(
+            "2026-Q2",
+            filed_on="2026-07-08",
+            status="baseline",
+            form_code="130",
+            payload=_snapshot_payload("130", filed_values={"19": "2639.12"}),
+        )
+        db.create_filing_snapshot(
+            "2026-Q2",
+            filed_on="2026-07-08",
+            status="baseline",
+            form_code="303",
+            payload=_snapshot_payload(
+                "303",
+                filed_values={"71": "-407.36", "72": "407.36"},
+                value_extraction_schema="modelo303_v4",
+            ),
+        )
+
+    app = LocalAccountingApp(config)
+    before_payment = app.taxes("2026-Q2", as_of=date(2026, 9, 4))["tax_summary"]
+    assert before_payment["total_payable_minor"] == 263912
+    assert before_payment["total_confirmed_paid_minor"] == 0
+    assert before_payment["outstanding_minor"] == 263912
+    assert before_payment["settlement_status"] == "payment_unconfirmed"
+    assert before_payment["forms"]["303"]["filed_minor"] == -40736
+
+    with LedgerDB.open(config.database) as db:
+        db.add_payment(
+            paid_on="2026-07-20",
+            amount_minor=263912,
+            currency="EUR",
+            source_hash="confirmed-q2-tax-payment",
+            obligation_id=obligation["obligation_id"],
+            match_status="manual",
+            source_system="revolut",
+            external_id="q2-modelo130-debit",
+            source_row_json=json.dumps(
+                {
+                    "evidence_sha256": "a" * 64,
+                    "evidence_locator": "2026-Q2/tax_payment_evidence/m130.pdf",
+                    "source_system": "revolut",
+                    "external_id": "q2-modelo130-debit",
+                }
+            ),
+        )
+
+    after_payment = app.taxes("2026-Q2", as_of=date(2026, 9, 4))["tax_summary"]
+    assert after_payment["total_confirmed_paid_minor"] == 263912
+    assert after_payment["outstanding_minor"] == 0
+    assert after_payment["settlement_status"] == "paid"
+
+
+@pytest.mark.parametrize(
+    ("paid_minor", "expected_status", "expected_outstanding", "expected_overpaid"),
+    [
+        (100000, "partially_paid", 163912, 0),
+        (300000, "overpaid", 0, 36088),
+    ],
+)
+def test_taxes_summary_exposes_partial_payment_and_overpayment(
+    tmp_path: Path,
+    paid_minor: int,
+    expected_status: str,
+    expected_outstanding: int,
+    expected_overpaid: int,
+) -> None:
+    config = _config(tmp_path)
+    with LedgerDB.initialize(config.database) as db:
+        obligation = db.add_obligation(
+            period_key="2026-Q2",
+            obligation_code="130",
+            filing_status="filed",
+            determination="due",
+        )
+        db.create_filing_snapshot(
+            "2026-Q2",
+            filed_on="2026-07-08",
+            status="baseline",
+            form_code="130",
+            payload=_snapshot_payload("130", filed_values={"19": "2639.12"}),
+        )
+        db.add_payment(
+            paid_on="2026-07-20",
+            amount_minor=paid_minor,
+            currency="EUR",
+            source_hash=f"q2-tax-payment-{paid_minor}",
+            obligation_id=obligation["obligation_id"],
+            match_status="exact",
+            source_system="revolut",
+            external_id=f"q2-tax-payment-{paid_minor}",
+            source_row_json=json.dumps(
+                {
+                    "evidence_sha256": "b" * 64,
+                    "evidence_locator": "2026-Q2/tax_payment_evidence/m130.json",
+                    "source_system": "revolut",
+                    "external_id": f"q2-tax-payment-{paid_minor}",
+                }
+            ),
+        )
+
+    summary = LocalAccountingApp(config).taxes(
+        "2026-Q2", as_of=date(2026, 9, 4)
+    )["tax_summary"]
+    assert summary["settlement_status"] == expected_status
+    assert summary["outstanding_minor"] == expected_outstanding
+    assert summary["overpaid_minor"] == expected_overpaid
+
+
+def test_taxes_summary_keeps_future_and_unknown_amounts_distinct_from_zero(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    _write_dashboard_cache(
+        config,
+        "2026-Q4",
+        as_of="2026-09-03",
+        modelo130_values={"19": "0.00"},
+    )
+    with LedgerDB.initialize(config.database) as db:
+        db.add_obligation(
+            period_key="2026-Q4",
+            obligation_code="130",
+            filing_status="due",
+            determination="due",
+        )
+
+    future = LocalAccountingApp(config).taxes(
+        "2026-Q4", as_of=date(2026, 9, 4)
+    )
+    assert future["period_state"]["phase"] == "future"
+    assert future["tax_summary"]["total_payable_minor"] is None
+    assert future["tax_summary"]["settlement_status"] == "not_started"
+
+
+def test_taxes_summary_distinguishes_modelo303_refund_from_carryforward(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    with LedgerDB.initialize(config.database) as db:
+        db.add_obligation(
+            period_key="2025-Q4",
+            obligation_code="303",
+            filing_status="filed",
+            determination="due",
+        )
+        db.create_filing_snapshot(
+            "2025-Q4",
+            filed_on="2026-01-15",
+            status="baseline",
+            form_code="303",
+            payload=_snapshot_payload(
+                "303",
+                filed_values={"71": "-500.00", "73": "500.00"},
+                value_extraction_schema="modelo303_v4",
+            ),
+        )
+
+    summary = LocalAccountingApp(config).taxes(
+        "2025-Q4", as_of=date(2026, 2, 1)
+    )["tax_summary"]
+    iva = summary["forms"]["303"]
+    assert iva["payable_minor"] == 0
+    assert iva["refund_requested_minor"] == 50000
+    assert iva["disposition"] == "refund"
 
 
 def test_filed_form_selection_treats_forms_independently(tmp_path: Path) -> None:
