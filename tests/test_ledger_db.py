@@ -2113,6 +2113,21 @@ class LedgerDbTests(unittest.TestCase):
             )
             self.assertEqual(closed["status"], "closed")
 
+    def test_fk_rebuild_rolls_back_when_foreign_key_check_finds_an_orphan(self) -> None:
+        db = self._database()
+
+        def leave_an_orphan(connection: sqlite3.Connection) -> None:
+            connection.execute("CREATE TABLE rebuild_parent (id INTEGER PRIMARY KEY)")
+            connection.execute("CREATE TABLE rebuild_child (parent_id INTEGER REFERENCES rebuild_parent(id))")
+            connection.execute("INSERT INTO rebuild_parent VALUES (1)")
+            connection.execute("INSERT INTO rebuild_child VALUES (1)")
+            connection.execute("DROP TABLE rebuild_parent")
+
+        with self.assertRaisesRegex(LedgerDbError, "foreign-key violations"):
+            db._run_fk_rebuild_migration(leave_an_orphan, 19)
+        self.assertEqual(db.connection.execute("PRAGMA foreign_keys").fetchone()[0], 1)
+        self.assertIsNone(db.connection.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'rebuild_child'").fetchone())
+
     def _database(self) -> LedgerDB:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)

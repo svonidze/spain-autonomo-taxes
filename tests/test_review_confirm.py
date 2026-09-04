@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 import hashlib
 from decimal import Decimal
 from pathlib import Path
@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from autonomo_taxes.ledger_db import initialize, open as open_ledger_db
+from autonomo_taxes.fx_reference import ECBRateObservation
 from autonomo_taxes.review_packet import (
     ReviewPacketError,
     build_fx_suggestion,
@@ -174,19 +175,26 @@ def _reject_decision(packet: dict[str, object]) -> None:
 
 
 def _ecb_fx_spec(rate: str = "0.9216") -> dict[str, object]:
-    rate_date = date.today().isoformat()
-    raw_observation = (
-        '{"currency":"USD","date":"' + rate_date + '","value":"1.0850"}'
-    )
     return {
-        "rate_date": rate_date,
+        "rate_date": date.today().isoformat(),
         "rate": rate,
         "rate_source": "ecb",
-        "source_reference": "https://data-api.ecb.europa.eu/service/data/EXR/D.USD.EUR.SP00.A",
-        "raw_observation": raw_observation,
-        "raw_observation_hash": hashlib.sha256(raw_observation.encode("utf-8")).hexdigest(),
+        "source_reference": None,
+        "raw_observation": None,
+        "raw_observation_hash": None,
         "supersedes_rate_id": None,
     }
+
+
+def _ecb_observation(rate: str, currency: str, rate_date: date) -> ECBRateObservation:
+    eur_per_unit = Decimal(rate)
+    units_per_eur = Decimal(1) / eur_per_unit
+    raw_observation = '{"currency":"' + currency + '","date":"' + rate_date.isoformat() + '","value":"' + format(units_per_eur, "f") + '"}'
+    return ECBRateObservation(currency=currency, rate_date=rate_date, units_per_eur=units_per_eur, eur_per_unit=eur_per_unit, source_url="https://data-api.ecb.europa.eu/service/data/EXR/D.USD.EUR.SP00.A", raw_observation=raw_observation, raw_observation_hash=hashlib.sha256(raw_observation.encode("utf-8")).hexdigest())
+
+
+def _ecb_lookup(rate: str = "0.9216"):
+    return lambda currency, rate_date: _ecb_observation(rate, currency, rate_date)
 
 
 def _settlement_fx_spec(rate: str = "0.9100", reference: str = "Bank settlement advice 42") -> dict[str, object]:
@@ -212,9 +220,9 @@ def test_confirm_applies_verified_fx_and_decision_in_one_commit(tmp_path: Path) 
     rate = "0.9216"
     ecb_verified: list[tuple[str, date]] = []
 
-    def ecb_verify(currency: str, rate_date: date) -> Decimal:
+    def ecb_verify(currency: str, rate_date: date) -> ECBRateObservation:
         ecb_verified.append((currency, rate_date))
-        return Decimal(rate)
+        return _ecb_observation(rate, currency, rate_date)
 
     with open_ledger_db(fixture["database"]) as db:
         result = confirm_review_packet(
@@ -270,7 +278,7 @@ def test_confirm_rejects_stale_snapshot(tmp_path: Path) -> None:
         )
         db.connection.commit()
         with pytest.raises(ReviewPacketError, match="stale|edited|row_version"):
-            confirm_review_packet(db, packet, _ecb_fx_spec(), ecb_verify=lambda *_: Decimal("0.9216"))
+            confirm_review_packet(db, packet, _ecb_fx_spec(), ecb_verify=_ecb_lookup())
     with open_ledger_db(fixture["database"], read_only=True) as db:
         count = db.connection.execute("SELECT COUNT(*) FROM fx_rates").fetchone()[0]
         assert count == 0
@@ -295,7 +303,7 @@ def test_confirm_detects_concurrent_row_version_change(tmp_path: Path) -> None:
                 first,
                 packet,
                 _ecb_fx_spec(),
-                ecb_verify=lambda *_: Decimal("0.9216"),
+                ecb_verify=_ecb_lookup(),
             )
     with open_ledger_db(fixture["database"], read_only=True) as db:
         rows = db.connection.execute(
@@ -361,7 +369,7 @@ def test_closed_period_blocks_confirm_and_rolls_back(tmp_path: Path) -> None:
         )
         db.connection.commit()
         with pytest.raises(ReviewPacketError, match="not open|immutable|close"):
-            confirm_review_packet(db, packet, _ecb_fx_spec(), ecb_verify=lambda *_: Decimal("0.9216"))
+            confirm_review_packet(db, packet, _ecb_fx_spec(), ecb_verify=_ecb_lookup())
     with open_ledger_db(fixture["database"], read_only=True) as db:
         count = db.connection.execute("SELECT COUNT(*) FROM fx_rates").fetchone()[0]
         assert count == 0
@@ -390,7 +398,7 @@ def test_failed_decision_rolls_back_applied_fx(tmp_path: Path, monkeypatch: pyte
             (fixture["transaction_id"],),
         ).fetchone()
         with pytest.raises(ReviewPacketError, match="forced validation failure"):
-            confirm_review_packet(db, packet, _ecb_fx_spec(), ecb_verify=lambda *_: Decimal("0.9216"))
+            confirm_review_packet(db, packet, _ecb_fx_spec(), ecb_verify=_ecb_lookup())
         after = db.connection.execute(
             "SELECT row_version, amount_eur_minor, lifecycle_status FROM transactions "
             "WHERE transaction_id = ?",
@@ -412,7 +420,7 @@ def test_ecb_rate_mismatch_is_rejected(tmp_path: Path) -> None:
     with open_ledger_db(fixture["database"]) as db:
         with pytest.raises(ReviewPacketError, match="does not match"):
             confirm_review_packet(
-                db, packet, _ecb_fx_spec("0.9216"), ecb_verify=lambda *_: Decimal("0.9999")
+                db, packet, _ecb_fx_spec("0.9216"), ecb_verify=_ecb_lookup("0.9999")
             )
     code, status = classify_review_packet_failure(
         "ECB rate verification failed: the official rate does not match the submitted rate"
@@ -438,15 +446,21 @@ def test_ecb_confirmation_requires_server_verification(tmp_path: Path) -> None:
             confirm_review_packet(db, packet, _ecb_fx_spec())
 
 
-def test_raw_observation_hash_mismatch_is_rejected(tmp_path: Path) -> None:
+def test_ecb_confirmation_ignores_client_provenance(tmp_path: Path) -> None:
     fixture = _invoice_fixture(tmp_path, currency="USD")
     packet = _packet(fixture)
     _approve_decision(packet)
     fx_spec = _ecb_fx_spec()
+    fx_spec["source_reference"] = "https://example.invalid/forged"
+    fx_spec["raw_observation"] = '{"forged":true}'
     fx_spec["raw_observation_hash"] = "0" * 64
     with open_ledger_db(fixture["database"]) as db:
-        with pytest.raises(ReviewPacketError, match="raw_observation_hash"):
-            confirm_review_packet(db, packet, fx_spec, ecb_verify=lambda *_: Decimal("0.9216"))
+        confirm_review_packet(db, packet, fx_spec, ecb_verify=_ecb_lookup())
+        transaction = db.connection.execute("SELECT fx_rate_id FROM transactions WHERE transaction_id = ?", (fixture["transaction_id"],)).fetchone()
+        provenance = db.fx_provenance_for_rate(str(transaction["fx_rate_id"]))
+        assert provenance is not None
+        assert provenance["primary_source_reference"] != fx_spec["source_reference"]
+        assert provenance["raw_observation"] != fx_spec["raw_observation"]
 
 
 def test_fx_rate_cannot_be_dated_after_the_transaction(tmp_path: Path) -> None:
@@ -456,8 +470,28 @@ def test_fx_rate_cannot_be_dated_after_the_transaction(tmp_path: Path) -> None:
     fx_spec = _ecb_fx_spec()
     fx_spec["rate_date"] = "2999-01-01"
     with open_ledger_db(fixture["database"]) as db:
-        with pytest.raises(ReviewPacketError, match="after the transaction"):
+        with pytest.raises(ReviewPacketError, match="future"):
             confirm_review_packet(db, packet, fx_spec)
+
+
+def test_ecb_rate_cannot_be_more_than_the_fallback_window_before_transaction(tmp_path: Path) -> None:
+    transaction_date = date.today() - timedelta(days=30)
+    fixture = _invoice_fixture(tmp_path, currency="USD", transaction_date=transaction_date.isoformat())
+    packet = _packet(fixture)
+    _approve_decision(packet)
+    old_rate_date = transaction_date - timedelta(days=8)
+    fx_spec = _ecb_fx_spec()
+    fx_spec["rate_date"] = old_rate_date.isoformat()
+    calls: list[tuple[str, date]] = []
+
+    def verify(currency: str, rate_date: date) -> ECBRateObservation:
+        calls.append((currency, rate_date))
+        return _ecb_observation("0.9216", currency, rate_date)
+
+    with open_ledger_db(fixture["database"]) as db:
+        with pytest.raises(ReviewPacketError, match="within 7 days"):
+            confirm_review_packet(db, packet, fx_spec, ecb_verify=verify)
+    assert calls == []
 
 
 def test_eur_transactions_do_not_accept_fx(tmp_path: Path) -> None:
@@ -466,7 +500,7 @@ def test_eur_transactions_do_not_accept_fx(tmp_path: Path) -> None:
     _approve_decision(packet)
     with open_ledger_db(fixture["database"]) as db:
         with pytest.raises(ReviewPacketError, match="EUR transactions"):
-            confirm_review_packet(db, packet, _ecb_fx_spec(), ecb_verify=lambda *_: Decimal("1"))
+            confirm_review_packet(db, packet, _ecb_fx_spec(), ecb_verify=_ecb_lookup("1"))
 
 
 def test_fx_spec_shape_is_strict(tmp_path: Path) -> None:
@@ -478,7 +512,7 @@ def test_fx_spec_shape_is_strict(tmp_path: Path) -> None:
     fx_spec["extra_field"] = True
     with open_ledger_db(fixture["database"]) as db:
         with pytest.raises(ReviewPacketError, match="missing=source_reference"):
-            confirm_review_packet(db, packet, fx_spec, ecb_verify=lambda *_: Decimal("1"))
+            confirm_review_packet(db, packet, fx_spec, ecb_verify=_ecb_lookup("1"))
 
 
 def test_documented_settlement_rates_can_coexist(tmp_path: Path) -> None:

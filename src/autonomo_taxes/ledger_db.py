@@ -2947,6 +2947,15 @@ class LedgerDB:
                             existing["fx_rate_id"],
                         ),
                     )
+                    self.connection.execute(
+                        """
+                        UPDATE fx_provenance
+                        SET primary_source_reference =
+                            COALESCE(primary_source_reference, ?)
+                        WHERE fx_rate_id = ?
+                        """,
+                        (normalized_reference, existing["fx_rate_id"]),
+                    )
                 return self._fetch_one(
                     "SELECT * FROM fx_rates WHERE fx_rate_id = ?",
                     (existing["fx_rate_id"],),
@@ -2986,7 +2995,6 @@ class LedgerDB:
                     quote_currency=quote_currency,
                     rate=canonical_rate,
                     rate_source=rate_source,
-                    source_reference=normalized_reference,
                 ),
                 supersedes_rate_id=(provenance or {}).get("supersedes_rate_id"),
             )
@@ -3010,10 +3018,9 @@ class LedgerDB:
                 (str(supersedes_rate_id),),
             )
             supersedes_provenance_id = str(supersedes["fx_provenance_id"])
-            provenance_kind = "manual_adjustment"
         else:
             supersedes_provenance_id = None
-            provenance_kind = FX_PROVENANCE_KINDS.get(str(rate_source), "manual_adjustment")
+        provenance_kind = FX_PROVENANCE_KINDS.get(str(rate_source), "manual_adjustment")
         self.connection.execute(
             """
             INSERT INTO fx_provenance (
@@ -5677,6 +5684,12 @@ class LedgerDB:
             raise
         try:
             migration(self.connection)
+            violations = self.connection.execute("PRAGMA foreign_key_check").fetchall()
+            if violations:
+                raise LedgerDbError(
+                    f"Migration {version} left {len(violations)} foreign-key "
+                    "violations; the rebuild was rolled back"
+                )
             self.connection.execute(f"PRAGMA user_version = {version}")
         except Exception:
             self.connection.rollback()
@@ -5906,7 +5919,6 @@ def _fx_raw_observation(
     quote_currency: str,
     rate: str,
     rate_source: str,
-    source_reference: str | None,
 ) -> str:
     """Return the caller-supplied raw observation or a deterministic fallback."""
 
@@ -5921,7 +5933,6 @@ def _fx_raw_observation(
             "rate": rate,
             "rate_date": rate_date,
             "rate_source": rate_source,
-            "source_reference": source_reference,
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -7020,7 +7031,6 @@ def _backfill_fx_provenance(connection: sqlite3.Connection) -> None:
                 "rate": row["rate"],
                 "rate_date": row["rate_date"],
                 "rate_source": row["rate_source"],
-                "source_reference": row["source_reference"],
             },
             sort_keys=True,
             separators=(",", ":"),

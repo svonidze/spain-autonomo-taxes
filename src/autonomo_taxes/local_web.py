@@ -39,7 +39,7 @@ except Exception:  # pragma: no cover - dependency guard
 
 from .analytics_series import AnalyticsQuery, build_analytics
 from .account_settings import AccountSettingsError, read_settings, save_backups, save_profile
-from .fx_reference import FXReferenceError, fetch_eur_rate
+from .fx_reference import ECBRateObservation, FXReferenceError, fetch_eur_rate
 from .expense_view import enrich_expense_context, expense_page, expense_summary
 from .ledger_db import LedgerDB, LedgerDbError, StaleRowVersionError, open as open_ledger_db
 from .legacy_paths import LegacyPathResolver
@@ -1455,17 +1455,17 @@ class LocalAccountingApp:
             ecb_error = str(exc)
         return build_fx_suggestion(state, ecb_result=ecb_result, ecb_error=ecb_error)
 
-    def _ecb_verify(self, currency: str, rate_date: date) -> Decimal | None:
+    def _ecb_verify(self, currency: str, rate_date: date) -> ECBRateObservation | None:
         """Re-verify a submitted official rate against a fresh ECB lookup.
 
-        Returns the official EUR-per-unit rate when the exact requested date
-        is published; ``None`` when the date itself has no observation.
+        The confirmation flow stores this observation's provenance rather than
+        accepting client-provided audit data.
         """
 
         result = fetch_eur_rate(currency, rate_date)
         if result.status != "exact":
             return None
-        return result.observation.eur_per_unit
+        return result.observation
 
     def review_validate(self, packet: Mapping[str, Any]) -> dict[str, Any]:
         self._ensure_supported_review_packet(packet)

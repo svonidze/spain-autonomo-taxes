@@ -140,6 +140,16 @@ def clear_cache() -> None:
     _CACHE.clear()
 
 
+def _is_final_result(as_of: date, status: str, today: date) -> bool:
+    """Whether a lookup result cannot improve with a later ECB publication."""
+
+    if as_of >= today:
+        return False
+    if status == "exact":
+        return True
+    return (today - as_of).days > FALLBACK_WINDOW_DAYS
+
+
 def validate_currency(currency: object) -> str:
     normalized = str(currency or "").strip().upper()
     if len(normalized) != 3 or not normalized.isalpha():
@@ -310,6 +320,7 @@ def fetch_eur_rate(
     as_of: date,
     *,
     http_get: HttpGetter | None = None,
+    today: date | None = None,
 ) -> ECBRateResult:
     """Fetch the EUR reference rate for ``currency`` as of ``as_of``.
 
@@ -364,5 +375,6 @@ def fetch_eur_rate(
         raw_observation_hash=hashlib.sha256(raw_observation.encode("utf-8")).hexdigest(),
     )
     result = ECBRateResult(status=status_name, observation=observation)
-    _CACHE.put(key, result)
+    if _is_final_result(as_of, status_name, today or date.today()):
+        _CACHE.put(key, result)
     return result
