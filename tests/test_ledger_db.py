@@ -36,6 +36,7 @@ EXPECTED_TABLES = {
     "tax_treatments",
     "payments",
     "fx_rates",
+    "fx_verifications",
     "assets",
     "amortization_entries",
     "obligations",

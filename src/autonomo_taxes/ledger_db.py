@@ -13,6 +13,7 @@ from types import EllipsisType
 from uuid import uuid4
 
 from .fx_policy import ALLOWED_PRODUCTION_SOURCES, XOLO_RECORDED_PRODUCTION_THROUGH
+from .fx_reference import ECBRateObservation
 from .counterparty_names import normalize_counterparty_name, validate_counterparty_name
 from .outgoing_invoices import (
     calculate_invoice_totals,
@@ -27,7 +28,7 @@ from .tax_rules import ALL_FORM_CODES
 from .vat_classification import is_vat_investment_good
 
 
-LATEST_SCHEMA_VERSION = 23
+LATEST_SCHEMA_VERSION = 24
 
 # Migrations that rebuild a table referenced by a foreign key. They must
 # run with foreign-key enforcement temporarily disabled, and that pragma
@@ -3047,6 +3048,15 @@ class LedgerDB:
         )
         return dict(row) if row is not None else None
 
+    def fx_verification_for_transaction(
+        self, transaction_id: str, fx_rate_id: str,
+    ) -> dict[str, Any] | None:
+        return self._fetch_optional(
+            "SELECT * FROM fx_verifications WHERE transaction_id = ? AND fx_rate_id = ? "
+            "ORDER BY verification_id DESC LIMIT 1",
+            (transaction_id, fx_rate_id),
+        )
+
     def review_transaction_fx_rate(
         self,
         transaction_id: str,
@@ -3092,6 +3102,7 @@ class LedgerDB:
         source_reference: str | None,
         rule_version_id: str | None = None,
         provenance: Mapping[str, Any] | None = None,
+        verified_ecb: ECBRateObservation | None = None,
     ) -> dict[str, Any]:
         """Apply a reviewed FX rate inside the caller's transaction scope."""
 
@@ -3160,17 +3171,36 @@ class LedgerDB:
                 "rule_version_id": rule_version_id,
             }
         )
-        fx_rate = self.add_fx_rate(
-            rate_date=parsed_rate_date.isoformat(),
-            base_currency=original_currency,
-            quote_currency="EUR",
-            rate=canonical_rate,
-            rate_source=normalized_source,
-            source_reference=normalized_reference,
-            source_hash=fx_source_hash,
-            rule_version_id=rule_version_id,
-            provenance=provenance,
-        )
+        fx_rate = None
+        if verified_ecb is not None:
+            if (
+                normalized_source != "ecb"
+                or verified_ecb.currency != original_currency
+                or verified_ecb.rate_date != parsed_rate_date
+                or verified_ecb.eur_per_unit != rate_decimal
+            ):
+                raise ValueError("Verified ECB observation does not match the reviewed rate")
+            # Official identity is the series/date/value, not its retrieval window.
+            # Reuse legacy rows without rewriting their original evidence or URL.
+            fx_rate = self._fetch_optional(
+                "SELECT * FROM fx_rates WHERE rate_date = ? AND base_currency = ? "
+                "AND quote_currency = 'EUR' AND rate_source = 'ecb'",
+                (parsed_rate_date.isoformat(), original_currency),
+            )
+            if fx_rate is not None and Decimal(fx_rate["rate"]) != rate_decimal:
+                raise FxRateConflictError("Verified ECB value differs from the stored official rate")
+        if fx_rate is None:
+            fx_rate = self.add_fx_rate(
+                rate_date=parsed_rate_date.isoformat(),
+                base_currency=original_currency,
+                quote_currency="EUR",
+                rate=canonical_rate,
+                rate_source=normalized_source,
+                source_reference=normalized_reference,
+                source_hash=fx_source_hash,
+                rule_version_id=rule_version_id,
+                provenance=provenance,
+            )
         eur_minor = int(
             (Decimal(original_minor) * rate_decimal).quantize(
                 Decimal("1"),
@@ -3192,6 +3222,18 @@ class LedgerDB:
                 transaction_id,
             ),
         )
+        if verified_ecb is not None:
+            self.connection.execute(
+                "INSERT INTO fx_verifications "
+                "(transaction_id, fx_rate_id, source_url, raw_observation, "
+                "raw_observation_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    transaction_id, fx_rate["fx_rate_id"], verified_ecb.source_url,
+                    verified_ecb.raw_observation,
+                    hashlib.sha256(verified_ecb.raw_observation.encode("utf-8")).hexdigest(),
+                    timestamp,
+                ),
+            )
         return self._fetch_one(
             "SELECT * FROM transactions WHERE transaction_id = ?",
             (transaction_id,),
@@ -7297,6 +7339,34 @@ def _migration_23(connection: sqlite3.Connection) -> None:
     """)
 
 
+def _migration_24(connection: sqlite3.Connection) -> None:
+    # No backfill: old evidence was not necessarily verified by this server.
+    connection.execute("""
+        CREATE TABLE fx_verifications (
+            verification_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            transaction_id TEXT NOT NULL REFERENCES transactions(transaction_id),
+            fx_rate_id TEXT NOT NULL REFERENCES fx_rates(fx_rate_id),
+            source_url TEXT NOT NULL,
+            raw_observation TEXT NOT NULL,
+            raw_observation_hash TEXT NOT NULL CHECK (
+                length(raw_observation_hash) = 64
+                AND raw_observation_hash NOT GLOB '*[^0-9a-f]*'
+            ),
+            created_at TEXT NOT NULL
+        )
+    """)
+    connection.execute(
+        "CREATE INDEX fx_verifications_transaction_idx "
+        "ON fx_verifications(transaction_id, fx_rate_id, verification_id)"
+    )
+    for action in ("UPDATE", "DELETE"):
+        connection.execute(
+            f"CREATE TRIGGER fx_verifications_no_{action.lower()} BEFORE {action} "
+            "ON fx_verifications BEGIN "
+            "SELECT RAISE(ABORT, 'FX verifications are immutable'); END"
+        )
+
+
 _MIGRATIONS = {
     1: _migration_1,
     2: _migration_2,
@@ -7321,4 +7391,5 @@ _MIGRATIONS = {
     21: _migration_21,
     22: _migration_22,
     23: _migration_23,
+    24: _migration_24,
 }

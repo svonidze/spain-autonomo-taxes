@@ -15,6 +15,7 @@ from .ledger_db import LedgerDB
 from .review_packet import (
     TREATMENT_DECISION_FIELDS, DECISION_FIELDS, prepare_review_packet, confirm_review_packet,
     _build_packet, _verify_archived_document,
+    _apply_confirmed_fx, _resolve_confirmed_fx, _validate_fx_spec_shape,
 )
 from .posting import prevalidate_expense_inbox_cleanup
 
@@ -342,26 +343,42 @@ class _RollbackPreview(Exception):
         self.result = result
 
 
+def _resolve_draft_fx(db: LedgerDB, transaction_id: str, version: int, *,
+                      ecb_verify: Callable | None = None) -> dict[str, Any] | None:
+    """Resolve saved FX before opening the accounting write transaction."""
+    _, payload, _ = _saved(db, transaction_id, version)
+    if not payload["fx"]:
+        return None
+    _validate_fx_spec_shape(payload["fx"])
+    return _resolve_confirmed_fx(
+        payload["fx"],
+        snapshot_currency=text(payload["facts"]["currency"], "Currency").upper(),
+        transaction_date=date.fromisoformat(text(payload["facts"]["transaction_date"], "Transaction date")),
+        ecb_verify=ecb_verify,
+    )
+
+
 def preview(db: LedgerDB, transaction_id: str, *, expected_version: int,
             ecb_verify: Callable | None = None) -> dict[str, Any]:
+    resolved_fx = _resolve_draft_fx(db, transaction_id, expected_version, ecb_verify=ecb_verify)
     try:
         with db.transaction():
-            result = _prepare(db, transaction_id, expected_version, ecb_verify=ecb_verify)
+            result = _prepare(db, transaction_id, expected_version, resolved_fx=resolved_fx)
             raise _RollbackPreview(result["preview"])
     except _RollbackPreview as completed:
         return completed.result
     raise RuntimeError("Preview transaction did not roll back")
 
 
-def _prepare(db: LedgerDB, transaction_id: str, version: int, *, ecb_verify: Callable | None = None) -> dict[str, Any]:
+def _prepare(db: LedgerDB, transaction_id: str, version: int, *, resolved_fx: Mapping[str, Any] | None = None) -> dict[str, Any]:
     evaluation_date = date.today()
     packet, payload, token = _saved(db, transaction_id, version, as_of=evaluation_date)
     _facts(db, packet, payload)
     packet = _build_packet(db, "transaction:" + transaction_id)
     if payload["fx"]:
-        from .review_packet import _apply_confirmed_fx, _validate_fx_spec_shape
-        _validate_fx_spec_shape(payload["fx"])
-        _apply_confirmed_fx(db, packet["state"], payload["fx"], ecb_verify=ecb_verify)
+        if resolved_fx is None:
+            raise ExpenseWorkflowError("FX must be resolved before preparing the expense")
+        _apply_confirmed_fx(db, packet["state"], resolved_fx)
         packet = _build_packet(db, packet["review_id"])
     _reconcile_amounts(packet, payload)
     asset, rows = _asset(db, packet, payload)
@@ -490,6 +507,10 @@ def confirm_and_post(db: LedgerDB, transaction_id: str, *, expected_version: int
                      actor: str, archive_root: Path, inbox_root: Path | None = None, ecb_verify: Callable | None = None) -> dict[str, Any]:
     request_id = _request_id(request_id)
     fingerprint = digest({"kind": "expense", "id": transaction_id, "version": expected_version, "preview": preview_token})
+    cached = _cached(db, request_id, fingerprint)
+    if cached:
+        return cached
+    resolved_fx = _resolve_draft_fx(db, transaction_id, expected_version, ecb_verify=ecb_verify)
     with db.transaction():
         cached = _cached(db, request_id, fingerprint)
         if cached:
@@ -498,7 +519,7 @@ def confirm_and_post(db: LedgerDB, transaction_id: str, *, expected_version: int
         require(token == preview_token, "Preview is stale; review the updated result", code="expense_stale", status=409)
         cleanup = prevalidate_expense_inbox_cleanup(db, transaction_id, inbox_root=inbox_root, archive_root=archive_root)
         require(not cleanup.blocking, cleanup.message or "Original archive is not ready", status=409)
-        prepared = _prepare(db, transaction_id, expected_version, ecb_verify=ecb_verify)
+        prepared = _prepare(db, transaction_id, expected_version, resolved_fx=resolved_fx)
         require(prepared["preview"]["preview_token"] == preview_token, "Preview date changed; review the updated result", code="expense_stale", status=409)
         recognitions = [_recognize(db, row["amortization_entry_id"], archive_root, actor) for row in prepared["due"]]
         result = {"transaction_id": transaction_id, "asset_id": prepared["asset"]["asset_id"] if prepared["asset"] else None,

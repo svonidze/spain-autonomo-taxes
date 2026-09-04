@@ -1445,7 +1445,10 @@ class LocalAccountingApp:
             return None
         if transaction["fx_rate_id"]:
             provenance = db.fx_provenance_for_rate(str(transaction["fx_rate_id"]))
-            return build_fx_suggestion(state, provenance=provenance)
+            verification = db.fx_verification_for_transaction(
+                str(transaction["transaction_id"]), str(transaction["fx_rate_id"]),
+            )
+            return build_fx_suggestion(state, provenance=provenance, verification=verification)
         transaction_date = date.fromisoformat(str(transaction["transaction_date"])[:10])
         try:
             ecb_result = fetch_eur_rate(original_currency, transaction_date)
