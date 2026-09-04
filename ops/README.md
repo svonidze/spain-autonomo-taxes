@@ -312,8 +312,10 @@ with sqlite3.connect(Path(sys.argv[1]).resolve().as_uri() + '?mode=ro', uri=True
     schema = db.execute('PRAGMA user_version').fetchone()[0]
 print(f'integrity=ok schema={schema} release_schema={Path(sys.argv[2]).read_text().strip()}')
 PY
-systemctl --user is-enabled autonomo-backup.timer autonomo-backup-monthly.timer
-systemctl --user list-timers --all autonomo-backup.timer autonomo-backup-monthly.timer
+systemctl --user is-enabled autonomo-backup.timer autonomo-backup-monthly.timer \
+  autonomo-backup-verification-monthly.timer
+systemctl --user list-timers --all autonomo-backup.timer autonomo-backup-monthly.timer \
+  autonomo-backup-verification-monthly.timer
 systemctl --user show autonomo-backup.service autonomo-backup-monthly.service \
   -p Result -p ExecMainStatus -p ExecMainStartTimestamp -p ExecMainExitTimestamp
 "$run" -- /bin/sh -c 'command -v rclone'
@@ -324,16 +326,19 @@ HTTPS root/bootstrap check, `integrity=ok`, expected schema, enabled timers with
 future runs, and a recent completed backup (`Result=success`, exit status 0).
 A never-run unit can also show a default success status: check timestamps.
 Inspect recent backup logs privately with `journalctl --user -u autonomo-backup.service -n 50 --no-pager`
-if necessary. This is read-only but can display private paths. Confirm both
-archive and manifest in the configured crypt remote using the
-[recovery download procedure](../docs/DISASTER_RECOVERY.md#download-and-verify-a-backup).
-A green timer or stored replica status is not proof of recoverability.
+if necessary. This is read-only but can display private paths. The settings page
+distinguishes a locally verified pair, an acknowledged upload and the separate
+monthly recovery verification. A green timer or upload marker alone is not proof
+of recoverability.
 
 ## Deploy a reviewed release (production change)
 
-Before either route: require green CI for the **exact SHA**, take and verify a
-fresh backup, record the current SHA/schema, and reserve a write-free maintenance
-window if migration is needed. Use the checklist setup above in the same shell.
+Before either route: require green CI for the **exact SHA**, create a fresh
+format-2 local backup pair, record the current SHA/schema, and reserve a
+write-free maintenance window if migration is needed. The deploy-only readiness
+helper validates that local pair without contacting remote storage. Upload and
+monthly recovery-verification gaps are reported but do not block deployment.
+Use the checklist setup above in the same shell.
 `deploy.sh` takes exactly one full lowercase 40-character SHA, never a branch.
 
 ### Merged code
@@ -452,9 +457,19 @@ For a deliberate fresh backup, after the checklist setup:
 "$run" -- "$ops_root/backup.sh"
 ```
 
-Expect `archive=` and `manifest=` plus exit status 0. Verify the pair remotely,
-not just its local existence. `AUTONOMO_ALERT_WEBHOOK` is optional; no alert
-delivery exists unless separately configured and tested.
+Expect `archive=` and `manifest=`. The format-2 marker records local validation
+before remote work and distinguishes `pending`, `acknowledged`, `failed`, and
+`disabled`; its legacy `offsite` Boolean remains compatible with older readers.
+The ordinary backup never reads an uploaded object back. Upload/configuration
+failure returns nonzero and preserves the locally verified marker.
+
+The monthly backup still runs on day 1. On day 2 the separate
+`autonomo-backup-verification-monthly.timer` downloads the exact pair named by
+the current-month marker, restores it into private scratch, validates hashes,
+SQLite integrity, foreign keys and schema, then removes plaintext scratch.
+Its failure is recorded and alerted independently and never blocks deployment.
+Run `verify-backup.sh monthly` for a deliberate manual retry. `AUTONOMO_ALERT_WEBHOOK`
+is optional; no external alert delivery exists unless configured and tested.
 
 For the monthly exercise, follow the [isolated recovery drill](../docs/DISASTER_RECOVERY.md#download-and-verify-a-backup).
 It downloads through crypt, validates the pair, extracts to an empty directory,

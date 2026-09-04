@@ -89,6 +89,13 @@ host, do not use an ad-hoc SSH shell: invoke the installed default-mode
 `run-with-service-env.sh` wrapper so its `PATH` and runtime file match the
 backup service.
 
+The installed monthly verifier automates this drill on day 2 for the exact pair
+recorded by the current-month format-2 monthly marker. It keeps a latest-attempt
+marker and a separate last-success marker, validates the restored SQLite database,
+and always removes downloaded plaintext. This scheduled evidence reports recovery
+health; it is deliberately not a deployment gate. Manual recovery still follows
+the commands below and must not rely on a marker alone.
+
 ```bash
 set -euo pipefail
 umask 077

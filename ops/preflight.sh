@@ -63,38 +63,6 @@ for (credential_ref,) in credential_refs:
         raise SystemExit(f"storage credential must be owned by the service user with mode 0600: {credential}")
 PY
 
-# Deploying on top of a stale backup removes the rollback a failed release
-# depends on. The webhook is optional, so a silent backup failure would otherwise
-# surface here for the first time.
-backup_marker="$data/backups/last-backup-daily.json"
-if [[ -f "$backup_marker" ]]; then
-  python3 - "$backup_marker" "${AUTONOMO_BACKUP_MAX_AGE_HOURS:-48}" <<'FRESHNESS'
-import json
-import sys
-from datetime import datetime, timezone
-from pathlib import Path
-
-marker = Path(sys.argv[1])
-limit_hours = float(sys.argv[2])
-try:
-    payload = json.loads(marker.read_text(encoding="utf-8"))
-    recorded = datetime.strptime(payload["recorded_at"], "%Y-%m-%dT%H:%M:%SZ").replace(
-        tzinfo=timezone.utc
-    )
-except (OSError, ValueError, KeyError) as exc:
-    raise SystemExit(f"daily backup marker is unreadable: {exc}") from exc
-age_hours = (datetime.now(timezone.utc) - recorded).total_seconds() / 3600
-if age_hours > limit_hours:
-    raise SystemExit(
-        f"last successful daily backup is {age_hours:.1f}h old, "
-        f"limit is {limit_hours:.0f}h; fix the backup before deploying"
-    )
-print(f"last successful daily backup is {age_hours:.1f}h old", file=sys.stderr)
-FRESHNESS
-else
-  note "no daily backup marker yet; skipping backup freshness check"
-fi
-
 if [[ -n "${AUTONOMO_MIGRATE_COMMAND:-}" ]]; then
   note "migration command is configured"
 else

@@ -1,0 +1,10 @@
+[Unit]
+Description=Verify the monthly Spain autonomo backup
+
+[Timer]
+OnCalendar=*-*-02 05:23:00 UTC
+Persistent=true
+RandomizedDelaySec=20m
+
+[Install]
+WantedBy=timers.target

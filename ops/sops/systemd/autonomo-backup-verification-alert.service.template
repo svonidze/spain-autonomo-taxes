@@ -1,0 +1,12 @@
+[Unit]
+Description=Monthly backup verification alert
+
+[Service]
+Type=oneshot
+EnvironmentFile=@SECRET_CONFIG_ROOT@/current/runtime.env
+Environment=AUTONOMO_RUNTIME_ENV_PATH=@SECRET_CONFIG_ROOT@/current/runtime.env
+ExecStart=@OPS_ROOT@/alert.sh backup-verification-failed
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=@PRIVATE_ROOT@

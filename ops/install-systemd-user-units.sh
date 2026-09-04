@@ -16,6 +16,7 @@ mkdir -p "$ops_root"
 install -m 644 "$script_dir/ocr-readiness.py" "$ops_root/ocr-readiness.py"
 install -m 755 "$script_dir"/*.sh "$ops_root/"
 install -m 644 "$script_dir/healthcheck.py" "$ops_root/healthcheck.py"
+install -m 644 "$script_dir/backup_state.py" "$script_dir/backup_readiness.py" "$script_dir/verify_backup.py" "$ops_root/"
 install -m 755 "$script_dir/configure-google-picker.py" "$ops_root/configure-google-picker.py"
 install -m 644 "$script_dir/../scripts/backup_sqlite.py" "$ops_root/backup_sqlite.py"
 install -m 644 "$script_dir/../scripts/backup_private_root.py" "$ops_root/backup_private_root.py"
@@ -51,8 +52,12 @@ render_unit "$script_dir/systemd/autonomo-backup.service.template" "$units_dir/a
 install -m 644 "$script_dir/systemd/autonomo-backup.timer" "$units_dir/autonomo-backup.timer"
 render_unit "$script_dir/systemd/autonomo-backup-monthly.service.template" "$units_dir/autonomo-backup-monthly.service"
 install -m 644 "$script_dir/systemd/autonomo-backup-monthly.timer" "$units_dir/autonomo-backup-monthly.timer"
+render_unit "$script_dir/systemd/autonomo-backup-verification-monthly.service.template" "$units_dir/autonomo-backup-verification-monthly.service"
+install -m 644 "$script_dir/systemd/autonomo-backup-verification-monthly.timer" "$units_dir/autonomo-backup-verification-monthly.timer"
+render_unit "$script_dir/systemd/autonomo-backup-verification-alert.service.template" "$units_dir/autonomo-backup-verification-alert.service"
 render_unit "$script_dir/systemd/autonomo-alert.service.template" "$units_dir/autonomo-alert.service"
 systemctl --user daemon-reload
 systemctl --user enable --now autonomo-backup.timer
 systemctl --user enable --now autonomo-backup-monthly.timer
+systemctl --user enable --now autonomo-backup-verification-monthly.timer
 note "install completed; set $HOME/.config/autonomo-tax/runtime.env with 0600 permissions and AUTONOMO_OPS_ROOT=$ops_root"

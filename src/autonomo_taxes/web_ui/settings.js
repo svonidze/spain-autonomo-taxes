@@ -23,6 +23,16 @@
       applied: "Локальный лимит в этом запуске: {count}", appliedUnknown: "Применённый лимит неизвестен",
       offsiteYes: "Отправка во внешнее хранилище в этом запуске завершена",
       offsiteNo: "Внешняя копия в этом запуске не подтверждена",
+      uploadAcknowledged: "Внешнее хранилище приняло копию; восстановление проверяется отдельно",
+      uploadPending: "Отправка во внешнее хранилище ещё не завершена",
+      uploadFailed: "Отправка во внешнее хранилище завершилась ошибкой",
+      uploadDisabled: "Внешнее хранилище не настроено для этого запуска",
+      recoveryCheck: "Проверка восстановления",
+      recoveryUnknown: "Ежемесячная проверка восстановления ещё не выполнялась",
+      recoveryRunning: "Проверка восстановления выполняется",
+      recoveryFailed: "Последняя проверка восстановления завершилась ошибкой",
+      recoverySuccess: "Последняя проверка восстановления прошла успешно",
+      recoveryPrevious: "Предыдущая успешная проверка: {date}",
       consumerUnknown: "Применение настроек интерфейса службой ещё не подтверждено.",
       schedule: "Расписание и облачные подключения управляются на сервере. Активация таймеров, текущее состояние облака и восстановление из копии здесь не проверены.",
       unavailable: "Настройка бэкапов недоступна. Оператору нужно проверить приватный каталог, файл параметров и обновление службы. Данные профиля можно редактировать отдельно.",
@@ -54,6 +64,12 @@
       maximum: "retain at most {count}", unknownLimit: "operator-managed limit; its value and remaining copy count are unknown",
       lastSuccess: "Last successful runs", unknown: "No confirmed run information", applied: "Local limit used in this run: {count}", appliedUnknown: "Applied limit unknown",
       offsiteYes: "Offsite upload completed in this run", offsiteNo: "Offsite copy not confirmed in this run",
+      uploadAcknowledged: "Offsite storage acknowledged the upload; recovery is verified separately",
+      uploadPending: "Offsite upload has not completed yet", uploadFailed: "Offsite upload failed",
+      uploadDisabled: "Offsite storage was not configured for this run",
+      recoveryCheck: "Recovery verification", recoveryUnknown: "Monthly recovery verification has not run yet",
+      recoveryRunning: "Recovery verification is running", recoveryFailed: "The latest recovery verification failed",
+      recoverySuccess: "The latest recovery verification succeeded", recoveryPrevious: "Previous successful verification: {date}",
       consumerUnknown: "The service has not yet confirmed using interface settings.",
       schedule: "Schedules and cloud connections are managed on the server. Timer activation, current cloud health and restore verification are not checked here.",
       unavailable: "Backup settings are unavailable. An operator needs to check the private directory, preferences file and service update. You can edit the profile separately.",
@@ -101,10 +117,24 @@
         const formatted = Number.isNaN(time.getTime()) ? "—" : new Intl.DateTimeFormat(locale === "ru" ? "ru-RU" : "en-GB", {dateStyle: "medium", timeStyle: "short"}).format(time);
         body = `<p><time datetime="${escape(run.recorded_at)}">${escape(formatted)}</time></p>
           <p>${run.keep === null ? t("appliedUnknown") : t("applied", {count: escape(run.keep)})}</p>
-          <p>${t(run.offsite ? "offsiteYes" : "offsiteNo")}</p>`;
+          <p>${t(run.offsite_status === "acknowledged" ? "uploadAcknowledged" : run.offsite_status === "pending" ? "uploadPending" : run.offsite_status === "failed" ? "uploadFailed" : run.offsite_status === "disabled" ? "uploadDisabled" : run.offsite ? "offsiteYes" : "offsiteNo")}</p>`;
       }
       return `<article class="settings-run"><h4>${t(kind)}</h4>${body}</article>`;
     }).join("");
+  }
+  function verificationHtml(backups, locale) {
+    const t = translator(locale);
+    const verification = backups.recovery_verification?.monthly || {};
+    const attempt = verification.last_attempt;
+    const success = verification.last_success;
+    const date = value => {
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? "—" : new Intl.DateTimeFormat(locale === "ru" ? "ru-RU" : "en-GB", {dateStyle: "medium", timeStyle: "short"}).format(parsed);
+    };
+    if (!attempt) return `<p>${t("recoveryUnknown")}</p>`;
+    const message = attempt.status === "success" ? t("recoverySuccess") : attempt.status === "running" ? t("recoveryRunning") : t("recoveryFailed");
+    const previous = success && attempt.status !== "success" ? `<p>${t("recoveryPrevious", {date: escape(date(success.recorded_at))})}</p>` : "";
+    return `<p>${message}</p><p><time datetime="${escape(attempt.recorded_at)}">${escape(date(attempt.recorded_at))}</time></p>${previous}`;
   }
   function mount(container, options) {
     const {data, locale, request, isCurrent, onProfile, onLocale, onReload, confirm} = options;
@@ -127,6 +157,7 @@
         <p class="settings-warning">${t("backupNote")}</p><button class="primary-button" type="submit">${t("saveBackups")}</button></fieldset>
         <p class="settings-feedback" role="status" aria-live="polite"></p></form>
         <h3>${t("lastSuccess")}</h3><div class="settings-runs">${statusHtml(backups, locale)}</div>
+        <h3>${t("recoveryCheck")}</h3><div class="settings-runs">${verificationHtml(backups, locale)}</div>
         ${!Object.values(backups.last_success || {}).some(run => run?.settings_format === 1) ? `<p class="settings-hint">${t("consumerUnknown")}</p>` : ""}` : `<p class="settings-warning" role="status">${t("unavailable")}</p>`}
         <p class="settings-hint">${t("schedule")}</p></section>
       <section class="settings-panel" aria-labelledby="settings-activities-title"><h2 id="settings-activities-title">${t("activities")}</h2><p class="settings-hint">${t("activitiesNote")}</p><div id="settings-activities">${activityHtml(profile, t)}</div></section>
@@ -221,7 +252,7 @@
       dispose() { active = false; },
     };
   }
-  const api = {mount, retentionPayload, pruningText, statusHtml, profileFields, translator, copy};
+  const api = {mount, retentionPayload, pruningText, statusHtml, verificationHtml, profileFields, translator, copy};
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.AutonomoSettings = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

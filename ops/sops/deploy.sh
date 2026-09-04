@@ -42,6 +42,11 @@ mkdir -p "$root/releases"
 "$script_dir/config-sync.sh" --stage-only "$secret_sha"
 "$script_dir/preflight.sh" "$secret_sha"
 python3 "$ops_dir/ocr-readiness.py" --runtime-env "$secret_generation/runtime.env"
+python3 "$ops_dir/backup_readiness.py" \
+  --runtime-env "$secret_generation/runtime.env" \
+  --private-root "$(private_root)" \
+  --release-root "$(release_root)" \
+  --max-age-hours "${AUTONOMO_BACKUP_MAX_AGE_HOURS:-48}"
 
 git -C "$source_repo" fetch --quiet origin "$release_ref"
 git -C "$source_repo" cat-file -e "$sha^{commit}"

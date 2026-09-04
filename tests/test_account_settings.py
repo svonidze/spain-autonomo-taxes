@@ -202,6 +202,33 @@ def test_last_marker_is_allowlisted_and_future_or_symlink_is_unknown(database, t
     assert read_settings(database, tmp_path)["backups"]["last_success"]["daily"] is None
 
 
+def test_format_two_upload_and_recovery_statuses_are_allowlisted(database, tmp_path):
+    directory = tmp_path / "backups"
+    directory.mkdir()
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    (directory / "last-backup-daily.json").write_text(json.dumps({
+        "format": 2, "class": "daily", "recorded_at": now, "offsite": "yes",
+        "offsite_status": "acknowledged", "keep": 7, "settings_format": 1,
+    }))
+    (directory / "last-backup-verification-attempt-monthly.json").write_text(json.dumps({
+        "format": 1, "class": "monthly", "recorded_at": now, "status": "failed",
+        "failure_code": "remote_download_failed", "private": "must not escape",
+    }))
+    (directory / "last-backup-verified-monthly.json").write_text(json.dumps({
+        "format": 1, "class": "monthly", "recorded_at": now, "status": "success",
+        "sqlite_schema": 23, "private": "must not escape",
+    }))
+
+    backups = read_settings(database, tmp_path)["backups"]
+
+    assert backups["last_success"]["daily"]["offsite"] is True
+    assert backups["last_success"]["daily"]["offsite_status"] == "acknowledged"
+    assert backups["recovery_verification"]["monthly"] == {
+        "last_attempt": {"recorded_at": now, "status": "failed", "failure_code": "remote_download_failed"},
+        "last_success": {"recorded_at": now, "status": "success", "sqlite_schema": 23},
+    }
+
+
 def test_atomic_replace_failure_cleans_temporary(database, tmp_path, monkeypatch):
     def fail(*args):
         raise OSError("private fixture path must not leak")

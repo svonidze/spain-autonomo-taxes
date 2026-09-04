@@ -50,6 +50,8 @@ const submit = form => form.listeners.submit({preventDefault() {}});
   assert.doesNotMatch(UI.profileFields({...profile, full_name: HTML_NAME}, UI.translator('en')), /value="<img/);
   assert.match(UI.pruningText({daily_keep: null, monthly_keep: 3}, 'en'), /value and remaining copy count are unknown/);
   assert.match(UI.pruningText({daily_keep: 7, monthly_keep: 3}, 'en'), /retain at most 7/);
+  assert.match(UI.statusHtml({last_success: {daily: {recorded_at: '2026-09-04T00:00:00Z', keep: 7, offsite: true, offsite_status: 'acknowledged'}, monthly: null}}, 'en'), /recovery is verified separately/);
+  assert.match(UI.verificationHtml({recovery_verification: {monthly: {last_attempt: {recorded_at: '2026-09-04T00:00:00Z', status: 'failed'}, last_success: {recorded_at: '2026-08-02T00:00:00Z', status: 'success'}}}}, 'en'), /Previous successful verification/);
   {
     const h = setup();
     h.form.elements.namedItem('full_name').value = UPDATED_NAME;

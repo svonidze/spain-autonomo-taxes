@@ -1,0 +1,14 @@
+[Unit]
+Description=Verify monthly Spain autonomo backup recovery
+After=autonomo-backup-monthly.service
+OnFailure=autonomo-backup-verification-alert.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=@SECRET_CONFIG_ROOT@/current/runtime.env
+Environment=AUTONOMO_RUNTIME_ENV_PATH=@SECRET_CONFIG_ROOT@/current/runtime.env
+ExecStart=@OPS_ROOT@/verify-backup.sh monthly
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=@PRIVATE_ROOT@

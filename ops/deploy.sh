@@ -26,6 +26,11 @@ release_ref="${AUTONOMO_DEPLOY_REF:-master}"
 mkdir -p "$root/releases"
 "$script_dir/preflight.sh"
 python3 "$script_dir/ocr-readiness.py" --runtime-env "$(runtime_env_path)"
+python3 "$script_dir/backup_readiness.py" \
+  --runtime-env "$(runtime_env_path)" \
+  --private-root "$(private_root)" \
+  --release-root "$(release_root)" \
+  --max-age-hours "${AUTONOMO_BACKUP_MAX_AGE_HOURS:-48}"
 
 git -C "$source_repo" fetch --quiet origin "$release_ref"
 git -C "$source_repo" cat-file -e "$sha^{commit}"

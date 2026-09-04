@@ -48,9 +48,10 @@ the backup form is unavailable and profile settings remain independent.
 - Saving does not run a backup, change timers, configure cloud storage or
   verify recovery. Remote retention remains independent of local retention.
 
-The page reports only observed successful runs from the existing per-class
-markers: time, whether offsite upload completed in that run, and the retention
-limit actually used when the updated service recorded it. Older markers do not
+The page reports observed runs from the per-class markers: time, local readiness,
+whether offsite upload was acknowledged, and the retention limit actually used.
+It separately shows the latest monthly recovery-verification attempt and the
+last successful isolated restore. Older markers do not
 prove support for the new preferences. Missing, malformed or future-dated
 markers are unknown, not a green health signal. A past successful upload is not
 proof that the cloud is healthy now or that a restore has been tested.
