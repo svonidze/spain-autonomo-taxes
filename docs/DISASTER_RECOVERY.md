@@ -83,6 +83,12 @@ raw S3 remote for the download: it returns ciphertext and encrypted names.
 Run in one fresh shell. Select the daily or monthly **crypt** remote from the
 private inventory. Listing displays backup filenames; keep it private.
 
+This procedure is for a recovery machine with its intended recovered rclone
+environment. If an isolated drill is deliberately performed on the production
+host, do not use an ad-hoc SSH shell: invoke the installed default-mode
+`run-with-service-env.sh` wrapper so its `PATH` and runtime file match the
+backup service.
+
 ```bash
 set -euo pipefail
 umask 077

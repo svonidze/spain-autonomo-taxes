@@ -49,6 +49,20 @@ any environment changes or drop-ins. Do not dump its environment or secrets.
 If runtime.env changed, restart only the active web unit and recheck health;
 package installation alone does not require a web restart.
 
+After the default ops control plane is installed, verify every runtime-only
+dependency through its service environment. For example, if rclone was installed
+under the service user's local bin directory, add that **absolute** directory to
+runtime `PATH`, then run:
+
+```bash
+read -r -p 'Absolute installed ops directory: ' ops_root
+"$ops_root/run-with-service-env.sh" -- /bin/sh -c 'command -v rclone'
+```
+
+Do not treat `command -v rclone` in an SSH shell or after a bare
+`load_runtime_env` call as an equivalent check: inherited non-empty values take
+precedence in that loader.
+
 For SOPS, check the **validated candidate generation's** runtime.env before
 switching releases, not the currently active generation. Do not edit a decrypted
 generation in place: publish the intended encrypted configuration revision.
