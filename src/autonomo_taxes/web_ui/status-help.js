@@ -438,6 +438,7 @@
     money,
     reasonInfo,
     text: lang,
+    termLabel: key => termNames[key] ? lang(termNames[key]) : key,
     allReasons,
     content,
     beforeRender,

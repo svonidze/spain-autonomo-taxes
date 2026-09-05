@@ -18,7 +18,7 @@ export interface ContactsContext {
   contactId: string | null; period: string; services: ViewServices;
   settled(): void; detailResolved(party: Counterparty): void;
   notify(message: UiMessage, error?: boolean): void;
-  mountChart(): void; restorePosition(): void; rememberPosition(): void;
+  chartPeriod: string; restorePosition(): void; rememberPosition(): void;
 }
 export const contactUrl = (id: string, period = '') => `/contacts/${encodeURIComponent(id)}${period ? `?period=${encodeURIComponent(period)}` : ''}`;
 export const validName = (value: string) => value.trim().length > 0 && !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(value);

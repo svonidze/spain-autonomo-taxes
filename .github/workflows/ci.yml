@@ -26,6 +26,7 @@ jobs:
       - run: npm run check:runtime
       - run: npm run test:coverage-map
       - run: npm run test:legacy
+      - run: npm run test:chart-module
       - run: npm run typecheck
       - run: npm run test:unit
       - run: npx playwright install --with-deps chromium

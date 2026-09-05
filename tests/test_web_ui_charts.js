@@ -18,7 +18,8 @@ const source = fs.readFileSync(chartsPath, "utf8");
 const sandbox = {};
 vm.createContext(__uiCore.prepare(sandbox));
 vm.runInContext(source, __uiCore.prepare(sandbox));
-const AutonomoCharts = sandbox.AutonomoCharts;
+const AutonomoCharts = process.env.AUTONOMO_CHART_ESM === '1'
+  ? require('../frontend/src/charts/renderer.js') : sandbox.AutonomoCharts;
 assert.ok(AutonomoCharts, "charts.js must register the AutonomoCharts namespace");
 
 const eur = (value) => `${(value / 100).toFixed(2)}`;

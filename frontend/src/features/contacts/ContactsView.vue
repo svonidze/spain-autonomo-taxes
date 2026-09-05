@@ -6,6 +6,7 @@ import {formatDateText} from '../../core/format.ts';
 import {ApiError} from '../../core/http.ts';
 import {errorMessage} from '../../core/error-message.ts';
 import {formatMessage, message, messageIds} from '../../core/i18n.ts';
+import ChartHost from '../../charts/ChartHost.vue';
 import StatusCell from '../../components/StatusCell.vue';
 import NameHistory from './NameHistory.vue';
 import RenameDialog from './RenameDialog.vue';
@@ -14,6 +15,7 @@ import {contactUrl, type ContactsContext, type Counterparty, type ContactOperati
 const props = defineProps<{context: ContactsContext}>();
 const {locale, t} = useLocale();
 const rows = shallowRef<Counterparty[]>([]), party = shallowRef<Counterparty>();
+const chartRevision = ref(0);
 const periods = ref<string[]>([]), loading = ref(true), error = shallowRef<unknown>();
 const operations = shallowRef<ContactOperation[]>([]), operationBusy = ref(false), operationError = ref(false);
 const total = ref<number | null>(null), hasMore = ref(false);
@@ -84,12 +86,12 @@ async function load() {
   finally {
     if (current(version)) {
       loading.value = false; context.settled(); await nextTick();
-      if (current(version) && !context.contactId && !error.value) {context.mountChart(); context.restorePosition();}
+      if (current(version) && !context.contactId && !error.value) {context.restorePosition();}
     }
   }
 }
 watch(() => props.context, () => {closeMenu(false); void load();}, {immediate: true});
-watch(locale, async () => {await nextTick(); if (active && !props.context.contactId && rows.value.length) props.context.mountChart();});
+
 async function loadOperations(version = generation) {
   const context = props.context;
   if (!context.contactId || operationBusy.value || !current(version)) return;
@@ -127,7 +129,7 @@ async function saved(result: Partial<Counterparty> & {changed: boolean}, id: str
     try {
       const fresh = await context.services.request('/api/counterparties') as Counterparty[];
       if (!current(version)) return;
-      rows.value = fresh; await nextTick(); if (current(version)) {context.mountChart(); context.restorePosition();}
+      rows.value = fresh; chartRevision.value++; await nextTick(); if (current(version)) {context.restorePosition();}
     } catch {if (current(version)) context.notify(message('contacts.nameRefreshError'), true);}
   }
   await nextTick();
@@ -158,7 +160,7 @@ defineExpose({canLeave: () => rename.value?.canLeave() ?? true, isDirty: () => r
           <td class="counterparty-action-cell"><button type="button" class="counterparty-more" :data-counterparty-menu="row.counterparty_id" :aria-label="t('contacts.actionsFor', {name: row.display_name})" aria-haspopup="menu" :aria-expanded="menu?.row.counterparty_id === row.counterparty_id" aria-controls="vue-counterparty-actions-menu" @click="toggleMenu(row, $event)"><span aria-hidden="true">⋯</span></button></td>
         </tr><tr v-if="!rows.length"><td colspan="7"><div class="empty-state">{{t('common.noRecords')}}</div></td></tr>
       </tbody></table></div></section>
-      <section class="panel"><div class="chart-slot" id="chart-counterparty-concentration"></div></section>
+      <section class="panel"><ChartHost id="chart-counterparty-concentration" kind="counterparty" :period="context.chartPeriod" :request="context.services.request" :revision="chartRevision"/></section>
     </template>
     <template v-else-if="party">
       <div id="contact-identity"><header class="contact-detail-header"><h2>{{party.display_name}}</h2><button type="button" class="counterparty-more" :data-counterparty-menu="party.counterparty_id" :aria-label="t('contacts.actionsFor', {name: party.display_name})" aria-haspopup="menu" :aria-expanded="!!menu" aria-controls="vue-counterparty-actions-menu" @click="toggleMenu(party, $event)"><span aria-hidden="true">⋯</span></button></header>

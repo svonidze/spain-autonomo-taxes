@@ -30,7 +30,11 @@
     "source": "tests/test_web_ui_charts.js",
     "behavior": "web ui charts",
     "stage": 7,
-    "replacements": []
+    "replacements": [
+      "frontend/tests/chart-parity.test.ts",
+      "scripts/test_chart_module.cjs",
+      "tests/browser/overview.spec.ts"
+    ]
   },
   {
     "source": "tests/test_web_ui_contacts.js",
@@ -87,6 +91,9 @@
     "source": "tests/test_web_ui_taxes.js",
     "behavior": "web ui taxes",
     "stage": 7,
-    "replacements": []
+    "replacements": [
+      "frontend/tests/finance-parity.test.ts",
+      "tests/browser/overview.spec.ts"
+    ]
   }
 ]

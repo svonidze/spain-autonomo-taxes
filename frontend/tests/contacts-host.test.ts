@@ -1,3 +1,4 @@
+import analytics from './fixtures/analytics.json' with {type: 'json'};
 import {nextTick} from 'vue';
 import {test, expect, vi} from 'vitest';
 import ContactsView from '../src/features/contacts/ContactsView.vue';
@@ -13,18 +14,20 @@ test('host context replacement respects dirty and pending rename; saved names re
   const gate = new Promise(resolve => {release = resolve;});
   const id = '33333333-3333-4333-8333-333333333333';
   let name = 'Synthetic supplier';
+  let chartReads = 0;
+  vi.stubGlobal('ResizeObserver', class {observe() {} disconnect() {}});
   const request = vi.fn(async (url: string) => {
+    if (url.startsWith('/api/analytics?')) {chartReads++; return analytics;}
     if (url.endsWith('/name-history')) return {changes: []};
     if (url.endsWith('/rename')) {await gate; name = 'Synthetic corrected'; return {display_name: name, row_version: 2, changed: true};}
     if (url === '/api/counterparties') return [{counterparty_id: id, display_name: name, row_version: 1, ui_context: {domain: 'counterparty', state: 'unknown'}}];
     throw new Error('Unexpected request');
   });
-  const chart = vi.fn();
-  const context: ContactsContext = {contactId: null, period: '', services: {request, navigate: vi.fn()}, settled: vi.fn(), detailResolved: vi.fn(), notify: vi.fn(), mountChart: chart, restorePosition: vi.fn(), rememberPosition: vi.fn()};
+  const context: ContactsContext = {contactId: null, period: '', services: {request, navigate: vi.fn()}, settled: vi.fn(), detailResolved: vi.fn(), notify: vi.fn(), chartPeriod: '2026-Q2', restorePosition: vi.fn(), rememberPosition: vi.fn()};
   const root = document.createElement('div'); document.body.append(root);
   const host = mountView(root, ContactsView, context);
   const flush = async () => {for (let index = 0; index < 5; index++) {await Promise.resolve(); await nextTick();}};
-  await flush(); expect(chart).toHaveBeenCalledTimes(1);
+  await flush(); expect(chartReads).toBe(1);
   (root.querySelector('[data-counterparty-menu]') as HTMLButtonElement).click(); await flush();
   (document.querySelector('#vue-counterparty-actions-menu button') as HTMLButtonElement).click(); await flush();
   const input = document.querySelector('#vue-counterparty-name-input') as HTMLInputElement;
@@ -37,7 +40,7 @@ test('host context replacement respects dirty and pending rename; saved names re
   expect(host.updateContext({...context, contactId: id})).toBe(false);
   expect(confirm).toHaveBeenCalledTimes(1);
   release({}); await flush();
-  expect(chart).toHaveBeenCalledTimes(2);
+  expect(chartReads).toBe(2);
   expect(root.textContent).toContain('Synthetic corrected');
   host.dispose(); root.remove(); vi.unstubAllGlobals();
 });
