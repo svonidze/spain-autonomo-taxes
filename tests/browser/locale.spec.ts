@@ -137,10 +137,10 @@ test('income search remains selected after changing the language', async ({page}
 test('an expanded chart is translated from its cached data without closing', async ({page}) => {
   await page.goto('/dashboard?period=2026-Q3');
   await page.locator('#chart-business-result .chart-expand-button').click();
-  const title = page.locator('#chart-dialog-title');
+  const title = page.locator('#vue-chart-title-businessResult');
   const previous = await title.textContent();
   await language(page, 'en');
-  await expect(page.locator('#chart-dialog')).toBeVisible();
+  await expect(page.locator('#vue-chart-businessResult')).toBeVisible();
   await expect(title).not.toHaveText(previous!);
   await expect(title).toHaveText(chartMessages['charts.business.title']);
 });

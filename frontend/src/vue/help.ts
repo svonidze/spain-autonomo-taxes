@@ -6,6 +6,7 @@ export interface HelpAdapter {
   summary(context: HelpContext): string;
   tone(context: HelpContext): string;
   word(key: string): string;
+  termLabel?(key: string): string;
 }
 // The shell owns dialog/history until stage 11. Cells own their individual records.
 declare global {var AccountingHelp: HelpAdapter;}

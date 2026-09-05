@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import {computed, nextTick, onBeforeUnmount, ref, shallowRef, watch} from 'vue';
+import {computed, onBeforeUnmount, ref, shallowRef, watch} from 'vue';
 import {useLocale} from '../../vue/locale.ts';
 import {eur} from '../../core/format.ts';
 import {ApiError} from '../../core/http.ts';
 import {errorMessage} from '../../core/error-message.ts';
+import ChartHost from '../../charts/ChartHost.vue';
 import TermHelp from '../../components/TermHelp.vue';
 import ExpenseTable from './ExpenseTable.vue';
 import IncomeTable from './IncomeTable.vue';
@@ -44,8 +45,7 @@ watch(() => props.context, () => {
   const context = props.context;
   pager = createExpensePager(async ({query, offset}) => await context.services.request(`/api/expenses?${new URLSearchParams({period: context.period, q: query, offset: String(offset)})}`) as ExpensePage);
   query.value = context.query; page.value = undefined; income.value = [];
-  const revision = generation + 1;
-  void load().then(async () => {await nextTick(); if (current(revision) && context.kind === 'expense') context.mountChart();});
+  void load();
 }, {immediate: true});
 function searchChanged() {
   generation++; pager.invalidate(); clearTimeout(timer);
@@ -61,7 +61,7 @@ function refreshVisible() {
 const interval = setInterval(refreshVisible, 60000);
 document.addEventListener('visibilitychange', refreshVisible);
 onBeforeUnmount(() => {active = false; generation++; pager.invalidate(); clearTimeout(timer); clearInterval(interval); document.removeEventListener('visibilitychange', refreshVisible);});
-watch(locale, async () => {await nextTick(); if (active && expense.value) props.context.mountChart();});
+
 const forbidden = computed(() => error.value instanceof ApiError && error.value.code === 'session_forbidden');
 const reload = () => window.location.reload();
 function copy(row: TransactionRow) {if (income.value.includes(row) && copyable(row, props.context.copyTarget)) props.context.copy(row);}
@@ -82,7 +82,7 @@ function copy(row: TransactionRow) {if (income.value.includes(row) && copyable(r
       <div id="expense-load-status" role="status" aria-live="polite"><template v-if="busy">{{t('expense.loading')}}</template><template v-else-if="error && !forbidden">{{errorMessage(error, locale)}}</template></div>
       <button v-if="page?.has_more" class="secondary-button" id="expense-more" :disabled="busy" @click="load(true)">{{t('expense.loadMore')}}</button>
       <button v-if="error && !forbidden" class="secondary-button" id="expense-retry" @click="load(retryAppend, retryRefresh)">{{t('expense.retry')}}</button>
-      <section class="panel"><p class="expense-section-header">{{t('expense.chartSourceNote')}}</p><div class="chart-slot" id="chart-expense-structure"></div></section>
+      <section class="panel"><p class="expense-section-header">{{t('expense.chartSourceNote')}}</p><ChartHost id="chart-expense-structure" kind="expenseStructure" :period="context.period" :request="context.services.request"/></section>
     </template>
     <section v-else class="panel"><p v-if="busy && !income.length" role="status">{{t('common.loading')}}</p><div id="transactions-table"><IncomeTable v-if="!busy || income.length" :rows="income" :target="context.copyTarget" :query="query" :copy="copy"/></div></section>
     <div v-if="error && (!expense || forbidden)" class="empty-state state-error" role="alert"><p>{{t(forbidden ? 'common.sessionExpired' : 'common.loadFailed')}}</p><button class="secondary-button" @click="forbidden ? reload() : load()">{{t(forbidden ? 'common.reload' : 'common.retry')}}</button><details><summary>{{t('issues.sourceDetails')}}</summary><p>{{errorMessage(error, locale)}}</p></details></div>

@@ -1745,6 +1745,27 @@ async function renderCurrentView({localeOnly = false} = {}) {
   closeChartDialog();
   viewChartRegistry.clear();
   if (typeof AutonomoViews !== "undefined") vueViewNavigation = {url: window.location.pathname + window.location.search, state: window.history.state};
+  if (["dashboard", "assets", "taxes"].includes(state.view) && typeof AutonomoViews !== "undefined") {
+    const period = state.period;
+    vueViewHost = AutonomoViews.overview(app, {
+      view: state.view, period, copyTarget: state.copyTargetPeriodKey,
+      services: {request: fetchJSON, navigate: navigateToUrl},
+      settled() {if (renderGeneration === currentRenderGeneration) app.setAttribute("aria-busy", "false");},
+      refreshCalculation: () => requestDashboardRefresh({period, showSuccessToast: false}),
+      notify: showToast,
+      copy(row) {
+        if (renderGeneration !== currentRenderGeneration || !AutonomoViews.copyable(row, state.copyTargetPeriodKey)) return;
+        const {prefill, noticeLines} = AutonomoViews.buildIncomeCopy(row, {
+          sourcePeriodKey: period, targetPeriodKey: state.copyTargetPeriodKey,
+          targetIsCurrentQuarter: state.copyTargetIsCurrentQuarter,
+          currencyOptions: Array.from(intakeForm.elements.currency.options, option => option.value),
+        });
+        openIntake("income_invoice", {targetPeriodKey: state.copyTargetPeriodKey, prefill, noticeLines});
+        intakeForm.elements.document_number.focus(); intakeForm.elements.document_number.select();
+      },
+    });
+    return;
+  }
   if (["expenses", "income"].includes(state.view) && typeof AutonomoViews !== "undefined") {
     const kind = state.view === "expenses" ? "expense" : "income";
     const period = state.period;
@@ -1768,7 +1789,6 @@ async function renderCurrentView({localeOnly = false} = {}) {
         openIntake("income_invoice", {targetPeriodKey: state.copyTargetPeriodKey, prefill, noticeLines});
         intakeForm.elements.document_number.focus(); intakeForm.elements.document_number.select();
       },
-      mountChart() {void mountViewAnalyticsChart("chart-expense-structure", buildExpenseStructureSpec, AutonomoCharts.renderHorizontalBars);},
     });
     return;
   }
@@ -1780,7 +1800,7 @@ async function renderCurrentView({localeOnly = false} = {}) {
       settled() {if (renderGeneration === currentRenderGeneration) {app.setAttribute("aria-busy", "false"); applyViewState();}},
       detailResolved(party) {detail.data = {counterparty: party}; applyViewState();},
       notify: showToast,
-      mountChart() {void mountViewAnalyticsChart("chart-counterparty-concentration", buildCounterpartySpec, AutonomoCharts.renderHorizontalBars);},
+      chartPeriod: state.period,
       restorePosition: restoreContactsListPosition, rememberPosition: rememberContactsListPosition,
     });
     return;
@@ -4778,7 +4798,7 @@ if (hasDOM) {
   const refreshVisibleExpenseData = () => {
     if (document.visibilityState !== "visible" || dialog?.open || postingConfirmDialog?.open || chartDialog?.open || document.querySelector("#status-help-dialog")?.open) return;
     if (state.view === "expenses") refreshExpenseView?.();
-    if (state.view === "dashboard") void refreshDashboardExpenses();
+    if (state.view === "dashboard" && !vueViewHost) void refreshDashboardExpenses();
   };
   const handleChartResize = debounce(() => {
     if (chartDialog?.open) renderChartDialogFigure();

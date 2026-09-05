@@ -63,8 +63,8 @@ for screens whose API supplies only lifecycle status.
 
 Contacts use guarded host updates: `updateContext` returns false when the current
 view rejects leaving a dirty or busy rename. Browser history and unload use the
-same exposed guards. Chart rendering remains a narrow shell service until stage
-7, refreshed after a successful rename. The legacy contact renderers and their
+same exposed guards. ChartHost owns rendering and cached locale updates; a successful rename
+invalidates the contact chart data. The legacy contact renderers and their
 VM suites remain independent comparison oracles until finalization.
 
 Transaction lists own request generations and expense polling. Expense pages
@@ -72,3 +72,10 @@ rebuild from offset zero when the server revision or as-of date changes, keeping
 the expanded count. Vue row keys and scoped help records preserve controls across
 locale updates. Income-copy intent is typed and uses original amount/currency;
 only opening/populating the existing intake remains a temporary shell service.
+
+The chart geometry is an intentional JavaScript exception: `charts/renderer.js`
+retains the existing numerical/SVG algorithms without semantic edits. Its public
+API is declared in `renderer.d.ts`/`types.ts`; chart domain mapping, locale handling
+and Vue lifecycle are strict TypeScript. The full legacy chart suite also runs
+against the ES module via `npm run test:chart-module`. Legacy global exposure is
+temporary and removed in stage 12; the isolated geometry module may remain JS.
