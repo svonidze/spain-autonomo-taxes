@@ -107,7 +107,9 @@ function createHarness({emptyPeriods = false, settingsControls = null, initial =
   const document = {
     documentElement: new FakeElement(),
     querySelector: element,
-    querySelectorAll: () => [],
+    querySelectorAll: (selector) => selector === "[data-status-help]"
+      ? [...element("#app").innerHTML.matchAll(/data-status-help="([^"]+)"/g)]
+        .map(match => new FakeElement({"data-status-help": match[1]})) : [],
     getElementById: (id) => element(`#${id}`),
     body: {appendChild() {}},
     addEventListener(type, callback) {
