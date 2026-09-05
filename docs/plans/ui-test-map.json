@@ -1,0 +1,80 @@
+[
+  {
+    "source": "tests/test_account_settings_ui.js",
+    "behavior": "account settings ui",
+    "stage": 11,
+    "replacements": []
+  },
+  {
+    "source": "tests/test_expense_ui.js",
+    "behavior": "expense ui",
+    "stage": 12,
+    "replacements": []
+  },
+  {
+    "source": "tests/test_expense_workflow_ui.js",
+    "behavior": "expense workflow ui",
+    "stage": 8,
+    "replacements": []
+  },
+  {
+    "source": "tests/test_status_help.js",
+    "behavior": "status help",
+    "stage": 12,
+    "replacements": []
+  },
+  {
+    "source": "tests/test_web_ui_charts.js",
+    "behavior": "web ui charts",
+    "stage": 7,
+    "replacements": []
+  },
+  {
+    "source": "tests/test_web_ui_contacts.js",
+    "behavior": "web ui contacts",
+    "stage": 5,
+    "replacements": []
+  },
+  {
+    "source": "tests/test_web_ui_counterparty_names.js",
+    "behavior": "web ui counterparty names",
+    "stage": 5,
+    "replacements": []
+  },
+  {
+    "source": "tests/test_web_ui_expense_detail.js",
+    "behavior": "web ui expense detail",
+    "stage": 4,
+    "replacements": []
+  },
+  {
+    "source": "tests/test_web_ui_guided.js",
+    "behavior": "web ui guided",
+    "stage": 8,
+    "replacements": []
+  },
+  {
+    "source": "tests/test_web_ui_navigation.js",
+    "behavior": "web ui navigation",
+    "stage": 12,
+    "replacements": []
+  },
+  {
+    "source": "tests/test_web_ui_posting_behavior.js",
+    "behavior": "web ui posting behavior",
+    "stage": 9,
+    "replacements": []
+  },
+  {
+    "source": "tests/test_web_ui_states.js",
+    "behavior": "web ui states",
+    "stage": 12,
+    "replacements": []
+  },
+  {
+    "source": "tests/test_web_ui_taxes.js",
+    "behavior": "web ui taxes",
+    "stage": 7,
+    "replacements": []
+  }
+]

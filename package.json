@@ -1,0 +1,25 @@
+{
+  "name": "autonomo-accounting-ui",
+  "private": true,
+  "version": "0.1.0",
+  "engines": {
+    "node": "24.20.0",
+    "npm": "11.19.0"
+  },
+  "packageManager": "npm@11.19.0",
+  "scripts": {
+    "check:runtime": "node scripts/check_frontend_runtime.cjs",
+    "test:legacy": "node scripts/test_legacy_ui.cjs",
+    "test:coverage-map": "node scripts/check_ui_test_map.cjs",
+    "test:unit": "vitest run --passWithNoTests",
+    "test:browser": "playwright test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "24.13.3",
+    "jsdom": "30.0.1",
+    "typescript": "7.0.2",
+    "vitest": "5.0.0"
+  }
+}
