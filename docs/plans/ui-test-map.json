@@ -33,13 +33,19 @@
     "source": "tests/test_web_ui_contacts.js",
     "behavior": "web ui contacts",
     "stage": 5,
-    "replacements": []
+    "replacements": [
+      "tests/browser/contacts.spec.ts",
+      "frontend/tests/contacts-host.test.ts"
+    ]
   },
   {
     "source": "tests/test_web_ui_counterparty_names.js",
     "behavior": "web ui counterparty names",
     "stage": 5,
-    "replacements": []
+    "replacements": [
+      "tests/browser/contacts.spec.ts",
+      "frontend/tests/contacts-host.test.ts"
+    ]
   },
   {
     "source": "tests/test_web_ui_expense_detail.js",

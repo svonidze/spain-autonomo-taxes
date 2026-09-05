@@ -60,3 +60,9 @@ registry lifecycle is verified at the real helper and component boundaries in
 stage 4; its first production consumer is the contacts view in stage 5, which
 already receives an authoritative accounting context. Do not invent contexts
 for screens whose API supplies only lifecycle status.
+
+Contacts use guarded host updates: `updateContext` returns false when the current
+view rejects leaving a dirty or busy rename. Browser history and unload use the
+same exposed guards. Chart rendering remains a narrow shell service until stage
+7, refreshed after a successful rename. The legacy contact renderers and their
+VM suites remain independent comparison oracles until finalization.
