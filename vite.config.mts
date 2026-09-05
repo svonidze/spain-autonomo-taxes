@@ -1,9 +1,10 @@
 import {defineConfig} from 'vite';
+import vue from '@vitejs/plugin-vue';
 import {fileURLToPath} from 'node:url';
 import {localizeShell} from './scripts/shell_locales.mts';
 
 export default defineConfig({
-  plugins: [{name: 'catalog-shell', transformIndexHtml: {order: 'pre', handler: localizeShell}}],
+  plugins: [vue(), {name: 'catalog-shell', transformIndexHtml: {order: 'pre', handler: localizeShell}}],
   root: fileURLToPath(new URL('./src/autonomo_taxes/web_ui', import.meta.url)),
   publicDir: false,
   envDir: false,

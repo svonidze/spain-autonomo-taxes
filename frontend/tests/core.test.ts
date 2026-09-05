@@ -57,3 +57,15 @@ describe('HTTP boundary', () => {
     await expect(fetchJSON('/api/test', {}, {fetch: transport, origin: 'https://example.invalid', t: formatMessage})).resolves.toBe(0);
   });
 });
+
+
+test('additive error messages retain legacy text when a server key is unknown', async () => {
+  const {errorMessage} = await import('../src/core/error-message.ts');
+  const error = new ApiError('Synthetic server explanation');
+  error.messageCode = 'future.server.validation';
+  expect(errorMessage(error, 'en')).toBe('Synthetic server explanation');
+  error.messageCode = 'expense.sourceDate';
+  expect(errorMessage(error, 'en')).toBe('Synthetic server explanation');
+  error.messageCode = 'contacts.invalidName';
+  expect(errorMessage(error, 'en')).toBe(formatMessage('contacts.invalidName', {}, 'en'));
+});
