@@ -66,3 +66,9 @@ view rejects leaving a dirty or busy rename. Browser history and unload use the
 same exposed guards. Chart rendering remains a narrow shell service until stage
 7, refreshed after a successful rename. The legacy contact renderers and their
 VM suites remain independent comparison oracles until finalization.
+
+Transaction lists own request generations and expense polling. Expense pages
+rebuild from offset zero when the server revision or as-of date changes, keeping
+the expanded count. Vue row keys and scoped help records preserve controls across
+locale updates. Income-copy intent is typed and uses original amount/currency;
+only opening/populating the existing intake remains a temporary shell service.

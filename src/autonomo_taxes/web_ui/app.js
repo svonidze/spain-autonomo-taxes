@@ -1745,6 +1745,33 @@ async function renderCurrentView({localeOnly = false} = {}) {
   closeChartDialog();
   viewChartRegistry.clear();
   if (typeof AutonomoViews !== "undefined") vueViewNavigation = {url: window.location.pathname + window.location.search, state: window.history.state};
+  if (["expenses", "income"].includes(state.view) && typeof AutonomoViews !== "undefined") {
+    const kind = state.view === "expenses" ? "expense" : "income";
+    const period = state.period;
+    vueViewHost = AutonomoViews.transactions(app, {
+      kind, period, query: kind === "expense" ? state.expensesQuery : state.incomeQuery,
+      copyTarget: state.copyTargetPeriodKey,
+      services: {request: fetchJSON, navigate: navigateToUrl},
+      queryChanged(query) {
+        if (kind === "expense") {state.expensesQuery = query; window.history.replaceState(window.history.state, "", buildRouteUrl("expenses", {period, q: query}));}
+        else state.incomeQuery = query;
+      },
+      settled() {if (renderGeneration === currentRenderGeneration) app.setAttribute("aria-busy", "false");},
+      openIntake: () => openIntake(kind === "expense" ? "expense_invoice" : "income_invoice"),
+      copy(row) {
+        if (renderGeneration !== currentRenderGeneration || !AutonomoViews.copyable(row, state.copyTargetPeriodKey)) return;
+        const {prefill, noticeLines} = AutonomoViews.buildIncomeCopy(row, {
+          sourcePeriodKey: period, targetPeriodKey: state.copyTargetPeriodKey,
+          targetIsCurrentQuarter: state.copyTargetIsCurrentQuarter,
+          currencyOptions: Array.from(intakeForm.elements.currency.options, option => option.value),
+        });
+        openIntake("income_invoice", {targetPeriodKey: state.copyTargetPeriodKey, prefill, noticeLines});
+        intakeForm.elements.document_number.focus(); intakeForm.elements.document_number.select();
+      },
+      mountChart() {void mountViewAnalyticsChart("chart-expense-structure", buildExpenseStructureSpec, AutonomoCharts.renderHorizontalBars);},
+    });
+    return;
+  }
   if (["contacts", "contact-detail"].includes(state.view) && typeof AutonomoViews !== "undefined") {
     const detail = state.contactDetail;
     vueViewHost = AutonomoViews.contacts(app, {
