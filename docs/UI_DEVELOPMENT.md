@@ -4,8 +4,10 @@ Use Node from `.nvmrc` (24.20.0, bundled npm 11.19.0) and Python 3.11. Create an
 activate a virtual environment, then install the editable Python package and tests:
 
 ```sh
-python -m pip install -e . pytest build
+python -m pip install pytest build
 npm ci --include=dev --no-audit --no-fund
+npm run build
+python -m pip install -e .
 npm run check:runtime
 npm run test:coverage-map
 npm run test:legacy
@@ -13,6 +15,7 @@ npm run typecheck
 npm run test:unit
 npx playwright install chromium
 npm run test:browser
+npm run test:installed
 python -m pytest -q
 ```
 
@@ -28,3 +31,9 @@ traces, browser reports, dependencies and build output remain untracked.
 
 See [the staged migration contract](plans/ui-modularization.md) for accepted
 boundaries, commit/PR policy, baseline evidence and progress.
+
+`npm run build` must precede Python installation and startup. The runtime serves
+only verified built assets, with no source fallback. `test:installed` builds a
+wheel, creates a fresh environment outside the repository and runs the browser
+suite with isolated Python imports. Node is a build/test dependency, not a
+separate application service.

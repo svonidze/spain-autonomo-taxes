@@ -106,5 +106,16 @@ authenticated unknown-resource responses and settings dirty navigation.
 
 ## Progress
 
-- Stage 1: implemented and locally verified; source application unchanged.
-- Stages 2–12: pending.
+- Stage 1: published as draft PR #41, commit `668b9ae`; local gates and independent reviews passed.
+- Stage 2: build/install implemented; 1,333 Python checks passed with four skips,
+  plus 13 legacy suites and four browser scenarios against both source-built and
+  isolated installed-wheel resources. Added missing/corrupt/stale-wheel checks.
+  Independent code review approved; architecture review is being finalized.
+- Stages 3–12: pending.
+
+Stage 2 compatibility note: Vite's CommonJS handling hid the settings global used
+by the old shell. The module now retains that namespace as well as its CommonJS
+export; the existing settings tests and compiled browser checks cover both forms.
+Obsolete Python script-tag assertions now verify built resources; initialization
+order remains covered by the browser baseline. See `ops/FRONTEND_BUILD.md` for the
+scoped installed-helper update, partial-target handling and legacy rollback.

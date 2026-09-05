@@ -45,14 +45,11 @@ def test_web_ui_scripts_parse(script: Path) -> None:
     assert result.returncode == 0, result.stderr
 
 
-def test_charts_js_is_served_and_loaded_before_app_js() -> None:
-    local_web_source = LOCAL_WEB.read_text(encoding="utf-8")
-    assert '"/charts.js"' in local_web_source
-
-    index_source = INDEX_HTML.read_text(encoding="utf-8")
-    charts_tag = index_source.index('<script src="/charts.js"></script>')
-    app_tag = index_source.index('<script src="/app.js"></script>')
-    assert charts_tag < app_tag
+def test_chart_resources_are_part_of_the_built_application() -> None:
+    from autonomo_taxes.ui_assets import UiAssets
+    assets = UiAssets(WEB_UI)
+    assert any(name.endswith(".js") for name in assets.files)
+    # Initialization order is exercised by tests/browser/baseline.spec.ts
 
 
 def test_dashboard_renders_chart_slots_from_analytics() -> None:

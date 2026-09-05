@@ -13,13 +13,16 @@
     "test:coverage-map": "node scripts/check_ui_test_map.cjs",
     "test:unit": "vitest run --passWithNoTests",
     "test:browser": "playwright test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "npm run check:runtime && vite build && node scripts/write_ui_manifest.cjs",
+    "test:installed": "python scripts/test_installed_ui.py"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
     "@types/node": "24.13.3",
     "jsdom": "30.0.1",
     "typescript": "7.0.2",
+    "vite": "8.2.2",
     "vitest": "5.0.0"
   }
 }
