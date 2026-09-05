@@ -23,7 +23,9 @@ def test_wrapper_uses_runtime_path_and_passes_one_shot_overrides(tmp_path: Path)
     runtime = tmp_path / "runtime.env"
     runtime.write_text(
         f"PATH={runtime_bin}:/usr/bin:/bin\n"
-        "AUTONOMO_PRIVATE_ROOT=/private\n",
+        "AUTONOMO_PRIVATE_ROOT=/private\n"
+        "AUTONOMO_DEPLOY_REF=runtime-default\n"
+        "AUTONOMO_ENABLE_STORAGE_MIGRATION=0\n",
         encoding="utf-8",
     )
     runtime.chmod(0o600)
@@ -35,11 +37,10 @@ def test_wrapper_uses_runtime_path_and_passes_one_shot_overrides(tmp_path: Path)
         f"received={received!s}\n"
         "printf '%s\\n' \"$@\" > \"$received\"\n"
         "runtime=\"\"\n"
-        "overrides=()\n"
         "while [[ $# -gt 0 ]]; do\n"
         "  case \"$1\" in\n"
         "    --property=EnvironmentFile=*) runtime=${1#--property=EnvironmentFile=} ;;\n"
-        "    --setenv=*) overrides+=(\"${1#--setenv=}\") ;;\n"
+        "    --setenv=*) ;;\n"
         "    --) shift; break ;;\n"
         "  esac\n"
         "  shift\n"
@@ -48,7 +49,6 @@ def test_wrapper_uses_runtime_path_and_passes_one_shot_overrides(tmp_path: Path)
         "  case \"$line\" in ''|'#'*) continue ;; esac\n"
         "  export \"$line\"\n"
         "done < \"$runtime\"\n"
-        "for assignment in \"${overrides[@]}\"; do export \"$assignment\"; done\n"
         "exec \"$@\"\n",
     )
     _script(runtime_bin / "rclone", "#!/bin/sh\nprintf 'runtime-rclone\\n'\n")
@@ -61,6 +61,7 @@ def test_wrapper_uses_runtime_path_and_passes_one_shot_overrides(tmp_path: Path)
         "IFS= read -r payload\n"
         "printf 'stdin=%s\\n' \"$payload\"\n"
         "printf 'deploy_ref=%s\\n' \"$AUTONOMO_DEPLOY_REF\"\n"
+        "printf 'migration=%s\\n' \"$AUTONOMO_ENABLE_STORAGE_MIGRATION\"\n"
         "printf 'runtime_env=%s\\n' \"$AUTONOMO_RUNTIME_ENV_PATH\"\n",
     )
 
@@ -80,6 +81,8 @@ def test_wrapper_uses_runtime_path_and_passes_one_shot_overrides(tmp_path: Path)
             str(WRAPPER),
             "--setenv",
             "AUTONOMO_DEPLOY_REF=master",
+            "--setenv",
+            "AUTONOMO_ENABLE_STORAGE_MIGRATION=1",
             "--",
             str(consumer),
         ],
@@ -95,6 +98,7 @@ def test_wrapper_uses_runtime_path_and_passes_one_shot_overrides(tmp_path: Path)
         "rclone=runtime-rclone\n"
         "stdin=stdin-roundtrip\n"
         "deploy_ref=master\n"
+        "migration=1\n"
         f"runtime_env={runtime}\n"
     )
     arguments = received.read_text(encoding="utf-8")
@@ -105,8 +109,10 @@ def test_wrapper_uses_runtime_path_and_passes_one_shot_overrides(tmp_path: Path)
         "--pipe",
         "--quiet",
         f"--property=EnvironmentFile={runtime}",
-        f"--setenv=AUTONOMO_RUNTIME_ENV_PATH={runtime}",
-        "--setenv=AUTONOMO_DEPLOY_REF=master",
+        "/usr/bin/env",
+        f"AUTONOMO_RUNTIME_ENV_PATH={runtime}",
+        "AUTONOMO_DEPLOY_REF=master",
+        "AUTONOMO_ENABLE_STORAGE_MIGRATION=1",
         str(consumer),
     ):
         assert expected in arguments

@@ -11,7 +11,7 @@ usage() {
 }
 
 runtime_env="$(runtime_env_path)"
-setenv_args=()
+setenv_assignments=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --setenv)
@@ -21,7 +21,7 @@ while [[ $# -gt 0 ]]; do
         || die "--setenv accepts nonempty AUTONOMO_NAME=value assignments only"
       [[ "$assignment" != AUTONOMO_RUNTIME_ENV_PATH=* ]] \
         || die "AUTONOMO_RUNTIME_ENV_PATH is selected by the wrapper"
-      setenv_args+=("--setenv=$assignment")
+      setenv_assignments+=("$assignment")
       shift 2
       ;;
     --)
@@ -37,8 +37,11 @@ done
 [[ $# -gt 0 && "$1" == /* ]] || die "command must be an absolute path"
 require_private_file "$runtime_env" "runtime environment"
 require_command systemd-run
+require_command env
+env_command="$(command -v env)"
+[[ "$env_command" == /* ]] || die "env command must resolve to an absolute path"
 
 exec systemd-run --user --wait --collect --pipe --quiet \
   "--property=EnvironmentFile=$runtime_env" \
-  "--setenv=AUTONOMO_RUNTIME_ENV_PATH=$runtime_env" \
-  "${setenv_args[@]}" -- "$@"
+  -- "$env_command" "AUTONOMO_RUNTIME_ENV_PATH=$runtime_env" \
+  "${setenv_assignments[@]}" "$@"
