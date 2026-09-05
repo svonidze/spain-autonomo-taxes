@@ -1,22 +1,23 @@
+const __uiCore = require('./legacy_core.cjs');
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const root = path.join(__dirname, "..", "src", "autonomo_taxes", "web_ui");
-const context = vm.createContext({
+const context = vm.createContext(__uiCore.prepare({
   console,
   URLSearchParams,
   Intl,
   Date,
   setTimeout,
   clearTimeout,
-});
+}));
 vm.runInContext(
   fs.readFileSync(path.join(root, "status-help.js"), "utf8"),
-  context,
+  __uiCore.prepare(context),
 );
 const source = fs.readFileSync(path.join(root, "app.js"), "utf8");
-vm.runInContext(source, context);
+vm.runInContext(source, __uiCore.prepare(context));
 const help = context.AccountingHelp;
 const app = context.__AUTONOMO_WEB_UI_TEST_HOOKS__;
 for (const name of [
@@ -150,7 +151,7 @@ console.log("Status explanations: effective-script behavior verified");
       selector === ".copy-question" ? question : feedback,
   };
   const copyButton = { closest: () => article };
-  const domContext = vm.createContext({
+  const domContext = vm.createContext(__uiCore.prepare({
     Intl,
     Date,
     console,
@@ -165,10 +166,10 @@ console.log("Status explanations: effective-script behavior verified");
       addEventListener: (type, handler) => handlers.set(type, handler),
       getElementById: () => null,
     },
-  });
+  }));
   vm.runInContext(
     fs.readFileSync(path.join(root, "status-help.js"), "utf8"),
-    domContext,
+    __uiCore.prepare(domContext),
   );
   const click = {
     target: {
@@ -217,7 +218,7 @@ assert.match(
   const requests = [];
   const mounts = [];
   const builder = () => ({});
-  const renderContext = vm.createContext({
+  const renderContext = vm.createContext(__uiCore.prepare({
     app: rendered,
     state: {view: 'assets', period: '2032-Q2'},
     currentRenderGeneration: 7,
@@ -235,8 +236,8 @@ assert.match(
     emptyRow: () => '',
     buildAmortizationSpec: builder,
     mountViewAnalyticsChart: (id, spec) => mounts.push({id, spec}),
-  });
-  vm.runInContext(renderSource, renderContext);
+  }));
+  vm.runInContext(renderSource, __uiCore.prepare(renderContext));
   await renderContext.renderAssets(7);
   assert.equal(requests[0], '/api/assets?period=2032-Q2');
   assert.match(rendered.innerHTML, /status-details-button/);

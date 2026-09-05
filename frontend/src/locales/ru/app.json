@@ -1,0 +1,9 @@
+{
+  "app.inline.depreciationPosted": "Амортизация проведена.",
+  "app.inline.enGb": "ru-RU",
+  "app.inline.equipmentSchedule": "График оборудования",
+  "app.inline.postedCalculationRefreshNeedsRetry": "Проведено; требуется обновление расчётов.",
+  "app.inline.postedCalculationRefreshOrInboxCleanupIsPending": "Расход проведён; обновление расчётов или очистка Inbox ещё не завершены.",
+  "app.inline.retryFollowUp": "Повторить обновление",
+  "app.title": "Учет autónomo"
+}

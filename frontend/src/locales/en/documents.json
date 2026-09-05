@@ -1,0 +1,11 @@
+{
+  "documents.counterparty": "Counterparty",
+  "documents.type": "Type",
+  "documents.types.bank_statement": "bank statement",
+  "documents.types.expense_invoice": "supplier invoice",
+  "documents.types.income_invoice": "issued invoice",
+  "documents.types.other": "other document",
+  "documents.types.other_document": "other document",
+  "documents.types.receipt": "receipt",
+  "documents.types.tax_report": "tax report"
+}

@@ -11,7 +11,7 @@ SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 class UiAssets:
-    def __init__(self, source_root: Path) -> None:
+    def __init__(self, source_root: Path, *, allow_test: bool = False) -> None:
         self.root = (source_root if source_root.name == "dist" else source_root / "dist").resolve()
         try:
             self.manifest = json.loads((self.root / "build-manifest.json").read_text())
@@ -19,6 +19,8 @@ class UiAssets:
             raise RuntimeError("Frontend build is missing or invalid. Run npm ci --include=dev and npm run build before installing or starting the web application.") from exc
         if not isinstance(self.manifest, dict) or self.manifest.get("contract") != 1:
             raise RuntimeError("Unsupported frontend build contract")
+        if self.manifest.get("test_only") and not allow_test:
+            raise RuntimeError("This is a test-only frontend. Run npm run build before starting the application.")
         files = self.manifest.get("files")
         if not isinstance(files, dict) or "index.html" not in files or not any(name.endswith(".js") for name in files):
             raise RuntimeError("Frontend build has no shell or JavaScript entry")

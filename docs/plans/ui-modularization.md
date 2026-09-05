@@ -49,7 +49,9 @@ No hard stack-depth limit or freeze of master. Preserve unrelated work.
   implement mount/updateContext/dispose and receive narrow services, not the
   mutable legacy state. Delegated legacy events ignore Vue-owned roots.
 - Keep the existing route dispatcher and help overlay history until stage 11.
-  Status cells use scoped registry ownership. Locale changes never dispose Vue
+  Vue status cells gain scoped registry ownership with the stage 4 bridge.
+  Until then, legacy DOM replacement sweeps detached help contexts while retaining
+  live sibling buttons and the active overlay. Locale changes never dispose Vue
   hosts, navigate, or invalidate a running write. A POST cannot be cancelled by
   aborting its local observer. Preserve existing settings/rename leave policies.
 - Preserve URLs, allowed returnTo, authoritative detail period, contact-local
@@ -113,7 +115,12 @@ authenticated unknown-resource responses and settings dirty navigation.
   Independent code review APPROVE and architecture review CLEAR. Exact-SHA local
   preparation/install/receipt/reuse was exercised at `39f9ed3`, including reuse
   with Node absent from PATH. No production services or data were accessed.
-- Stages 3–12: pending.
+- Stage 3: shared TypeScript core and 1,049 ICU message IDs implemented. Twenty-one
+  direct module checks, 13 legacy suites, ten installed-wheel browser scenarios
+  and the test-only third-locale browser scenario pass. Python: 1,340 passed,
+  four skipped. Registry lifetime regression verifies detached record release,
+  live siblings and Back/Forward.
+- Stages 4–12: pending.
 
 Stage 2 compatibility note: Vite's CommonJS handling hid the settings global used
 by the old shell. The module now retains that namespace as well as its CommonJS
@@ -121,3 +128,11 @@ export; the existing settings tests and compiled browser checks cover both forms
 Obsolete Python script-tag assertions now verify built resources; initialization
 order remains covered by the browser baseline. See `ops/FRONTEND_BUILD.md` for the
 scoped installed-helper update, partial-target handling and legacy rollback.
+
+Stage 3 extraction evidence: 1,510 original RU/EN main/settings dictionary values
+were compared with the ICU-backed compatibility adapters against parent `1db5d58`;
+all matched. Literal copy moved out of the four UI scripts and the HTML source.
+The remaining legacy renderer is 4,997 lines; feature ownership moves to Vue in
+stages 4–11. Old VM contexts now receive the real typed core explicitly, while new
+module tests import it directly. Browser tests cover live locale changes during a
+POST, rejection drafts/focus, native expense drafts and help history.

@@ -1,3 +1,4 @@
+const __uiCore = require('./legacy_core.cjs');
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -38,7 +39,7 @@ function loadFunctions(names, additions = {}) {
     ...additions,
   };
   names.forEach((name) => {
-    vm.runInNewContext(`${extractFunction(source, name)}; this.${name} = ${name};`, context);
+    vm.runInNewContext(`${extractFunction(source, name)}; this.${name} = ${name};`, __uiCore.prepare(context));
   });
   return context;
 }
@@ -64,18 +65,18 @@ function loadAppWithRoutes(pathname = "/expenses", search = "") {
       },
     },
   };
-  const context = vm.createContext({
+  const context = vm.createContext(__uiCore.prepare({
     URL, URLSearchParams, URLSearchParams, Map, Set, Intl, JSON, String, Number, Array, Object,
     Boolean, Promise, Date, RegExp, Error, console, encodeURIComponent, decodeURIComponent,
     setTimeout, clearTimeout, Element, window,
-  });
-  vm.runInContext(fs.readFileSync(appPath, "utf8"), context);
+  }));
+  vm.runInContext(fs.readFileSync(appPath, "utf8"), __uiCore.prepare(context));
   vm.runInContext(`
     state.bootstrap = {default_period: "2026-Q3", periods: [{period_key: "2026-Q2", status: "closed"}, {period_key: "2026-Q3", status: "open"}], intake_enabled: false};
     state.period = "2026-Q3";
     applyViewState = () => {};
     renderCurrentView = () => { globalThis.__routeRenders = (globalThis.__routeRenders || 0) + 1; return Promise.resolve(); };
-  `, context);
+  `, __uiCore.prepare(context));
   return {context, location, historyCalls, Element};
 }
 
@@ -89,6 +90,8 @@ async function main() {
   let status = 404;
   let code = "transaction_not_found";
   const errors = loadFunctions(["fetchJSON", "parseJSONText"], {
+    t: __uiCore.core.formatMessage,
+    requestScope: __uiCore.core.createRequestScope(),
     window: {location: {origin: "https://taxes.test"}},
     fetch: async () => ({ok: false, status, headers: {get: () => "application/json"},
       text: async () => JSON.stringify({error: "Synthetic error", code})}),
@@ -251,6 +254,9 @@ async function main() {
   assert.equal(stale.state.expenseDetail.data, null);
 
   const rejected = loadFunctions(["renderCurrentView"], {
+    expenseWorkflowController: null,
+    lastAssetPostingResult: null,
+    pendingLocaleRepaint: false,
     state: {view: "expense-detail", period: "2026-Q2", expenseDetail: {transactionId: EXPENSE_ID}, review: {selectedReviewId: null}},
     currentRenderGeneration: 3,
     app: {innerHTML: "newer page remains", setAttribute: () => {}},
@@ -269,7 +275,7 @@ async function main() {
     errorState: (error) => `error:${error.message}`,
     uiLoadingSkeleton: () => "loading",
   });
-  vm.runInNewContext("renderExpenseDetail = async () => { app.innerHTML = 'newer page remains'; currentRenderGeneration = 5; throw new Error('old request failed'); };", rejected);
+  vm.runInNewContext("renderExpenseDetail = async () => { app.innerHTML = 'newer page remains'; currentRenderGeneration = 5; throw new Error('old request failed'); };", __uiCore.prepare(rejected));
   await rejected.renderCurrentView();
   assert.equal(rejected.app.innerHTML, "newer page remains");
 }
@@ -285,16 +291,16 @@ async function main() {
     state.review.validationResult = {valid: true};
     state.review.error = "old";
     applyRouteFromLocation();
-  `, app.context);
-  let snapshot = JSON.parse(vm.runInContext("JSON.stringify(state)", app.context));
+  `, __uiCore.prepare(app.context));
+  let snapshot = JSON.parse(vm.runInContext("JSON.stringify(state)", __uiCore.prepare(app.context)));
   assert.equal(snapshot.view, "review");
   assert.equal(snapshot.period, "2026-Q3");
   assert.equal(snapshot.review.selectedReviewId, `transaction:${EXPENSE_ID}`);
 
   app.location.pathname = "/review";
   app.location.search = "?period=2026-Q2";
-  vm.runInContext("applyRouteFromLocation()", app.context);
-  snapshot = JSON.parse(vm.runInContext("JSON.stringify(state)", app.context));
+  vm.runInContext("applyRouteFromLocation()", __uiCore.prepare(app.context));
+  snapshot = JSON.parse(vm.runInContext("JSON.stringify(state)", __uiCore.prepare(app.context)));
   assert.equal(snapshot.review.selectedReviewId, null);
   assert.equal(snapshot.review.workItem, null);
   assert.equal(snapshot.review.fxChoice, null);
@@ -304,9 +310,9 @@ async function main() {
 
   app.location.pathname = "/expenses";
   app.location.search = "?period=2026-Q2&q=SYN";
-  vm.runInContext("applyRouteFromLocation()", app.context);
-  vm.runInContext(`navigateToUrl("/expenses/${EXPENSE_ID}?period=2026-Q2&returnTo=%2Fexpenses%3Fperiod%3D2026-Q2%26q%3DSYN")`, app.context);
-  snapshot = JSON.parse(vm.runInContext("JSON.stringify(state)", app.context));
+  vm.runInContext("applyRouteFromLocation()", __uiCore.prepare(app.context));
+  vm.runInContext(`navigateToUrl("/expenses/${EXPENSE_ID}?period=2026-Q2&returnTo=%2Fexpenses%3Fperiod%3D2026-Q2%26q%3DSYN")`, __uiCore.prepare(app.context));
+  snapshot = JSON.parse(vm.runInContext("JSON.stringify(state)", __uiCore.prepare(app.context)));
   assert.equal(snapshot.view, "expense-detail");
   assert.equal(snapshot.expenseDetail.transactionId, EXPENSE_ID);
   assert.equal(snapshot.returnTo, "/expenses?period=2026-Q2&q=SYN");
@@ -314,14 +320,14 @@ async function main() {
   // Simulate Back and Forward popstate applications without manufacturing new history entries.
   app.location.pathname = "/expenses";
   app.location.search = "?period=2026-Q2&q=SYN";
-  vm.runInContext("applyRouteFromLocation()", app.context);
-  snapshot = JSON.parse(vm.runInContext("JSON.stringify(state)", app.context));
+  vm.runInContext("applyRouteFromLocation()", __uiCore.prepare(app.context));
+  snapshot = JSON.parse(vm.runInContext("JSON.stringify(state)", __uiCore.prepare(app.context)));
   assert.equal(snapshot.view, "expenses");
   assert.equal(snapshot.expenseDetail.transactionId, null);
   assert.equal(snapshot.expensesQuery, "SYN");
   app.location.pathname = `/expenses/${EXPENSE_ID}`;
   app.location.search = "?period=2026-Q2&returnTo=%2Fexpenses%3Fperiod%3D2026-Q2%26q%3DSYN";
-  vm.runInContext("applyRouteFromLocation()", app.context);
+  vm.runInContext("applyRouteFromLocation()", __uiCore.prepare(app.context));
   assert.equal(app.historyCalls.filter((call) => call.kind === "push").length, 1);
 }
 
@@ -335,9 +341,9 @@ async function main() {
     detailRouteActive = () => true;
     fetchJSON = async () => { throw new Error("posted expense must not load a work item"); };
     navigateToRoute = (view, options) => { globalThis.__legacyNavigation = {view, options}; };
-  `, posted.context);
-  await vm.runInContext("renderReview(0)", posted.context);
-  assert.deepEqual(JSON.parse(vm.runInContext("JSON.stringify(__legacyNavigation)", posted.context)), {
+  `, __uiCore.prepare(posted.context));
+  await vm.runInContext("renderReview(0)", __uiCore.prepare(posted.context));
+  assert.deepEqual(JSON.parse(vm.runInContext("JSON.stringify(__legacyNavigation)", __uiCore.prepare(posted.context))), {
     view: "expense-detail",
     options: {transactionId: EXPENSE_ID, period: "2026-Q2", returnTo: null, replace: true},
   });
@@ -351,16 +357,16 @@ async function main() {
     applyDetailPeriod = (data) => { state.period = data.period.period_key; };
     fetchJSON = async () => ({packet: {review_id: "transaction:${OTHER_EXPENSE_ID}", state: {transaction: {transaction_id: "${OTHER_EXPENSE_ID}"}, period: {period_key: "2026-Q2"}}, decision: {}}});
     renderReviewWorkspace = () => { globalThis.__workspaceRendered = true; };
-  `, needsReview.context);
-  await vm.runInContext("renderReview(0)", needsReview.context);
-  assert.equal(vm.runInContext("state.period", needsReview.context), "2026-Q2");
-  assert.equal(vm.runInContext("__workspaceRendered", needsReview.context), true);
+  `, __uiCore.prepare(needsReview.context));
+  await vm.runInContext("renderReview(0)", __uiCore.prepare(needsReview.context));
+  assert.equal(vm.runInContext("state.period", __uiCore.prepare(needsReview.context)), "2026-Q2");
+  assert.equal(vm.runInContext("__workspaceRendered", __uiCore.prepare(needsReview.context)), true);
 }
 
 // Modified clicks keep browser behavior; a plain click preserves the complete query for SPA navigation.
 {
   const app = loadAppWithRoutes("/expenses", "?period=2026-Q2&q=SYN");
-  vm.runInContext("navigateToUrl = (url) => { globalThis.__clickedUrl = url; }", app.context);
+  vm.runInContext("navigateToUrl = (url) => { globalThis.__clickedUrl = url; }", __uiCore.prepare(app.context));
   class Link extends app.Element {
     constructor() { super(); this.href = `/expenses/${EXPENSE_ID}?period=2026-Q2&returnTo=%2Fexpenses%3Fperiod%3D2026-Q2%26q%3DSYN`; }
     closest() { return this; }
@@ -369,13 +375,13 @@ async function main() {
   }
   const link = new Link();
   const modified = {defaultPrevented: false, button: 0, ctrlKey: true, metaKey: false, shiftKey: false, altKey: false, target: link, preventDefault() { throw new Error("modified click intercepted"); }};
-  vm.runInContext("handleSpaClick", app.context)(modified);
-  assert.equal(vm.runInContext("typeof __clickedUrl", app.context), "undefined");
+  vm.runInContext("handleSpaClick", __uiCore.prepare(app.context))(modified);
+  assert.equal(vm.runInContext("typeof __clickedUrl", __uiCore.prepare(app.context)), "undefined");
   let prevented = false;
   const plain = {...modified, ctrlKey: false, preventDefault() { prevented = true; }};
-  vm.runInContext("handleSpaClick", app.context)(plain);
+  vm.runInContext("handleSpaClick", __uiCore.prepare(app.context))(plain);
   assert.equal(prevented, true);
-  assert.equal(vm.runInContext("__clickedUrl", app.context), link.href);
+  assert.equal(vm.runInContext("__clickedUrl", __uiCore.prepare(app.context)), link.href);
 }
 
 // A posting response that returns after navigation cannot refresh or rerender the new expense card; an active review still refreshes its own quarter.

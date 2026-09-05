@@ -29,6 +29,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run test:unit
       - run: npx playwright install --with-deps chromium
+      - run: npm run test:pseudo
       - run: npm run test:browser
       - run: npm run test:installed
       - run: python -m pytest -q

@@ -47,3 +47,14 @@ def test_packaged_resource_contract_is_complete():
     assert assets.manifest["source_sha"]
     assert any(name.endswith(".css") for name in assets.files)
     assert all(name == "index.html" or name.startswith("ui-assets/") for name in assets.files)
+
+
+def test_pseudolocale_requires_the_explicit_synthetic_test_host(tmp_path):
+    dist = fixture(tmp_path)
+    path = dist / "build-manifest.json"
+    manifest = json.loads(path.read_text())
+    manifest["test_only"] = True
+    path.write_text(json.dumps(manifest))
+    with pytest.raises(RuntimeError, match="test-only"):
+        UiAssets(tmp_path)
+    assert UiAssets(tmp_path, allow_test=True).files

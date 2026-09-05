@@ -206,6 +206,7 @@ class LocalWebConfig:
     google_picker_developer_key: str | None = None
     google_picker_app_id: str | None = None
     private_root: Path | None = None
+    allow_test_ui: bool = False
 
 
 def load_config(
@@ -322,7 +323,7 @@ class LocalAccountingApp:
         if not config.database.is_file():
             raise FileNotFoundError(f"SQLite database does not exist: {config.database}")
         self.config = config
-        self.ui_assets = UiAssets(config.static_root)
+        self.ui_assets = UiAssets(config.static_root, allow_test=config.allow_test_ui)
         self.session_token = session_token or secrets.token_urlsafe(32)
         self.principal_session_secret = (
             _coerce_session_secret(principal_session_secret)

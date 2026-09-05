@@ -1,0 +1,19 @@
+{
+  "issues.default": "Требуется ручная проверка.",
+  "issues.messages.amount_mismatch": "Сумма не совпадает с источником. Сверьте документ, валюту и налоговую базу.",
+  "issues.messages.counterparty_tax_profile_review": "Проверьте страну и налоговые реквизиты контрагента перед проведением.",
+  "issues.messages.deductibility_pending_confirmation": "Нужно подтвердить сумму, допустимую к вычету.",
+  "issues.messages.default": "Требуется ручная проверка.",
+  "issues.messages.document_classification_review": "Документ не удалось надежно классифицировать.",
+  "issues.messages.foreign_counterparty_identity_missing": "Не хватает подтвержденных налоговых реквизитов иностранного контрагента.",
+  "issues.messages.missing_locally": "Документ есть в реестре, но локальный оригинал не найден.",
+  "issues.messages.modelo100_deferral_submission_unconfirmed": "Не подтверждена подача заявления на отсрочку по Modelo 100.",
+  "issues.messages.modelo130_difficult_expense_filed_method_conflict": "Метод Xolo для 5% труднообосновываемых расходов расходится с инструкцией AEAT.",
+  "issues.messages.modelo303_q1_notary_vat_base_unverified": "Налоговая база IVA по счету нотариуса требует сверки.",
+  "issues.messages.modelo303_q1_output_vat_classification_mismatch": "Классификация исходящего IVA не совпадает с поданной Modelo 303.",
+  "issues.messages.nonresident_payee_legal_form_review": "Нужно уточнить правовую форму иностранного получателя.",
+  "issues.messages.nonresident_professional_irnr_review": "После оплаты требуется отдельная проверка IRNR по иностранному исполнителю.",
+  "issues.messages.transaction_tax_review": "Нужно проверить назначение расхода и его учет в IRPF и IVA.",
+  "issues.none": "Открытых вопросов нет",
+  "issues.sourceDetails": "Исходные сведения"
+}

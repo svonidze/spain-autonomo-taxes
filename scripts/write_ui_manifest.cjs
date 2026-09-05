@@ -1,5 +1,5 @@
 const {createHash} = require('node:crypto');
-const {readFileSync, writeFileSync, readdirSync, lstatSync} = require('node:fs');
+const {readFileSync, writeFileSync, readdirSync, lstatSync, existsSync} = require('node:fs');
 const {execFileSync} = require('node:child_process');
 const path = require('node:path');
 const root = path.resolve('src/autonomo_taxes/web_ui/dist');
@@ -13,6 +13,7 @@ for (const name of ['index.html', ...readdirSync(path.join(root, 'ui-assets')).m
 const git = args => execFileSync('git', args, {encoding: 'utf8'}).trim();
 const manifest = {
   contract: 1,
+  test_only: existsSync('frontend/src/generated/catalogs.json') && JSON.parse(readFileSync('frontend/src/generated/catalogs.json', 'utf8')).testOnly === true,
   source_sha: git(['rev-parse', 'HEAD']),
   source_dirty: Boolean(git(['status', '--porcelain', '--untracked-files=no'])),
   node: process.versions.node,

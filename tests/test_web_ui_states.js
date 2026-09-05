@@ -1,3 +1,4 @@
+const __uiCore = require('./legacy_core.cjs');
 "use strict";
 
 // Behavior checks for the shared UI state helpers in app.js: the loading
@@ -31,14 +32,14 @@ function extractFunction(source, name) {
   throw new Error(`Could not extract ${name} from app.js`);
 }
 
-const context = vm.createContext({
+const context = vm.createContext(__uiCore.prepare({
   t: (key, vars) => (vars && vars.amount !== undefined ? `${key}:${vars.amount}` : key),
   statusLabel: (value) => `label:${value}`,
   eur: (value) => `€${value.toFixed(2)}`,
-});
+}));
 const tonesMatch = appSource.match(/const REVIEW_CATEGORY_TONES = \{[^}]+\};/);
 if (!tonesMatch) throw new Error("Could not find REVIEW_CATEGORY_TONES in app.js");
-vm.runInContext(tonesMatch[0], context);
+vm.runInContext(tonesMatch[0], __uiCore.prepare(context));
 for (const name of [
   "escapeHtml",
   "emptyRow",
@@ -48,13 +49,13 @@ for (const name of [
   "minorUnitEurPreviewText",
   "minorUnitEurPreview",
 ]) {
-  vm.runInContext(extractFunction(appSource, name), context);
+  vm.runInContext(extractFunction(appSource, name), __uiCore.prepare(context));
 }
 
 // The loading skeleton keeps an accessible text and hides the shimmer bars
 // from assistive tech.
 {
-  const html = vm.runInContext("uiLoadingSkeleton()", context);
+  const html = vm.runInContext("uiLoadingSkeleton()", __uiCore.prepare(context));
   assert.ok(html.includes('class="loading-state state-loading"'));
   assert.ok(html.includes('aria-hidden="true"'));
   assert.strictEqual((html.match(/skeleton-line/g) || []).length, 3);
@@ -66,7 +67,7 @@ for (const name of [
 {
   const html = vm.runInContext(
     'errorState({message: "<img src=x onerror=alert(1)>", code: null})',
-    context
+    __uiCore.prepare(context)
   );
   assert.ok(html.includes("state-error"));
   assert.ok(html.includes('role="alert"'));
@@ -80,7 +81,7 @@ for (const name of [
 {
   const html = vm.runInContext(
     'errorState({message: "forbidden", code: "session_forbidden"})',
-    context
+    __uiCore.prepare(context)
   );
   assert.ok(html.includes("data-reload-view"));
   assert.ok(!html.includes("data-retry-view"));
@@ -90,11 +91,11 @@ for (const name of [
 // Empty rows accept a contextual message, escape it, and fall back to the
 // shared no-records label.
 {
-  const html = vm.runInContext('emptyRow(6, "<b>evil</b>")', context);
+  const html = vm.runInContext('emptyRow(6, "<b>evil</b>")', __uiCore.prepare(context));
   assert.ok(html.includes('colspan="6"'));
   assert.ok(html.includes("&lt;b&gt;evil&lt;/b&gt;"));
   assert.ok(!html.includes("<b>evil"));
-  const fallback = vm.runInContext("emptyRow(7)", context);
+  const fallback = vm.runInContext("emptyRow(7)", __uiCore.prepare(context));
   assert.ok(fallback.includes('colspan="7"'));
   assert.ok(fallback.includes("common.noRecords"));
 }
@@ -103,18 +104,18 @@ for (const name of [
 // tone class; unexpected categories degrade to the neutral tone with the
 // generic status label instead of leaking a raw token.
 {
-  const ready = vm.runInContext('reviewCategoryBadge("ready")', context);
+  const ready = vm.runInContext('reviewCategoryBadge("ready")', __uiCore.prepare(context));
   assert.ok(ready.includes("status-positive"));
   assert.ok(ready.includes("review.category.ready"));
-  const later = vm.runInContext('reviewCategoryBadge("later")', context);
+  const later = vm.runInContext('reviewCategoryBadge("later")', __uiCore.prepare(context));
   assert.ok(later.includes("status-pending"));
   assert.ok(later.includes("review.category.later"));
-  const blocked = vm.runInContext('reviewCategoryBadge("blocked")', context);
+  const blocked = vm.runInContext('reviewCategoryBadge("blocked")', __uiCore.prepare(context));
   assert.ok(blocked.includes("status-attention"));
-  const unknown = vm.runInContext('reviewCategoryBadge("mystery")', context);
+  const unknown = vm.runInContext('reviewCategoryBadge("mystery")', __uiCore.prepare(context));
   assert.ok(unknown.includes("status-neutral"));
   assert.ok(unknown.includes("label:mystery"));
-  const missing = vm.runInContext("reviewCategoryBadge(undefined)", context);
+  const missing = vm.runInContext("reviewCategoryBadge(undefined)", __uiCore.prepare(context));
   assert.ok(missing.includes("status-neutral"));
   assert.ok(missing.includes("label:unknown"));
 }
@@ -124,14 +125,14 @@ for (const name of [
 // (a known zero is not missing data).
 {
   assert.equal(
-    vm.runInContext('minorUnitEurPreviewText("12345")', context),
+    vm.runInContext('minorUnitEurPreviewText("12345")', __uiCore.prepare(context)),
     "review.irpfPreview:€123.45"
   );
-  assert.equal(vm.runInContext('minorUnitEurPreviewText("0")', context), "review.irpfPreview:€0.00");
-  assert.equal(vm.runInContext('minorUnitEurPreviewText("")', context), "");
-  assert.equal(vm.runInContext("minorUnitEurPreviewText(null)", context), "");
-  assert.equal(vm.runInContext('minorUnitEurPreviewText("abc")', context), "");
-  const markup = vm.runInContext('minorUnitEurPreview("-2500")', context);
+  assert.equal(vm.runInContext('minorUnitEurPreviewText("0")', __uiCore.prepare(context)), "review.irpfPreview:€0.00");
+  assert.equal(vm.runInContext('minorUnitEurPreviewText("")', __uiCore.prepare(context)), "");
+  assert.equal(vm.runInContext("minorUnitEurPreviewText(null)", __uiCore.prepare(context)), "");
+  assert.equal(vm.runInContext('minorUnitEurPreviewText("abc")', __uiCore.prepare(context)), "");
+  const markup = vm.runInContext('minorUnitEurPreview("-2500")', __uiCore.prepare(context));
   assert.ok(markup.includes("data-eur-preview"));
   assert.ok(markup.includes("review.irpfPreview:€-25.00"));
 }
@@ -140,7 +141,7 @@ for (const name of [
 // the stored draft, and foreign schema versions are discarded.
 {
   const storage = new Map();
-  const intakeContext = vm.createContext({
+  const intakeContext = vm.createContext(__uiCore.prepare({
     JSON,
     Object,
     localStorage: {
@@ -148,12 +149,12 @@ for (const name of [
       setItem: (key, value) => storage.set(key, String(value)),
       removeItem: (key) => storage.delete(key),
     },
-  });
+  }));
   const keyMatch = appSource.match(/const INTAKE_DRAFT_STORAGE_KEY = [^\n]+/);
   const fieldsMatch = appSource.match(/const INTAKE_DRAFT_FIELDS = [^\n]+/);
   if (!keyMatch || !fieldsMatch) throw new Error("Could not find intake draft constants in app.js");
-  vm.runInContext(keyMatch[0], intakeContext);
-  vm.runInContext(fieldsMatch[0], intakeContext);
+  vm.runInContext(keyMatch[0], __uiCore.prepare(intakeContext));
+  vm.runInContext(fieldsMatch[0], __uiCore.prepare(intakeContext));
   for (const name of [
     "readIntakeDraftValues",
     "intakeDraftIsEmpty",
@@ -162,7 +163,7 @@ for (const name of [
     "clearIntakeDraft",
     "applyIntakeDraft",
   ]) {
-    vm.runInContext(extractFunction(appSource, name), intakeContext);
+    vm.runInContext(extractFunction(appSource, name), __uiCore.prepare(intakeContext));
   }
   const makeForm = (values) => {
     const elements = {};
@@ -172,23 +173,23 @@ for (const name of [
     return {elements};
   };
   intakeContext.intakeForm = makeForm({issued_on: "2026-07-01", counterparty_name: "ACME Test", currency: "EUR", gross: "121.00"});
-  vm.runInContext("persistIntakeDraft()", intakeContext);
+  vm.runInContext("persistIntakeDraft()", __uiCore.prepare(intakeContext));
   const stored = JSON.parse(storage.get("autonomo.intake-draft"));
   assert.equal(stored.schema, 1);
   assert.equal(stored.values.counterparty_name, "ACME Test");
   const target = makeForm({});
   intakeContext.__target = target;
-  assert.equal(vm.runInContext("applyIntakeDraft(__target.elements)", intakeContext), true);
+  assert.equal(vm.runInContext("applyIntakeDraft(__target.elements)", __uiCore.prepare(intakeContext)), true);
   assert.equal(target.elements.gross.value, "121.00");
   assert.equal(target.elements.issued_on.value, "2026-07-01");
   intakeContext.intakeForm = makeForm({currency: "EUR"});
-  vm.runInContext("persistIntakeDraft()", intakeContext);
+  vm.runInContext("persistIntakeDraft()", __uiCore.prepare(intakeContext));
   assert.equal(storage.has("autonomo.intake-draft"), false);
   storage.set("autonomo.intake-draft", JSON.stringify({schema: 2, values: {gross: "5"}}));
-  assert.equal(vm.runInContext("loadIntakeDraft()", intakeContext), null);
+  assert.equal(vm.runInContext("loadIntakeDraft()", __uiCore.prepare(intakeContext)), null);
   const untouched = makeForm({});
   intakeContext.__target = untouched;
-  assert.equal(vm.runInContext("applyIntakeDraft(__target.elements)", intakeContext), false);
+  assert.equal(vm.runInContext("applyIntakeDraft(__target.elements)", __uiCore.prepare(intakeContext)), false);
   assert.equal(untouched.elements.gross.value, "");
 }
 

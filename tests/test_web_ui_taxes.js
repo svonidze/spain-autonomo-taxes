@@ -1,3 +1,4 @@
+const __uiCore = require('./legacy_core.cjs');
 "use strict";
 
 const assert = require("node:assert");
@@ -25,7 +26,7 @@ function extractFunction(name) {
   throw new Error(`Could not extract ${name}`);
 }
 
-const context = vm.createContext({
+const context = vm.createContext(__uiCore.prepare({
   t(key, variables = {}) {
     return Object.entries(variables).reduce(
       (text, [name, value]) => `${text}|${name}=${value}`,
@@ -35,7 +36,7 @@ const context = vm.createContext({
   formatDate: (value) => `date:${value}`,
   formatMinorEur: (value) => `minor:${value}`,
   escapeHtml: (value) => String(value),
-});
+}));
 
 for (const name of [
   "taxSettlementLabel",
@@ -43,14 +44,14 @@ for (const name of [
   "taxHeadlineModel",
   "taxSummaryFacts",
 ]) {
-  vm.runInContext(extractFunction(name), context);
+  vm.runInContext(extractFunction(name), __uiCore.prepare(context));
 }
 
 const planned = vm.runInContext(`taxHeadlineModel(
   {phase: "current"},
   {settlement_status: "planned", total_payable_minor: 320427, total_confirmed_paid_minor: 0,
    outstanding_minor: 320427, overpaid_minor: 0, calculated_as_of: "2026-09-03"}
-)`, context);
+)`, __uiCore.prepare(context));
 assert.equal(planned.label, "taxes.headlinePlanned");
 assert.equal(planned.amount, 320427);
 assert.ok(planned.detail.includes("date:2026-09-03"));
@@ -60,7 +61,7 @@ const unconfirmed = vm.runInContext(`taxHeadlineModel(
   {settlement_status: "payment_unconfirmed", total_payable_minor: 263912,
    total_confirmed_paid_minor: 0, outstanding_minor: 263912, overpaid_minor: 0,
    calculation_source: "filed"}
-)`, context);
+)`, __uiCore.prepare(context));
 assert.equal(unconfirmed.label, "taxes.headlineConfirmed");
 assert.equal(unconfirmed.amount, 0);
 assert.ok(unconfirmed.detail.includes("taxes.unconfirmedDetail"));
@@ -71,14 +72,14 @@ const filedValuesMissing = vm.runInContext(`taxHeadlineModel(
   {settlement_status: "payment_unconfirmed", total_payable_minor: 263912,
    total_confirmed_paid_minor: 0, outstanding_minor: 263912, overpaid_minor: 0,
    calculation_source: "preview"}
-)`, context);
+)`, __uiCore.prepare(context));
 assert.ok(filedValuesMissing.detail.includes("taxes.previewUnconfirmedDetail"));
 
 const partial = vm.runInContext(`taxHeadlineModel(
   {phase: "past"},
   {settlement_status: "partially_paid", total_payable_minor: 263912,
    total_confirmed_paid_minor: 100000, outstanding_minor: 163912, overpaid_minor: 0}
-)`, context);
+)`, __uiCore.prepare(context));
 assert.equal(partial.amount, 100000);
 assert.ok(partial.detail.includes("amount=minor:163912"));
 assert.equal(partial.tone, "pending");
@@ -87,7 +88,7 @@ const overpaid = vm.runInContext(`taxHeadlineModel(
   {phase: "past"},
   {settlement_status: "overpaid", total_payable_minor: 263912,
    total_confirmed_paid_minor: 300000, outstanding_minor: 0, overpaid_minor: 36088}
-)`, context);
+)`, __uiCore.prepare(context));
 assert.equal(overpaid.amount, 300000);
 assert.ok(overpaid.detail.includes("amount=minor:36088"));
 assert.equal(overpaid.tone, "attention");
@@ -95,14 +96,14 @@ assert.equal(overpaid.tone, "attention");
 const future = vm.runInContext(`taxHeadlineModel(
   {phase: "future"},
   {settlement_status: "not_started", total_payable_minor: null, total_confirmed_paid_minor: 0}
-)`, context);
+)`, __uiCore.prepare(context));
 assert.equal(future.label, "taxes.headlineNotStarted");
 assert.equal(future.amount, null);
 
 const facts = vm.runInContext(`taxSummaryFacts(
   {total_payable_minor: 263912, total_confirmed_paid_minor: 100000,
    outstanding_minor: 163912, overpaid_minor: 0}, "past"
-)`, context);
+)`, __uiCore.prepare(context));
 assert.ok(facts.includes("minor:263912"));
 assert.ok(facts.includes("minor:100000"));
 assert.ok(facts.includes("minor:163912"));
