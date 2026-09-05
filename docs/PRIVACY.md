@@ -45,7 +45,7 @@ The secrets repository is a ciphertext distribution and recovery layer, not an a
 - Use explicit non-production identifiers such as `TEST-TAX-ID-001`.
 - Keep amounts, dates, document numbers, names, and combinations independent from operational records.
 - Do not add binary fixtures unless the privacy guard is deliberately extended with an exact reviewed hash and the review explains why the binary is necessary.
-- Write commit messages without email addresses; name tools in `Co-Authored-By` trailers without an address. The only reviewed exception is the digest-allowlisted Anthropic no-reply service address that already appears in merged history.
+- Commit-message email addresses are ignored because Git attribution trailers routinely contain them. Email addresses in tracked files remain findings, and commit messages are still checked for credentials and other private identifiers.
 - Any new default output path must resolve under the private root, independent of the current working directory.
 
 ## What each scan covers
@@ -62,7 +62,8 @@ intended files before relying on a scan of a new document or fixture.
 | `python scripts/privacy_guard.py --history` | All history reachable through local Git references (`--all`), including other branches, remote-tracking references and tags; annotated tag content is also checked. |
 
 History checks inspect reachable blobs, historical paths and commit messages,
-not just changed lines. The command's reported scope matters: passing the PR
+not just changed lines. Email-address matches are ignored only in commit messages;
+all other commit-message patterns and all blob patterns remain active. The command's reported scope matters: passing the PR
 range does not certify every branch or tag. A local backup reference also
 retains history for an all-reference scan.
 

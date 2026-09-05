@@ -88,7 +88,7 @@ ALLOWED_SYNTHETIC_VALUE_SHA256 = frozenset(
 )
 ALLOWED_BINARY_SHA256: frozenset[str] = frozenset()
 
-# Approved Anthropic no-reply address used for commit co-author attribution.
+# Approved Anthropic no-reply address used in existing repository content.
 # Exact match only, and only for email findings (never credentials/other fields).
 ALLOWED_PUBLIC_BOT_EMAIL_SHA256 = frozenset(
     {"cd29c5ac348a026a3ec5286890908fffb5bf6ab77f20672171be323a70c95026"}
@@ -240,6 +240,16 @@ def scan_content(data: bytes, location: str, *, max_bytes: int = DEFAULT_MAX_BYT
                     continue
                 findings.add(Finding(spec.category, safe_location, line_number, fingerprint))
     return sorted(findings)
+
+
+def scan_commit_message(data: bytes, location: str, *, max_bytes: int = DEFAULT_MAX_BYTES) -> list[Finding]:
+    """Scan message content while ignoring ordinary Git attribution addresses."""
+
+    return [
+        finding
+        for finding in scan_content(data, location, max_bytes=max_bytes)
+        if finding.category != "email-address"
+    ]
 
 
 def _git(repo: Path, args: Sequence[str], *, input_bytes: bytes | None = None) -> bytes:
@@ -429,7 +439,9 @@ def scan_history(repo: Path, revision: str, *, max_bytes: int = DEFAULT_MAX_BYTE
         _, separator, message = data.partition(b"\n\n")
         if not separator:
             raise GuardError("malformed Git commit object")
-        findings.extend(scan_content(message, f"commit-message:{commit_id[:12]}", max_bytes=max_bytes))
+        findings.extend(scan_commit_message(
+            message, f"commit-message:{commit_id[:12]}", max_bytes=max_bytes,
+        ))
 
     if revision == "--all":
         tag_output = _git(repo, ["for-each-ref", "--format=%(objecttype) %(objectname)", "refs/tags"])
