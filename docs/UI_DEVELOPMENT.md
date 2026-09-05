@@ -79,3 +79,16 @@ API is declared in `renderer.d.ts`/`types.ts`; chart domain mapping, locale hand
 and Vue lifecycle are strict TypeScript. The full legacy chart suite also runs
 against the ES module via `npm run test:chart-module`. Legacy global exposure is
 temporary and removed in stage 12; the isolated geometry module may remain JS.
+
+Review detail owns separate native expense and guided editor state. A completed
+preflight and same-record context update preserve the current editor and pending
+write; initial or different-record reads still fence stale replies. Guided drafts
+merge all decision fields only for the matching snapshot, otherwise retaining
+only counterparty corrections. Confirmation removes a browser draft only if it
+has not changed since submission. Resolution controls target backend issue IDs,
+even when the decision array uses a different order.
+
+Review errors may add `message_code`, `params`, and `field` to the existing
+`error`/`code`/`current` envelope. Three exact required-field diagnostics now carry
+localized IDs; unknown or malformed metadata keeps the original diagnostic.
+No financial validation rule, status code or accounting operation changed.
