@@ -127,7 +127,13 @@ authenticated unknown-resource responses and settings dirty navigation.
   with authoritative contact contexts in stage 5 (expense detail retains its plain
   lifecycle badge). Typecheck, 26 module tests, 13 legacy suites, 15 compiled and
   installed-wheel browser scenarios, and 1,340 Python tests pass (four skips).
-- Stages 5–12: pending.
+- Stage 5: Vue contacts list/detail, operation paging, name history, action menu
+  and revision-aware rename implemented. Contact context feeds scoped StatusCell.
+  Host updates respect dirty/busy guards; rename refreshes the concentration chart.
+  Browser gates cover help history, contact/global period, expense return, rename
+  conflicts, pending writes, paging, menu focus/placement and CSP. Typecheck,
+  27 module tests, 13 legacy suites and 1,340 Python tests pass (four skips).
+- Stages 6–12: pending.
 
 Stage 2 compatibility note: Vite's CommonJS handling hid the settings global used
 by the old shell. The module now retains that namespace as well as its CommonJS
