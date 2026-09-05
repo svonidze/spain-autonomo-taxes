@@ -133,7 +133,13 @@ authenticated unknown-resource responses and settings dirty navigation.
   Browser gates cover help history, contact/global period, expense return, rename
   conflicts, pending writes, paging, menu focus/placement and CSP. Typecheck,
   27 module tests, 13 legacy suites and 1,340 Python tests pass (four skips).
-- Stages 6–12: pending.
+- Stage 6: Vue expense/income lists implemented with revision-aware paging,
+  guarded search/refresh, scoped help and typed income-copy intent. Source amounts
+  and currencies are preserved when bridging to the legacy intake. Typecheck,
+  30 module tests, 13 legacy suites, 25 source-built and installed-wheel browser
+  scenarios, and 1,340 Python tests pass (four skips). Master was fetched again
+  and remains `27522dec`; the complete stack includes the latest base.
+- Stages 7–12: pending.
 
 Stage 2 compatibility note: Vite's CommonJS handling hid the settings global used
 by the old shell. The module now retains that namespace as well as its CommonJS
