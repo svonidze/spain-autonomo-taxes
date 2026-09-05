@@ -65,8 +65,11 @@ def test_app_assets_avoid_inline_styles() -> None:
     assert "style=" not in INDEX_HTML.read_text(encoding="utf-8")
 
 
-def test_status_help_script_loads_before_app_script() -> None:
-    index_html = INDEX_HTML.read_text(encoding="utf-8")
-    help_at = index_html.index('<script src="/status-help.js"></script>')
-    app_at = index_html.index('<script src="/app.js"></script>')
-    assert help_at < app_at
+def test_built_shell_uses_external_module_resources() -> None:
+    from autonomo_taxes.ui_assets import UiAssets
+    assets = UiAssets(STATIC_ROOT)
+    html = assets.path("index.html").read_text()
+    assert 'type="module"' in html
+    assert '/ui-assets/' in html
+    assert '<script src="/app.js"' not in html
+    # Help initialization and Back/Forward are tested in the real browser.

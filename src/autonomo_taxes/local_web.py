@@ -29,6 +29,7 @@ from typing import Any, Mapping
 from urllib.parse import parse_qs, unquote, urlencode, urlparse
 from uuid import UUID
 
+from .ui_assets import UiAssets
 from . import expense_workflow
 from .expense_workflow import ExpenseWorkflowError
 
@@ -321,6 +322,7 @@ class LocalAccountingApp:
         if not config.database.is_file():
             raise FileNotFoundError(f"SQLite database does not exist: {config.database}")
         self.config = config
+        self.ui_assets = UiAssets(config.static_root)
         self.session_token = session_token or secrets.token_urlsafe(32)
         self.principal_session_secret = (
             _coerce_session_secret(principal_session_secret)
@@ -2034,7 +2036,7 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             if parsed.path == "/":
                 self._serve_static("index.html", set_cookie=True, principal=principal)
                 return
-            if parsed.path in {"/app.js", "/charts.js", "/status-help.js", "/expense-workflow.js", "/settings.js", "/styles.css"}:
+            if parsed.path.startswith("/ui-assets/"):
                 self._serve_static(parsed.path.removeprefix("/"))
                 return
             if parsed.path == "/favicon.ico":
@@ -2424,11 +2426,7 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
         set_cookie: bool = False,
         principal: str | None = None,
     ) -> None:
-        path = (self.server.app.config.static_root / name).resolve()
-        if not _is_relative_to(path, self.server.app.config.static_root):
-            raise LocalWebError("Invalid static path")
-        if not path.is_file():
-            raise FileNotFoundError(path)
+        path = self.server.app.ui_assets.path(name)
         content = path.read_bytes()
         mime_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
         self.send_response(HTTPStatus.OK)

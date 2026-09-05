@@ -494,3 +494,12 @@ untouched in this default-only update.
 recipient validation, dual-SHA deployment, and recovery. Copying that directory
 or preparing the private Git repository does not enable it. Do not mix its
 units, environment files, or rollback scripts with the default control plane.
+
+## Compiled frontend releases
+
+Releases that declare frontend build contract 1 require the pinned Node/npm
+build tools during preparation, and include their compiled resources in the
+installed Python package. Before the first such release on an existing host,
+follow [Frontend build and installed-helper update](FRONTEND_BUILD.md). Update
+only the active deployment caller and its shared helpers; do not run the general
+installer or change timers for this update. Legacy rollback remains build-free.

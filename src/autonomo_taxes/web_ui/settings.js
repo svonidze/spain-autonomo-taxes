@@ -254,5 +254,6 @@
   }
   const api = {mount, retentionPayload, pruningText, statusHtml, verificationHtml, profileFields, translator, copy};
   if (typeof module !== "undefined" && module.exports) module.exports = api;
-  else root.AutonomoSettings = api;
+  // Bundlers provide a CommonJS module too; the legacy shell still uses this API.
+  root.AutonomoSettings = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
