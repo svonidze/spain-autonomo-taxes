@@ -25,7 +25,7 @@ test('Vue expense uses authoritative period, preserves notes and values, and ret
   await expect(page.locator('.expense-detail a[target="_blank"]')).toHaveAttribute('rel', 'noreferrer');
   await page.locator('.review-workspace-header > a').click();
   await expect(page).toHaveURL(/\/expenses\?period=2026-Q3&q=Synthetic$/);
-  await expect(page.locator('[data-vue-owned]')).toHaveCount(0);
+  await expect(page.locator('.expense-detail')).toHaveCount(0);
   await page.goBack();
   await expect(page.locator('[data-vue-owned] h2').first()).toHaveText('SYN-EXPENSE');
 });
@@ -54,7 +54,7 @@ test('a late detail response cannot replace a new route', async ({page}) => {
   await page.locator('a[data-view="income"]').click();
   release();
   await expect(page).toHaveURL(/\/income/);
-  await expect(page.locator('[data-vue-owned]')).toHaveCount(0);
+  await expect(page.locator('.expense-detail')).toHaveCount(0);
   await expect(page.locator('body')).not.toContainText('SYN-EXPENSE');
 });
 test('follow-up failure is retryable and a late success cannot change another route', async ({page}) => {
@@ -74,7 +74,7 @@ test('follow-up failure is retryable and a late success cannot change another ro
   await page.locator('a[data-view="income"]').click();
   release();
   await expect(page).toHaveURL(/\/income/);
-  await expect(page.locator('[data-vue-owned]')).toHaveCount(0);
+  await expect(page.locator('.expense-detail')).toHaveCount(0);
   expect(writes).toBe(2);
 });
 test('missing, forbidden and wrong-type detail states retain usable navigation', async ({page}) => {

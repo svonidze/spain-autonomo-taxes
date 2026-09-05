@@ -8,8 +8,11 @@
   {
     "source": "tests/test_expense_ui.js",
     "behavior": "expense ui",
-    "stage": 12,
-    "replacements": []
+    "stage": 6,
+    "replacements": [
+      "tests/browser/transaction-lists.spec.ts",
+      "frontend/tests/transaction-state.test.ts"
+    ]
   },
   {
     "source": "tests/test_expense_workflow_ui.js",
