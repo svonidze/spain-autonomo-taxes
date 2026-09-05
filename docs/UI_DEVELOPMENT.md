@@ -92,3 +92,10 @@ Review errors may add `message_code`, `params`, and `field` to the existing
 `error`/`code`/`current` envelope. Three exact required-field diagnostics now carry
 localized IDs; unknown or malformed metadata keeps the original diagnostic.
 No financial validation rule, status code or accounting operation changed.
+
+Review overview and batch posting share one feature owner, separate from review
+detail. Confirmation captures a deep snapshot of the period, rows and expected
+versions. Busy state and the latest captured-period result survive route disposal;
+stale calculations are tracked by period. Refresh tokens prevent an earlier
+calculation from clearing a later marker. Recovery only refreshes calculations
+and reads the overview; it never submits the batch again.

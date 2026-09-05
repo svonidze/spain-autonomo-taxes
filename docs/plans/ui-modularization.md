@@ -156,7 +156,13 @@ authenticated unknown-resource responses and settings dirty navigation.
   metadata without changing original codes/text/status. Forty unit tests, 13
   legacy suites, 33 source/installed-wheel browser scenarios and 1,342 Python
   tests pass (four skips). Code review APPROVE; architecture CLEAR.
-- Stages 9–12: pending.
+- Stage 9: Vue review overview tabs and batch posting implemented together.
+  Consent snapshots freeze period/items/versions; durable feature state retains
+  late results and per-period recovery markers. Refresh identity protects newer
+  markers; retry never reposts. Mismatched previews fail closed. Forty-four unit
+  tests, 13 legacy suites, 36 source/installed-wheel browser scenarios and
+  1,342 Python tests pass (four skips). Code review APPROVE; architecture CLEAR.
+- Stages 10–12: pending.
 
 Stage 2 compatibility note: Vite's CommonJS handling hid the settings global used
 by the old shell. The module now retains that namespace as well as its CommonJS

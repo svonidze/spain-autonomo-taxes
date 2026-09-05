@@ -78,6 +78,7 @@
   "review.postingLater": "Проверено · Можно будет провести {date}",
   "review.postingNothingReady": "Сейчас нет строк, готовых к проведению.",
   "review.postingOpenPeriod": "Период открыт",
+  "review.postingPreviewMismatch": "Ответ сервера не соответствует выбранному периоду. Обновите список.",
   "review.postingReady": "Проверено · Можно провести сейчас",
   "review.postingReadyHint": "Будут проведены только строки, которые все еще готовы по текущему превью.",
   "review.postingResultMessage": "Сообщение",

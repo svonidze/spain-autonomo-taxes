@@ -89,7 +89,11 @@
     "source": "tests/test_web_ui_posting_behavior.js",
     "behavior": "web ui posting behavior",
     "stage": 9,
-    "replacements": []
+    "replacements": [
+      "tests/browser/review-posting.spec.ts",
+      "frontend/tests/posting-host.test.ts",
+      "frontend/tests/posting-state.test.ts"
+    ]
   },
   {
     "source": "tests/test_web_ui_states.js",

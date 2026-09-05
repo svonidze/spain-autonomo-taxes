@@ -1745,6 +1745,17 @@ async function renderCurrentView({localeOnly = false} = {}) {
   closeChartDialog();
   viewChartRegistry.clear();
   if (typeof AutonomoViews !== "undefined") vueViewNavigation = {url: window.location.pathname + window.location.search, state: window.history.state};
+  if (state.view === "review" && !state.review.selectedReviewId && typeof AutonomoViews !== "undefined") {
+    vueViewHost = AutonomoViews.reviewOverview(app, {
+      period: state.period, tab: state.review.activeTab,
+      services: {request: fetchJSON, navigate: navigateToUrl},
+      selectTab: tab => navigateToRoute("review", {tab}),
+      refreshCalculation: period => requestDashboardRefresh({period, showSuccessToast: false}),
+      settled() {if (renderGeneration === currentRenderGeneration) app.setAttribute("aria-busy", "false");},
+      notify: showToast,
+    });
+    return;
+  }
   if (state.view === "review" && state.review.selectedReviewId && typeof AutonomoViews !== "undefined") {
     const id = reviewIdToTransactionId(state.review.selectedReviewId);
     vueViewHost = AutonomoViews.reviewDetail(app, {
@@ -3881,7 +3892,9 @@ async function refreshDashboard() {
   const period = state.period;
   const generation = currentRenderGeneration;
   try {
+    const refreshToken = typeof AutonomoViews === "undefined" ? undefined : AutonomoViews.postingRefreshToken(period);
     await requestDashboardRefresh({period, showSuccessToast: false});
+    if (typeof AutonomoViews !== "undefined") AutonomoViews.clearPostingRefresh(period, refreshToken);
     if (state.posting.staleRefresh?.period === period) state.posting.staleRefresh = null;
     if (generation !== currentRenderGeneration) return;
     showToast(AutonomoCore.message("refresh.done", {period}));
@@ -3909,7 +3922,9 @@ async function retryPostingRefresh() {
   if (!period || state.view !== "review" || period !== state.period) return;
   const generation = currentRenderGeneration;
   try {
+    const refreshToken = typeof AutonomoViews === "undefined" ? undefined : AutonomoViews.postingRefreshToken(period);
     await requestDashboardRefresh({period, showSuccessToast: false});
+    if (typeof AutonomoViews !== "undefined") AutonomoViews.clearPostingRefresh(period, refreshToken);
     if (state.posting.staleRefresh?.period === period) state.posting.staleRefresh = null;
     if (generation === currentRenderGeneration) await renderCurrentView();
   } catch (error) {
