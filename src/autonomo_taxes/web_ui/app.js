@@ -145,6 +145,7 @@ const localizedText = new Map();
 let intakeNoticeMessages = [];
 let localeRepaintTimer = null;
 let vueViewHost = null;
+let vueViewNavigation = null;
 const requestScope = AutonomoCore.createRequestScope(() => scheduleLocaleRepaint());
 let expenseWorkflowController = null;
 let expensePresentation = null;
@@ -303,6 +304,10 @@ function leaveSettings() {
 
 function applyRouteFromLocation() {
   if (!state.bootstrap) return false;
+  if (vueViewHost && !vueViewHost.canLeave()) {
+    window.history.pushState(vueViewNavigation.state, "", vueViewNavigation.url);
+    return false;
+  }
   if (settingsController && !leaveSettings()) {
     window.history.pushState(null, "", "/settings");
     return false;
@@ -387,6 +392,7 @@ function applyRouteFromLocation() {
 }
 
 function navigateToUrl(url, {replace = false} = {}) {
+  if (vueViewHost && !vueViewHost.canLeave()) return;
   if (!leaveSettings()) return;
   if (counterpartyNameEditor && !closeCounterpartyNameEditor()) return;
   rememberContactsListPosition();
@@ -1717,6 +1723,7 @@ async function renderSettings(generation) {
 
 async function renderCurrentView({localeOnly = false} = {}) {
   if (!app || (state.view !== "settings" && !state.period && !state.expenseDetail.transactionId && !state.review.selectedReviewId && !state.contactDetail.id)) return;
+  if (vueViewHost && !vueViewHost.canLeave()) return;
   pendingLocaleRepaint = false;
   vueViewHost?.dispose(); vueViewHost = null;
   closeCounterpartyMenu(false);
@@ -1737,6 +1744,20 @@ async function renderCurrentView({localeOnly = false} = {}) {
   if (state.view !== "review") closePostingConfirmDialog();
   closeChartDialog();
   viewChartRegistry.clear();
+  if (typeof AutonomoViews !== "undefined") vueViewNavigation = {url: window.location.pathname + window.location.search, state: window.history.state};
+  if (["contacts", "contact-detail"].includes(state.view) && typeof AutonomoViews !== "undefined") {
+    const detail = state.contactDetail;
+    vueViewHost = AutonomoViews.contacts(app, {
+      contactId: state.view === "contact-detail" ? detail.id : null, period: detail.period,
+      services: {request: fetchJSON, navigate: navigateToUrl},
+      settled() {if (renderGeneration === currentRenderGeneration) {app.setAttribute("aria-busy", "false"); applyViewState();}},
+      detailResolved(party) {detail.data = {counterparty: party}; applyViewState();},
+      notify: showToast,
+      mountChart() {void mountViewAnalyticsChart("chart-counterparty-concentration", buildCounterpartySpec, AutonomoCharts.renderHorizontalBars);},
+      restorePosition: restoreContactsListPosition, rememberPosition: rememberContactsListPosition,
+    });
+    return;
+  }
   if (state.view === "expense-detail" && typeof AutonomoViews !== "undefined") {
     const id = state.expenseDetail.transactionId;
     vueViewHost = AutonomoViews.expenseDetail(app, {
@@ -4794,6 +4815,7 @@ if (hasDOM) {
   document.addEventListener("scroll", () => closeCounterpartyMenu(false), true);
   window.addEventListener("resize", () => closeCounterpartyMenu(false));
   window.addEventListener("beforeunload", event => {
+    if (vueViewHost && (vueViewHost.isDirty() || vueViewHost.isBusy())) {event.preventDefault(); event.returnValue = "";}
     if (settingsController && (settingsController.isDirty() || settingsController.isBusy())) { event.preventDefault(); event.returnValue = ""; }
     const edit = counterpartyNameEditor;
     if (edit && (edit.busy || document.querySelector("#counterparty-name-input").value !== edit.row.display_name)) {
