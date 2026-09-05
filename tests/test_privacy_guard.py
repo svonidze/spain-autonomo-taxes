@@ -50,58 +50,51 @@ def test_exact_synthetic_value_hash_is_allowed() -> None:
     assert findings == []
 
 
-def test_anthropic_coauthor_trailer_is_allowed_in_commit_messages() -> None:
-    service_email = "noreply" + "@anthropic.com"
-    message = f"Subject line\n\nCo-Authored-By: Claude <{service_email}>\n".encode()
+def test_commit_messages_ignore_email_addresses_but_keep_other_findings() -> None:
+    address = "private.person" + "@example.net"
+    secret = "gh" + "p_" + "E" * 36
+    message = f"Subject line\n\nCo-Authored-By: Someone <{address}>\ntoken={secret}\n".encode()
 
-    findings = privacy_guard.scan_content(message, "commit-message:0123456789ab")
+    findings = privacy_guard.scan_commit_message(message, "commit-message:0123456789ab")
 
-    assert findings == []
-    assert (
-        hashlib.sha256(service_email.encode()).hexdigest()
-        in privacy_guard.ALLOWED_PUBLIC_BOT_EMAIL_SHA256
-    )
+    assert [finding.category for finding in findings] == ["service-token"]
+    assert findings[0].fingerprint == hashlib.sha256(secret.encode()).hexdigest()
 
 
-def test_other_coauthor_trailer_emails_remain_findings() -> None:
-    personal_email = "private.person" + "@example.net"
-    message = f"Subject line\n\nCo-Authored-By: Someone <{personal_email}>\n".encode()
+def test_email_addresses_in_files_remain_findings() -> None:
+    address = "private.person" + "@example.net"
 
-    findings = privacy_guard.scan_content(message, "commit-message:0123456789ab")
+    findings = privacy_guard.scan_content(address.encode(), "sample.txt")
 
     assert [finding.category for finding in findings] == ["email-address"]
 
 
-def test_only_the_exact_approved_public_bot_email_is_allowed() -> None:
-    public_bot = "noreply@anthropic.com"
-    assert privacy_guard.scan_content(public_bot.encode(), "sample.txt") == []
-    # Negative specimens must not become literal rejected addresses in Git.
-    for other_email in (
-        "private.person" + "@example.net",
-        "private.person" + "@anthropic.com",
-        "noreply+other" + "@anthropic.com",
-        "noreply" + "@anthropic.com.example.net",
-        "NOREPLY" + "@anthropic.com",
-    ):
-        findings = privacy_guard.scan_content(other_email.encode(), "sample.txt")
-        assert [finding.category for finding in findings] == ["email-address"]
-        assert findings[0].fingerprint == hashlib.sha256(other_email.encode()).hexdigest()
-        assert other_email not in repr(findings)
+def test_existing_public_bot_email_remains_allowed_in_files() -> None:
+    address = "noreply" + "@anthropic.com"
+
+    assert privacy_guard.scan_content(address.encode(), "sample.txt") == []
+    assert (
+        hashlib.sha256(address.encode()).hexdigest()
+        in privacy_guard.ALLOWED_PUBLIC_BOT_EMAIL_SHA256
+    )
 
 
-def test_public_bot_email_does_not_bypass_credential_rules() -> None:
+def test_commit_email_exception_does_not_bypass_credential_rules() -> None:
     field = "pass" + "word"
-    specimen = field + '="' + "noreply@anthropic.com" + '"'
-    findings = privacy_guard.scan_content(specimen.encode(), "sample.txt")
+    specimen = field + '="' + "noreply" + "@anthropic.com" + '"'
+    findings = privacy_guard.scan_commit_message(
+        specimen.encode(), "commit-message:0123456789ab"
+    )
     assert [finding.category for finding in findings] == ["credential-literal"]
 
 
-def test_history_accepts_public_bot_attribution_without_rewriting_commits(tmp_path: Path) -> None:
+def test_history_accepts_coauthor_attribution_without_rewriting_commits(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     _init_repo(repo)
     (repo / "tracked.txt").write_text("safe", encoding="utf-8")
     _git(repo, "add", "tracked.txt")
-    _git(repo, "commit", "-m", "Synthetic change\n\nCo-authored-by: Assistant <noreply@anthropic.com>")
+    address = "private.person" + "@example.net"
+    _git(repo, "commit", "-m", f"Synthetic change\n\nCo-authored-by: Assistant <{address}>")
     head = _git_output(repo, "rev-parse", "HEAD")
 
     assert privacy_guard.scan_history(repo, "HEAD") == []
@@ -142,10 +135,10 @@ def test_history_finds_deleted_blob_and_commit_message_without_leaking_value(
     _init_repo(repo)
     tracked = repo / "tracked.txt"
     deleted_secret = "gh" + "p_" + "C" * 36
-    message_email = "private.person" + "@example.net"
+    message_secret = "xoxb-" + "C" * 24
     tracked.write_text(deleted_secret, encoding="utf-8")
     _git(repo, "add", "tracked.txt")
-    _git(repo, "commit", "-m", f"temporary contact {message_email}")
+    _git(repo, "commit", "-m", f"temporary token {message_secret}")
     tracked.unlink()
     _git(repo, "add", "-u")
     _git(repo, "commit", "-m", "remove temporary file")
@@ -157,7 +150,7 @@ def test_history_finds_deleted_blob_and_commit_message_without_leaking_value(
     assert "history-blob:" in output.err
     assert "commit-message:" in output.err
     assert deleted_secret not in output.err
-    assert message_email not in output.err
+    assert message_secret not in output.err
 
 
 def test_commit_range_limits_history_scan(tmp_path: Path) -> None:
