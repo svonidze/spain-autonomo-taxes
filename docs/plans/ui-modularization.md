@@ -148,7 +148,15 @@ authenticated unknown-resource responses and settings dirty navigation.
   comparisons; 35 unit checks, 13 legacy suites, full chart ES-module checks,
   29 source/installed-wheel browser scenarios and 1,340 Python tests pass (four
   skips). Independent code review APPROVE; architecture CLEAR.
-- Stages 8–12: pending.
+- Stage 8: Vue review-detail preflight, native expense workflow and guided review
+  implemented. Matching-snapshot drafts, explicit conflict reset, ID-matched issue
+  edits, FX evidence, reject flow and request idempotency retain their contracts.
+  Parent and child lifecycles preserve same-record pending work and use current
+  callbacks after context updates. Required-field errors gain optional localized
+  metadata without changing original codes/text/status. Forty unit tests, 13
+  legacy suites, 33 source/installed-wheel browser scenarios and 1,342 Python
+  tests pass (four skips). Code review APPROVE; architecture CLEAR.
+- Stages 9–12: pending.
 
 Stage 2 compatibility note: Vite's CommonJS handling hid the settings global used
 by the old shell. The module now retains that namespace as well as its CommonJS

@@ -1745,6 +1745,20 @@ async function renderCurrentView({localeOnly = false} = {}) {
   closeChartDialog();
   viewChartRegistry.clear();
   if (typeof AutonomoViews !== "undefined") vueViewNavigation = {url: window.location.pathname + window.location.search, state: window.history.state};
+  if (state.view === "review" && state.review.selectedReviewId && typeof AutonomoViews !== "undefined") {
+    const id = reviewIdToTransactionId(state.review.selectedReviewId);
+    vueViewHost = AutonomoViews.reviewDetail(app, {
+      transactionId: id, period: state.period, returnUrl: safeReturnUrl(state.returnTo, state.period, "review"),
+      knownPeriods: state.bootstrap.periods.map(row => row.period_key),
+      services: {request: fetchJSON, navigate: navigateToUrl},
+      resolved(period) {applyDetailPeriod({period}, "review", id); return safeReturnUrl(state.returnTo, period.period_key, "review");},
+      complete(outcome) {showToast(AutonomoCore.message(outcome === "approve" ? "review.confirmSuccess" : "review.rejectSuccess")); navigateToRoute("review");},
+      posted(transactionId, period, replace = true) {navigateToRoute("expense-detail", {transactionId, period, returnTo: state.returnTo, replace});},
+      settled() {if (renderGeneration === currentRenderGeneration) app.setAttribute("aria-busy", "false");},
+      notify: showToast,
+    });
+    return;
+  }
   if (["dashboard", "assets", "taxes"].includes(state.view) && typeof AutonomoViews !== "undefined") {
     const period = state.period;
     vueViewHost = AutonomoViews.overview(app, {

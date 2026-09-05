@@ -154,11 +154,17 @@ class LocalWebApiError(LocalWebError):
     def __init__(
         self, status: HTTPStatus, code: str, message: str, *,
         current: Mapping[str, Any] | None = None,
+        message_code: str | None = None,
+        params: Mapping[str, Any] | None = None,
+        field: str | None = None,
     ) -> None:
         super().__init__(message)
         self.status = status
         self.code = code
         self.current = current
+        self.message_code = message_code
+        self.params = params
+        self.field = field
 
 
 def _validated_counterparty_id(value: str) -> str:
@@ -1960,7 +1966,14 @@ class LocalAccountingApp:
 
     def _review_api_error(self, exc: ReviewPacketError) -> LocalWebApiError:
         code, status = classify_review_packet_failure(str(exc))
-        return LocalWebApiError(HTTPStatus(status), code, str(exc))
+        metadata = {
+            "decision.business_purpose is required": ("review.validationBusinessPurpose", "business_purpose"),
+            "decision.reason is required": ("review.validationReason", "reason"),
+            "Approved review requires document_valid=true": ("review.validationDocumentConfirmation", "document_valid"),
+        }.get(str(exc))
+        return LocalWebApiError(HTTPStatus(status), code, str(exc),
+            message_code=metadata[0] if metadata else None,
+            field=metadata[1] if metadata else None)
 
     def _run_cli_json(
         self,
@@ -2148,7 +2161,8 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
         except (ExpenseWorkflowError, AccountSettingsError) as exc:
             self._send_error_json(HTTPStatus(exc.status), str(exc), code=exc.code)
         except LocalWebApiError as exc:
-            self._send_error_json(exc.status, str(exc), code=exc.code, current=exc.current)
+            self._send_error_json(exc.status, str(exc), code=exc.code, current=exc.current,
+                message_code=exc.message_code, params=exc.params, field=exc.field)
         except FileNotFoundError as exc:
             self._send_error_json(HTTPStatus.NOT_FOUND, str(exc))
         except (LocalWebError, ValueError) as exc:
@@ -2296,7 +2310,8 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
         except (ExpenseWorkflowError, AccountSettingsError) as exc:
             self._send_error_json(HTTPStatus(exc.status), str(exc), code=exc.code)
         except LocalWebApiError as exc:
-            self._send_error_json(exc.status, str(exc), code=exc.code, current=exc.current)
+            self._send_error_json(exc.status, str(exc), code=exc.code, current=exc.current,
+                message_code=exc.message_code, params=exc.params, field=exc.field)
         except FileNotFoundError as exc:
             self._send_error_json(HTTPStatus.NOT_FOUND, str(exc))
         except LocalWebPostingCommandError as exc:
@@ -2582,6 +2597,9 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
         *,
         code: str | None = None,
         current: Mapping[str, Any] | None = None,
+        message_code: str | None = None,
+        params: Mapping[str, Any] | None = None,
+        field: str | None = None,
     ) -> None:
         if self.wfile.closed:
             return
@@ -2590,6 +2608,12 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             payload["code"] = code
         if current is not None:
             payload["current"] = dict(current)
+        if message_code is not None:
+            payload["message_code"] = message_code
+        if params is not None:
+            payload["params"] = dict(params)
+        if field is not None:
+            payload["field"] = field
         self._send_json(payload, status=status)
 
     def _security_headers(self, *, document_preview: bool = False) -> None:
