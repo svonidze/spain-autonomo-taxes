@@ -78,6 +78,7 @@
   "review.postingLater": "Reviewed · Can post on {date}",
   "review.postingNothingReady": "There are no rows ready to post right now.",
   "review.postingOpenPeriod": "Period is open",
+  "review.postingPreviewMismatch": "The preview does not match the selected period. Refresh the list.",
   "review.postingReady": "Reviewed · Can post now",
   "review.postingReadyHint": "Only rows that are still ready in the current preview will be posted.",
   "review.postingResultMessage": "Message",
