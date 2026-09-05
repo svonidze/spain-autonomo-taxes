@@ -18,7 +18,12 @@
     "source": "tests/test_expense_workflow_ui.js",
     "behavior": "expense workflow ui",
     "stage": 8,
-    "replacements": []
+    "replacements": [
+      "tests/browser/review-detail.spec.ts",
+      "tests/browser/locale.spec.ts",
+      "frontend/tests/review-host.test.ts",
+      "frontend/tests/review-helpers.test.ts"
+    ]
   },
   {
     "source": "tests/test_status_help.js",
@@ -67,7 +72,12 @@
     "source": "tests/test_web_ui_guided.js",
     "behavior": "web ui guided",
     "stage": 8,
-    "replacements": []
+    "replacements": [
+      "tests/browser/review-detail.spec.ts",
+      "tests/browser/locale.spec.ts",
+      "frontend/tests/review-host.test.ts",
+      "frontend/tests/review-helpers.test.ts"
+    ]
   },
   {
     "source": "tests/test_web_ui_navigation.js",
