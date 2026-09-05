@@ -139,7 +139,16 @@ authenticated unknown-resource responses and settings dirty navigation.
   30 module tests, 13 legacy suites, 25 source-built and installed-wheel browser
   scenarios, and 1,340 Python tests pass (four skips). Master was fetched again
   and remains `27522dec`; the complete stack includes the latest base.
-- Stages 7–12: pending.
+- Stage 7: Vue dashboard/assets/taxes and depreciation schedule implemented.
+  ChartHost now owns all migrated charts, cached locale redraws and cleanup.
+  Numerical geometry is retained as an unchanged JS leaf with strict API types;
+  domain builders and Vue lifecycle are strict TS. This explicit exception was
+  reviewed by the architect and remains valid after stage 12. Legacy global
+  adapters still retire at finalization. Chart/form mappings pass old-oracle
+  comparisons; 35 unit checks, 13 legacy suites, full chart ES-module checks,
+  29 source/installed-wheel browser scenarios and 1,340 Python tests pass (four
+  skips). Independent code review APPROVE; architecture CLEAR.
+- Stages 8–12: pending.
 
 Stage 2 compatibility note: Vite's CommonJS handling hid the settings global used
 by the old shell. The module now retains that namespace as well as its CommonJS

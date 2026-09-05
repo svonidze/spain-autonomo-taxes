@@ -5,4 +5,4 @@ defineProps<{term: string; label?: string}>();
 const {locale} = useLocale();
 const help = helpAdapter();
 </script>
-<template><button type="button" class="term-help" :data-help-term="term" :aria-label="`${(locale, help.word('help'))}: ${label || term}`" aria-describedby="accounting-tooltip">?</button></template>
+<template><button type="button" class="term-help" :data-help-term="term" :aria-label="`${(locale, help.word('help'))}: ${label || help.termLabel?.(term) || term}`" aria-describedby="accounting-tooltip">?</button></template>

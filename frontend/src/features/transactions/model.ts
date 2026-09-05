@@ -20,7 +20,7 @@ export interface ExpensePage {
 export interface TransactionListContext {
   kind: 'income' | 'expense'; period: string; query: string; copyTarget: string | null;
   services: ViewServices; queryChanged(query: string): void; settled(): void;
-  openIntake(): void; copy(row: TransactionRow): void; mountChart(): void;
+  openIntake(): void; copy(row: TransactionRow): void;
 }
 export const hasAmount = (value: unknown) => value !== null && value !== undefined && value !== '';
 export const copyable = (row: TransactionRow, target: string | null) => !!target && row.entry_type === 'income' && !!row.transaction_id && !['duplicate','rejected','void'].includes(row.lifecycle_status) && !['duplicate','rejected','void'].includes(row.document_status || '');

@@ -17,7 +17,8 @@
     "build": "npm run check:runtime && npm run locales:check && vite build && node scripts/write_ui_manifest.cjs",
     "test:installed": "python scripts/test_installed_ui.py",
     "locales:check": "node scripts/build_locales.mts",
-    "test:pseudo": "node scripts/test_pseudolocale.cjs"
+    "test:pseudo": "node scripts/test_pseudolocale.cjs",
+    "test:chart-module": "node scripts/test_chart_module.cjs"
   },
   "devDependencies": {
     "@babel/parser": "8.0.4",
