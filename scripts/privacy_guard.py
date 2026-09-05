@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import re
 import stat
@@ -213,6 +214,37 @@ def prohibited_path_reason(path: str) -> str | None:
     return None
 
 
+def _package_manager_span(text: str, location: str) -> tuple[int, int] | None:
+    """Locate only the actual root packageManager string, including multiline JSON."""
+    if PurePosixPath(location.rsplit(":", 1)[-1].replace("\\", "/")).name != "package.json":
+        return None
+    try:
+        document = json.loads(text)
+    except ValueError:
+        return None
+    value = document.get("packageManager") if isinstance(document, dict) else None
+    if not isinstance(value, str) or not re.fullmatch(r"npm@\d+\.\d+\.\d+", value):
+        return None
+    decoder = json.JSONDecoder()
+    def whitespace(position: int) -> int:
+        while position < len(text) and text[position] in " \t\r\n":
+            position += 1
+        return position
+    cursor = whitespace(0) + 1  # The validated root is an object.
+    selected = None
+    while text[whitespace(cursor)] != "}":
+        key, end = decoder.raw_decode(text, whitespace(cursor))
+        start = whitespace(whitespace(end) + 1)  # Skip the validated colon.
+        field_value, end = decoder.raw_decode(text, start)
+        if key == "packageManager":
+            selected = (start + 1, end - 1) if field_value == value and text[start + 1:end - 1] == value else None
+        cursor = whitespace(end)
+        if text[cursor] == "}":
+            break
+        cursor += 1
+    return selected
+
+
 def scan_content(data: bytes, location: str, *, max_bytes: int = DEFAULT_MAX_BYTES) -> list[Finding]:
     safe_location = _safe_location(location)
     if len(data) > max_bytes:
@@ -229,7 +261,9 @@ def scan_content(data: bytes, location: str, *, max_bytes: int = DEFAULT_MAX_BYT
         return [Finding("non-utf8-file", safe_location, 0, digest)]
 
     findings: set[Finding] = set()
-    for line_number, line in enumerate(text.splitlines(), start=1):
+    package_manager_span = _package_manager_span(text, location)
+    offset = 0
+    for line_number, (line, raw_line) in enumerate(zip(text.splitlines(), text.splitlines(keepends=True)), start=1):
         for spec in PATTERNS:
             for match in spec.pattern.finditer(line):
                 value = match.group(spec.value_group) if spec.value_group else match.group(0)
@@ -238,7 +272,10 @@ def scan_content(data: bytes, location: str, *, max_bytes: int = DEFAULT_MAX_BYT
                     continue
                 if spec.category == "email-address" and fingerprint in ALLOWED_PUBLIC_BOT_EMAIL_SHA256:
                     continue
+                if spec.category == "email-address" and (offset + match.start(), offset + match.end()) == package_manager_span:
+                    continue
                 findings.add(Finding(spec.category, safe_location, line_number, fingerprint))
+        offset += len(raw_line)
     return sorted(findings)
 
 
