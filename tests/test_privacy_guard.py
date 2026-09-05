@@ -7,6 +7,26 @@ from pathlib import Path
 from scripts import install_privacy_hook, privacy_guard
 
 
+def test_npm_package_manager_version_is_not_an_email():
+    version = "npm" + "@" + "11.19.0"
+    value = ('{"packageManager": "' + version + '"}').encode()
+    for location in ("index:package.json", "history-blob:abc:frontend/package.json"):
+        assert not privacy_guard.scan_content(value, location)
+    assert any(item.category == "email-address" for item in privacy_guard.scan_content(value, "index:notes.json"))
+
+
+def test_package_manager_exception_does_not_hide_real_addresses_or_other_fields():
+    address = "private" + "@" + "mail" + "." + "net"
+    version = "npm" + "@" + "11.19.0"
+    for document in (
+        '{"packageManager": "' + address + '"}',
+        '{"packageManager": "' + version + '", "contact": "' + address + '"}',
+        '{"packageManager": "' + version + '", "notes": "' + version + '"}',
+        '"packageManager": "' + version + '",',
+    ):
+        assert any(item.category == "email-address" for item in privacy_guard.scan_content(document.encode(), "index:package.json"))
+
+
 def _git(repo: Path, *args: str) -> None:
     subprocess.run(
         ["git", "-C", str(repo), *args],
@@ -218,3 +238,13 @@ def test_hook_installer_is_idempotent_and_preserves_other_hooks(tmp_path: Path) 
     else:
         raise AssertionError("a different hook must not be overwritten")
     assert hook.read_text(encoding="utf-8") == "#!/bin/sh\nexit 0\n"
+
+
+def test_package_manager_span_is_root_only_and_supports_multiline_json():
+    version = "npm" + "@" + "11.19.0"
+    nested = ('{\n"packageManager": "' + version + '",\n"metadata": {"packageManager": "' + version + '"}\n}').encode()
+    findings = privacy_guard.scan_content(nested, "index:package.json")
+    assert len(findings) == 1 and findings[0].category == "email-address"
+    assert findings[0].line == 3
+    multiline = ('{\r\n"packageManager":\r\n"' + version + '"\r\n}').encode()
+    assert not privacy_guard.scan_content(multiline, "index:package.json")
