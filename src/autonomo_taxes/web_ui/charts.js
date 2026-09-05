@@ -4,6 +4,8 @@
   const SVG_NS = "http://www.w3.org/2000/svg";
   const VIEW_WIDTH = 640;
   const CARTESIAN_HEIGHT = 240;
+  // Full currency ticks need a wider gutter than the other chart types.
+  const CARTESIAN_LEFT_MARGIN = 96;
   const ROW_HEIGHT = 30;
   const BULLET_HEIGHT = 84;
   const MARGIN = {top: 14, right: 16, bottom: 26, left: 68};
@@ -173,7 +175,7 @@
     const [minValue, maxValue] = domainOf(stackTotals.concat(lineValues));
     const plotTop = MARGIN.top;
     const plotBottom = CARTESIAN_HEIGHT - MARGIN.bottom;
-    const plotLeft = MARGIN.left;
+    const plotLeft = CARTESIAN_LEFT_MARGIN;
     const plotRight = viewWidth - MARGIN.right;
     const yScale = scaleFactory(minValue, maxValue, plotBottom, plotTop);
     const bandWidth = (plotRight - plotLeft) / buckets.length;

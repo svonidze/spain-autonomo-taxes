@@ -21,6 +21,12 @@ const AutonomoCharts = sandbox.AutonomoCharts;
 assert.ok(AutonomoCharts, "charts.js must register the AutonomoCharts namespace");
 
 const eur = (value) => `${(value / 100).toFixed(2)}`;
+const localizedEur = (locale) => (value) =>
+  new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency: "EUR",
+    minimumFractionDigits: 2,
+  }).format(value / 100);
 
 // charts.js runs in a separate vm realm, so its arrays/objects carry foreign
 // prototypes; clone through JSON before deepStrictEqual against literals.
@@ -349,6 +355,7 @@ function geometryOnly(scene) {
 {
   const narrow = AutonomoCharts.buildCartesianScene(cartesianSpec({width: 320}));
   assert.strictEqual(narrow.viewBox.width, 320);
+  assert.strictEqual(narrow.grid[0].x1, 96);
   assert.strictEqual(narrow.grid[0].x2, 304);
   assert.strictEqual(
     AutonomoCharts.buildCartesianScene(cartesianSpec({width: 10000})).viewBox.width,
@@ -366,6 +373,58 @@ function geometryOnly(scene) {
     AutonomoCharts.buildCartesianScene(cartesianSpec({})).viewBox.width,
     640
   );
+}
+
+// Full currency ticks keep enough internal space for their leading digits.
+{
+  const baseSeries = cartesianSpec({}).series[0];
+  const scene = AutonomoCharts.buildCartesianScene(
+    cartesianSpec({
+      buckets: ["Income", "Deductions", "Net"],
+      formatValue: localizedEur("ru-RU"),
+      series: [
+        Object.assign({}, baseSeries, {
+          values: [6153009, 660712, 5492297],
+        }),
+      ],
+    })
+  );
+  assert.deepStrictEqual(
+    plain(scene.grid.map((line) => line.label)),
+    ["0,00 €", "20 000,00 €", "40 000,00 €", "60 000,00 €"]
+  );
+  assert.ok(
+    scene.grid.every((line) => line.x1 === 96),
+    "currency ticks reserve 90 units before their right-aligned anchor"
+  );
+}
+
+// Signed six-digit euro values stay inside the widened Cartesian plot.
+{
+  const baseSeries = cartesianSpec({}).series[0];
+  const scene = AutonomoCharts.buildCartesianScene(
+    cartesianSpec({
+      width: 640,
+      formatValue: localizedEur("en-GB"),
+      series: [
+        Object.assign({}, baseSeries, {
+          stack: "net",
+          values: [-98765432, 98765432],
+        }),
+      ],
+    })
+  );
+  assert.ok(
+    scene.grid.some((line) => line.label === "-€500,000.00"),
+    "the negative six-digit tick keeps its full currency label"
+  );
+  assert.ok(scene.grid.every((line) => line.x1 === 96));
+  scene.marks
+    .filter((mark) => mark.kind === "rect")
+    .forEach((mark) => {
+      assert.ok(mark.x >= 96);
+      assert.ok(mark.x + mark.width <= 624);
+    });
 }
 
 // Narrow monthly charts thin bucket labels deterministically; marks stay complete.
