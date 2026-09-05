@@ -1,3 +1,4 @@
+import './vue/install.ts';
 // Preserve legacy initialization order until each feature owns its lifecycle.
 import './core/install.ts';
 import '../../src/autonomo_taxes/web_ui/status-help.js';

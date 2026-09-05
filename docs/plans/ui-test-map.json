@@ -45,7 +45,10 @@
     "source": "tests/test_web_ui_expense_detail.js",
     "behavior": "web ui expense detail",
     "stage": 4,
-    "replacements": []
+    "replacements": [
+      "tests/browser/expense-detail.spec.ts",
+      "frontend/tests/vue-host.test.ts"
+    ]
   },
   {
     "source": "tests/test_web_ui_guided.js",

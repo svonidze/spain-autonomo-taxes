@@ -254,6 +254,7 @@ async function main() {
   assert.equal(stale.state.expenseDetail.data, null);
 
   const rejected = loadFunctions(["renderCurrentView"], {
+    vueViewHost: null,
     expenseWorkflowController: null,
     lastAssetPostingResult: null,
     pendingLocaleRepaint: false,
