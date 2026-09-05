@@ -17,6 +17,7 @@ def test_posting_ui_static_assets_cover_dashboard_banner_and_review_flow() -> No
     assert 'id="posting-confirm-body"' in html
     assert 'id="confirm-posting-button"' in html
 
+    catalogs = "\n".join(path.read_text() for path in (static_root.parents[2] / "frontend/src/locales").glob("*/*.json"))
     for expected in (
         'fetchJSON(`/api/review/posting-preview?period=${encodeURIComponent(period)}`)',
         'fetchJSON("/api/review/post-ready", {',
@@ -33,7 +34,7 @@ def test_posting_ui_static_assets_cover_dashboard_banner_and_review_flow() -> No
         '"review.postConfirmCleanupWarning": "Posting affects cleanup: applies {cleanupCount}, blocked {cleanupBlockedCount}. Review the reasons before confirming."',
         '"review.postConfirmCleanupWarning": "Проведение затронет cleanup: применится {cleanupCount}, заблокировано {cleanupBlockedCount}. Проверьте причины перед подтверждением."',
     ):
-        assert expected in javascript
+        assert expected in (catalogs if expected.startswith('"') else javascript)
 
 
 def test_posting_ui_behavioral_helpers_run_under_node() -> None:

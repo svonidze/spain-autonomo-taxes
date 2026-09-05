@@ -37,3 +37,7 @@ only verified built assets, with no source fallback. `test:installed` builds a
 wheel, creates a fresh environment outside the repository and runs the browser
 suite with isolated Python imports. Node is a build/test dependency, not a
 separate application service.
+
+Localization uses one ICU catalog set for legacy views and typed components.
+See [Interface languages](UI_LOCALIZATION.md) for adding languages, generated
+types, pseudolocale checks and state-preserving language updates.

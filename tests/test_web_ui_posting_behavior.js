@@ -1,3 +1,4 @@
+const __uiCore = require('./legacy_core.cjs');
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -53,7 +54,7 @@ const context = {
   "normalizePostingResult",
   "buildPostReadyItems",
 ].forEach((name) => {
-  vm.runInNewContext(`${extractFunction(source, name)}; this.${name} = ${name};`, context);
+  vm.runInNewContext(`${extractFunction(source, name)}; this.${name} = ${name};`, __uiCore.prepare(context));
 });
 
 const preview = context.normalizePostingPreview({

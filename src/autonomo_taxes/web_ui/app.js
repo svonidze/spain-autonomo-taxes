@@ -1,7 +1,7 @@
-const LOCALE_STORAGE_KEY = "autonomo.locale";
+const LOCALE_STORAGE_KEY = AutonomoCore.localeStorageKey;
 const REVIEW_DRAFT_STORAGE_PREFIX = "autonomo.review-draft";
 const INTAKE_DRAFT_STORAGE_KEY = "autonomo.intake-draft";
-const SUPPORTED_LOCALES = new Set(["ru", "en"]);
+const SUPPORTED_LOCALES = new Set(AutonomoCore.localeRegistry.map(locale => locale.code));
 const KNOWN_REVIEW_TAX_CODES = new Set([
   "domestic_input",
   "domestic_output",
@@ -19,1451 +19,33 @@ const KNOWN_REVIEW_TAX_CODES = new Set([
 // Source: AEAT's 2026 normalized registry-book design (LSI.xlsx),
 // RECIBIDAS_GASTOS / Concepto de Gasto. These labels are display-only: the
 // original code remains visible and continues to be sent through every API.
-const AEAT_EXPENSE_CONCEPT_LABELS = {
-  ru: {
-    G01: "Закупка товаров и материалов",
-    G02: "Уменьшение товарных запасов",
-    G03: "Прочие расходы на ведение деятельности",
-    G04: "Зарплата сотрудников",
-    G05: "Соцстрахование сотрудников за счёт работодателя",
-    G06: "Соцстрахование и альтернативное страхование autónomo (до I кв. 2024)",
-    G07: "Компенсации сотрудникам",
-    G08: "Командировочные сотрудников",
-    G09: "Взносы в пенсионные системы сотрудников",
-    G10: "Прочие расходы на сотрудников",
-    G11: "Питание autónomo",
-    G12: "Аренда и лицензионные платежи",
-    G13: "Ремонт и обслуживание",
-    G14: "Электроэнергия",
-    G15: "Вода",
-    G16: "Газ",
-    G17: "Телефон и интернет",
-    G18: "Прочие коммунальные услуги",
-    G19: "Услуги сторонних специалистов",
-    G20: "Страховые взносы",
-    G22: "Прочие внешние услуги",
-    G23: "Проценты по долгам",
-    G24: "Прочие финансовые расходы",
-    G25: "Входной IVA при специальных режимах",
-    G26: "Прочие вычитаемые налоги и сборы",
-    G27: "Амортизация зданий",
-    G28: "Амортизация оборудования, мебели и прочих материальных активов",
-    G29: "Амортизация машин и механизмов",
-    G30: "Амортизация транспорта",
-    G31: "Амортизация компьютеров и электроники",
-    G32: "Амортизация инструментов",
-    G33: "Амортизация скота и сельскохозяйственных культур",
-    G34: "Потери по безнадёжным долгам",
-    G35: "Меценатство: соглашения о сотрудничестве",
-    G36: "Меценатство: общественно полезные мероприятия",
-    G37: "Прочие налогово вычитаемые расходы",
-    G38: "Амортизация нематериальных активов",
-    G39: "Налогово вычитаемые резервы",
-    G40: "Оформление договоров",
-    G41: "Юридическая защита",
-    G42: "Прочие персональные услуги третьих лиц",
-    G43: "Сомнительная дебиторская задолженность",
-    G44: "Взносы сообществу собственников",
-    G45: "Соцстрахование autónomo",
-    G46: "Взносы autónomo в альтернативные страховые системы",
-    G47: "Корректировка RETA: к доплате",
-    G48: "Корректировка RETA: к возврату",
-    GY4: "Коммунальные услуги и связь",
-    GY8: "Амортизация материальных активов",
-  },
-  en: {
-    G01: "Purchases of goods and materials",
-    G02: "Decrease in inventory",
-    G03: "Other operating expenses",
-    G04: "Employee salaries",
-    G05: "Employer Social Security contributions",
-    G06: "Owner Social Security and alternative insurance (through Q1 2024)",
-    G07: "Employee compensation",
-    G08: "Employee travel allowances",
-    G09: "Employee pension contributions",
-    G10: "Other employee expenses",
-    G11: "Owner meal expenses",
-    G12: "Rent and licence fees",
-    G13: "Repairs and maintenance",
-    G14: "Electricity",
-    G15: "Water",
-    G16: "Gas",
-    G17: "Telephone and internet",
-    G18: "Other utilities",
-    G19: "Independent professional services",
-    G20: "Insurance premiums",
-    G22: "Other external services",
-    G23: "Interest on debt",
-    G24: "Other financial expenses",
-    G25: "Input IVA under special regimes",
-    G26: "Other deductible taxes and levies",
-    G27: "Depreciation of buildings",
-    G28: "Depreciation of equipment, furniture and other tangible assets",
-    G29: "Depreciation of machinery",
-    G30: "Depreciation of vehicles",
-    G31: "Depreciation of computers and electronics",
-    G32: "Depreciation of tools",
-    G33: "Depreciation of livestock and agricultural crops",
-    G34: "Bad-debt losses",
-    G35: "Patronage: collaboration agreements",
-    G36: "Patronage: public-interest activities",
-    G37: "Other tax-deductible expenses",
-    G38: "Amortization of intangible assets",
-    G39: "Tax-deductible provisions",
-    G40: "Contract formalization",
-    G41: "Legal defence",
-    G42: "Other personal services supplied by third parties",
-    G43: "Doubtful receivables",
-    G44: "Property community fees",
-    G45: "Owner Social Security contributions",
-    G46: "Owner contributions to alternative insurance schemes",
-    G47: "RETA adjustment: amount payable",
-    G48: "RETA adjustment: refund",
-    GY4: "Utilities and communications",
-    GY8: "Depreciation of tangible assets",
-  },
-};
+const AEAT_EXPENSE_CONCEPT_LABELS = AutonomoCore.legacy.AEAT_EXPENSE_CONCEPT_LABELS;
 
-const messages = {
-  ru: {
-    "expense.purchase": "Покупки, услуги и прочие расходы",
-    "expense.amortization": "Амортизация техники",
-    "expense.explanation": "Часть стоимости ранее купленной техники, учитываемая в расходах этого квартала. Это не новая покупка и не платёж.",
-    "expense.recognitionDate": "Дата учёта",
-    "expense.sourceDate": "Документ от {date}",
-    "expense.sourceAmount": "Сумма документа: {amount}",
-    "expense.recordedAmount": "Сумма исходной записи: {amount}",
-    "expense.amount": "Сумма расхода",
-    "expense.quarterAmount": "Амортизация за квартал",
-    "expense.periodDate": "Период и дата учёта",
-    "expense.assetDocument": "Актив / исходный документ",
-    "expense.quarter": "{quarter} квартал {year}",
-    "expense.forQuarter": "Амортизация за {period}",
-    "expense.future": "Дата учёта ещё не наступила: {date}",
-    "expense.unposted": "Не проведено",
-    "expense.unmatched": "Актив не сопоставлен",
-    "expense.inferred": "Сопоставлено по контрагенту и дате документа",
-    "expense.source": "Источник",
-    "expense.quarterTotal": "Проведено и проверено за весь квартал: {amount}",
-    "expense.shown": "Показано {shown} из {count}",
-    "expense.empty": "В этом квартале записей нет.",
-    "expense.noMatches": "По запросу ничего не найдено.",
-    "expense.moreRecords": "Эти записи находятся на следующих страницах. Нажмите «Показать ещё».",
-    "expense.loadMore": "Показать ещё",
-    "expense.retry": "Повторить загрузку",
-    "expense.refreshData": "Обновить данные",
-    "expense.refreshFailed": "Не удалось обновить данные. Показаны предыдущие значения.",
-    "expense.invalidPage": "Не удалось загрузить следующую страницу. Повторите попытку.",
-    "expense.loading": "Загружаем расходы…",
-    "expense.search": "Контрагент, документ или актив",
-    "expense.posted": "Проведено",
-    "expense.approved": "Проверено, не проведено: {amount}",
-    "expense.futureAmount": "Из них будущей датой: {amount}",
-    "expense.missing": "Не хватает данных о сумме",
-    "expense.inAmount": "В сумме амортизации",
-    "expense.chartSourceNote": "График использует исходные суммы записей. Для амортизации это полная стоимость прежней покупки, а не новое списание: сумму за квартал смотрите в блоке выше.",
-    "common.loadFailed": "Не удалось загрузить данные. Проверьте подключение и повторите попытку.",
-    "common.retry": "Повторить",
-    "common.sessionExpired": "Сессия истекла. Перезагрузите страницу, чтобы восстановить доступ.",
-    "common.reload": "Перезагрузить страницу",
-    "app.title": "Учет autónomo",
-    "brand.subtitle": "Бухгалтерия в Испании",
-    "nav.aria": "Основная навигация",
-    "nav.dashboard": "Обзор",
-    "nav.income": "Доходы",
-    "nav.expenses": "Расходы",
-    "nav.review": "Проверка",
-    "nav.assets": "Активы",
-    "nav.taxes": "Налоги",
-    "nav.contacts": "Контрагенты",
-    "nav.settings": "Настройки",
-    "storage.settings": "SQLite · Настройки",
-    "storage.local": "Локальная SQLite",
-    "locale.aria": "Язык интерфейса",
-    "toolbar.period": "Период",
-    "toolbar.periodAria": "Налоговый период",
-    "toolbar.refresh": "Обновить расчет",
-    "common.add": "Добавить",
-    "common.copyToPeriod": "Копировать в {period}",
-    "common.back": "Назад",
-    "common.cancel": "Отмена",
-    "common.close": "Закрыть",
-    "common.file": "Файл",
-    "common.loading": "Загрузка данных…",
-    "common.noId": "без ID",
-    "common.noRecords": "Нет записей",
-    "common.refresh": "Обновить",
-    "common.save": "Сохранить",
-    "common.step": "Шаг",
-    "common.yes": "Да",
-    "common.no": "Нет",
-    "intake.title": "Новая запись",
-    "intake.kindAria": "Тип записи",
-    "intake.expenseFile": "Выберите счет поставщика или перетащите файл",
-    "intake.incomeFile": "Выберите выставленный счет или перетащите файл",
-    "intake.fileFormats": "PDF, изображение, CSV или TXT до 30 MB",
-    "intake.sourceAria": "Источник документа",
-    "intake.sourceUpload": "Загрузить файл",
-    "intake.sourceGoogleDrive": "Google Drive URL",
-    "intake.googleDriveUrl": "Ссылка на файл Google Drive",
-    "intake.googleDrivePlaceholder": "drive.google.com/file/d/...",
-    "intake.googleDriveHint": "Файл останется в вашем архиве; будет сохранена ссылка на оригинал.",
-    "intake.googlePickerHint": "Google Picker будет доступен после настройки узкого доступа drive.file.",
-    "intake.googleDriveInvalid": "Введите ссылку на файл Google Drive.",
-    "intake.chooseGoogleFolder": "Выбрать папку Google Drive",
-    "intake.googleFolderSelected": "Папка: {name}",
-    "intake.googlePickerUnavailable": "Выбор папки Google Drive пока не настроен.",
-    "intake.accept": "Принять в систему",
-    "intake.selectFile": "Выберите файл.",
-    "intake.processing": "Извлечение и запись…",
-    "intake.failed": "Не удалось принять документ",
-    "intake.accepted": "Принято: {id}",
-    "intake.acceptedToast": "Документ принят в {period}",
-    "intake.copyNotice": "Дата и номер перенесены в {period}, когда это безопасно. Проверьте поля и загрузите новый файл перед приемом.",
-    "intake.copyUnsupportedCurrency": "Валюта {currency} не поддерживается формой приема, поэтому валюта и сумма не были скопированы.",
-    "intake.copyInvalidAmount": "Сумма источника недоступна для копирования, поэтому введите ее вручную при необходимости.",
-    "intake.copyStale": "Исходная строка больше недоступна. Обновите страницу или повторите поиск.",
-    "errors.apiReturnedHtml": "API вернул HTML вместо данных. Вероятно, на {origin} запущен другой сервер. Остановите его или запустите autonomo-web на другом порту.",
-    "errors.unexpectedNonJson": "Неожиданный ответ не в JSON от {url} ({status}).",
-    "errors.malformedJson": "Некорректный JSON в ответе от {url} ({status}).",
-    "fields.amount": "Сумма",
-    "fields.bookingDate": "Дата проводки",
-    "fields.businessPurpose": "Деловое назначение",
-    "fields.supplier": "Поставщик",
-    "fields.client": "Клиент",
-    "fields.counterpartyCountry": "Страна контрагента",
-    "fields.counterpartyType": "Форма контрагента",
-    "fields.currency": "Валюта",
-    "fields.deductibleIrpfMinor": "Вычет IRPF, центы",
-    "fields.deductibleRatio": "Доля вычета",
-    "fields.deductibleVatMinor": "Вычет IVA, центы",
-    "fields.documentDate": "Дата документа",
-    "fields.documentValid": "Документ подтвержден",
-    "fields.fxRate": "Курс EUR",
-    "fields.fxRateDate": "Дата курса",
-    "fields.fxRateSource": "Источник курса",
-    "fields.fxSourceReference": "Ссылка или примечание к источнику",
-    "fields.includeModelo130": "Включать в Modelo 130",
-    "fields.includeModelo303": "Включать в Modelo 303",
-    "fields.includeModelo347": "Включать в Modelo 347",
-    "fields.invoiceType": "Тип счета AEAT",
-    "fields.issuedOn": "Дата счета",
-    "fields.legalForm": "Юр. форма",
-    "fields.notes": "Примечание для аудита",
-    "fields.number": "Номер",
-    "fields.operationKey": "Ключ операции AEAT",
-    "fields.operationQualification": "Квалификация AEAT",
-    "fields.exemptionCode": "Код освобождения AEAT",
-    "fields.reverseCharge": "Обратное начисление IVA",
-    "fields.expenseConcept": "Код расхода AEAT",
-    "fields.rateBasisPoints": "Ставка, базисные пункты",
-    "fields.ruleVersion": "Версия правила",
-    "fields.outcome": "Решение",
-    "fields.reason": "Причина решения",
-    "fields.retentionExpected": "Ожидать удержание",
-    "fields.professionalSupplier": "Профессиональный поставщик",
-    "fields.reviewAction": "Действие по вопросу",
-    "fields.reviewReason": "Почему вопрос можно закрыть",
-    "fields.roiStatus": "ROI / VAT",
-    "fields.supplier": "Поставщик",
-    "fields.taxCode": "Налоговый код",
-    "fields.taxId": "NIF / Tax ID",
-    "fields.taxableBaseMinor": "База, центы",
-    "fields.total": "Итого",
-    "fields.transactionDate": "Дата операции",
-    "fields.vatBase": "База IVA",
-    "fields.vatId": "VAT ID",
-    "fields.vatMinor": "IVA, центы",
-    "fields.withholdingMinor": "Удержание, центы",
-    "titles.dashboard": "Обзор",
-    "titles.income": "Доходы",
-    "titles.expenses": "Расходы",
-    "expense.open": "Открыть расход",
-    "expense.title": "Просмотр расхода",
-    "expense.notes": "Примечания",
-    "expense.noNotes": "Примечаний нет",
-    "expense.readOnly": "Только просмотр сохранённых данных",
-    "expense.back": "К списку: {title} · {period}",
-    "expense.notFound": "Расход не найден",
-    "expense.wrongType": "Это не расход",
-    "expense.refresh": "Обновить данные",
-    "expense.description": "Описание",
-    "titles.review": "Проверка",
-    "titles.assets": "Активы",
-    "titles.taxes": "Налоги и сроки",
-    "titles.contacts": "Контрагенты",
-    "titles.settings": "Настройки аккаунта",
-    "contacts.cardTitle": "Карточка контрагента",
-    "contacts.actionsFor": "Действия для {name}",
-    "contacts.actions": "Дополнительные действия",
-    "contacts.back": "К списку контрагентов",
-    "contacts.backToParty": "К контрагенту",
-    "contacts.facts": "Реквизиты",
-    "contacts.operations": "Операции",
-    "contacts.operationType": "Тип",
-    "contacts.description": "Описание",
-    "contacts.sourceDocument": "Документ-источник",
-    "contacts.email": "Эл. почта",
-    "contacts.phone": "Телефон",
-    "contacts.allPeriods": "Все периоды",
-    "contacts.more": "Показать ещё",
-    "contacts.shown": "Показано {count} из {total}",
-    "contacts.noOperations": "Операций за этот период нет.",
-    "contacts.operationsError": "Не удалось загрузить операции.",
-    "contacts.retry": "Повторить",
-    "contacts.notFound": "Контрагент не найден.",
-    "contacts.refresh": "Обновить карточку",
-    "dashboard.incomePosted": "Доходы, проведено",
-    "dashboard.expensesPosted": "Расходы, проведено",
-    "dashboard.expensesForecast": "Готово к проведению",
-    "dashboard.waitingForPeriodOne": "{count} ожидает закрытия периода",
-    "dashboard.waitingForPeriodOther": "{count} ожидают закрытия периода",
-    "dashboard.calculatedAsOf": "расчет на {date}",
-    "dashboard.notCalculated": "расчет не обновлен",
-    "dashboard.filed": "подано",
-    "dashboard.filedOn": "подано {date}",
-    "dashboard.valuesUnavailable": "значения недоступны",
-    "dashboard.snapshotAvailable": "есть filing snapshot",
-    "dashboard.carryForward": "к переносу {amount}",
-    "dashboard.approvedNotPosted": "В периоде есть подтвержденные операции, но они еще не проведены. Карточки «проведено» считают только posted / included in filing.",
-    "dashboard.postingBannerTitle": "{count} подтвержденных операций ждут проведения",
-    "dashboard.postingBannerCta": "Открыть проверку",
-    "dashboard.modelo130Box": "Modelo 130 · поле 19",
-    "dashboard.modelo303Result": "Modelo 303 · результат",
-    "dashboard.upcomingFiling": "Предстоящая декларация",
-    "dashboard.obligationDue": "Требуется подать за выбранный период.",
-    "dashboard.recentTransactions": "Последние операции",
-    "dashboard.needsAttention": "Требует внимания",
-    "dashboard.readyBannerOne": "{count} операция уже проверена и может быть проведена",
-    "dashboard.readyBannerOther": "{count} операции уже проверены и могут быть проведены",
-    "dashboard.readyBannerAction": "Открыть проверку",
-    "transactions.search": "Поиск по контрагенту или номеру",
-    "transactions.date": "Дата",
-    "transactions.counterpartyDocument": "Контрагент / документ",
-    "transactions.status": "Статус",
-    "transactions.amount": "Сумма",
-    "transactions.irpfDeduction": "Вычет IRPF",
-    "transactions.noCounterparty": "Без контрагента",
-    "transactions.emptyIncome": "Доходов в этом периоде пока нет. Нажмите «Добавить», чтобы принять счёт.",
-    "transactions.noMatches": "По запросу ничего не найдено.",
-    "review.queueEmpty": "Очередь проверки пуста — всё проверено.",
-    "review.transactions": "Операции на проверке",
-    "review.documents": "Документы на проверке",
-    "review.openIssues": "Открытые вопросы",
-    "review.summary": "Очередь проведения",
-    "review.summaryReady": "Можно провести сейчас",
-    "review.summaryNeedsReview": "Нужно проверить",
-    "review.category.ready": "можно провести",
-    "review.category.later": "провести позже",
-    "review.category.blocked": "проведение заблокировано",
-    "review.category.needs_review": "нужна проверка",
-    "reviewTabs.aria": "Разделы проверки",
-    "reviewTabs.queue": "Очередь",
-    "reviewTabs.posting": "Проведение",
-    "reviewTabs.documents": "Документы и вопросы",
-    "review.submitting": "Отправка…",
-    "review.formDisabledHint": "Поля решений заблокированы, пока операцию нельзя провести — причина объяснена выше.",
-    "intake.draftRestored": "Черновик восстановлен — проверьте поля перед приёмом.",
-    "intake.consistencyHint": "База + IVA = {expected}, а итого — {total}. Проверьте суммы.",
-    "intake.disabledReason": "Приём документов отключён: на сервере не настроен каталог входящих.",
-    "toolbar.periodLocked": "Период зафиксирован, пока открыта карточка записи.",
-    "tables.actions": "Действия",
-    "review.summaryLater": "Можно будет провести позже",
-    "review.summaryBlocked": "Блокировки после проверки",
-    "review.workspaceBack": "К списку операций",
-    "review.workspaceTitle": "Проверка счета",
-    "review.openWorkspace": "Открыть проверку",
-    "review.facts": "Факты",
-    "review.taxDecision": "Налоговое решение",
-    "review.result": "Результат",
-    "review.requirements": "Что нужно подтвердить",
-    "review.requirementSupported": "можно сделать сейчас",
-    "review.requirementUnsupported": "нужно завершить вне этого экрана",
-    "review.counterpartyFacts": "Проверенные факты о контрагенте",
-    "review.counterpartyFactsHint": "Меняются только поля решения. Исходный пакет не редактируется.",
-    "review.technicalDetails": "Технические поля AEAT",
-    "review.validationPending": "Сначала выполните проверку пакета.",
-    "review.validationPassed": "Пакет прошел проверку и готов к применению.",
-    "review.validationPreview": "Предпросмотр проверки",
-    "review.primaryValidate": "Проверить пакет",
-    "review.primaryApprove": "Подтвердить и оставить готовым к проведению",
-    "review.primaryReject": "Отклонить счет",
-    "review.applySuccess": "Решение применено.",
-    "review.fx": "Курс валюты",
-    "review.fxHint": "Курс записывается отдельным вызовом и обновляет рабочий пакет.",
-    "review.fxApply": "Применить курс",
-    "review.fxApplied": "Курс обновлен. Пакет перезагружен.",
-    "review.fxDirty": "После смены курса пакет нужно проверить заново.",
-    "review.unsupported": "Этот счет нельзя завершить из этого экрана.",
-    "review.future": "Будущую операцию можно провести только после {date}.",
-    "review.postingReady": "Проверено · Можно провести сейчас",
-    "review.postingLater": "Проверено · Можно будет провести {date}",
-    "review.postingBlocked": "Проверено · Нельзя провести",
-    "review.needsReview": "Нужно проверить решение по счету",
-    "review.unknownSupport": "Налоговый код не поддерживается для проведения.",
-    "review.invalidWorkItem": "Не удалось проверить операцию и её период. Обновите страницу или вернитесь к списку через меню «Проверка».",
-    "review.outcomeApprove": "Подтвердить",
-    "review.outcomeReject": "Отклонить",
-    "review.actionResolve": "Закрыть вопрос",
-    "review.actionKeepOpen": "Оставить открытым",
-    "review.documentLink": "Открыть файл",
-    "review.invoiceLabel": "Счет {number}",
-    "review.issueOpen": "Открытый вопрос",
-    "review.issueResolved": "Вопрос будет закрыт",
-    "review.vatInvestment": "Классификация покупки для IVA",
-    "review.vatCurrent": "Текущая покупка для IVA",
-    "review.vatAsset": "Инвестиционный товар для IVA",
-    "review.vatUnknown": "Классификация IVA не проверена",
-    "review.vatInvestmentHint": "Амортизация для IRPF не определяет классификацию IVA. Выберите отдельно на основании покупки.",
-    "review.assetDecision": "Классификация расхода",
-    "review.assetCurrentExpense": "Текущий расход",
-    "review.assetAsset": "Основное средство",
-    "review.assetNotApplicable": "Не применяется",
-    "review.supportReason": "Причина блокировки",
-    "review.statusReady": "готово",
-    "review.statusLater": "позже",
-    "review.statusBlocked": "заблокировано",
-    "review.stepBusinessPurpose": "Подтвердите деловое назначение расхода.",
-    "review.stepIrpfAmount": "Укажите сумму, допустимую к вычету по IRPF.",
-    "review.stepIvaTreatment": "Проверьте режим IVA и базу налога.",
-    "review.stepIncomeRecognition": "Подтвердите признание дохода.",
-    "review.stepAssetDecision": "Решите, это текущий расход или актив.",
-    "review.stepBusinessUse": "Укажите процент делового использования.",
-    "review.stepFx": "Добавьте официальный или расчетный курс EUR.",
-    "review.stepAmountError": "Разберите расхождение сумм: {detail}.",
-    "review.stepUnknown": "Подтвердите это требование вручную: {code}.",
-    "review.postingTitle": "Проведение подтвержденных операций",
-    "review.postingApproved": "Подтверждено",
-    "review.postingBatchReady": "Готово к проведению",
-    "review.postingDeferred": "Отложено",
-    "review.postingBatchBlocked": "Заблокировано",
-    "review.postingCleanup": "Очистка Inbox",
-    "review.postingCleanupBlocked": "Очистка заблокирована",
-    "review.postingAmount": "Сумма к проведению",
-    "review.postingOpenPeriod": "Период открыт",
-    "review.postingClosedPeriod": "Период закрыт",
-    "review.postingGeneratedAt": "Сформировано {date}",
-    "review.postingGeneratedUnknown": "Превью проведения без отметки времени",
-    "review.postingReadyHint": "Будут проведены только строки, которые все еще готовы по текущему превью.",
-    "review.postingNothingReady": "Сейчас нет строк, готовых к проведению.",
-    "review.postingClosedHint": "Проведение отключено: выбранный период не открыт.",
-    "review.postConfirmTitle": "Провести готовые операции",
-    "review.postConfirmLead": "Будут проведены только эти строки из текущего превью.",
-    "review.postConfirmAction": "Провести",
-    "review.postConfirmCleanupWarning": "Проведение затронет cleanup: применится {cleanupCount}, заблокировано {cleanupBlockedCount}. Проверьте причины перед подтверждением.",
-    "review.postingRows": "Строки превью",
-    "review.postingRetryRefresh": "Повторить обновление расчета",
-    "review.postingStaleWarning": "Операции проведены, налоговый расчёт требует обновления.",
-    "review.postingResults": "Результат проведения",
-    "review.postingResultSummary": "Статус: {status} · проведено {count}",
-    "review.postingResultMessage": "Сообщение",
-    "review.postSuccess": "Проведено: {count}",
-    "review.postPartial": "Проведение завершено частично",
-    "review.postInterrupted": "Проведение прервано",
-    "review.postNone": "Новых проводок нет",
-    "assets.title": "Активы и амортизация",
-    "assets.asset": "Актив",
-    "assets.inService": "Ввод",
-    "assets.cost": "Стоимость",
-    "assets.base": "База",
-    "assets.businessUse": "Использование",
-    "assets.rate": "Ставка",
-    "assets.schedule": "График",
-    "assets.decision": "Состояние учёта",
-    "taxes.obligations": "Обязательства",
-    "taxes.form": "Форма",
-    "taxes.applicability": "Применимость",
-    "taxes.status": "Статус",
-    "taxes.directDebit": "Автосписание оформить до",
-    "taxes.deadline": "Срок",
-    "taxes.noCalculation": "нет расчета",
-    "taxes.calculationMissing": "Расчет не сформирован",
-    "taxes.filedValuesUnavailable": "Декларация подана, но значения filing snapshot недоступны.",
-    "taxes.filedValuesUnavailableExtract": "Декларация подана, но значения не удалось извлечь из filing snapshot.",
-    "taxes.filedValuesUnavailablePdf": "Декларация подана, но PDF filing snapshot не удалось прочитать.",
-    "taxes.headlinePlanned": "Планируется к оплате",
-    "taxes.headlinePaid": "Заплачено",
-    "taxes.headlineConfirmed": "Подтверждено оплачено",
-    "taxes.headlineNoPayment": "Платить не нужно",
-    "taxes.headlineNotStarted": "Квартал ещё не начался",
-    "taxes.headlineUndetermined": "Сумма пока не определена",
-    "taxes.currentDetail": "Расчёт на {date} До конца квартала сумма может измениться.",
-    "taxes.currentDetailNoDate": "Предварительный расчёт. До конца квартала сумма может измениться.",
-    "taxes.paidDetail": "Банковское списание подтверждено.",
-    "taxes.unconfirmedDetail": "По декларациям к уплате {amount}. Банковское списание не подтверждено.",
-    "taxes.previewUnconfirmedDetail": "По предварительному расчёту к уплате {amount}. Сумма поданной декларации недоступна, списание не подтверждено.",
-    "taxes.partialDetail": "Осталось подтвердить или доплатить {amount}.",
-    "taxes.overpaidDetail": "Списано на {amount} больше суммы к уплате.",
-    "taxes.evidenceUnavailableDetail": "Запись об оплате есть, но её подтверждение неполное.",
-    "taxes.unfiledDetail": "Квартал завершён, но декларация ещё не подтверждена. Показан предварительный расчёт.",
-    "taxes.notStartedDetail": "Налоговый прогноз появится с первого дня квартала.",
-    "taxes.undeterminedDetail": "Не хватает расчёта или решения по обязательной декларации.",
-    "taxes.payable": "К оплате",
-    "taxes.confirmedDebit": "Подтверждено списано",
-    "taxes.remaining": "Осталось",
-    "taxes.overpayment": "Переплата",
-    "taxes.irpf": "Подоходный налог",
-    "taxes.iva": "Налог на добавленную стоимость",
-    "taxes.details": "Детали расчёта",
-    "taxes.filing": "Подача",
-    "taxes.filed": "Подана",
-    "taxes.notFiled": "Ещё не подана",
-    "taxes.filingNotRequired": "Подача не требуется",
-    "taxes.carryforward": "Всего IVA к переносу",
-    "taxes.generatedCredit": "Добавлено в этом квартале",
-    "taxes.refundRequested": "Запрошен возврат",
-    "taxes.noTaxPayment": "По этой декларации платить не нужно.",
-    "taxes.otherForms": "Остальные декларации — подача не требуется",
-    "taxes.additionalDueForms": "Дополнительные обязательные декларации",
-    "taxes.additionalAnalytics": "Дополнительная аналитика",
-    "taxes.amendedNotice": "Период был исправлен. Суммы оплаты требуют сверки с актуальной декларацией.",
-    "taxes.status.planned": "Предварительный расчёт",
-    "taxes.status.unfiled": "Декларация не подана",
-    "taxes.status.paymentUnconfirmed": "Оплата не подтверждена",
-    "taxes.status.evidenceUnavailable": "Подтверждение оплаты неполное",
-    "taxes.status.partiallyPaid": "Оплачено частично",
-    "taxes.status.paid": "Оплачено",
-    "taxes.status.overpaid": "Обнаружена переплата",
-    "taxes.status.noPaymentRequired": "Оплата не требуется",
-    "taxes.status.undetermined": "Сумма не определена",
-    "taxes.status.notStarted": "Квартал не начался",
-    "contacts.title": "Контрагенты",
-    "contacts.name": "Название",
-    "contacts.country": "Страна",
-    "contacts.transactions": "Операций",
-    "contacts.last": "Последняя",
-    "contacts.editName": "Исправить имя",
-    "contacts.nameLabel": "Имя",
-    "contacts.renameHint": "Имя изменится в приложении и новых выгрузках. Исходные документы останутся без изменений.",
-    "contacts.manualName": "Исправлено вручную",
-    "contacts.saveName": "Сохранить",
-    "contacts.savingName": "Сохранение…",
-    "contacts.nameSaved": "Имя исправлено",
-    "contacts.nameUnchanged": "Имя не изменилось",
-    "contacts.invalidName": "Введите непустое имя в одну строку без управляющих символов.",
-    "contacts.nameHistory": "История изменений",
-    "contacts.noNameHistory": "Ручных исправлений пока нет.",
-    "contacts.historyError": "Не удалось загрузить историю.",
-    "contacts.retryHistory": "Повторить загрузку",
-    "contacts.localActor": "Локальная сессия",
-    "contacts.sheetActor": "Правка из таблицы",
-    "contacts.nameConflict": "Контрагент изменился после открытия формы. Проверьте актуальное имя перед сохранением.",
-    "contacts.currentName": "Актуальное имя: {name}",
-    "contacts.acceptCurrentName": "Проверил: использовать текущую версию",
-    "contacts.discardName": "Закрыть форму без сохранения исправленного имени?",
-    "contacts.nameBusy": "База временно занята. Повторите сохранение.",
-    "contacts.nameMissing": "Контрагент больше недоступен. Закройте форму и обновите список.",
-    "contacts.nameRefreshError": "Имя сохранено, но список не обновился. Откройте раздел заново.",
-    "refresh.done": "Расчет {period} обновлен",
-    "documents.counterparty": "Контрагент",
-    "documents.type": "Тип",
-    "issues.none": "Открытых вопросов нет",
-    "issues.sourceDetails": "Исходные сведения",
-    "issues.default": "Требуется ручная проверка.",
-    "routes.unknownTitle": "Страница не найдена",
-    "routes.unknownHint": "Такого раздела нет. Откройте обзор, чтобы продолжить.",
-    "routes.backToDashboard": "К обзору",
-    "review.factsTitle": "Факты счёта",
-    "review.questionsTitle": "Что нужно от вас",
-    "review.confirmAction": "Подтвердить проверку",
-    "review.confirmHint": "Проверка применяется одной операцией: курс (если нужен) и решение по счёту.",
-    "review.confirmSuccess": "Проверка подтверждена, решение применено.",
-    "review.rejectAction": "Отклонить счёт",
-    "review.rejectTitle": "Отклонение счёта",
-    "review.rejectLead": "Отклонение — отдельное действие: укажите валидность документа и причину.",
-    "review.rejectConfirm": "Подтвердить отклонение",
-    "review.rejectSuccess": "Счёт отклонён.",
-    "review.rejectDocumentRequired": "Для отклонения нужно явно указать, валиден ли документ.",
-    "review.rejectReasonRequired": "Для отклонения нужна причина.",
-    "review.fxSuggestionLabel": "Справочный курс ECB / Banco de España",
-    "review.fxExactRate": "Курс на {date}",
-    "review.fxPriorRate": "Курс предыдущего рабочего дня, {date}",
-    "review.fxUseManual": "Документированный settlement-курс",
-    "review.fxExisting": "Курс уже применён к счёту",
-    "review.fxUnavailable": "Справочный курс недоступен",
-    "review.fxUnavailableHint": "Справочного курса на эту дату нет. Укажите документированный settlement-курс со ссылкой на документ.",
-    "review.fxSettlementRate": "Settlement-курс (EUR за {currency})",
-    "review.fxSettlementReference": "Ссылка на settlement-документ",
-    "review.fxSettlementDate": "Дата settlement",
-    "review.fxAmount": "Сумма в EUR",
-    "review.fxNeeded": "Курс не выбран",
-    "review.fxChoiceNote": "Справочный курс — не фактический банковский курс.",
-    "review.autoFilledTitle": "Заполнено автоматически",
-    "review.autoFilledIntake": "из приёма документа",
-    "review.autoFilledExtraction": "из извлечённых значений",
-    "review.autoFilledDefault": "значение по умолчанию",
-    "review.issueAutoResolveHint": "Закроется автоматически: подтверждены ответы {labels}.",
-    "review.irpfPreview": "≈ {amount}",
-    "review.technicalDetails": "Технические поля AEAT и центы",
-    "review.errorGeneral": "Не удалось применить решение. Проверьте подсвеченные поля.",
-    "taxCodeLabels.domestic_output": "Доход в Испании (облагаемый)",
-    "taxCodeLabels.domestic_output_zero": "Доход в Испании (нулевая ставка)",
-    "taxCodeLabels.eu_goods_income": "Доход: товары в ЕС",
-    "taxCodeLabels.eu_service_income": "Доход: услуги в ЕС",
-    "taxCodeLabels.export": "Экспорт",
-    "taxCodeLabels.outside_scope": "Вне обложения",
-    "taxCodeLabels.domestic_input": "Расход в Испании",
-    "taxCodeLabels.reverse_charge": "Обратное начисление IVA",
-    "taxCodeLabels.withholding_service": "Удержание IRPF: услуги",
-    "taxCodeLabels.withholding_rent": "Удержание IRPF: аренда",
-    "taxCodeLabels.unknown": "Код не определён",
-    "charts.loadError": "Не удалось загрузить аналитику",
-    "charts.table": "Данные таблицей",
-    "charts.bucket.month": "Месяц",
-    "charts.bucket.quarter": "Квартал",
-    "charts.empty.noTransactions": "Нет операций за период",
-    "charts.empty.missingFx": "У части операций нет курса валюты — суммы не рассчитаны",
-    "charts.empty.onlyUnreviewed": "Операции есть, но ещё не разобраны",
-    "charts.empty.filedWithoutValues": "Форма подана, но значения не извлечены",
-    "charts.business.title": "Доходы и вычитаемые расходы по месяцам",
-    "charts.business.aria": "Столбики доходов и вычитаемых расходов по месяцам",
-    "charts.business.incomeActual": "Доход — факт",
-    "charts.business.incomeBacklog": "Доход — не проведено",
-    "charts.business.incomeForecast": "Доход — прогноз",
-    "charts.business.expenseActual": "Вычет — факт",
-    "charts.business.expenseBacklog": "Вычет — не проведено",
-    "charts.business.expenseForecast": "Вычет — прогноз",
-    "charts.taxDue.title": "Налоги к оплате по кварталам",
-    "charts.taxDue.aria": "Платежи Modelo 130 и Modelo 303 по кварталам",
-    "charts.taxDue.m130": "Modelo 130 к оплате",
-    "charts.taxDue.m303": "Modelo 303 к оплате",
-    "charts.taxDue.empty": "Квартальные расчёты не сформированы",
-    "charts.iva.title": "Позиция IVA по кварталам",
-    "charts.iva.aria": "IVA начисленный, к вычету и итог по кварталам",
-    "charts.iva.output": "IVA начисленный (27)",
-    "charts.iva.input": "IVA к вычету (45)",
-    "charts.iva.result": "Итог (71)",
-    "charts.reserve.title": "Резерв под налоги",
-    "charts.reserve.aria": "Требуемый налог, рекомендуемый резерв и доступные средства",
-    "charts.reserve.required": "Нужно на налоги",
-    "charts.reserve.recommended": "Рекомендуемый резерв",
-    "charts.reserve.available": "Доступно",
-    "charts.reserve.notChecked": "Свободные средства не проверены — сверьте резерв вручную",
-    "charts.reserve.notRequired": "Платежей к резервированию нет",
-    "charts.reserve.blocked": "Расчёт заблокирован — резерв не определён",
-    "charts.cumulative.title": "Чистый результат нарастающим итогом",
-    "charts.cumulative.aria": "Накопленный чистый результат до трудно обосновываемых расходов",
-    "charts.cumulative.actual": "Факт",
-    "charts.cumulative.projected": "С учётом одобренного",
-    "charts.yoy.title": "Год к году (по текущий месяц)",
-    "charts.yoy.aria": "Сравнение дохода, вычетов и результата с прошлым годом",
-    "charts.yoy.currentYear": "Текущий год",
-    "charts.yoy.previousYear": "Прошлый год",
-    "charts.yoy.income": "Доход",
-    "charts.yoy.deductible": "Вычеты",
-    "charts.yoy.net": "Результат",
-    "charts.yoy.empty": "Недостаточно данных для сравнения",
-    "charts.expenses.title": "Расходы: что уменьшает базу IRPF",
-    "charts.expenses.aria": "Расходы по категориям: суммы, которые уменьшают и не уменьшают базу IRPF",
-    "charts.expenses.concept": "Категория расхода",
-    "charts.expenses.deductible": "Уменьшает базу IRPF",
-    "charts.expenses.nonDeductible": "Не уменьшает базу IRPF",
-    "charts.expenses.unclassified": "Категория не указана",
-    "charts.expenses.unknownConcept": "Неизвестная категория AEAT",
-    "charts.expenses.total": "Всего расходов",
-    "charts.expenses.totalValue": "Всего",
-    "charts.expenses.table": "Суммы по категориям",
-    "charts.expenses.shareUnavailable": "доля не рассчитывается",
-    "charts.expenses.empty": "Расходы за период не найдены",
-    "charts.aging.title": "Очередь разбора по срокам",
-    "charts.aging.aria": "Число операций в очереди по возрасту и статусу",
-    "charts.aging.bucketLabel": "Дней в очереди",
-    "charts.aging.approvedOverdue": "Одобрено, не проведено",
-    "charts.aging.empty": "Очередь разбора пуста",
-    "charts.counterparties.title": "Крупнейшие клиенты",
-    "charts.counterparties.aria": "Доход по крупнейшим контрагентам",
-    "charts.counterparties.income": "Доход",
-    "charts.counterparties.other": "Прочие",
-    "charts.counterparties.noname": "Без контрагента",
-    "charts.counterparties.empty": "Доходы за период не найдены",
-    "charts.amortization.title": "Амортизация по кварталам",
-    "charts.amortization.aria": "Начисления амортизации по кварталам",
-    "charts.amortization.perQuarter": "Амортизация за квартал",
-    "charts.amortization.note": "На графике — включённые в книги строки по кварталам года. В таблице — выбранный квартал, с отдельными суммами вне книг. Годовые подтверждения не прибавляются.",
-    "charts.amortization.empty": "Начислений амортизации нет",
-    "charts.expand": "Увеличить",
-  },
-  en: {
-    "expense.purchase": "Purchases, services and other expenses",
-    "expense.amortization": "Asset depreciation",
-    "expense.explanation": "Part of an earlier asset purchase recognized as an expense this quarter. This is not a new purchase or a payment.",
-    "expense.recognitionDate": "Recognition date",
-    "expense.sourceDate": "Document dated {date}",
-    "expense.sourceAmount": "Document amount: {amount}",
-    "expense.recordedAmount": "Source entry amount: {amount}",
-    "expense.amount": "Expense amount",
-    "expense.quarterAmount": "Quarterly depreciation",
-    "expense.periodDate": "Period and recognition date",
-    "expense.assetDocument": "Asset / source document",
-    "expense.quarter": "Q{quarter} {year}",
-    "expense.forQuarter": "Depreciation for {period}",
-    "expense.future": "Recognition date has not arrived: {date}",
-    "expense.unposted": "Not posted",
-    "expense.unmatched": "Asset not matched",
-    "expense.inferred": "Matched by counterparty and document date",
-    "expense.source": "Source",
-    "expense.quarterTotal": "Posted and reviewed for the whole quarter: {amount}",
-    "expense.shown": "Showing {shown} of {count}",
-    "expense.empty": "No entries in this quarter.",
-    "expense.noMatches": "No matching entries.",
-    "expense.moreRecords": "These entries are on subsequent pages. Select “Show more”.",
-    "expense.loadMore": "Show more",
-    "expense.retry": "Retry loading",
-    "expense.refreshData": "Refresh data",
-    "expense.refreshFailed": "Could not refresh data. Previous values are still shown.",
-    "expense.invalidPage": "Could not load the next page. Please retry.",
-    "expense.loading": "Loading expenses…",
-    "expense.search": "Counterparty, document or asset",
-    "expense.posted": "Posted",
-    "expense.approved": "Reviewed, not posted: {amount}",
-    "expense.futureAmount": "Of which future-dated: {amount}",
-    "expense.missing": "Amount information is missing",
-    "expense.inAmount": "In depreciation amount",
-    "expense.chartSourceNote": "The chart uses source entry amounts. For depreciation this is the original purchase cost, not a new charge; see the section above for the quarterly deduction.",
-    "common.loadFailed": "Could not load data. Check the connection and try again.",
-    "common.retry": "Retry",
-    "common.sessionExpired": "The session expired. Reload the page to restore access.",
-    "common.reload": "Reload page",
-    "app.title": "Autónomo accounting",
-    "brand.subtitle": "Accounting in Spain",
-    "nav.aria": "Primary navigation",
-    "nav.dashboard": "Overview",
-    "nav.income": "Income",
-    "nav.expenses": "Expenses",
-    "nav.review": "Review",
-    "nav.assets": "Assets",
-    "nav.taxes": "Taxes",
-    "nav.contacts": "Counterparties",
-    "nav.settings": "Settings",
-    "storage.settings": "SQLite · Settings",
-    "storage.local": "Local SQLite",
-    "locale.aria": "Interface language",
-    "toolbar.period": "Period",
-    "toolbar.periodAria": "Tax period",
-    "toolbar.refresh": "Refresh calculation",
-    "common.add": "Add",
-    "common.copyToPeriod": "Copy into {period}",
-    "common.back": "Back",
-    "common.cancel": "Cancel",
-    "common.close": "Close",
-    "common.file": "File",
-    "common.loading": "Loading data…",
-    "common.noId": "no ID",
-    "common.noRecords": "No records",
-    "common.refresh": "Refresh",
-    "common.save": "Save",
-    "common.step": "Step",
-    "common.yes": "Yes",
-    "common.no": "No",
-    "intake.title": "New entry",
-    "intake.kindAria": "Entry type",
-    "intake.expenseFile": "Choose a supplier invoice or drop a file",
-    "intake.incomeFile": "Choose an issued invoice or drop a file",
-    "intake.fileFormats": "PDF, image, CSV, or TXT up to 30 MB",
-    "intake.sourceAria": "Document source",
-    "intake.sourceUpload": "Upload file",
-    "intake.sourceGoogleDrive": "Google Drive URL",
-    "intake.googleDriveUrl": "Google Drive file link",
-    "intake.googleDrivePlaceholder": "drive.google.com/file/d/...",
-    "intake.googleDriveHint": "The file stays in your archive; the original link is recorded.",
-    "intake.googlePickerHint": "Google Picker will be available after narrow drive.file access is configured.",
-    "intake.googleDriveInvalid": "Enter a Google Drive file link.",
-    "intake.chooseGoogleFolder": "Choose Google Drive folder",
-    "intake.googleFolderSelected": "Folder: {name}",
-    "intake.googlePickerUnavailable": "Google Drive folder selection is not configured yet.",
-    "intake.accept": "Add to system",
-    "intake.selectFile": "Choose a file.",
-    "intake.processing": "Extracting and recording…",
-    "intake.failed": "Could not accept the document",
-    "intake.accepted": "Accepted: {id}",
-    "intake.acceptedToast": "Document accepted into {period}",
-    "intake.copyNotice": "The date and number were carried into {period} when safe. Review the fields and upload a fresh file before accepting.",
-    "intake.copyUnsupportedCurrency": "Currency {currency} is not supported by the intake form, so currency and total were not copied.",
-    "intake.copyInvalidAmount": "The source total could not be copied, so enter it manually if needed.",
-    "intake.copyStale": "The source row is no longer available. Refresh the page or run the search again.",
-    "errors.apiReturnedHtml": "The API returned HTML instead of data. Another server is probably running at {origin}. Stop it or run autonomo-web on another port.",
-    "errors.unexpectedNonJson": "Unexpected non-JSON response from {url} ({status}).",
-    "errors.malformedJson": "Malformed JSON response from {url} ({status}).",
-    "fields.amount": "Amount",
-    "fields.bookingDate": "Booking date",
-    "fields.businessPurpose": "Business purpose",
-    "fields.supplier": "Supplier",
-    "fields.client": "Client",
-    "fields.counterpartyCountry": "Counterparty country",
-    "fields.counterpartyType": "Counterparty form",
-    "fields.currency": "Currency",
-    "fields.deductibleIrpfMinor": "IRPF deduction, cents",
-    "fields.deductibleRatio": "Deduction ratio",
-    "fields.deductibleVatMinor": "VAT deduction, cents",
-    "fields.documentDate": "Document date",
-    "fields.documentValid": "Document confirmed",
-    "fields.fxRate": "EUR rate",
-    "fields.fxRateDate": "Rate date",
-    "fields.fxRateSource": "Rate source",
-    "fields.fxSourceReference": "Source link or note",
-    "fields.includeModelo130": "Include in Modelo 130",
-    "fields.includeModelo303": "Include in Modelo 303",
-    "fields.includeModelo347": "Include in Modelo 347",
-    "fields.invoiceType": "AEAT invoice type",
-    "fields.issuedOn": "Invoice date",
-    "fields.legalForm": "Legal form",
-    "fields.notes": "Audit note",
-    "fields.number": "Number",
-    "fields.operationKey": "AEAT operation key",
-    "fields.operationQualification": "AEAT qualification",
-    "fields.exemptionCode": "AEAT exemption code",
-    "fields.reverseCharge": "VAT reverse charge",
-    "fields.expenseConcept": "AEAT expense concept",
-    "fields.rateBasisPoints": "Rate, basis points",
-    "fields.ruleVersion": "Rule version",
-    "fields.outcome": "Outcome",
-    "fields.reason": "Decision reason",
-    "fields.retentionExpected": "Retention expected",
-    "fields.professionalSupplier": "Professional supplier",
-    "fields.reviewAction": "Issue action",
-    "fields.reviewReason": "Why the issue can be resolved",
-    "fields.roiStatus": "ROI / VAT",
-    "fields.supplier": "Supplier",
-    "fields.taxCode": "Tax code",
-    "fields.taxId": "NIF / Tax ID",
-    "fields.taxableBaseMinor": "Taxable base, cents",
-    "fields.total": "Total",
-    "fields.transactionDate": "Transaction date",
-    "fields.vatBase": "VAT base",
-    "fields.vatId": "VAT ID",
-    "fields.vatMinor": "VAT, cents",
-    "fields.withholdingMinor": "Withholding, cents",
-    "titles.dashboard": "Overview",
-    "titles.income": "Income",
-    "titles.expenses": "Expenses",
-    "expense.open": "Open expense",
-    "expense.title": "Expense details",
-    "expense.notes": "Notes",
-    "expense.noNotes": "No notes",
-    "expense.readOnly": "Read-only saved data",
-    "expense.back": "Back to {title} · {period}",
-    "expense.notFound": "Expense not found",
-    "expense.wrongType": "This is not an expense",
-    "expense.refresh": "Refresh data",
-    "expense.description": "Description",
-    "titles.review": "Review",
-    "titles.assets": "Assets",
-    "titles.taxes": "Taxes and deadlines",
-    "titles.contacts": "Counterparties",
-    "titles.settings": "Account settings",
-    "contacts.cardTitle": "Counterparty details",
-    "contacts.actionsFor": "Actions for {name}",
-    "contacts.actions": "Additional actions",
-    "contacts.back": "Back to counterparties",
-    "contacts.backToParty": "Back to counterparty",
-    "contacts.facts": "Details",
-    "contacts.operations": "Transactions",
-    "contacts.operationType": "Type",
-    "contacts.description": "Description",
-    "contacts.sourceDocument": "Source document",
-    "contacts.email": "Email",
-    "contacts.phone": "Phone",
-    "contacts.allPeriods": "All periods",
-    "contacts.more": "Show more",
-    "contacts.shown": "Showing {count} of {total}",
-    "contacts.noOperations": "No transactions in this period.",
-    "contacts.operationsError": "Could not load transactions.",
-    "contacts.retry": "Retry",
-    "contacts.notFound": "Counterparty not found.",
-    "contacts.refresh": "Refresh counterparty",
-    "dashboard.incomePosted": "Posted income",
-    "dashboard.expensesPosted": "Posted expenses",
-    "dashboard.expensesForecast": "Ready to post",
-    "dashboard.waitingForPeriodOne": "{count} awaiting period close",
-    "dashboard.waitingForPeriodOther": "{count} awaiting period close",
-    "dashboard.calculatedAsOf": "calculated as of {date}",
-    "dashboard.notCalculated": "calculation not refreshed",
-    "dashboard.filed": "filed",
-    "dashboard.filedOn": "filed {date}",
-    "dashboard.valuesUnavailable": "values unavailable",
-    "dashboard.snapshotAvailable": "filing snapshot available",
-    "dashboard.carryForward": "carry-forward {amount}",
-    "dashboard.approvedNotPosted": "This period has approved transactions that are not posted yet. The “posted” cards count only posted / included in filing rows.",
-    "dashboard.postingBannerTitle": "{count} approved transactions are waiting to post",
-    "dashboard.postingBannerCta": "Open review",
-    "dashboard.modelo130Box": "Modelo 130 · box 19",
-    "dashboard.modelo303Result": "Modelo 303 · result",
-    "dashboard.upcomingFiling": "Upcoming filing",
-    "dashboard.obligationDue": "Filing is due for the selected period.",
-    "dashboard.recentTransactions": "Recent transactions",
-    "dashboard.needsAttention": "Needs attention",
-    "dashboard.readyBannerOne": "{count} reviewed transaction can be posted now",
-    "dashboard.readyBannerOther": "{count} reviewed transactions can be posted now",
-    "dashboard.readyBannerAction": "Open review",
-    "transactions.search": "Search by counterparty or number",
-    "transactions.date": "Date",
-    "transactions.counterpartyDocument": "Counterparty / document",
-    "transactions.status": "Status",
-    "transactions.amount": "Amount",
-    "transactions.irpfDeduction": "IRPF deduction",
-    "transactions.noCounterparty": "No counterparty",
-    "transactions.emptyIncome": "No income in this period yet. Click “Add” to accept an invoice.",
-    "transactions.noMatches": "Nothing matches your search.",
-    "review.queueEmpty": "The review queue is empty — everything is reviewed.",
-    "review.transactions": "Transactions to review",
-    "review.documents": "Documents to review",
-    "review.openIssues": "Open issues",
-    "review.summary": "Posting queue",
-    "review.summaryReady": "Can post now",
-    "review.summaryNeedsReview": "Needs review",
-    "review.category.ready": "can post",
-    "review.category.later": "post later",
-    "review.category.blocked": "posting blocked",
-    "review.category.needs_review": "needs review",
-    "reviewTabs.aria": "Review sections",
-    "reviewTabs.queue": "Queue",
-    "reviewTabs.posting": "Posting",
-    "reviewTabs.documents": "Documents and issues",
-    "review.submitting": "Submitting…",
-    "review.formDisabledHint": "Decision fields are locked while this transaction cannot be posted — the reason is explained above.",
-    "intake.draftRestored": "Draft restored — review the fields before accepting.",
-    "intake.consistencyHint": "Base + IVA = {expected}, but the total is {total}. Check the amounts.",
-    "intake.disabledReason": "Document intake is disabled: the server inbox folders are not configured.",
-    "toolbar.periodLocked": "The period is locked while a record card is open.",
-    "tables.actions": "Actions",
-    "review.summaryLater": "Can post later",
-    "review.summaryBlocked": "Blocked after review",
-    "review.workspaceBack": "Back to transactions",
-    "review.workspaceTitle": "Invoice review",
-    "review.openWorkspace": "Open review",
-    "review.facts": "Facts",
-    "review.taxDecision": "Tax decision",
-    "review.result": "Result",
-    "review.requirements": "What to confirm",
-    "review.requirementSupported": "can be completed here",
-    "review.requirementUnsupported": "must be completed outside this screen",
-    "review.counterpartyFacts": "Verified counterparty facts",
-    "review.counterpartyFactsHint": "Only decision fields change. The immutable packet stays untouched.",
-    "review.technicalDetails": "Technical AEAT fields",
-    "review.validationPending": "Validate the packet before applying it.",
-    "review.validationPassed": "The packet validated successfully and is ready to apply.",
-    "review.validationPreview": "Validation preview",
-    "review.primaryValidate": "Validate packet",
-    "review.primaryApprove": "Approve and keep ready to post",
-    "review.primaryReject": "Reject invoice",
-    "review.applySuccess": "Decision applied.",
-    "review.fx": "FX rate",
-    "review.fxHint": "FX is written through a separate endpoint and refreshes the work item.",
-    "review.fxApply": "Apply FX rate",
-    "review.fxApplied": "FX rate updated. The work item was refreshed.",
-    "review.fxDirty": "Changing FX makes validation stale.",
-    "review.unsupported": "This invoice cannot be completed from this screen.",
-    "review.future": "This future-dated transaction can only be posted on or after {date}.",
-    "review.postingReady": "Reviewed · Can post now",
-    "review.postingLater": "Reviewed · Can post on {date}",
-    "review.postingBlocked": "Reviewed · Cannot post",
-    "review.needsReview": "This invoice still needs a guided tax decision",
-    "review.unknownSupport": "The tax code is not supported for posting.",
-    "review.invalidWorkItem": "Could not verify the transaction and its period. Reload the page or return to the list using the Review menu.",
-    "review.outcomeApprove": "Approve",
-    "review.outcomeReject": "Reject",
-    "review.actionResolve": "Resolve issue",
-    "review.actionKeepOpen": "Keep open",
-    "review.documentLink": "Open file",
-    "review.invoiceLabel": "Invoice {number}",
-    "review.issueOpen": "Open issue",
-    "review.issueResolved": "Issue will be resolved",
-    "review.vatInvestment": "IVA purchase classification",
-    "review.vatCurrent": "Current purchase for IVA",
-    "review.vatAsset": "Investment good for IVA",
-    "review.vatUnknown": "IVA classification not reviewed",
-    "review.vatInvestmentHint": "IRPF depreciation does not determine IVA classification. Review the purchase separately.",
-    "review.assetDecision": "Expense classification",
-    "review.assetCurrentExpense": "Current expense",
-    "review.assetAsset": "Asset",
-    "review.assetNotApplicable": "Not applicable",
-    "review.supportReason": "Blocking reason",
-    "review.statusReady": "ready",
-    "review.statusLater": "later",
-    "review.statusBlocked": "blocked",
-    "review.stepBusinessPurpose": "Confirm the business purpose of the expense.",
-    "review.stepIrpfAmount": "Set the amount deductible for IRPF.",
-    "review.stepIvaTreatment": "Verify the VAT treatment and tax base.",
-    "review.stepIncomeRecognition": "Confirm the income recognition decision.",
-    "review.stepAssetDecision": "Decide whether this is a current expense or an asset.",
-    "review.stepBusinessUse": "Set the business-use percentage.",
-    "review.stepFx": "Attach an official or settlement EUR rate.",
-    "review.stepAmountError": "Resolve the amount mismatch: {detail}.",
-    "review.stepUnknown": "Review this requirement manually: {code}.",
-    "review.postingTitle": "Post approved transactions",
-    "review.postingApproved": "Approved",
-    "review.postingBatchReady": "Ready to post",
-    "review.postingDeferred": "Deferred",
-    "review.postingBatchBlocked": "Blocked",
-    "review.postingCleanup": "Cleanup applies",
-    "review.postingCleanupBlocked": "Cleanup blocked",
-    "review.postingAmount": "Ready amount",
-    "review.postingOpenPeriod": "Period is open",
-    "review.postingClosedPeriod": "Period is closed",
-    "review.postingGeneratedAt": "Generated {date}",
-    "review.postingGeneratedUnknown": "Posting preview has no timestamp",
-    "review.postingReadyHint": "Only rows that are still ready in the current preview will be posted.",
-    "review.postingNothingReady": "There are no rows ready to post right now.",
-    "review.postingClosedHint": "Posting is disabled because the selected period is not open.",
-    "review.postConfirmTitle": "Post ready transactions",
-    "review.postConfirmLead": "Only these rows from the current preview will be posted.",
-    "review.postConfirmAction": "Post ready",
-    "review.postConfirmCleanupWarning": "Posting affects cleanup: applies {cleanupCount}, blocked {cleanupBlockedCount}. Review the reasons before confirming.",
-    "review.postingRows": "Preview rows",
-    "review.postingRetryRefresh": "Retry calculation refresh",
-    "review.postingStaleWarning": "Transactions were posted, but the tax calculation needs to be refreshed.",
-    "review.postingResults": "Posting result",
-    "review.postingResultSummary": "Status: {status} · posted {count}",
-    "review.postingResultMessage": "Message",
-    "review.postSuccess": "Posted: {count}",
-    "review.postPartial": "Posting finished partially",
-    "review.postInterrupted": "Posting was interrupted",
-    "review.postNone": "No new postings were applied",
-    "assets.title": "Assets and amortization",
-    "assets.asset": "Asset",
-    "assets.inService": "In service",
-    "assets.cost": "Cost",
-    "assets.base": "Base",
-    "assets.businessUse": "Business use",
-    "assets.rate": "Rate",
-    "assets.schedule": "Schedule",
-    "assets.decision": "Accounting status",
-    "taxes.obligations": "Obligations",
-    "taxes.form": "Form",
-    "taxes.applicability": "Applicability",
-    "taxes.status": "Status",
-    "taxes.directDebit": "Arrange direct debit by",
-    "taxes.deadline": "Deadline",
-    "taxes.noCalculation": "not calculated",
-    "taxes.calculationMissing": "Calculation not available",
-    "taxes.filedValuesUnavailable": "The return was filed, but filing-snapshot values are unavailable.",
-    "taxes.filedValuesUnavailableExtract": "The return was filed, but values could not be extracted from the filing snapshot.",
-    "taxes.filedValuesUnavailablePdf": "The return was filed, but the filing-snapshot PDF could not be read.",
-    "taxes.headlinePlanned": "Planned tax payment",
-    "taxes.headlinePaid": "Paid",
-    "taxes.headlineConfirmed": "Confirmed paid",
-    "taxes.headlineNoPayment": "No payment required",
-    "taxes.headlineNotStarted": "The quarter has not started",
-    "taxes.headlineUndetermined": "Amount not determined yet",
-    "taxes.currentDetail": "Calculated as of {date}. The amount may change before quarter end.",
-    "taxes.currentDetailNoDate": "Preliminary calculation. The amount may change before quarter end.",
-    "taxes.paidDetail": "The bank debit is confirmed.",
-    "taxes.unconfirmedDetail": "Filed amount due: {amount}. The bank debit is not confirmed.",
-    "taxes.previewUnconfirmedDetail": "Preliminary amount due: {amount}. The filed amount is unavailable and the bank debit is not confirmed.",
-    "taxes.partialDetail": "Still to confirm or pay: {amount}.",
-    "taxes.overpaidDetail": "The confirmed debit exceeds the amount due by {amount}.",
-    "taxes.evidenceUnavailableDetail": "A payment record exists, but its evidence is incomplete.",
-    "taxes.unfiledDetail": "The quarter has ended, but filing is not confirmed. This is a preliminary calculation.",
-    "taxes.notStartedDetail": "A tax forecast will be available from the first day of the quarter.",
-    "taxes.undeterminedDetail": "A calculation or decision for a required return is missing.",
-    "taxes.payable": "Amount due",
-    "taxes.confirmedDebit": "Confirmed debit",
-    "taxes.remaining": "Remaining",
-    "taxes.overpayment": "Overpayment",
-    "taxes.irpf": "Income tax",
-    "taxes.iva": "Value added tax",
-    "taxes.details": "Calculation details",
-    "taxes.filing": "Filing",
-    "taxes.filed": "Filed",
-    "taxes.notFiled": "Not filed yet",
-    "taxes.filingNotRequired": "Filing not required",
-    "taxes.carryforward": "Total IVA carry-forward",
-    "taxes.generatedCredit": "Added this quarter",
-    "taxes.refundRequested": "Refund requested",
-    "taxes.noTaxPayment": "No payment is required for this return.",
-    "taxes.otherForms": "Other returns — filing not required",
-    "taxes.additionalDueForms": "Additional required returns",
-    "taxes.additionalAnalytics": "Additional analytics",
-    "taxes.amendedNotice": "This period was amended. Reconcile payments against the current filed return.",
-    "taxes.status.planned": "Preliminary calculation",
-    "taxes.status.unfiled": "Return not filed",
-    "taxes.status.paymentUnconfirmed": "Payment not confirmed",
-    "taxes.status.evidenceUnavailable": "Payment evidence incomplete",
-    "taxes.status.partiallyPaid": "Partially paid",
-    "taxes.status.paid": "Paid",
-    "taxes.status.overpaid": "Overpayment detected",
-    "taxes.status.noPaymentRequired": "No payment required",
-    "taxes.status.undetermined": "Amount not determined",
-    "taxes.status.notStarted": "Quarter not started",
-    "contacts.title": "Counterparties",
-    "contacts.name": "Name",
-    "contacts.country": "Country",
-    "contacts.transactions": "Transactions",
-    "contacts.last": "Latest",
-    "contacts.editName": "Correct name",
-    "contacts.nameLabel": "Name",
-    "contacts.renameHint": "The name will change throughout the app and in new exports. Original documents will remain unchanged.",
-    "contacts.manualName": "Manually corrected",
-    "contacts.saveName": "Save",
-    "contacts.savingName": "Saving…",
-    "contacts.nameSaved": "Name corrected",
-    "contacts.nameUnchanged": "Name unchanged",
-    "contacts.invalidName": "Enter a non-empty, single-line name without control characters.",
-    "contacts.nameHistory": "Change history",
-    "contacts.noNameHistory": "No manual corrections yet.",
-    "contacts.historyError": "Could not load change history.",
-    "contacts.retryHistory": "Retry loading",
-    "contacts.localActor": "Local session",
-    "contacts.sheetActor": "Spreadsheet correction",
-    "contacts.nameConflict": "The counterparty changed after this form was opened. Review the current name before saving.",
-    "contacts.currentName": "Current name: {name}",
-    "contacts.acceptCurrentName": "Reviewed: use the current version",
-    "contacts.discardName": "Close without saving the corrected name?",
-    "contacts.nameBusy": "The database is temporarily busy. Try saving again.",
-    "contacts.nameMissing": "This counterparty is no longer available. Close the form and refresh the list.",
-    "contacts.nameRefreshError": "The name was saved, but the list could not refresh. Reopen this section.",
-    "refresh.done": "{period} calculation refreshed",
-    "documents.counterparty": "Counterparty",
-    "documents.type": "Type",
-    "issues.none": "No open issues",
-    "issues.sourceDetails": "Source details",
-    "issues.default": "Manual review is required.",
-    "routes.unknownTitle": "Page not found",
-    "routes.unknownHint": "This section does not exist. Open the overview to continue.",
-    "routes.backToDashboard": "Back to overview",
-    "review.factsTitle": "Invoice facts",
-    "review.questionsTitle": "What we need from you",
-    "review.confirmAction": "Confirm review",
-    "review.confirmHint": "The review is applied in one step: the FX rate (when needed) and the invoice decision.",
-    "review.confirmSuccess": "Review confirmed, decision applied.",
-    "review.rejectAction": "Reject invoice",
-    "review.rejectTitle": "Reject invoice",
-    "review.rejectLead": "Rejection is a separate action: state whether the document is valid and why.",
-    "review.rejectConfirm": "Confirm rejection",
-    "review.rejectSuccess": "Invoice rejected.",
-    "review.rejectDocumentRequired": "A rejection needs an explicit document-valid decision.",
-    "review.rejectReasonRequired": "A rejection needs a reason.",
-    "review.fxSuggestionLabel": "ECB / Banco de España reference rate",
-    "review.fxExactRate": "Rate for {date}",
-    "review.fxPriorRate": "Previous business day rate, {date}",
-    "review.fxUseManual": "Documented settlement rate",
-    "review.fxExisting": "A rate is already applied to this invoice",
-    "review.fxUnavailable": "Reference rate unavailable",
-    "review.fxUnavailableHint": "No reference rate for this date. Provide a documented settlement rate with a document reference.",
-    "review.fxSettlementRate": "Settlement rate (EUR per {currency})",
-    "review.fxSettlementReference": "Settlement document reference",
-    "review.fxSettlementDate": "Settlement date",
-    "review.fxAmount": "EUR amount",
-    "review.fxNeeded": "No FX rate selected",
-    "review.fxChoiceNote": "The reference rate is not an actual bank settlement rate.",
-    "review.autoFilledTitle": "Filled in automatically",
-    "review.autoFilledIntake": "from document intake",
-    "review.autoFilledExtraction": "from extracted values",
-    "review.autoFilledDefault": "default value",
-    "review.issueAutoResolveHint": "Will close automatically: {labels} are confirmed.",
-    "review.irpfPreview": "≈ {amount}",
-    "review.technicalDetails": "Technical AEAT and cents fields",
-    "review.errorGeneral": "The decision could not be applied. Check the highlighted fields.",
-    "taxCodeLabels.domestic_output": "Income in Spain (taxable)",
-    "taxCodeLabels.domestic_output_zero": "Income in Spain (zero rate)",
-    "taxCodeLabels.eu_goods_income": "Income: EU goods",
-    "taxCodeLabels.eu_service_income": "Income: EU services",
-    "taxCodeLabels.export": "Export",
-    "taxCodeLabels.outside_scope": "Outside scope",
-    "taxCodeLabels.domestic_input": "Expense in Spain",
-    "taxCodeLabels.reverse_charge": "VAT reverse charge",
-    "taxCodeLabels.withholding_service": "IRPF withholding: services",
-    "taxCodeLabels.withholding_rent": "IRPF withholding: rent",
-    "taxCodeLabels.unknown": "Code not set",
-    "charts.loadError": "Could not load analytics",
-    "charts.table": "Data as a table",
-    "charts.bucket.month": "Month",
-    "charts.bucket.quarter": "Quarter",
-    "charts.empty.noTransactions": "No transactions in this period",
-    "charts.empty.missingFx": "Some transactions have no FX rate — amounts are not computed",
-    "charts.empty.onlyUnreviewed": "Transactions exist but are not reviewed yet",
-    "charts.empty.filedWithoutValues": "The form was filed but no values were extracted",
-    "charts.business.title": "Income and deductible expenses by month",
-    "charts.business.aria": "Bars of income and deductible expenses by month",
-    "charts.business.incomeActual": "Income — actual",
-    "charts.business.incomeBacklog": "Income — not posted",
-    "charts.business.incomeForecast": "Income — forecast",
-    "charts.business.expenseActual": "Deductible — actual",
-    "charts.business.expenseBacklog": "Deductible — not posted",
-    "charts.business.expenseForecast": "Deductible — forecast",
-    "charts.taxDue.title": "Tax cash due by quarter",
-    "charts.taxDue.aria": "Modelo 130 and Modelo 303 payments by quarter",
-    "charts.taxDue.m130": "Modelo 130 payable",
-    "charts.taxDue.m303": "Modelo 303 payable",
-    "charts.taxDue.empty": "Quarterly calculations are not available",
-    "charts.iva.title": "IVA position by quarter",
-    "charts.iva.aria": "Output IVA, deductible input IVA and the result by quarter",
-    "charts.iva.output": "Output IVA (27)",
-    "charts.iva.input": "Deductible input IVA (45)",
-    "charts.iva.result": "Result (71)",
-    "charts.reserve.title": "Tax reserve",
-    "charts.reserve.aria": "Required tax, recommended reserve and available funds",
-    "charts.reserve.required": "Required for taxes",
-    "charts.reserve.recommended": "Recommended reserve",
-    "charts.reserve.available": "Available",
-    "charts.reserve.notChecked": "Available funds are not checked — verify the reserve manually",
-    "charts.reserve.notRequired": "No payments to reserve for",
-    "charts.reserve.blocked": "Calculation is blocked — the reserve is not determined",
-    "charts.cumulative.title": "Cumulative business result",
-    "charts.cumulative.aria": "Cumulative net result before difficult-to-justify expenses",
-    "charts.cumulative.actual": "Actual",
-    "charts.cumulative.projected": "Including approved",
-    "charts.yoy.title": "Year over year (through this month)",
-    "charts.yoy.aria": "Income, deductibles and result compared with the previous year",
-    "charts.yoy.currentYear": "Current year",
-    "charts.yoy.previousYear": "Previous year",
-    "charts.yoy.income": "Income",
-    "charts.yoy.deductible": "Deductibles",
-    "charts.yoy.net": "Result",
-    "charts.yoy.empty": "Not enough data for a comparison",
-    "charts.expenses.title": "Expenses: what reduces the IRPF tax base",
-    "charts.expenses.aria": "Expenses by category: amounts that reduce and do not reduce the IRPF tax base",
-    "charts.expenses.concept": "Expense category",
-    "charts.expenses.deductible": "Reduces the IRPF tax base",
-    "charts.expenses.nonDeductible": "Does not reduce the IRPF tax base",
-    "charts.expenses.unclassified": "Category not assigned",
-    "charts.expenses.unknownConcept": "Unknown AEAT category",
-    "charts.expenses.total": "Total expenses",
-    "charts.expenses.totalValue": "Total",
-    "charts.expenses.table": "Amounts by category",
-    "charts.expenses.shareUnavailable": "share not available",
-    "charts.expenses.empty": "No expenses found for the period",
-    "charts.aging.title": "Review queue by age",
-    "charts.aging.aria": "Queued transactions by age bucket and status",
-    "charts.aging.bucketLabel": "Days in queue",
-    "charts.aging.approvedOverdue": "Approved, not posted",
-    "charts.aging.empty": "The review queue is empty",
-    "charts.counterparties.title": "Top customers",
-    "charts.counterparties.aria": "Income by largest counterparties",
-    "charts.counterparties.income": "Income",
-    "charts.counterparties.other": "Other",
-    "charts.counterparties.noname": "No counterparty",
-    "charts.counterparties.empty": "No income found for the period",
-    "charts.amortization.title": "Amortization by quarter",
-    "charts.amortization.aria": "Amortization charges by quarter",
-    "charts.amortization.perQuarter": "Amortization per quarter",
-    "charts.amortization.note": "The chart shows book-included entries across the year. The table shows the selected quarter, separating entries outside the books. Annual evidence is not added.",
-    "charts.amortization.empty": "No amortization charges",
-    "charts.expand": "Expand",
-  },
-};
+const messages = AutonomoCore.messages;
 
-const statusMessages = {
-  ru: {
-    received: "получено",
-    extracted: "извлечено",
-    needs_review: "нужна проверка",
-    approved: "проверено",
-    posted: "проведено",
-    included_in_snapshot: "в декларации",
-    duplicate: "дубликат",
-    rejected: "отклонено",
-    void: "аннулировано",
-    due: "нужно подать",
-    not_due: "не применяется",
-    unknown: "не определено",
-    filed: "подано",
-    waived: "не подается",
-    blocking: "блокирует",
-    warning: "предупреждение",
-    high: "высокий",
-    medium: "средний",
-    low: "низкий",
-    error: "ошибка",
-    reviewed: "проверено",
-    confirmed: "подтверждено",
-    pending: "ожидает",
-    open: "открыт",
-    closed: "закрыт",
-    amended: "исправлен",
-    deferred: "отложено",
-    blocked: "заблокировано",
-    partial: "частично",
-    interrupted: "прервано",
-    completed: "завершено",
-    already_posted: "уже проведено",
-    already_finalized: "уже включено в декларацию",
-    skipped: "пропущено",
-    failed: "ошибка",
-    not_attempted: "не обработано",
-    posted_cleanup_failed: "проведено, очистка не завершена",
-    ok: "успешно",
-  },
-  en: {
-    received: "received",
-    extracted: "extracted",
-    needs_review: "needs review",
-    approved: "reviewed",
-    posted: "posted",
-    included_in_snapshot: "included in filing",
-    duplicate: "duplicate",
-    rejected: "rejected",
-    void: "void",
-    due: "due",
-    not_due: "not due",
-    unknown: "unknown",
-    filed: "filed",
-    waived: "waived",
-    blocking: "blocking",
-    warning: "warning",
-    high: "high",
-    medium: "medium",
-    low: "low",
-    error: "error",
-    reviewed: "reviewed",
-    confirmed: "confirmed",
-    pending: "pending",
-    open: "open",
-    closed: "closed",
-    amended: "amended",
-    deferred: "deferred",
-    blocked: "blocked",
-    partial: "partial",
-    interrupted: "interrupted",
-    completed: "completed",
-    already_posted: "already posted",
-    already_finalized: "already included in filing",
-    skipped: "skipped",
-    failed: "failed",
-    not_attempted: "not attempted",
-    posted_cleanup_failed: "posted, cleanup incomplete",
-    ok: "ok",
-  },
-};
+const statusMessages = AutonomoCore.legacy.statusMessages;
 
-const documentTypeMessages = {
-  ru: {
-    expense_invoice: "счет поставщика",
-    income_invoice: "выставленный счет",
-    receipt: "чек",
-    bank_statement: "банковская выписка",
-    tax_report: "налоговый отчет",
-    other_document: "другой документ",
-    other: "другой документ",
-  },
-  en: {
-    expense_invoice: "supplier invoice",
-    income_invoice: "issued invoice",
-    receipt: "receipt",
-    bank_statement: "bank statement",
-    tax_report: "tax report",
-    other_document: "other document",
-    other: "other document",
-  },
-};
+const documentTypeMessages = AutonomoCore.legacy.documentTypeMessages;
 
-const casillaMessages = {
-  ru: {
-    "130": {
-      "01": "Доход с начала года",
-      "02": "Вычитаемые расходы с начала года",
-      "03": "Чистый доход с начала года",
-      "04": "20% от чистого дохода",
-      "05": "Положительные платежи прошлых кварталов",
-      "07": "Промежуточный результат",
-      "19": "Итог декларации",
-      difficult_expenses: "Труднообосновываемые расходы",
-    },
-    "303": {
-      "29": "IVA к вычету по текущим расходам",
-      "45": "Всего IVA к вычету",
-      "64": "Разница начисленного и вычитаемого IVA",
-      "69": "Результат после зачётов и корректировок",
-      "71": "Итог декларации",
-      "72": "IVA к переносу из этого квартала",
-      "73": "Запрошенный возврат",
-      result: "Итог декларации",
-      compensation_carryforward: "Всего IVA к переносу",
-    },
-  },
-  en: {
-    "130": {
-      "01": "Year-to-date income",
-      "02": "Year-to-date deductible expenses",
-      "03": "Year-to-date net income",
-      "04": "20% of net income",
-      "05": "Positive instalments from earlier quarters",
-      "07": "Intermediate result",
-      "19": "Return result",
-      difficult_expenses: "Difficult-to-justify expenses",
-    },
-    "303": {
-      "29": "Deductible IVA on current expenses",
-      "45": "Total deductible IVA",
-      "64": "Accrued less deductible IVA",
-      "69": "Result after credits and adjustments",
-      "71": "Return result",
-      "72": "IVA credit generated this quarter",
-      "73": "Refund requested",
-      result: "Return result",
-      compensation_carryforward: "Total IVA carry-forward",
-    },
-  },
-};
+const casillaMessages = AutonomoCore.legacy.casillaMessages;
 
-const issueMessages = {
-  ru: {
-    amount_mismatch: "Сумма не совпадает с источником. Сверьте документ, валюту и налоговую базу.",
-    counterparty_tax_profile_review: "Проверьте страну и налоговые реквизиты контрагента перед проведением.",
-    deductibility_pending_confirmation: "Нужно подтвердить сумму, допустимую к вычету.",
-    document_classification_review: "Документ не удалось надежно классифицировать.",
-    foreign_counterparty_identity_missing: "Не хватает подтвержденных налоговых реквизитов иностранного контрагента.",
-    missing_locally: "Документ есть в реестре, но локальный оригинал не найден.",
-    modelo100_deferral_submission_unconfirmed: "Не подтверждена подача заявления на отсрочку по Modelo 100.",
-    modelo130_difficult_expense_filed_method_conflict: "Метод Xolo для 5% труднообосновываемых расходов расходится с инструкцией AEAT.",
-    modelo303_q1_notary_vat_base_unverified: "Налоговая база IVA по счету нотариуса требует сверки.",
-    modelo303_q1_output_vat_classification_mismatch: "Классификация исходящего IVA не совпадает с поданной Modelo 303.",
-    nonresident_payee_legal_form_review: "Нужно уточнить правовую форму иностранного получателя.",
-    nonresident_professional_irnr_review: "После оплаты требуется отдельная проверка IRNR по иностранному исполнителю.",
-    transaction_tax_review: "Нужно проверить назначение расхода и его учет в IRPF и IVA.",
-    default: "Требуется ручная проверка.",
-  },
-  en: {
-    amount_mismatch: "The amount does not match its source. Reconcile the document, currency, and tax base.",
-    counterparty_tax_profile_review: "Review the counterparty's country and tax identity before posting.",
-    deductibility_pending_confirmation: "Confirm the amount eligible for deduction.",
-    document_classification_review: "The document could not be classified reliably.",
-    foreign_counterparty_identity_missing: "Verified tax identity is missing for the foreign counterparty.",
-    missing_locally: "The register contains this document, but its local original is missing.",
-    modelo100_deferral_submission_unconfirmed: "Submission of the Modelo 100 deferral request is not confirmed.",
-    modelo130_difficult_expense_filed_method_conflict: "Xolo's treatment of the 5% difficult-to-justify allowance conflicts with AEAT instructions.",
-    modelo303_q1_notary_vat_base_unverified: "The VAT base of the notary invoice requires reconciliation.",
-    modelo303_q1_output_vat_classification_mismatch: "Output VAT classification does not match the filed Modelo 303.",
-    nonresident_payee_legal_form_review: "The foreign payee legal form still needs review.",
-    nonresident_professional_irnr_review: "A separate IRNR review is required after payment to the foreign professional.",
-    transaction_tax_review: "Review the business purpose and the IRPF and VAT treatment.",
-    default: "Manual review is required.",
-  },
-};
+const issueMessages = AutonomoCore.legacy.issueMessages;
 
-const nounMessages = {
-  ru: {
-    operations: {one: "операция", few: "операции", many: "операций", other: "операции"},
-    steps: {one: "шаг", few: "шага", many: "шагов", other: "шага"},
-  },
-  en: {
-    operations: {one: "transaction", other: "transactions"},
-    steps: {one: "step", other: "steps"},
-  },
-};
+const nounMessages = AutonomoCore.legacy.nounMessages;
 
 const reviewRequirementMessages = {
-  confirm_business_purpose: {ru: "review.stepBusinessPurpose", en: "review.stepBusinessPurpose"},
-  confirm_irpf_deductible_amount: {ru: "review.stepIrpfAmount", en: "review.stepIrpfAmount"},
-  confirm_iva_treatment: {ru: "review.stepIvaTreatment", en: "review.stepIvaTreatment"},
-  confirm_income_recognition: {ru: "review.stepIncomeRecognition", en: "review.stepIncomeRecognition"},
-  decide_expense_or_amortizable_asset: {ru: "review.stepAssetDecision", en: "review.stepAssetDecision"},
-  confirm_business_use_percentage: {ru: "review.stepBusinessUse", en: "review.stepBusinessUse"},
-  attach_official_or_settlement_fx: {ru: "review.stepFx", en: "review.stepFx"},
+  confirm_business_purpose: "review.stepBusinessPurpose",
+  confirm_irpf_deductible_amount: "review.stepIrpfAmount",
+  confirm_iva_treatment: "review.stepIvaTreatment",
+  confirm_income_recognition: "review.stepIncomeRecognition",
+  decide_expense_or_amortizable_asset: "review.stepAssetDecision",
+  confirm_business_use_percentage: "review.stepBusinessUse",
+  attach_official_or_settlement_fx: "review.stepFx",
 };
 
-const legalFormLabels = {
-  unknown: {ru: "неизвестно", en: "unknown"},
-  individual: {ru: "физлицо", en: "individual"},
-  legal_entity: {ru: "юрлицо", en: "legal entity"},
-  public_body: {ru: "госорган", en: "public body"},
-};
+const legalFormLabels = AutonomoCore.legacy.legalFormLabels;
 
-const roiStatusLabels = {
-  unknown: {ru: "не проверено", en: "unknown"},
-  registered: {ru: "зарегистрирован", en: "registered"},
-  not_registered: {ru: "не зарегистрирован", en: "not registered"},
-};
+const roiStatusLabels = AutonomoCore.legacy.roiStatusLabels;
 
 const FORM_KEYS = {
   130: "modelo130",
@@ -1479,6 +61,7 @@ const state = {
   contactsListPosition: null,
   expenseDetail: {transactionId: null, data: null},
   expensesQuery: "",
+  incomeQuery: "",
   returnTo: null,
   detailPeriodResolved: false,
   intakeKind: "expense_invoice",
@@ -1557,10 +140,18 @@ let counterpartyNameEditor = null;
 let counterpartyMenu = null;
 let settingsController = null;
 let currentRenderGeneration = 0;
+let pendingLocaleRepaint = false;
+const localizedText = new Map();
+let intakeNoticeMessages = [];
+let localeRepaintTimer = null;
+const requestScope = AutonomoCore.createRequestScope(() => scheduleLocaleRepaint());
+let expenseWorkflowController = null;
+let expensePresentation = null;
+let lastAssetPostingResult = null;
 let currentReviewRequest = 0;
 
 function buildReviewDraftStorageKey(transactionId) {
-  return `${REVIEW_DRAFT_STORAGE_PREFIX}:${String(transactionId || "unknown")}`;
+  return AutonomoCore.reviewDraftKey(String(transactionId || "unknown"));
 }
 
 function todayIso() {
@@ -1724,6 +315,7 @@ function applyRouteFromLocation() {
     }
   }
   if (hasDOM) closePostingConfirmDialog();
+  state.incomeQuery = "";
   const route = parseRoute(window.location.pathname);
   const reviewId = route?.view === "review" && route.reviewId
     ? reviewIdFromTransaction(route.reviewId)
@@ -1862,15 +454,7 @@ function pickReviewFactDecision(decision) {
 }
 
 function loadReviewDraft(transactionId) {
-  if (!transactionId) return null;
-  try {
-    const raw = localStorage.getItem(buildReviewDraftStorageKey(transactionId));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : null;
-  } catch {
-    return null;
-  }
+  return AutonomoCore.readReviewDraft(() => localStorage, transactionId);
 }
 
 function persistReviewDraft(packet, options = {}) {
@@ -1885,20 +469,11 @@ function persistReviewDraft(packet, options = {}) {
     snapshot_hash: packet.snapshot_hash,
     decision,
   };
-  try {
-    localStorage.setItem(buildReviewDraftStorageKey(transactionId), JSON.stringify(payload));
-  } catch {
-    // Draft persistence is optional.
-  }
+  AutonomoCore.writeReviewDraft(() => localStorage, payload);
 }
 
 function clearReviewDraft(transactionId) {
-  if (!transactionId) return;
-  try {
-    localStorage.removeItem(buildReviewDraftStorageKey(transactionId));
-  } catch {
-    // Storage may be unavailable.
-  }
+  AutonomoCore.removeReviewDraft(() => localStorage, transactionId);
 }
 
 function mergeReviewDecisionFromDraft(packet, draft, mode = "full") {
@@ -1920,7 +495,7 @@ function normalizeReviewRequirement(requirement) {
 
 function requirementMessageKey(code) {
   if (String(code).startsWith("resolve_amount_error:")) return null;
-  return reviewRequirementMessages[code]?.[state.locale] || null;
+  return reviewRequirementMessages[code] || null;
 }
 
 function buildRequirementSteps(requirements) {
@@ -2032,47 +607,81 @@ async function changeLocale(locale) {
   const changed = state.locale !== locale;
   if (changed && !leaveSettings()) return;
   state.locale = locale;
+  AutonomoCore.setLocale(locale);
   storeLocale(locale);
   applyStaticTranslations();
-  if (changed && (state.period || state.view === "settings")) await renderCurrentView();
+  if (changed && (state.period || state.view === "settings")) await refreshLocalePresentation();
+}
+
+function localeDialogOpen() {
+  return dialog?.open || postingConfirmDialog?.open || counterpartyNameEditor
+    || chartDialog?.open || document.querySelector("#status-help-dialog")?.open;
+}
+
+function scheduleLocaleRepaint() {
+  if (!hasDOM || !pendingLocaleRepaint) return;
+  clearTimeout(localeRepaintTimer);
+  localeRepaintTimer = setTimeout(() => {
+    if (pendingLocaleRepaint && !requestScope.pending && !localeDialogOpen()
+        && !state.review.busy && !state.posting.isSubmitting) void refreshLocalePresentation();
+  }, 0);
+}
+
+async function refreshLocalePresentation() {
+  AccountingHelp.setLocale(state.locale);
+  if (chartDialog?.open && chartDialogEntry) {
+    const focus = AutonomoCore.captureFocus(chartDialog);
+    renderChartDialogFigure();
+    AutonomoCore.restoreFocus(chartDialog, focus);
+  }
+  if (localeDialogOpen() || requestScope.writes || state.review.busy || state.posting.isSubmitting) {
+    pendingLocaleRepaint = true;
+    if (counterpartyNameEditor) updateCounterpartyNameControls();
+    return;
+  }
+  pendingLocaleRepaint = false;
+  if (state.view === "expenses" && expensePresentation) {
+    if (!expensePresentation.repaint()) pendingLocaleRepaint = true;
+    return;
+  }
+  if (state.view === "review" && state.review.selectedReviewId && expenseWorkflowController) {
+    expenseWorkflowController.setLocale(state.locale);
+    return;
+  }
+  if (state.view === "review" && state.review.workItem?.packet) {
+    const focus = AutonomoCore.captureFocus(app);
+    syncReviewUiState();
+    renderReviewWorkspace();
+    AutonomoCore.restoreFocus(app, focus);
+    return;
+  }
+  if (state.view === "assets" && !requestScope.pending) {
+    const selected = document.querySelector("#asset-plan-select")?.value || null;
+    await renderAssets(currentRenderGeneration, selected, lastAssetPostingResult);
+    return;
+  }
+  if (requestScope.pending) { pendingLocaleRepaint = true; return; }
+  await renderCurrentView({localeOnly: true});
 }
 
 function t(key, variables = {}) {
-  const template = messages[state.locale][key] || messages.ru[key] || key;
-  return Object.entries(variables).reduce(
-    (result, [name, value]) => result.replaceAll(`{${name}}`, String(value)),
-    template
-  );
+  return AutonomoCore.formatMessage(key, variables, state.locale);
 }
 
 function loadLocale() {
-  try {
-    const stored = localStorage.getItem(LOCALE_STORAGE_KEY);
-    if (SUPPORTED_LOCALES.has(stored)) return stored;
-  } catch {
-    // The UI remains usable when browser storage is disabled.
-  }
-  return "ru";
+  return AutonomoCore.loadLocale(() => localStorage);
 }
 
 function storeLocale(locale) {
-  try {
-    localStorage.setItem(LOCALE_STORAGE_KEY, locale);
-  } catch {
-    // Locale still applies for the current page when storage is unavailable.
-  }
+  AutonomoCore.storeLocale(() => localStorage, locale);
 }
 
 function intlLocale() {
-  return state.locale === "en" ? "en-GB" : "ru-RU";
+  return AutonomoCore.localeTag(state.locale);
 }
 
 function countNoun(value, noun) {
-  const count = Number(value) || 0;
-  const category = new Intl.PluralRules(intlLocale()).select(count);
-  const forms = nounMessages[state.locale][noun];
-  const label = forms[category] || forms.other;
-  return `${count} ${label}`;
+  return t(`common.counts.${noun}`, {count: Number(value) || 0});
 }
 
 function waitingForPeriod(value) {
@@ -2188,40 +797,15 @@ function issueMessage(issueCode) {
 }
 
 function eur(value) {
-  if (value === null || value === undefined || value === "") return "—";
-  const number = Number(value);
-  if (!Number.isFinite(number)) return "—";
-  return new Intl.NumberFormat(intlLocale(), {
-    style: "currency",
-    currency: "EUR",
-    minimumFractionDigits: 2,
-  }).format(number);
+  return AutonomoCore.eur(value, state.locale);
 }
 
 function formatDate(value) {
-  if (!value) return "—";
-  const date = new Date(`${value}T12:00:00`);
-  if (Number.isNaN(date.getTime())) return escapeHtml(value);
-  return new Intl.DateTimeFormat(intlLocale(), {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(date);
+  return AutonomoCore.formatDateHtml(value, state.locale);
 }
 
 function formatDateTime(value) {
-  if (!value) return "—";
-  const text = String(value);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return formatDate(text);
-  const date = new Date(text);
-  if (Number.isNaN(date.getTime())) return text;
-  return new Intl.DateTimeFormat(intlLocale(), {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+  return AutonomoCore.formatDateTime(value, state.locale);
 }
 
 function boolText(value) {
@@ -2229,62 +813,40 @@ function boolText(value) {
 }
 
 async function fetchJSON(url, options = {}) {
-  const {fallbackMessage, ...fetchOptions} = options;
-  const response = await fetch(url, fetchOptions);
-  const responseUrl = new URL(url, window.location.origin);
-  const contentType = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
-  const body = await response.text();
-  const trimmedBody = body.trim();
-  const parsed = parseJSONText(trimmedBody);
-
-  if (parsed.ok) {
-    if (!response.ok) {
-      const error = new Error(parsed.value?.error || fallbackMessage || `HTTP ${response.status}`);
-      error.status = response.status;
-      error.code = parsed.value?.code;
-      error.current = parsed.value?.current;
-      throw error;
-    }
-    return parsed.value;
-  }
-
-  if (response.ok && looksLikeHtmlResponse(contentType, trimmedBody)) {
-    throw new Error(t("errors.apiReturnedHtml", {origin: responseUrl.origin}));
-  }
-
-  const messageKey = looksLikeJsonResponse(contentType, trimmedBody)
-    ? "errors.malformedJson"
-    : "errors.unexpectedNonJson";
-  throw new Error(t(messageKey, {url: responseUrl.href, status: response.status}));
+  return requestScope.request(url, options, {fetch, origin: window.location.origin, t});
 }
 
 function parseJSONText(body) {
-  if (!body) return {ok: false};
-  try {
-    return {ok: true, value: JSON.parse(body)};
-  } catch {
-    return {ok: false};
-  }
+  return AutonomoCore.parseJSONText(body);
 }
 
 function looksLikeHtmlResponse(contentType, body) {
-  return contentType === "text/html"
-    || contentType === "application/xhtml+xml"
-    || /^<!doctype html\b/i.test(body)
-    || /^<html\b/i.test(body)
-    || /^<head\b/i.test(body)
-    || /^<body\b/i.test(body);
+  return AutonomoCore.looksLikeHtmlResponse(contentType, body);
 }
 
 function looksLikeJsonResponse(contentType, body) {
-  return contentType === "application/json"
-    || contentType.endsWith("+json")
-    || /^[\[{]/.test(body);
+  return AutonomoCore.looksLikeJsonResponse(contentType, body);
+}
+
+function setLocalizedText(element, message) {
+  if (!element) return;
+  if (message) localizedText.set(element, message); else localizedText.delete(element);
+  element.textContent = AutonomoCore.messageText(message, state.locale);
+}
+
+function refreshLocalizedText() {
+  for (const [element, message] of localizedText) {
+    if (element.isConnected === false) { localizedText.delete(element); continue; }
+    element.textContent = AutonomoCore.messageText(message, state.locale);
+  }
+  if (showToast.message !== undefined && toast) (toastMessage || toast).textContent = AutonomoCore.messageText(showToast.message, state.locale);
+  if (intakeNoticeMessages.length && dialog?.open) setIntakeNotice(intakeNoticeMessages);
 }
 
 function showToast(message, error = false) {
   if (!toast) return;
-  (toastMessage || toast).textContent = message;
+  showToast.message = message;
+  (toastMessage || toast).textContent = AutonomoCore.messageText(message, state.locale);
   toast.classList.toggle("error", error);
   toast.classList.add("visible");
   clearTimeout(showToast.timer);
@@ -2314,12 +876,7 @@ function shortId(value) {
 }
 
 function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+  return AutonomoCore.escapeHtml(value);
 }
 
 function debounce(callback, wait) {
@@ -2427,7 +984,7 @@ function expenseQuarter(period) {
   const match = /^(\d{4})-Q([1-4])$/.exec(String(period || ""));
   if (!match) return String(period || "—");
   return t("expense.quarter", {
-    year: match[1], quarter: state.locale === "ru" ? ["I", "II", "III", "IV"][Number(match[2]) - 1] : match[2],
+    year: match[1], quarter: AutonomoCore.quarterNumber(Number(match[2]), state.locale),
   });
 }
 
@@ -2578,13 +1135,13 @@ async function renderExpenses(renderGeneration = currentRenderGeneration) {
   const token = transactionRenderToken("expense", renderGeneration);
   const period = state.period;
   const active = () => isActiveTransactionRenderToken(token, "expense", renderGeneration);
-  app.innerHTML = `<div class="table-toolbar expense-toolbar"><h2>${escapeHtml(t("titles.expenses"))} · ${escapeHtml(state.period)}</h2>
-    <div class="toolbar-filters"><label>${escapeHtml(t("expense.search"))}<input id="expense-search" type="search"></label>
-    <button class="primary-button" id="view-add-entry">+ ${escapeHtml(t("common.add"))}</button></div></div>
+  app.innerHTML = `<div class="table-toolbar expense-toolbar"><h2><span data-i18n="titles.expenses">${escapeHtml(t("titles.expenses"))}</span> · ${escapeHtml(state.period)}</h2>
+    <div class="toolbar-filters"><label><span data-i18n="expense.search">${escapeHtml(t("expense.search"))}</span><input id="expense-search" type="search"></label>
+    <button class="primary-button" id="view-add-entry">+ <span data-i18n="common.add">${escapeHtml(t("common.add"))}</span></button></div></div>
     <div id="expense-results"></div><div id="expense-load-status" role="status" aria-live="polite"></div>
-    <button class="secondary-button" id="expense-more" hidden>${escapeHtml(t("expense.loadMore"))}</button>
-    <button class="secondary-button" id="expense-retry" hidden>${escapeHtml(t("expense.retry"))}</button>
-    <section class="panel"><p class="expense-section-header">${escapeHtml(t("expense.chartSourceNote"))}</p><div class="chart-slot" id="chart-expense-structure"></div></section>`;
+    <button class="secondary-button" id="expense-more" data-i18n="expense.loadMore" hidden>${escapeHtml(t("expense.loadMore"))}</button>
+    <button class="secondary-button" id="expense-retry" data-i18n="expense.retry" hidden>${escapeHtml(t("expense.retry"))}</button>
+    <section class="panel"><p class="expense-section-header" data-i18n="expense.chartSourceNote">${escapeHtml(t("expense.chartSourceNote"))}</p><div class="chart-slot" id="chart-expense-structure"></div></section>`;
   const search = document.querySelector("#expense-search");
   search.value = state.expensesQuery || "";
   const sourceUrl = () => buildRouteUrl("expenses", {period, q: state.expensesQuery});
@@ -2593,6 +1150,7 @@ async function renderExpenses(renderGeneration = currentRenderGeneration) {
   const more = document.querySelector("#expense-more");
   const retry = document.querySelector("#expense-retry");
   let busy = false;
+  let currentPage = null;
   let loadVersion = 0;
   let retryAppend = false;
   let retryRefresh = false;
@@ -2608,6 +1166,7 @@ async function renderExpenses(renderGeneration = currentRenderGeneration) {
       const page = await (refresh ? pager.refresh(search.value.trim()) : pager.load(search.value.trim(), append));
       if (!page || !active()) return;
       if (refresh && document.querySelector("#status-help-dialog")?.open) return;
+      currentPage = page;
       AccountingHelp.beforeRender();
       replaceExpenseResults(results, expenseSections(page, sourceUrl()));
       AccountingHelp.labelTables(results);
@@ -2629,6 +1188,7 @@ async function renderExpenses(renderGeneration = currentRenderGeneration) {
     if (!active()) return;
     state.expensesQuery = search.value;
     window.history.replaceState(null, "", sourceUrl());
+    currentPage = null;
     pager.invalidate();
     loadVersion += 1;
     busy = false;
@@ -2643,6 +1203,24 @@ async function renderExpenses(renderGeneration = currentRenderGeneration) {
   document.querySelector("#view-add-entry").addEventListener("click", () => openIntake("expense_invoice"));
   refreshExpenseView = () => {
     if (active() && !busy && document.activeElement !== search && !document.querySelector("#status-help-dialog")?.open) void load(false, true);
+  };
+  expensePresentation = {
+    repaint() {
+      if (!active() || !currentPage) return false;
+      replaceExpenseResults(results, expenseSections(currentPage, sourceUrl()));
+      AccountingHelp.labelTables(results);
+      if (busy) status.textContent = t("expense.loading");
+      const entry = viewChartRegistry.get("chart-expense-structure");
+      const host = document.querySelector("#chart-expense-structure");
+      if (entry?.rebuild && host) {
+        entry.spec = entry.rebuild();
+        const width = chartHostWidth(host);
+        if (width) entry.spec.width = width;
+        withChartExpandAction(entry);
+        entry.render(host, entry.spec);
+      }
+      return true;
+    },
   };
   await load();
   if (active()) {
@@ -3020,7 +1598,7 @@ async function mountViewAnalyticsChart(slotId, buildSpec, renderer) {
     const spec = buildSpec(analytics);
     const width = chartHostWidth(slot);
     if (width) spec.width = width;
-    const entry = withChartExpandAction({render, spec});
+    const entry = withChartExpandAction({render, spec, rebuild: () => buildSpec(analytics)});
     viewChartRegistry.set(slotId, entry);
     render(slot, spec);
   } catch (error) {
@@ -3046,7 +1624,8 @@ function openChartDialog(entry, trigger) {
 
 function renderChartDialogFigure() {
   if (!chartDialogEntry || !chartDialogSlot) return;
-  const copy = Object.assign({}, chartDialogEntry.spec);
+  const copy = Object.assign({}, chartDialogEntry.rebuild ? chartDialogEntry.rebuild() : chartDialogEntry.spec);
+  chartDialogTitle.textContent = copy.title;
   delete copy.expandAction;
   const width = chartHostWidth(chartDialogSlot);
   if (width) copy.width = width;
@@ -3083,19 +1662,20 @@ function renderDashboardCharts(analyticsResult) {
     return;
   }
   const analytics = analyticsResult.payload;
-  const mount = (slotId, renderChart, spec) => {
+  const mount = (slotId, renderChart, buildSpec) => {
+    const spec = buildSpec();
     const slot = document.querySelector(`#${slotId}`);
     if (!slot) return;
     const width = chartHostWidth(slot);
     if (width) spec.width = width;
-    viewChartRegistry.set(slotId, withChartExpandAction({render: renderChart, spec}));
+    viewChartRegistry.set(slotId, withChartExpandAction({render: renderChart, spec, rebuild: buildSpec}));
     renderChart(slot, spec);
   };
-  mount("chart-business-result", AutonomoCharts.renderCartesian, buildBusinessResultSpec(analytics));
-  mount("chart-tax-due", AutonomoCharts.renderCartesian, buildTaxDueSpec(analytics));
-  mount("chart-iva-position", AutonomoCharts.renderCartesian, buildIvaPositionSpec(analytics));
-  mount("chart-tax-reserve", AutonomoCharts.renderBullet, buildReserveSpec(analytics));
-  mount("chart-cumulative-net", AutonomoCharts.renderCartesian, buildCumulativeNetSpec(analytics));
+  mount("chart-business-result", AutonomoCharts.renderCartesian, () => buildBusinessResultSpec(analytics));
+  mount("chart-tax-due", AutonomoCharts.renderCartesian, () => buildTaxDueSpec(analytics));
+  mount("chart-iva-position", AutonomoCharts.renderCartesian, () => buildIvaPositionSpec(analytics));
+  mount("chart-tax-reserve", AutonomoCharts.renderBullet, () => buildReserveSpec(analytics));
+  mount("chart-cumulative-net", AutonomoCharts.renderCartesian, () => buildCumulativeNetSpec(analytics));
 }
 
 async function init() {
@@ -3132,9 +1712,18 @@ async function renderSettings(generation) {
   });
 }
 
-async function renderCurrentView() {
+async function renderCurrentView({localeOnly = false} = {}) {
   if (!app || (state.view !== "settings" && !state.period && !state.expenseDetail.transactionId && !state.review.selectedReviewId && !state.contactDetail.id)) return;
+  pendingLocaleRepaint = false;
   closeCounterpartyMenu(false);
+  if (!localeOnly) {
+    expenseWorkflowController?.dispose?.();
+    expenseWorkflowController = null;
+    expensePresentation = null;
+    lastAssetPostingResult = null;
+  }
+  // A full root replacement retires its help contexts. Cached presentation
+  // updates (review/expenses) do not pass through this path.
   AccountingHelp.beforeRender();
   AccountingHelp.setLocale(state.locale);
   app.setAttribute("aria-busy", "true");
@@ -3310,7 +1899,7 @@ async function renderDashboard(renderGeneration = currentRenderGeneration) {
 async function renderTransactions(entryType, renderGeneration = currentRenderGeneration) {
   const renderToken = transactionRenderToken(entryType, renderGeneration);
   let latestSearchRequestId = 0;
-  const initialQuery = entryType === "expense" ? state.expensesQuery : "";
+  const initialQuery = entryType === "expense" ? state.expensesQuery : state.incomeQuery || "";
   const sourceUrl = () => buildRouteUrl(entryType === "expense" ? "expenses" : "income", {q: state.expensesQuery});
   const rows = await fetchJSON(
     `/api/transactions?period=${encodeURIComponent(state.period)}&entry_type=${entryType}${initialQuery ? `&q=${encodeURIComponent(initialQuery.trim())}` : ""}`
@@ -3337,6 +1926,7 @@ async function renderTransactions(entryType, renderGeneration = currentRenderGen
   const searchToken = renderToken;
   search.addEventListener("input", () => {
     ++latestSearchRequestId;
+    if (entryType === "income" && isActiveTransactionRenderToken(searchToken, entryType, renderGeneration)) state.incomeQuery = search.value;
     if (entryType === "expense" && isActiveTransactionRenderToken(searchToken, entryType, renderGeneration)) {
       state.expensesQuery = search.value;
       window.history.replaceState(null, "", sourceUrl());
@@ -3405,7 +1995,7 @@ function expenseDetailMarkup(data, returnUrl) {
     ["EUR", minorEur(euroMinor)],
   ];
   return `<div class="section-stack expense-detail">
-    ${data.workflow_follow_up?.follow_up_pending ? `<section class="panel expense-panel-body"><p>${escapeHtml(state.locale === "ru" ? "Расход проведён; обновление расчётов или очистка Inbox ещё не завершены." : "Posted; calculation refresh or Inbox cleanup is pending.")}</p><button type="button" id="expense-follow-up">${escapeHtml(state.locale === "ru" ? "Повторить обновление" : "Retry follow-up")}</button><p id="expense-follow-up-error" role="alert"></p></section>` : ""}
+    ${data.workflow_follow_up?.follow_up_pending ? `<section class="panel expense-panel-body"><p>${escapeHtml(t("app.inline.postedCalculationRefreshOrInboxCleanupIsPending"))}</p><button type="button" id="expense-follow-up">${escapeHtml(t("app.inline.retryFollowUp"))}</button><p id="expense-follow-up-error" role="alert"></p></section>` : ""}
     <header class="review-workspace-header">
       ${back}
       <div><h2>${escapeHtml(documentState.document_number || t("expense.title"))}</h2><p>${escapeHtml(data.counterparty?.display_name || "—")}</p></div>
@@ -3485,10 +2075,12 @@ async function loadReviewWorkspace(reviewId, {factsOnly = false} = {}) {
     }
     if (data.transaction.entry_type === "expense" && typeof ExpenseWorkflow !== "undefined" && !factsOnly) {
       applyDetailPeriod(data, "review", transactionId);
-      await ExpenseWorkflow.open({container: app, api: fetchJSON, transactionId, locale: state.locale,
+      const workflowController = await ExpenseWorkflow.open({container: app, api: fetchJSON, transactionId, locale: state.locale,
         isActive, taxLabel: taxCodeLabel,
         onLegacy: () => loadReviewWorkspace(reviewId, {factsOnly: true}),
         onPosted: (result) => navigateToRoute("expense-detail", {transactionId: result.transaction_id, period: data.period.period_key, returnTo: state.returnTo})});
+      if (isActive()) expenseWorkflowController = workflowController;
+      else workflowController?.dispose?.();
       return;
     }
     const workItem = await fetchJSON(`/api/review/work-item?review_id=${encodeURIComponent(reviewId)}`);
@@ -3852,7 +2444,7 @@ function mapConfirmErrorToQuestion(message) {
 function inlineErrorFor(questionId) {
   const error = state.review.confirmError;
   if (!error || error.target !== questionId) return "";
-  return `<p class="review-inline-error" role="alert">${escapeHtml(error.message)}</p>`;
+  return `<p class="review-inline-error" role="alert">${escapeHtml(AutonomoCore.messageText(error.message, state.locale))}</p>`;
 }
 
 function buildConfirmFxSpec(fxChoice, suggestion) {
@@ -4033,6 +2625,28 @@ function renderGuidedIssueCard(issue, index, resolution, guidance) {
     </article>`;
 }
 
+function reviewUiState(packet) {
+  const id = packet.state?.transaction?.transaction_id || packet.review_id;
+  if (!state.review.ui || state.review.ui.transactionId !== id) {
+    state.review.ui = {transactionId: id, rejectDocumentValid: "", rejectReason: packet.decision?.reason || "", technicalOpen: false, rejectOpen: false};
+  }
+  return state.review.ui;
+}
+
+function syncReviewUiState() {
+  const packet = currentReviewPacket();
+  if (!packet) return;
+  const ui = reviewUiState(packet);
+  const valid = document.querySelector("#review-reject-document-valid");
+  const reason = document.querySelector("#review-reject-reason");
+  if (valid) ui.rejectDocumentValid = valid.value;
+  if (reason) ui.rejectReason = reason.value;
+  const technical = document.querySelector(".review-technical-details");
+  const reject = document.querySelector(".review-reject-panel");
+  if (technical) ui.technicalOpen = technical.open;
+  if (reject) ui.rejectOpen = reject.open;
+}
+
 function renderReviewWorkspace() {
   const workItem = state.review.workItem;
   if (!workItem?.packet) {
@@ -4041,6 +2655,7 @@ function renderReviewWorkspace() {
   }
   const packet = workItem.packet;
   const decision = packet.decision;
+  const reviewUi = reviewUiState(packet);
   const packetState = packet.state || {};
   const transaction = packetState.transaction || {};
   const documentState = packetState.document || {};
@@ -4092,7 +2707,7 @@ function renderReviewWorkspace() {
           <p>${escapeHtml(evaluation.reason || t("review.formDisabledHint"))}</p>
         </div>` : ""}
       ${state.review.confirmError?.target === "general" ? `
-        <div class="review-alert error" role="alert">${escapeHtml(state.review.confirmError.message)}</div>` : ""}
+        <div class="review-alert error" role="alert">${escapeHtml(AutonomoCore.messageText(state.review.confirmError.message, state.locale))}</div>` : ""}
       ${!evaluation.canApply && evaluation.availableOn ? `<p class="review-alert warning">${escapeHtml(t("review.future", {date: formatDate(evaluation.availableOn)}))}</p>` : ""}
       <form id="review-form" class="review-form">
         <section class="panel review-panel">
@@ -4174,7 +2789,7 @@ function renderReviewWorkspace() {
                 return renderGuidedIssueCard(issue, index, resolution, guidance);
               }).join("")}
             </div>` : ""}
-          <details class="review-technical-details">
+          <details class="review-technical-details" ${reviewUi.technicalOpen ? "open" : ""}>
             <summary>${escapeHtml(t("review.technicalDetails"))}</summary>
             <div class="form-grid compact-grid">
               <label>
@@ -4278,7 +2893,7 @@ function renderReviewWorkspace() {
 
         <section class="panel review-panel">
           <header class="panel-header"><h2>${escapeHtml(t("review.result"))}</h2><small>${escapeHtml(t("review.confirmHint"))}</small></header>
-          <details class="review-reject-panel">
+          <details class="review-reject-panel" ${reviewUi.rejectOpen ? "open" : ""}>
             <summary>${escapeHtml(t("review.rejectAction"))}</summary>
             <div class="review-reject-body">
               <p class="muted-copy">${escapeHtml(t("review.rejectLead"))}</p>
@@ -4286,13 +2901,13 @@ function renderReviewWorkspace() {
                 <span>${escapeHtml(t("fields.documentValid"))}</span>
                 <select id="review-reject-document-valid">
                   <option value=""></option>
-                  <option value="true">${escapeHtml(t("common.yes"))}</option>
-                  <option value="false">${escapeHtml(t("common.no"))}</option>
+                  <option value="true" ${reviewUi.rejectDocumentValid === "true" ? "selected" : ""}>${escapeHtml(t("common.yes"))}</option>
+                  <option value="false" ${reviewUi.rejectDocumentValid === "false" ? "selected" : ""}>${escapeHtml(t("common.no"))}</option>
                 </select>
               </label>
               <label>
                 <span>${escapeHtml(t("fields.reason"))}</span>
-                <textarea rows="2" id="review-reject-reason">${escapeHtml(decision.reason || "")}</textarea>
+                <textarea rows="2" id="review-reject-reason">${escapeHtml(reviewUi.rejectReason)}</textarea>
               </label>
               ${inlineErrorFor("reject")}
               <div class="review-reject-actions">
@@ -4357,6 +2972,11 @@ function renderReviewWorkspace() {
   document.querySelector("#review-fx-settlement-date")?.addEventListener("input", syncSettlementInputs);
   document.querySelector("#review-fx-settlement-reference")?.addEventListener("input", syncSettlementInputs);
 
+  document.querySelector("#review-reject-document-valid")?.addEventListener("change", syncReviewUiState);
+  document.querySelector("#review-reject-reason")?.addEventListener("input", syncReviewUiState);
+  document.querySelector(".review-technical-details")?.addEventListener("toggle", syncReviewUiState);
+  document.querySelector(".review-reject-panel")?.addEventListener("toggle", syncReviewUiState);
+
   document.querySelector("#review-reject-button")?.addEventListener("click", () => {
     void submitReviewReject();
   });
@@ -4402,7 +3022,7 @@ async function submitReviewConfirm() {
     ? buildConfirmFxSpec(state.review.fxChoice, suggestion)
     : null;
   if (fxChoiceNeeded(transaction) && !fxSpec) {
-    state.review.confirmError = {message: t("review.fxNeeded"), target: "fx_rate"};
+    state.review.confirmError = {message: AutonomoCore.message("review.fxNeeded"), target: "fx_rate"};
     renderReviewWorkspace();
     return;
   }
@@ -4429,7 +3049,7 @@ async function submitReviewConfirm() {
     state.review.busy = false;
     setReviewSubmitBusy(false);
     if (!detailRouteActive("review", transaction.transaction_id, generation)) return;
-    showToast(t("review.confirmSuccess"));
+    showToast(AutonomoCore.message("review.confirmSuccess"));
     state.review.selectedReviewId = null;
     state.review.workItem = null;
     state.review.fxChoice = null;
@@ -4451,12 +3071,12 @@ async function submitReviewReject() {
   const documentValidRaw = document.querySelector("#review-reject-document-valid")?.value || "";
   const reasonRaw = (document.querySelector("#review-reject-reason")?.value || "").trim();
   if (documentValidRaw !== "true" && documentValidRaw !== "false") {
-    state.review.confirmError = {message: t("review.rejectDocumentRequired"), target: "reject"};
+    state.review.confirmError = {message: AutonomoCore.message("review.rejectDocumentRequired"), target: "reject"};
     renderReviewWorkspace();
     return;
   }
   if (!reasonRaw) {
-    state.review.confirmError = {message: t("review.rejectReasonRequired"), target: "reject"};
+    state.review.confirmError = {message: AutonomoCore.message("review.rejectReasonRequired"), target: "reject"};
     renderReviewWorkspace();
     return;
   }
@@ -4480,7 +3100,7 @@ async function submitReviewReject() {
     state.review.busy = false;
     setReviewSubmitBusy(false);
     if (!detailRouteActive("review", transactionId, generation)) return;
-    showToast(t("review.rejectSuccess"));
+    showToast(AutonomoCore.message("review.rejectSuccess"));
     state.review.selectedReviewId = null;
     state.review.workItem = null;
     state.review.fxChoice = null;
@@ -4495,8 +3115,10 @@ async function submitReviewReject() {
 }
 
 async function renderAssets(renderGeneration = currentRenderGeneration, selectedAssetId = null, postingResult = null) {
+  lastAssetPostingResult = postingResult;
   const rows = await fetchJSON(`/api/assets?period=${encodeURIComponent(state.period)}`);
   if (renderGeneration !== currentRenderGeneration || state.view !== "assets") return;
+  AccountingHelp.beforeRender();
   app.innerHTML = `
     <div class="table-toolbar"><div><h2>${escapeHtml(t("assets.title"))}</h2><p>${escapeHtml(AccountingHelp.word("allAssets"))}: ${escapeHtml(state.period)}</p></div></div>
     <section class="panel"><div class="table-wrap"><table class="asset-explanations-table">
@@ -4515,7 +3137,7 @@ async function renderAssets(renderGeneration = currentRenderGeneration, selected
   if (typeof ExpenseWorkflow !== "undefined") {
     const actions = document.createElement("section");
     actions.className = "panel wf-fields";
-    actions.innerHTML = `<label><span>${escapeHtml(state.locale === "ru" ? "График оборудования" : "Equipment schedule")}</span><select id="asset-plan-select"><option value=""></option>${rows.map((row) => `<option value="${escapeHtml(row.asset_id)}">${escapeHtml(row.description || row.asset_code)}</option>`).join("")}</select></label><div id="asset-plan-detail"></div>`;
+    actions.innerHTML = `<label><span>${escapeHtml(t("app.inline.equipmentSchedule"))}</span><select id="asset-plan-select"><option value=""></option>${rows.map((row) => `<option value="${escapeHtml(row.asset_id)}">${escapeHtml(row.description || row.asset_code)}</option>`).join("")}</select></label><div id="asset-plan-detail"></div>`;
     app.appendChild(actions);
     const selector = actions.querySelector("select");
     async function loadSelectedSchedule() {
@@ -4533,8 +3155,8 @@ async function renderAssets(renderGeneration = currentRenderGeneration, selected
       await loadSelectedSchedule();
       const status = actions.querySelector('[role="status"]');
       if (status && postingResult) status.textContent = postingResult.follow_up_pending
-        ? (state.locale === "ru" ? "Проведено; требуется обновление расчётов." : "Posted; calculation refresh needs retry.")
-        : (state.locale === "ru" ? "Амортизация проведена." : "Depreciation posted.");
+        ? (t("app.inline.postedCalculationRefreshNeedsRetry"))
+        : (t("app.inline.depreciationPosted"));
     }
   }
   mountViewAnalyticsChart("chart-amortization", buildAmortizationSpec);
@@ -5028,7 +3650,7 @@ function openCounterpartyNameEditor(id, trigger, row = counterpartyRowsById.get(
   };
   document.querySelector("#counterparty-name-input").value = row.display_name;
   document.querySelector("#counterparty-name-input").removeAttribute("aria-invalid");
-  document.querySelector("#counterparty-name-error").textContent = "";
+  setLocalizedText(document.querySelector("#counterparty-name-error"), "");
   document.querySelector("#counterparty-name-conflict").hidden = true;
   document.querySelector("#counterparty-name-history").open = false;
   updateCounterpartyNameControls();
@@ -5080,7 +3702,7 @@ function acceptCurrentCounterpartyName() {
   edit.row = {...edit.row, ...edit.conflict};
   edit.conflict = null;
   document.querySelector("#counterparty-name-conflict").hidden = true;
-  document.querySelector("#counterparty-name-error").textContent = "";
+  setLocalizedText(document.querySelector("#counterparty-name-error"), "");
   updateCounterpartyNameControls();
   document.querySelector("#counterparty-name-input").focus();
   void loadCounterpartyNameHistory();
@@ -5092,10 +3714,10 @@ async function submitCounterpartyName(event) {
   if (!edit || edit.busy || edit.conflict) return;
   const input = document.querySelector("#counterparty-name-input");
   const errorLabel = document.querySelector("#counterparty-name-error");
-  errorLabel.textContent = "";
+  setLocalizedText(errorLabel, "");
   input.removeAttribute("aria-invalid");
   if (!validCounterpartyName(input.value)) {
-    errorLabel.textContent = t("contacts.invalidName");
+    setLocalizedText(errorLabel, AutonomoCore.message("contacts.invalidName"));
     input.setAttribute("aria-invalid", "true");
     input.focus();
     return;
@@ -5112,13 +3734,11 @@ async function submitCounterpartyName(event) {
     if (counterpartyNameEditor !== edit) return;
     if (error.status === 409 && error.code === "stale_counterparty" && error.current) {
       edit.conflict = error.current;
-      document.querySelector("#counterparty-current-name").textContent = t("contacts.currentName", {name: error.current.display_name});
+      setLocalizedText(document.querySelector("#counterparty-current-name"), AutonomoCore.message("contacts.currentName", {name: error.current.display_name}));
       document.querySelector("#counterparty-name-conflict").hidden = false;
-      errorLabel.textContent = t("contacts.nameConflict");
+      setLocalizedText(errorLabel, AutonomoCore.message("contacts.nameConflict"));
     } else {
-      errorLabel.textContent = error.code === "invalid_name" ? t("contacts.invalidName")
-        : error.code === "counterparty_busy" ? t("contacts.nameBusy")
-        : error.status === 404 ? t("contacts.nameMissing") : error.message;
+      setLocalizedText(errorLabel, error.code === "invalid_name" ? AutonomoCore.message("contacts.invalidName") : error.code === "counterparty_busy" ? AutonomoCore.message("contacts.nameBusy") : error.status === 404 ? AutonomoCore.message("contacts.nameMissing") : error.message);
     }
   } finally {
     edit.busy = false;
@@ -5127,7 +3747,7 @@ async function submitCounterpartyName(event) {
   if (!result || counterpartyNameEditor !== edit) return;
   counterpartyRowsById.set(edit.row.counterparty_id, {...edit.row, ...result});
   closeCounterpartyNameEditor(true);
-  showToast(t(result.changed ? "contacts.nameSaved" : "contacts.nameUnchanged"));
+  showToast(AutonomoCore.message(result.changed ? "contacts.nameSaved" : "contacts.nameUnchanged"));
   if (state.view === "contacts") {
     rememberContactsListPosition();
     try {
@@ -5135,7 +3755,7 @@ async function submitCounterpartyName(event) {
       Array.from(document.querySelectorAll("[data-counterparty-menu]"))
         .find((button) => button.dataset.counterpartyMenu === edit.row.counterparty_id)?.focus({preventScroll: true});
     } catch (_) {
-      showToast(t("contacts.nameRefreshError"), true);
+      showToast(AutonomoCore.message("contacts.nameRefreshError"), true);
     }
   } else if (state.view === "contact-detail" && state.contactDetail.id === edit.row.counterparty_id) {
     const current = state.contactDetail;
@@ -5163,7 +3783,7 @@ async function refreshDashboard() {
     await requestDashboardRefresh({period, showSuccessToast: false});
     if (state.posting.staleRefresh?.period === period) state.posting.staleRefresh = null;
     if (generation !== currentRenderGeneration) return;
-    showToast(t("refresh.done", {period}));
+    showToast(AutonomoCore.message("refresh.done", {period}));
     await renderCurrentView();
   } catch (error) {
     if (generation === currentRenderGeneration) showToast(error.message, true);
@@ -5179,7 +3799,7 @@ async function requestDashboardRefresh({showSuccessToast = true, period = state.
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({period, as_of: new Date().toISOString().slice(0, 10)}),
   });
-  if (showSuccessToast) showToast(t("refresh.done", {period}));
+  if (showSuccessToast) showToast(AutonomoCore.message("refresh.done", {period}));
   return response;
 }
 
@@ -5475,7 +4095,7 @@ function renderPostingQueueSection(title, rows) {
                 <td class="cell-primary"><strong>${escapeHtml(row.description || row.reviewId || row.transactionId || t("common.noId"))}</strong><small>${escapeHtml(row.entryType || "—")}</small></td>
                 <td>${AccountingHelp.cell(postingHelpContext(row))}</td>
                 <td class="amount">${row.amountEur ? eur(row.amountEur) : "—"}</td>
-                <td class="posting-result-message">${row.structuredReasons.length ? row.structuredReasons.map(reason => escapeHtml(AccountingHelp.reasonInfo(reason)[0][state.locale === "en" ? 1 : 0])).join(" · ") : escapeHtml(t("issues.default"))}</td>
+                <td class="posting-result-message">${row.structuredReasons.length ? row.structuredReasons.map(reason => escapeHtml(AccountingHelp.text(AccountingHelp.reasonInfo(reason)[0]))).join(" · ") : escapeHtml(t("issues.default"))}</td>
               </tr>`).join("")}
           </tbody>
         </table>
@@ -5503,7 +4123,7 @@ function openPostingConfirmDialog() {
   if (!preview || postingActionDisabled(preview)) return;
   state.posting.pendingItems = preview.ready.map((row) => ({...row}));
   postingConfirmPeriod.textContent = preview.period || state.period;
-  postingConfirmStatus.textContent = "";
+  setLocalizedText(postingConfirmStatus, "");
   renderPostingConfirmDialog();
   if (!postingConfirmDialog.open) postingConfirmDialog.showModal();
 }
@@ -5530,15 +4150,15 @@ function renderPostingConfirmDialog() {
 
 function closePostingConfirmDialog() {
   if (postingConfirmDialog.open) postingConfirmDialog.close();
-  postingConfirmStatus.textContent = "";
+  setLocalizedText(postingConfirmStatus, "");
   state.posting.pendingItems = [];
 }
 
 function postingResultToast(result) {
-  if (result.status === "interrupted") return t("review.postInterrupted");
-  if (result.status === "partial") return t("review.postPartial");
-  if (result.summary.postedCount > 0) return t("review.postSuccess", {count: result.summary.postedCount});
-  return t("review.postNone");
+  if (result.status === "interrupted") return AutonomoCore.message("review.postInterrupted");
+  if (result.status === "partial") return AutonomoCore.message("review.postPartial");
+  if (result.summary.postedCount > 0) return AutonomoCore.message("review.postSuccess", {count: result.summary.postedCount});
+  return AutonomoCore.message("review.postNone");
 }
 
 async function submitPostingReady() {
@@ -5580,7 +4200,7 @@ async function submitPostingReady() {
     await renderCurrentView();
   } catch (error) {
     if (!isActive()) return;
-    postingConfirmStatus.textContent = error.message;
+    setLocalizedText(postingConfirmStatus, error.message);
     showToast(error.message, true);
   } finally {
     state.posting.isSubmitting = false;
@@ -5637,9 +4257,10 @@ function resolveCopyIssuedOn(sourceDate, {sourcePeriodKey, targetPeriodKey, targ
 }
 
 function setIntakeNotice(lines) {
+  intakeNoticeMessages = lines;
   intakeNotice.replaceChildren();
   lines.forEach((line) => {
-    const text = String(line || "").trim();
+    const text = AutonomoCore.messageText(line, state.locale).trim();
     if (!text) return;
     const paragraph = document.createElement("p");
     paragraph.textContent = text;
@@ -5675,7 +4296,7 @@ function buildIncomeCopyPrefill(row, context) {
     currency: "",
     gross: "",
   };
-  const noticeLines = [t("intake.copyNotice", {period: context.targetPeriodKey})];
+  const noticeLines = [AutonomoCore.message("intake.copyNotice", {period: context.targetPeriodKey})];
   const candidateIssuedOn = resolveCopyIssuedOn(row.transaction_date, context);
   prefill.issued_on = quarterKeyForDateKey(candidateIssuedOn) === context.targetPeriodKey
     ? candidateIssuedOn
@@ -5692,10 +4313,10 @@ function buildIncomeCopyPrefill(row, context) {
     prefill.gross = amountOriginal;
   }
   if (currency && !currencyOptions.has(currency)) {
-    noticeLines.push(t("intake.copyUnsupportedCurrency", {currency}));
+    noticeLines.push(AutonomoCore.message("intake.copyUnsupportedCurrency", {currency}));
   }
   if (amountOriginal !== "" && !hasSupportedAmount) {
-    noticeLines.push(t("intake.copyInvalidAmount"));
+    noticeLines.push(AutonomoCore.message("intake.copyInvalidAmount"));
   }
 
   return {prefill, noticeLines};
@@ -5729,7 +4350,7 @@ function openIntake(kind, {targetPeriodKey = state.period, prefill = null, notic
   setIntakeSource("upload");
   intakePeriod.value = targetPeriodKey;
   document.querySelector("#intake-period-label").textContent = targetPeriodKey;
-  intakeStatus.textContent = "";
+  setLocalizedText(intakeStatus, "");
   const formElements = intakeForm.elements;
   formElements.issued_on.value = prefill?.issued_on || "";
   formElements.counterparty_name.value = prefill?.counterparty_name || "";
@@ -5814,7 +4435,7 @@ function applyIntakeDraft(formElements) {
 function setIntakeKind(kind) {
   state.intakeKind = kind;
   intakeKind.value = kind;
-  document.querySelectorAll(".segmented-control button").forEach((button) => {
+  document.querySelectorAll(".segmented-control button[data-kind]").forEach((button) => {
     button.classList.toggle("active", button.dataset.kind === kind);
   });
   document.querySelector("#counterparty-label").textContent =
@@ -5913,7 +4534,7 @@ async function openGoogleFolderPicker() {
       .build();
     picker.setVisible(true);
   } catch (error) {
-    intakeStatus.textContent = error.message || t("intake.googlePickerUnavailable");
+    setLocalizedText(intakeStatus, error.message || t("intake.googlePickerUnavailable"));
   } finally {
     chooseGoogleFolder.disabled = false;
   }
@@ -5938,6 +4559,7 @@ function isGoogleDriveUrl(value) {
 }
 
 function updateFilePrompt() {
+  if (intakeFile.files[0]) { fileLabel.textContent = intakeFile.files[0].name; return; }
   fileLabel.textContent = state.intakeKind === "income_invoice"
     ? t("intake.incomeFile")
     : t("intake.expenseFile");
@@ -5962,6 +4584,7 @@ function updateIntakeConsistencyHint() {
 function applyStaticTranslations() {
   if (!hasDOM) return;
   document.documentElement.lang = state.locale;
+  document.documentElement.dir = AutonomoCore.localeRegistry.find(item => item.code === state.locale)?.direction || "ltr";
   document.title = t("app.title");
   document.querySelectorAll("[data-i18n]").forEach((element) => {
     element.textContent = t(element.dataset.i18n);
@@ -5981,8 +4604,13 @@ function applyStaticTranslations() {
     button.setAttribute("aria-pressed", String(active));
   });
   applyViewState();
-  setIntakeKind(state.intakeKind);
+  document.querySelector("#counterparty-label").textContent = state.intakeKind === "income_invoice" ? t("fields.client") : t("fields.supplier");
+  updateFilePrompt();
+  updateIntakeConsistencyHint();
+  if (counterpartyNameEditor) updateCounterpartyNameControls();
   if (postingConfirmDialog?.open) renderPostingConfirmDialog();
+  if (state.review.busy) setReviewSubmitBusy(true);
+  refreshLocalizedText();
 }
 
 function applyViewState() {
@@ -6108,6 +4736,7 @@ if (hasDOM) {
     if (opener?.isConnected) opener.focus({preventScroll: true});
   });
   document.addEventListener("visibilitychange", refreshVisibleExpenseData);
+  document.addEventListener("close", scheduleLocaleRepaint, true);
   document.addEventListener("visibilitychange", handleChartResize);
   window.setInterval(refreshVisibleExpenseData, 60000);
   localeButtons.forEach((button) => {
@@ -6267,7 +4896,7 @@ if (hasDOM) {
     if (!button) return;
     const row = incomeCopyRowsById.get(button.dataset.copyTransactionId || "");
     if (!isCopyableIncomeRow(row, {copyable: true})) {
-      showToast(t("intake.copyStale"), true);
+      showToast(AutonomoCore.message("intake.copyStale"), true);
       return;
     }
     const {prefill, noticeLines} = buildIncomeCopyPrefill(row, {
@@ -6288,16 +4917,16 @@ if (hasDOM) {
   intakeForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (state.intakeSource === "upload" && !intakeFile.files[0]) {
-      intakeStatus.textContent = t("intake.selectFile");
+      setLocalizedText(intakeStatus, AutonomoCore.message("intake.selectFile"));
       return;
     }
     if (state.intakeSource === "google_drive" && !isGoogleDriveUrl(googleDriveUrl.value)) {
-      intakeStatus.textContent = t("intake.googleDriveInvalid");
+      setLocalizedText(intakeStatus, AutonomoCore.message("intake.googleDriveInvalid"));
       googleDriveUrl.focus();
       return;
     }
     submitIntake.disabled = true;
-    intakeStatus.textContent = t("intake.processing");
+    setLocalizedText(intakeStatus, AutonomoCore.message("intake.processing"));
     try {
       const request = state.intakeSource === "google_drive"
         ? {
@@ -6329,11 +4958,11 @@ if (hasDOM) {
         ...request.options,
         fallbackMessage: t("intake.failed"),
       });
-      intakeStatus.textContent = t("intake.accepted", {
+      setLocalizedText(intakeStatus, AutonomoCore.message("intake.accepted", {
         id: shortId(result.system_marker),
-      });
+      }));
       clearIntakeDraft();
-      showToast(t("intake.acceptedToast", {period: result.period}));
+      showToast(AutonomoCore.message("intake.acceptedToast", {period: result.period}));
       setTimeout(() => {
         closeIntake();
         if (result.kind === "expense_invoice" && result.transaction_id) {
@@ -6343,7 +4972,7 @@ if (hasDOM) {
         }
       }, 700);
     } catch (error) {
-      intakeStatus.textContent = error.message;
+      setLocalizedText(intakeStatus, error.message);
     } finally {
       submitIntake.disabled = false;
     }

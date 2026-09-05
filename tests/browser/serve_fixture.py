@@ -22,7 +22,7 @@ def main() -> None:
             raise RuntimeError("Installed browser check imported the source checkout")
         config = LocalWebConfig(project_root=root, database=root / "autonomo.sqlite",
             inbox_root=root / "Inbox", archive_root=root / "Evidence", cache_root=root / "cache",
-            static_root=package / "web_ui", private_root=root)
+            static_root=package / "web_ui", private_root=root, allow_test_ui=os.environ.get("AUTONOMO_PSEUDO") == "1")
         with LedgerDB.initialize(config.database) as db:
             db.add_transaction(external_key="web-income", period_key="2026-Q3",
                 transaction_date="2026-07-01", booking_date="2026-07-01", entry_type="income",

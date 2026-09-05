@@ -1,88 +1,9 @@
 /* Account forms keep private drafts in memory only. */
 (function (root) {
   "use strict";
-  const copy = {
-    ru: {
-      intro: "Профиль налогоплательщика, резервные копии и язык интерфейса.",
-      profile: "Данные налогоплательщика", select: "Профиль для редактирования",
-      empty: "Заполните профиль, чтобы использовать его данные в новых выгрузках.",
-      name: "Полное имя", tax: "Налоговый идентификатор (NIF / NIE)", country: "Страна резидентства (код ISO)",
-      countryHelp: "Две латинские буквы, например ES. Укажите данные из регистрационных документов.",
-      profileNote: "Правки сохраняются в истории базы. Уже созданные файлы и поданные декларации не изменяются; данные в AEAT не отправляются.",
-      locked: "Идентификатор защищён: в базе есть закрытые периоды или декларации. Для его исправления нужна отдельная процедура с проверкой истории.",
-      saveProfile: "Сохранить профиль", saving: "Сохранение…", saved: "Сохранено.",
-      backups: "Резервное копирование", backupIntro: "Сколько локальных копий сохранять после запуска службы бэкапа.",
-      daily: "Ежедневные копии", monthly: "Ежемесячные копии", inherit: "По настройке оператора",
-      dailyHelp: "От 7 до 365 копий. Пустое поле — настройка оператора.",
-      monthlyHelp: "От 3 до 120 копий. Пустое поле — настройка оператора.",
-      backupNote: "Сохранение задаёт желаемые лимиты. Они применяются только обновлённой службой при следующем запуске. Старые локальные архивы и их описания сверх лимита будут удалены безвозвратно. Облачное хранение настраивается отдельно.",
-      saveBackups: "Сохранить лимиты", backupSaved: "Лимиты сохранены. Применение службой пока не подтверждено — проверьте сведения о следующем запуске ниже.",
-      confirmPruning: "Изменить лимиты локальных копий?\n\nЕжедневные: {daily}.\nЕжемесячные: {monthly}.\n\nПри последующем бэкапе старые локальные архивы и их описания сверх этих лимитов будут удалены БЕЗВОЗВРАТНО. Точное число удалений неизвестно. Наличие облачной копии не гарантируется. Продолжить?",
-      maximum: "оставить не более {count}", unknownLimit: "лимит задаёт оператор; его значение и число оставшихся копий неизвестны",
-      lastSuccess: "Последние успешные запуски", unknown: "Нет подтверждённых сведений о запуске",
-      applied: "Локальный лимит в этом запуске: {count}", appliedUnknown: "Применённый лимит неизвестен",
-      offsiteYes: "Отправка во внешнее хранилище в этом запуске завершена",
-      offsiteNo: "Внешняя копия в этом запуске не подтверждена",
-      uploadAcknowledged: "Внешнее хранилище приняло копию; восстановление проверяется отдельно",
-      uploadPending: "Отправка во внешнее хранилище ещё не завершена",
-      uploadFailed: "Отправка во внешнее хранилище завершилась ошибкой",
-      uploadDisabled: "Внешнее хранилище не настроено для этого запуска",
-      recoveryCheck: "Проверка восстановления",
-      recoveryUnknown: "Ежемесячная проверка восстановления ещё не выполнялась",
-      recoveryRunning: "Проверка восстановления выполняется",
-      recoveryFailed: "Последняя проверка восстановления завершилась ошибкой",
-      recoverySuccess: "Последняя проверка восстановления прошла успешно",
-      recoveryPrevious: "Предыдущая успешная проверка: {date}",
-      consumerUnknown: "Применение настроек интерфейса службой ещё не подтверждено.",
-      schedule: "Расписание и облачные подключения управляются на сервере. Активация таймеров, текущее состояние облака и восстановление из копии здесь не проверены.",
-      unavailable: "Настройка бэкапов недоступна. Оператору нужно проверить приватный каталог, файл параметров и обновление службы. Данные профиля можно редактировать отдельно.",
-      activities: "Налоговые виды деятельности", activitiesNote: "Регистрационные данные для учётных книг. Изменение кодов и режимов требует подтверждающих документов и отдельной процедуры; здесь они доступны для просмотра.",
-      noActivities: "Виды деятельности ещё не зарегистрированы в базе.", dates: "Период деятельности", current: "по настоящее время",
-      codes: "Код / тип AEAT · IAE", regimes: "Режимы IRPF / IVA", yearStart: "Месяц начала налогового года",
-      interface: "Интерфейс", language: "Язык интерфейса", languageNote: "Язык запоминается только в этом браузере. Налоговые данные и черновики настроек в браузере не сохраняются.",
-      conflict: "Данные уже изменились. Ваш ввод сохранён в форме. Загрузите актуальные значения, затем повторите правки.",
-      error: "Не удалось сохранить. Проверьте поля и соединение; ваш ввод остаётся в форме.",
-      identityError: "Идентификатор теперь защищён историей учёта. Загрузите актуальные данные.",
-      duplicate: "Этот налоговый идентификатор уже используется другим профилем.",
-      reload: "Загрузить актуальные данные", leave: "Есть несохранённые настройки. Отменить эти правки?",
-      busy: "Дождитесь завершения сохранения.",
-    },
-    en: {
-      intro: "Taxpayer details, backup retention and interface language.",
-      profile: "Taxpayer details", select: "Profile to edit", empty: "Create a profile to use its details in new exports.",
-      name: "Full name", tax: "Tax identifier (NIF / NIE)", country: "Country of residence (ISO code)",
-      countryHelp: "Two Latin letters, for example ES. Use the details from your registration documents.",
-      profileNote: "Changes are recorded in the database history. Existing files and filed returns stay unchanged; nothing is submitted to AEAT.",
-      locked: "The identifier is protected because closed periods or filing records exist. Correcting it requires a separate procedure that checks the history.",
-      saveProfile: "Save profile", saving: "Saving…", saved: "Saved.",
-      backups: "Backups", backupIntro: "How many local copies to retain after a backup service run.",
-      daily: "Daily copies", monthly: "Monthly copies", inherit: "Operator managed",
-      dailyHelp: "7–365 copies. Leave blank to use the operator's policy.", monthlyHelp: "3–120 copies. Leave blank to use the operator's policy.",
-      backupNote: "Saving records requested limits. Only an updated backup service applies them on its next run. Older local archives and manifests above the limit will be permanently deleted. Cloud retention is managed separately.",
-      saveBackups: "Save limits", backupSaved: "Limits saved. Application by the service is not yet confirmed — check the next run below.",
-      confirmPruning: "Change local backup limits?\n\nDaily: {daily}.\nMonthly: {monthly}.\n\nOn a subsequent backup, older local archives AND manifests above these limits will be PERMANENTLY DELETED. The exact deletion count is unknown. An offsite copy is not guaranteed. Continue?",
-      maximum: "retain at most {count}", unknownLimit: "operator-managed limit; its value and remaining copy count are unknown",
-      lastSuccess: "Last successful runs", unknown: "No confirmed run information", applied: "Local limit used in this run: {count}", appliedUnknown: "Applied limit unknown",
-      offsiteYes: "Offsite upload completed in this run", offsiteNo: "Offsite copy not confirmed in this run",
-      uploadAcknowledged: "Offsite storage acknowledged the upload; recovery is verified separately",
-      uploadPending: "Offsite upload has not completed yet", uploadFailed: "Offsite upload failed",
-      uploadDisabled: "Offsite storage was not configured for this run",
-      recoveryCheck: "Recovery verification", recoveryUnknown: "Monthly recovery verification has not run yet",
-      recoveryRunning: "Recovery verification is running", recoveryFailed: "The latest recovery verification failed",
-      recoverySuccess: "The latest recovery verification succeeded", recoveryPrevious: "Previous successful verification: {date}",
-      consumerUnknown: "The service has not yet confirmed using interface settings.",
-      schedule: "Schedules and cloud connections are managed on the server. Timer activation, current cloud health and restore verification are not checked here.",
-      unavailable: "Backup settings are unavailable. An operator needs to check the private directory, preferences file and service update. You can edit the profile separately.",
-      activities: "Tax activities", activitiesNote: "Registration details used by accounting books. Changing codes or regimes needs supporting documents and a separate procedure; these details are read-only here.",
-      noActivities: "No business activities have been registered in the database.", dates: "Activity dates", current: "present", codes: "AEAT code / type · IAE", regimes: "IRPF / IVA regimes", yearStart: "Tax year start month",
-      interface: "Interface", language: "Interface language", languageNote: "Language is remembered only in this browser. Taxpayer details and settings drafts are not stored in browser storage.",
-      conflict: "The data has changed. Your input remains in the form. Load the current values, then apply your edits again.",
-      error: "Could not save. Check the fields and connection; your input remains in the form.", identityError: "The identifier is now protected by accounting history. Load the current data.",
-      duplicate: "Another profile already uses this tax identifier.", reload: "Load current data", leave: "There are unsaved settings. Discard these edits?", busy: "Wait for saving to finish.",
-    },
-  };
+  const copy = AutonomoCore.legacy.settingsCopy;
   const escape = value => String(value ?? "").replace(/[&<>"']/g, char => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[char]));
-  const translator = locale => (key, values = {}) => Object.entries(values).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, String(value)), (copy[locale] || copy.ru)[key] || key);
+  const translator = locale => (key, values = {}) => AutonomoCore.formatMessage(`settings.form.${key}`, values, locale);
   function retentionPayload(form, revision) {
     const count = name => form.elements.namedItem(name).value.trim() === "" ? null : Number(form.elements.namedItem(name).value);
     return {expected_revision: revision, daily_keep: count("daily_keep"), monthly_keep: count("monthly_keep"), confirm_local_pruning: true};
@@ -114,7 +35,7 @@
       let body = `<p>${t("unknown")}</p>`;
       if (run) {
         const time = new Date(run.recorded_at);
-        const formatted = Number.isNaN(time.getTime()) ? "—" : new Intl.DateTimeFormat(locale === "ru" ? "ru-RU" : "en-GB", {dateStyle: "medium", timeStyle: "short"}).format(time);
+        const formatted = Number.isNaN(time.getTime()) ? "—" : new Intl.DateTimeFormat(AutonomoCore.localeTag(locale), {dateStyle: "medium", timeStyle: "short"}).format(time);
         body = `<p><time datetime="${escape(run.recorded_at)}">${escape(formatted)}</time></p>
           <p>${run.keep === null ? t("appliedUnknown") : t("applied", {count: escape(run.keep)})}</p>
           <p>${t(run.offsite_status === "acknowledged" ? "uploadAcknowledged" : run.offsite_status === "pending" ? "uploadPending" : run.offsite_status === "failed" ? "uploadFailed" : run.offsite_status === "disabled" ? "uploadDisabled" : run.offsite ? "offsiteYes" : "offsiteNo")}</p>`;
@@ -129,7 +50,7 @@
     const success = verification.last_success;
     const date = value => {
       const parsed = new Date(value);
-      return Number.isNaN(parsed.getTime()) ? "—" : new Intl.DateTimeFormat(locale === "ru" ? "ru-RU" : "en-GB", {dateStyle: "medium", timeStyle: "short"}).format(parsed);
+      return Number.isNaN(parsed.getTime()) ? "—" : new Intl.DateTimeFormat(AutonomoCore.localeTag(locale), {dateStyle: "medium", timeStyle: "short"}).format(parsed);
     };
     if (!attempt) return `<p>${t("recoveryUnknown")}</p>`;
     const message = attempt.status === "success" ? t("recoverySuccess") : attempt.status === "running" ? t("recoveryRunning") : t("recoveryFailed");
@@ -162,7 +83,7 @@
         <p class="settings-hint">${t("schedule")}</p></section>
       <section class="settings-panel" aria-labelledby="settings-activities-title"><h2 id="settings-activities-title">${t("activities")}</h2><p class="settings-hint">${t("activitiesNote")}</p><div id="settings-activities">${activityHtml(profile, t)}</div></section>
       <section class="settings-panel" aria-labelledby="settings-interface-title"><h2 id="settings-interface-title">${t("interface")}</h2>
-        <label>${t("language")}<select id="settings-locale"><option value="ru" ${locale === "ru" ? "selected" : ""}>Русский</option><option value="en" ${locale === "en" ? "selected" : ""}>English</option></select></label><p class="settings-hint">${t("languageNote")}</p>
+        <label>${t("language")}<select id="settings-locale">${AutonomoCore.localeRegistry.map(item => `<option value="${escape(item.code)}" ${locale === item.code ? "selected" : ""}>${escape(item.name)}</option>`).join("")}</select></label><p class="settings-hint">${t("languageNote")}</p>
         <button id="settings-reload" class="secondary-button" type="button">${t("reload")}</button></section>
       </div></div>`;
     const profileForm = container.querySelector("#settings-profile-form");

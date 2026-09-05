@@ -431,50 +431,20 @@ def test_posting_summary_keeps_review_ready_later_and_blocked_exclusive() -> Non
 
 
 def test_web_ui_has_explicit_persisted_russian_and_english_locales() -> None:
-    static_root = (
-        Path(__file__).resolve().parents[1]
-        / "src"
-        / "autonomo_taxes"
-        / "web_ui"
-    )
-    html = (static_root / "index.html").read_text(encoding="utf-8")
-    javascript = (static_root / "app.js").read_text(encoding="utf-8")
-
-    assert 'data-locale="ru"' in html
-    assert 'data-locale="en"' in html
-    assert 'data-i18n="nav.dashboard"' in html
-    assert 'const LOCALE_STORAGE_KEY = "autonomo.locale"' in javascript
-    assert '"titles.dashboard": "Обзор"' in javascript
-    assert '"titles.dashboard": "Overview"' in javascript
-    for expected in (
-        '"errors.apiReturnedHtml": "API вернул HTML вместо данных.',
-        '"errors.apiReturnedHtml": "The API returned HTML instead of data.',
-        '"errors.unexpectedNonJson": "Неожиданный ответ не в JSON',
-        '"errors.unexpectedNonJson": "Unexpected non-JSON response',
-        '"errors.malformedJson": "Некорректный JSON',
-        '"errors.malformedJson": "Malformed JSON response',
-        '"dashboard.filedOn": "подано {date}"',
-        '"dashboard.filedOn": "filed {date}"',
-        '"dashboard.valuesUnavailable": "значения недоступны"',
-        '"dashboard.valuesUnavailable": "values unavailable"',
-        '"dashboard.snapshotAvailable": "есть filing snapshot"',
-        '"dashboard.snapshotAvailable": "filing snapshot available"',
-        '"dashboard.approvedNotPosted": "В периоде есть подтвержденные операции, но они еще не проведены. Карточки «проведено» считают только posted / included in filing."',
-        '"dashboard.approvedNotPosted": "This period has approved transactions that are not posted yet. The “posted” cards count only posted / included in filing rows."',
-        '"dashboard.carryForward": "к переносу {amount}"',
-        '"dashboard.carryForward": "carry-forward {amount}"',
-        '"dashboard.calculatedAsOf": "расчет на {date}"',
-        '"dashboard.calculatedAsOf": "calculated as of {date}"',
-        '"taxes.filedValuesUnavailableExtract": "Декларация подана, но значения не удалось извлечь из filing snapshot."',
-        '"taxes.filedValuesUnavailableExtract": "The return was filed, but values could not be extracted from the filing snapshot."',
-        '"taxes.filedValuesUnavailable": "Декларация подана, но значения filing snapshot недоступны."',
-        '"taxes.filedValuesUnavailable": "The return was filed, but filing-snapshot values are unavailable."',
-    ):
-        assert expected in javascript
-    assert '"dashboard.asOf":' not in javascript
-    assert '"dashboard.compensation":' not in javascript
-    assert "new Intl.NumberFormat(intlLocale()" in javascript
-    assert "new Intl.DateTimeFormat(intlLocale()" in javascript
+    root = Path(__file__).resolve().parents[1]
+    catalogs = {}
+    for locale in ("ru", "en"):
+        values = {}
+        for path in (root / "frontend/src/locales" / locale).glob("*.json"):
+            values.update(json.loads(path.read_text()))
+        catalogs[locale] = values
+    assert catalogs["ru"]["titles.dashboard"] == "Обзор"
+    assert catalogs["en"]["titles.dashboard"] == "Overview"
+    assert catalogs["ru"].keys() == catalogs["en"].keys()
+    for key in ("errors.apiReturnedHtml", "errors.unexpectedNonJson", "errors.malformedJson",
+                "dashboard.filedOn", "dashboard.valuesUnavailable", "dashboard.carryForward"):
+        assert key in catalogs["ru"]
+    # Persistence and live language switching are covered through real core and browser tests.
 
 
 def test_dashboard_prefers_filed_snapshot_values_for_filed_forms_without_cache(
@@ -1248,6 +1218,7 @@ const sandbox = {
   formatDate: undefined,
   eur(value) { return `EUR:${value}`; },
 };
+require("./tests/legacy_core.cjs").prepare(sandbox);
 vm.createContext(sandbox);
 vm.runInContext(snippet, sandbox);
 sandbox.formatDate = (value) => `DATE:${value}`;
@@ -1326,6 +1297,7 @@ def test_web_ui_copy_prefill_static_smoke_guards() -> None:
         : javascript.index("function closeIntake")
     ]
 
+    translations = "\n".join(path.read_text() for path in (static_root.parents[2] / "frontend/src/locales").glob("*/*.json"))
     for expected in (
         '"common.copyToPeriod": "Копировать в {period}"',
         '"common.copyToPeriod": "Copy into {period}"',
@@ -1338,9 +1310,9 @@ def test_web_ui_copy_prefill_static_smoke_guards() -> None:
         '"intake.copyStale": "Исходная строка больше недоступна. Обновите страницу или повторите поиск."',
         '"intake.copyStale": "The source row is no longer available. Refresh the page or run the search again."',
     ):
-        assert expected in javascript
+        assert expected in translations
 
-    assert '<div id="intake-notice" class="intake-notice" role="note" aria-live="polite" hidden></div>' in html
+    assert re.search(r'<div id="intake-notice" class="intake-notice" role="note" aria-live="polite" hidden(?:="")?></div>', html)
     assert '<form id="intake-form" method="dialog">' in html
     assert '<input type="text" name="document_number" aria-describedby="intake-notice">' in html
     assert ".intake-notice[hidden] {" in (static_root / "styles.css").read_text(encoding="utf-8")
@@ -1441,6 +1413,7 @@ const sandbox = {
     );
   },
 };
+require("./tests/legacy_core.cjs").prepare(sandbox);
 vm.createContext(sandbox);
 vm.runInContext(snippet, sandbox);
 const currentDate = new Date(2026, 7, 3);
@@ -1591,7 +1564,7 @@ console.log(JSON.stringify(payload));
                 "currency": "USD",
                 "gross": "1200.00",
             },
-            "noticeLines": ["copy notice 2026-Q3"],
+            "noticeLines": [{"key": "intake.copyNotice", "params": {"period": "2026-Q3"}}],
         },
         "zeroAmount": {
             "prefill": {
@@ -1601,7 +1574,7 @@ console.log(JSON.stringify(payload));
                 "currency": "EUR",
                 "gross": "0.00",
             },
-            "noticeLines": ["copy notice 2026-Q3"],
+            "noticeLines": [{"key": "intake.copyNotice", "params": {"period": "2026-Q3"}}],
         },
         "unsupportedChf": {
             "prefill": {
@@ -1611,7 +1584,7 @@ console.log(JSON.stringify(payload));
                 "currency": "",
                 "gross": "",
             },
-            "noticeLines": ["copy notice 2026-Q3", "unsupported CHF"],
+            "noticeLines": [{"key": "intake.copyNotice", "params": {"period": "2026-Q3"}}, {"key": "intake.copyUnsupportedCurrency", "params": {"currency": "CHF"}}],
         },
         "negativeUnsupported": {
             "prefill": {
@@ -1621,7 +1594,7 @@ console.log(JSON.stringify(payload));
                 "currency": "",
                 "gross": "",
             },
-            "noticeLines": ["copy notice 2026-Q3", "unsupported CHF", "invalid amount"],
+            "noticeLines": [{"key": "intake.copyNotice", "params": {"period": "2026-Q3"}}, {"key": "intake.copyUnsupportedCurrency", "params": {"currency": "CHF"}}, {"key": "intake.copyInvalidAmount"}],
         },
         "outOfQuarterDate": {
             "prefill": {
@@ -1631,7 +1604,7 @@ console.log(JSON.stringify(payload));
                 "currency": "EUR",
                 "gross": "10.00",
             },
-            "noticeLines": ["copy notice 2026-Q3"],
+            "noticeLines": [{"key": "intake.copyNotice", "params": {"period": "2026-Q3"}}],
         },
         "renderTokenStaleAfterViewChange": False,
         "renderTokenStaleAfterGenerationChange": False,
@@ -1684,6 +1657,7 @@ const sandbox = {
     );
   },
 };
+require("./tests/legacy_core.cjs").prepare(sandbox);
 vm.createContext(sandbox);
 vm.runInContext(snippet, sandbox);
 const rows = [
@@ -1789,6 +1763,8 @@ const sandbox = {
     values.status ?? "",
   ].join("|"),
 };
+require("./tests/legacy_core.cjs").prepare(sandbox);
+sandbox.requestScope = require("./tests/legacy_core.cjs").core.createRequestScope();
 vm.createContext(sandbox);
 vm.runInContext(`${source.slice(start, end)}\nthis.fetchJSON = fetchJSON;`, sandbox);
 

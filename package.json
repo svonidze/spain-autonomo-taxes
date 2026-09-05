@@ -11,18 +11,26 @@
     "check:runtime": "node scripts/check_frontend_runtime.cjs",
     "test:legacy": "node scripts/test_legacy_ui.cjs",
     "test:coverage-map": "node scripts/check_ui_test_map.cjs",
-    "test:unit": "vitest run --passWithNoTests",
+    "test:unit": "npm run locales:check && vitest run",
     "test:browser": "playwright test",
-    "typecheck": "tsc --noEmit",
-    "build": "npm run check:runtime && vite build && node scripts/write_ui_manifest.cjs",
-    "test:installed": "python scripts/test_installed_ui.py"
+    "typecheck": "npm run locales:check && tsc --noEmit",
+    "build": "npm run check:runtime && npm run locales:check && vite build && node scripts/write_ui_manifest.cjs",
+    "test:installed": "python scripts/test_installed_ui.py",
+    "locales:check": "node scripts/build_locales.mts",
+    "test:pseudo": "node scripts/test_pseudolocale.cjs"
   },
   "devDependencies": {
+    "@babel/parser": "8.0.4",
+    "@formatjs/icu-messageformat-parser": "3.5.17",
     "@playwright/test": "1.63.0",
+    "@types/jsdom": "30.0.0",
     "@types/node": "24.13.3",
     "jsdom": "30.0.1",
     "typescript": "7.0.2",
     "vite": "8.2.2",
     "vitest": "5.0.0"
+  },
+  "dependencies": {
+    "@formatjs/intl": "4.1.20"
   }
 }

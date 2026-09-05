@@ -1,0 +1,11 @@
+{
+  "assets.asset": "Актив",
+  "assets.base": "База",
+  "assets.businessUse": "Использование",
+  "assets.cost": "Стоимость",
+  "assets.decision": "Состояние учёта",
+  "assets.inService": "Ввод",
+  "assets.rate": "Ставка",
+  "assets.schedule": "График",
+  "assets.title": "Активы и амортизация"
+}

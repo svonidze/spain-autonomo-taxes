@@ -1,0 +1,478 @@
+{
+  "localeTables": {
+    "AEAT_EXPENSE_CONCEPT_LABELS": {
+      "G01": "aeat.expenseConcept.G01",
+      "G02": "aeat.expenseConcept.G02",
+      "G03": "aeat.expenseConcept.G03",
+      "G04": "aeat.expenseConcept.G04",
+      "G05": "aeat.expenseConcept.G05",
+      "G06": "aeat.expenseConcept.G06",
+      "G07": "aeat.expenseConcept.G07",
+      "G08": "aeat.expenseConcept.G08",
+      "G09": "aeat.expenseConcept.G09",
+      "G10": "aeat.expenseConcept.G10",
+      "G11": "aeat.expenseConcept.G11",
+      "G12": "aeat.expenseConcept.G12",
+      "G13": "aeat.expenseConcept.G13",
+      "G14": "aeat.expenseConcept.G14",
+      "G15": "aeat.expenseConcept.G15",
+      "G16": "aeat.expenseConcept.G16",
+      "G17": "aeat.expenseConcept.G17",
+      "G18": "aeat.expenseConcept.G18",
+      "G19": "aeat.expenseConcept.G19",
+      "G20": "aeat.expenseConcept.G20",
+      "G22": "aeat.expenseConcept.G22",
+      "G23": "aeat.expenseConcept.G23",
+      "G24": "aeat.expenseConcept.G24",
+      "G25": "aeat.expenseConcept.G25",
+      "G26": "aeat.expenseConcept.G26",
+      "G27": "aeat.expenseConcept.G27",
+      "G28": "aeat.expenseConcept.G28",
+      "G29": "aeat.expenseConcept.G29",
+      "G30": "aeat.expenseConcept.G30",
+      "G31": "aeat.expenseConcept.G31",
+      "G32": "aeat.expenseConcept.G32",
+      "G33": "aeat.expenseConcept.G33",
+      "G34": "aeat.expenseConcept.G34",
+      "G35": "aeat.expenseConcept.G35",
+      "G36": "aeat.expenseConcept.G36",
+      "G37": "aeat.expenseConcept.G37",
+      "G38": "aeat.expenseConcept.G38",
+      "G39": "aeat.expenseConcept.G39",
+      "G40": "aeat.expenseConcept.G40",
+      "G41": "aeat.expenseConcept.G41",
+      "G42": "aeat.expenseConcept.G42",
+      "G43": "aeat.expenseConcept.G43",
+      "G44": "aeat.expenseConcept.G44",
+      "G45": "aeat.expenseConcept.G45",
+      "G46": "aeat.expenseConcept.G46",
+      "G47": "aeat.expenseConcept.G47",
+      "G48": "aeat.expenseConcept.G48",
+      "GY4": "aeat.expenseConcept.GY4",
+      "GY8": "aeat.expenseConcept.GY8"
+    },
+    "statusMessages": {
+      "received": "statuses.labels.received",
+      "extracted": "statuses.labels.extracted",
+      "needs_review": "statuses.labels.needs_review",
+      "approved": "statuses.labels.approved",
+      "posted": "statuses.labels.posted",
+      "included_in_snapshot": "statuses.labels.included_in_snapshot",
+      "duplicate": "statuses.labels.duplicate",
+      "rejected": "statuses.labels.rejected",
+      "void": "statuses.labels.void",
+      "due": "statuses.labels.due",
+      "not_due": "statuses.labels.not_due",
+      "unknown": "statuses.labels.unknown",
+      "filed": "statuses.labels.filed",
+      "waived": "statuses.labels.waived",
+      "blocking": "statuses.labels.blocking",
+      "warning": "statuses.labels.warning",
+      "high": "statuses.labels.high",
+      "medium": "statuses.labels.medium",
+      "low": "statuses.labels.low",
+      "error": "statuses.labels.error",
+      "reviewed": "statuses.labels.reviewed",
+      "confirmed": "statuses.labels.confirmed",
+      "pending": "statuses.labels.pending",
+      "open": "statuses.labels.open",
+      "closed": "statuses.labels.closed",
+      "amended": "statuses.labels.amended",
+      "deferred": "statuses.labels.deferred",
+      "blocked": "statuses.labels.blocked",
+      "partial": "statuses.labels.partial",
+      "interrupted": "statuses.labels.interrupted",
+      "completed": "statuses.labels.completed",
+      "already_posted": "statuses.labels.already_posted",
+      "already_finalized": "statuses.labels.already_finalized",
+      "skipped": "statuses.labels.skipped",
+      "failed": "statuses.labels.failed",
+      "not_attempted": "statuses.labels.not_attempted",
+      "posted_cleanup_failed": "statuses.labels.posted_cleanup_failed",
+      "ok": "statuses.labels.ok"
+    },
+    "documentTypeMessages": {
+      "expense_invoice": "documents.types.expense_invoice",
+      "income_invoice": "documents.types.income_invoice",
+      "receipt": "documents.types.receipt",
+      "bank_statement": "documents.types.bank_statement",
+      "tax_report": "documents.types.tax_report",
+      "other_document": "documents.types.other_document",
+      "other": "documents.types.other"
+    },
+    "casillaMessages": {
+      "130": {
+        "19": "taxes.boxes.130.19",
+        "01": "taxes.boxes.130.01",
+        "02": "taxes.boxes.130.02",
+        "03": "taxes.boxes.130.03",
+        "04": "taxes.boxes.130.04",
+        "05": "taxes.boxes.130.05",
+        "07": "taxes.boxes.130.07",
+        "difficult_expenses": "taxes.boxes.130.difficult_expenses"
+      },
+      "303": {
+        "29": "taxes.boxes.303.29",
+        "45": "taxes.boxes.303.45",
+        "64": "taxes.boxes.303.64",
+        "69": "taxes.boxes.303.69",
+        "71": "taxes.boxes.303.71",
+        "72": "taxes.boxes.303.72",
+        "73": "taxes.boxes.303.73",
+        "result": "taxes.boxes.303.result",
+        "compensation_carryforward": "taxes.boxes.303.compensation_carryforward"
+      }
+    },
+    "issueMessages": {
+      "amount_mismatch": "issues.messages.amount_mismatch",
+      "counterparty_tax_profile_review": "issues.messages.counterparty_tax_profile_review",
+      "deductibility_pending_confirmation": "issues.messages.deductibility_pending_confirmation",
+      "document_classification_review": "issues.messages.document_classification_review",
+      "foreign_counterparty_identity_missing": "issues.messages.foreign_counterparty_identity_missing",
+      "missing_locally": "issues.messages.missing_locally",
+      "modelo100_deferral_submission_unconfirmed": "issues.messages.modelo100_deferral_submission_unconfirmed",
+      "modelo130_difficult_expense_filed_method_conflict": "issues.messages.modelo130_difficult_expense_filed_method_conflict",
+      "modelo303_q1_notary_vat_base_unverified": "issues.messages.modelo303_q1_notary_vat_base_unverified",
+      "modelo303_q1_output_vat_classification_mismatch": "issues.messages.modelo303_q1_output_vat_classification_mismatch",
+      "nonresident_payee_legal_form_review": "issues.messages.nonresident_payee_legal_form_review",
+      "nonresident_professional_irnr_review": "issues.messages.nonresident_professional_irnr_review",
+      "transaction_tax_review": "issues.messages.transaction_tax_review",
+      "default": "issues.messages.default"
+    },
+    "nounMessages": {
+      "operations": {
+        "one": "common.nouns.operations.one",
+        "few": "common.nouns.operations.few",
+        "many": "common.nouns.operations.many",
+        "other": "common.nouns.operations.other"
+      },
+      "steps": {
+        "one": "common.nouns.steps.one",
+        "few": "common.nouns.steps.few",
+        "many": "common.nouns.steps.many",
+        "other": "common.nouns.steps.other"
+      }
+    },
+    "settingsCopy": {
+      "intro": "settings.form.intro",
+      "profile": "settings.form.profile",
+      "select": "settings.form.select",
+      "empty": "settings.form.empty",
+      "name": "settings.form.name",
+      "tax": "settings.form.tax",
+      "country": "settings.form.country",
+      "countryHelp": "settings.form.countryHelp",
+      "profileNote": "settings.form.profileNote",
+      "locked": "settings.form.locked",
+      "saveProfile": "settings.form.saveProfile",
+      "saving": "settings.form.saving",
+      "saved": "settings.form.saved",
+      "backups": "settings.form.backups",
+      "backupIntro": "settings.form.backupIntro",
+      "daily": "settings.form.daily",
+      "monthly": "settings.form.monthly",
+      "inherit": "settings.form.inherit",
+      "dailyHelp": "settings.form.dailyHelp",
+      "monthlyHelp": "settings.form.monthlyHelp",
+      "backupNote": "settings.form.backupNote",
+      "saveBackups": "settings.form.saveBackups",
+      "backupSaved": "settings.form.backupSaved",
+      "confirmPruning": "settings.form.confirmPruning",
+      "maximum": "settings.form.maximum",
+      "unknownLimit": "settings.form.unknownLimit",
+      "lastSuccess": "settings.form.lastSuccess",
+      "unknown": "settings.form.unknown",
+      "applied": "settings.form.applied",
+      "appliedUnknown": "settings.form.appliedUnknown",
+      "offsiteYes": "settings.form.offsiteYes",
+      "offsiteNo": "settings.form.offsiteNo",
+      "uploadAcknowledged": "settings.form.uploadAcknowledged",
+      "uploadPending": "settings.form.uploadPending",
+      "uploadFailed": "settings.form.uploadFailed",
+      "uploadDisabled": "settings.form.uploadDisabled",
+      "recoveryCheck": "settings.form.recoveryCheck",
+      "recoveryUnknown": "settings.form.recoveryUnknown",
+      "recoveryRunning": "settings.form.recoveryRunning",
+      "recoveryFailed": "settings.form.recoveryFailed",
+      "recoverySuccess": "settings.form.recoverySuccess",
+      "recoveryPrevious": "settings.form.recoveryPrevious",
+      "consumerUnknown": "settings.form.consumerUnknown",
+      "schedule": "settings.form.schedule",
+      "unavailable": "settings.form.unavailable",
+      "activities": "settings.form.activities",
+      "activitiesNote": "settings.form.activitiesNote",
+      "noActivities": "settings.form.noActivities",
+      "dates": "settings.form.dates",
+      "current": "settings.form.current",
+      "codes": "settings.form.codes",
+      "regimes": "settings.form.regimes",
+      "yearStart": "settings.form.yearStart",
+      "interface": "settings.form.interface",
+      "language": "settings.form.language",
+      "languageNote": "settings.form.languageNote",
+      "conflict": "settings.form.conflict",
+      "error": "settings.form.error",
+      "identityError": "settings.form.identityError",
+      "duplicate": "settings.form.duplicate",
+      "reload": "settings.form.reload",
+      "leave": "settings.form.leave",
+      "busy": "settings.form.busy"
+    },
+    "helpWords": {
+      "details": "help.words.details",
+      "close": "help.words.close",
+      "known": "help.words.known",
+      "reasons": "help.words.reasons",
+      "next": "help.words.next",
+      "sources": "help.words.sources",
+      "technical": "help.words.technical",
+      "review": "help.words.review",
+      "file": "help.words.file",
+      "missingFile": "help.words.missingFile",
+      "missing": "help.words.missing",
+      "none": "help.words.none",
+      "book": "help.words.book",
+      "excluded": "help.words.excluded",
+      "annual": "help.words.annual",
+      "adjustment": "help.words.adjustment",
+      "noDecision": "help.words.noDecision",
+      "copy": "help.words.copy",
+      "copied": "help.words.copied",
+      "copyError": "help.words.copyError",
+      "sourceNote": "help.words.sourceNote",
+      "safe": "help.words.safe",
+      "original": "help.words.original",
+      "noAction": "help.words.noAction",
+      "noActionNeeded": "help.words.noActionNeeded",
+      "help": "help.words.help",
+      "calculation": "help.words.calculation",
+      "refresh": "help.words.refresh",
+      "refreshHint": "help.words.refreshHint",
+      "scope": "help.words.scope",
+      "allAssets": "help.words.allAssets",
+      "valueProposal": "help.words.valueProposal",
+      "afterReview": "help.words.afterReview",
+      "dated": "help.words.dated",
+      "ready": "help.words.ready",
+      "blocked": "help.words.blocked",
+      "future": "help.words.future",
+      "advisory": "help.words.advisory"
+    }
+  },
+  "keyTables": {
+    "legalFormLabels": {
+      "unknown": "parties.legalForms.unknown",
+      "individual": "parties.legalForms.individual",
+      "legal_entity": "parties.legalForms.legal_entity",
+      "public_body": "parties.legalForms.public_body"
+    },
+    "roiStatusLabels": {
+      "unknown": "parties.roiStatus.unknown",
+      "registered": "parties.roiStatus.registered",
+      "not_registered": "parties.roiStatus.not_registered"
+    }
+  },
+  "refs": {
+    "helpStatuses": {
+      "received": "help.statuses.received",
+      "extracted": "help.statuses.extracted",
+      "needs_review": "help.statuses.needs_review",
+      "approved": "help.statuses.approved",
+      "ready": "help.statuses.ready",
+      "deferred": "help.statuses.deferred",
+      "blocked": "help.statuses.blocked",
+      "posted": "help.statuses.posted",
+      "included_in_snapshot": "help.statuses.included_in_snapshot",
+      "duplicate": "help.statuses.duplicate",
+      "rejected": "help.statuses.rejected",
+      "void": "help.statuses.void",
+      "unknown": "help.statuses.unknown",
+      "recorded_information": "help.statuses.recorded_information",
+      "warning": "help.statuses.warning",
+      "due": "help.statuses.due",
+      "not_due": "help.statuses.not_due",
+      "filed": "help.statuses.filed",
+      "waived": "help.statuses.waived"
+    },
+    "helpReasons": {
+      "inbox_roots_not_configured": [
+        "help.reasons.inbox_roots_not_configured.title",
+        "help.reasons.inbox_roots_not_configured.description",
+        "help.reasons.inbox_roots_not_configured.action"
+      ],
+      "cleanup_precondition_failed": [
+        "help.reasons.cleanup_precondition_failed.title",
+        "help.reasons.cleanup_precondition_failed.description",
+        "help.reasons.cleanup_precondition_failed.action"
+      ],
+      "advance_documents_overlap": [
+        "help.reasons.advance_documents_overlap.title",
+        "help.reasons.advance_documents_overlap.description",
+        "help.reasons.advance_documents_overlap.action"
+      ],
+      "iva_prior_deduction_unconfirmed": [
+        "help.reasons.iva_prior_deduction_unconfirmed.title",
+        "help.reasons.iva_prior_deduction_unconfirmed.description",
+        "help.reasons.iva_prior_deduction_unconfirmed.action"
+      ],
+      "future_dated": [
+        "help.reasons.future_dated.title",
+        "help.reasons.future_dated.description",
+        "help.reasons.future_dated.action"
+      ],
+      "period_not_open": [
+        "help.reasons.period_not_open.title",
+        "help.reasons.period_not_open.description",
+        "help.reasons.period_not_open.action"
+      ],
+      "lifecycle_not_approved": [
+        "help.reasons.lifecycle_not_approved.title",
+        "help.reasons.lifecycle_not_approved.description",
+        "help.reasons.lifecycle_not_approved.action"
+      ],
+      "tax_treatment_missing": [
+        "help.reasons.tax_treatment_missing.title",
+        "help.reasons.tax_treatment_missing.description",
+        "help.reasons.tax_treatment_missing.action"
+      ],
+      "tax_treatment_unknown": [
+        "help.reasons.tax_treatment_unknown.title",
+        "help.reasons.tax_treatment_unknown.description",
+        "help.reasons.tax_treatment_unknown.action"
+      ],
+      "fx_missing": [
+        "help.reasons.fx_missing.title",
+        "help.reasons.fx_missing.description",
+        "help.reasons.fx_missing.action"
+      ],
+      "fx_unsourced": [
+        "help.reasons.fx_unsourced.title",
+        "help.reasons.fx_unsourced.description",
+        "help.reasons.fx_unsourced.action"
+      ],
+      "fx_historical_only": [
+        "help.reasons.fx_historical_only.title",
+        "help.reasons.fx_historical_only.description",
+        "help.reasons.fx_historical_only.action"
+      ],
+      "document_not_ready": [
+        "help.reasons.document_not_ready.title",
+        "help.reasons.document_not_ready.description",
+        "help.reasons.document_not_ready.action"
+      ],
+      "amount_mismatch": [
+        "help.reasons.amount_mismatch.title",
+        "help.reasons.amount_mismatch.description",
+        "help.reasons.amount_mismatch.action"
+      ],
+      "counterparty_tax_profile_review": [
+        "help.reasons.counterparty_tax_profile_review.title",
+        "help.reasons.counterparty_tax_profile_review.description",
+        "help.reasons.counterparty_tax_profile_review.action"
+      ],
+      "foreign_counterparty_identity_missing": [
+        "help.reasons.foreign_counterparty_identity_missing.title",
+        "help.reasons.foreign_counterparty_identity_missing.description",
+        "help.reasons.foreign_counterparty_identity_missing.action"
+      ],
+      "deductibility_pending_confirmation": [
+        "help.reasons.deductibility_pending_confirmation.title",
+        "help.reasons.deductibility_pending_confirmation.description",
+        "help.reasons.deductibility_pending_confirmation.action"
+      ],
+      "document_classification_review": [
+        "help.reasons.document_classification_review.title",
+        "help.reasons.document_classification_review.description",
+        "help.reasons.document_classification_review.action"
+      ],
+      "document_structural_review": [
+        "help.reasons.document_structural_review.title",
+        "help.reasons.document_structural_review.description",
+        "help.reasons.document_structural_review.action"
+      ],
+      "missing_locally": [
+        "help.reasons.missing_locally.title",
+        "help.reasons.missing_locally.description",
+        "help.reasons.missing_locally.action"
+      ],
+      "transaction_tax_review": [
+        "help.reasons.transaction_tax_review.title",
+        "help.reasons.transaction_tax_review.description",
+        "help.reasons.transaction_tax_review.action"
+      ],
+      "modelo100_deferral_submission_unconfirmed": [
+        "help.reasons.modelo100_deferral_submission_unconfirmed.title",
+        "help.reasons.modelo100_deferral_submission_unconfirmed.description",
+        "help.reasons.modelo100_deferral_submission_unconfirmed.action"
+      ],
+      "modelo130_difficult_expense_filed_method_conflict": [
+        "help.reasons.modelo130_difficult_expense_filed_method_conflict.title",
+        "help.reasons.modelo130_difficult_expense_filed_method_conflict.description",
+        "help.reasons.modelo130_difficult_expense_filed_method_conflict.action"
+      ],
+      "modelo303_q1_notary_vat_base_unverified": [
+        "help.reasons.modelo303_q1_notary_vat_base_unverified.title",
+        "help.reasons.modelo303_q1_notary_vat_base_unverified.description",
+        "help.reasons.modelo303_q1_notary_vat_base_unverified.action"
+      ],
+      "modelo303_q1_output_vat_classification_mismatch": [
+        "help.reasons.modelo303_q1_output_vat_classification_mismatch.title",
+        "help.reasons.modelo303_q1_output_vat_classification_mismatch.description",
+        "help.reasons.modelo303_q1_output_vat_classification_mismatch.action"
+      ],
+      "nonresident_payee_legal_form_review": [
+        "help.reasons.nonresident_payee_legal_form_review.title",
+        "help.reasons.nonresident_payee_legal_form_review.description",
+        "help.reasons.nonresident_payee_legal_form_review.action"
+      ],
+      "nonresident_professional_irnr_review": [
+        "help.reasons.nonresident_professional_irnr_review.title",
+        "help.reasons.nonresident_professional_irnr_review.description",
+        "help.reasons.nonresident_professional_irnr_review.action"
+      ]
+    },
+    "helpTerms": {
+      "IVA": "help.terms.IVA",
+      "IRPF": "help.terms.IRPF",
+      "ROI": "help.terms.ROI",
+      "base": "help.terms.base",
+      "rate": "help.terms.rate",
+      "posting": "help.terms.posting",
+      "forecast": "help.terms.forecast",
+      "paymentDeadline": "help.terms.paymentDeadline",
+      "cost": "help.terms.cost",
+      "use": "help.terms.use"
+    },
+    "helpFields": {
+      "transaction_date": "help.fields.transaction_date",
+      "issued_on": "help.fields.issued_on",
+      "amount_minor": "help.fields.amount_minor",
+      "cost_minor": "help.fields.cost_minor",
+      "amortizable_base_minor": "help.fields.amortizable_base_minor",
+      "placed_in_service_on": "help.fields.placed_in_service_on",
+      "business_use_ratio": "help.fields.business_use_ratio",
+      "annual_rate_basis_points": "help.fields.annual_rate_basis_points",
+      "advisor_decision": "help.fields.advisor_decision",
+      "determination": "help.fields.determination",
+      "filing_status": "help.fields.filing_status",
+      "filed_at": "help.fields.filed_at",
+      "statutory_due_on": "help.fields.statutory_due_on",
+      "direct_debit_cutoff_on": "help.fields.direct_debit_cutoff_on",
+      "deadline_status": "help.fields.deadline_status",
+      "country_code": "help.fields.country_code",
+      "tax_id": "help.fields.tax_id",
+      "vat_id": "help.fields.vat_id",
+      "roi_status": "help.fields.roi_status",
+      "lifecycle_status": "help.fields.lifecycle_status"
+    },
+    "helpTermNames": {
+      "base": "help.termNames.base",
+      "cost": "help.termNames.cost",
+      "rate": "help.termNames.rate",
+      "use": "help.termNames.use",
+      "posting": "help.termNames.posting",
+      "forecast": "help.termNames.forecast",
+      "paymentDeadline": "help.termNames.paymentDeadline"
+    }
+  }
+}

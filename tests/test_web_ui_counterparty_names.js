@@ -1,11 +1,12 @@
+const __uiCore = require('./legacy_core.cjs');
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
 const source = fs.readFileSync(path.join(__dirname, "../src/autonomo_taxes/web_ui/app.js"), "utf8");
-const context = vm.createContext({URL, console, window: {location: {origin: "http://localhost"}, confirm: () => true}});
-vm.runInContext(source, context); // No DOM at boot: exercise the real functions without starting the app.
+const context = vm.createContext(__uiCore.prepare({URL, console, window: {location: {origin: "http://localhost"}, confirm: () => true}}));
+vm.runInContext(source, __uiCore.prepare(context)); // No DOM at boot: exercise the real functions without starting the app.
 vm.runInContext(`
   this.names = {
     valid: validCounterpartyName, cell: counterpartyNameCell,
@@ -15,7 +16,7 @@ vm.runInContext(`
     put: row => counterpartyRowsById.set(row.counterparty_id, row),
     editor: () => counterpartyNameEditor,
   };
-`, context);
+`, __uiCore.prepare(context));
 
 const elements = new Map();
 function element(selector) {
