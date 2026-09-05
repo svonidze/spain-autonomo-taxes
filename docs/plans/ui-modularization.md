@@ -107,10 +107,12 @@ authenticated unknown-resource responses and settings dirty navigation.
 ## Progress
 
 - Stage 1: published as draft PR #41, commit `668b9ae`; local gates and independent reviews passed.
-- Stage 2: build/install implemented; 1,333 Python checks passed with four skips,
+- Stage 2: build/install verified; 1,339 Python checks passed with four skips,
   plus 13 legacy suites and four browser scenarios against both source-built and
   isolated installed-wheel resources. Added missing/corrupt/stale-wheel checks.
-  Independent code review approved; architecture review is being finalized.
+  Independent code review APPROVE and architecture review CLEAR. Exact-SHA local
+  preparation/install/receipt/reuse was exercised at `39f9ed3`, including reuse
+  with Node absent from PATH. No production services or data were accessed.
 - Stages 3–12: pending.
 
 Stage 2 compatibility note: Vite's CommonJS handling hid the settings global used
