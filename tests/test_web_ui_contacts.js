@@ -1,3 +1,4 @@
+const __uiCore = require('./legacy_core.cjs');
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
@@ -37,8 +38,8 @@ function setLocation(url) {
 const AccountingHelp = {
   cell: () => "<span>Status</span>", term: () => "", labelTables() {}, beforeRender() {}, setLocale() {},
 };
-const ctx = vm.createContext({window, document, URL, URLSearchParams, console, AccountingHelp});
-vm.runInContext(source.slice(0, source.lastIndexOf("\nif (hasDOM) {")), ctx);
+const ctx = vm.createContext(__uiCore.prepare({window, document, URL, URLSearchParams, console, AccountingHelp}));
+vm.runInContext(source.slice(0, source.lastIndexOf("\nif (hasDOM) {")), __uiCore.prepare(ctx));
 vm.runInContext(`this.h = {
   state, route: parseRoute, url: contactUrl, back: safeReturnUrl, cell: counterpartyNameCell,
   trigger: counterpartyMenuTrigger, position: contactMenuPosition, allowed: counterpartyRowClickAllowed,
@@ -53,7 +54,7 @@ vm.runInContext(`this.h = {
   applyExpensePeriod: applyDetailPeriod, buildUrl: buildRouteUrl,
   closeEditor: closeCounterpartyNameEditor, closeOutside: closeCounterpartyMenuFromOutside,
   operationMarkup: contactOperationMarkup,
-};`, ctx);
+};`, __uiCore.prepare(ctx));
 const h = ctx.h;
 const id = "d1029c71-3ed3-4c7b-8b42-971b8f312222";
 const party = {counterparty_id: id, display_name: "Synthetic <Party>", row_version: 1, legal_form: "legal_entity"};

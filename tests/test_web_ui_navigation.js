@@ -1,3 +1,4 @@
+const __uiCore = require('./legacy_core.cjs');
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -38,6 +39,7 @@ class FakeElement {
     this.value = "";
     this.disabled = false;
     this.files = [];
+    this.elements = {};
     this.style = {};
     this.open = false;
     this.listeners = new Map();
@@ -233,8 +235,8 @@ function createHarness({emptyPeriods = false, settingsControls = null, initial =
     AutonomoCharts: {renderHorizontalBars() {}, renderCartesian() {}, renderBullet() {}},
   };
   context.globalThis = context;
-  vm.runInNewContext(statusHelpSource, context, {filename: "status-help.js"});
-  vm.runInNewContext(appSource, context, {filename: "app.js"});
+  vm.runInNewContext(statusHelpSource, __uiCore.prepare(context), {filename: "status-help.js"});
+  vm.runInNewContext(appSource, __uiCore.prepare(context), {filename: "app.js"});
   const flush = async () => { for (let index = 0; index < 8; index += 1) await new Promise((resolve) => setImmediate(resolve)); };
   const click = async (href, eventProps = {}) => {
     const link = new FakeElement({href, "data-spa": ""});
@@ -260,7 +262,7 @@ function createHarness({emptyPeriods = false, settingsControls = null, initial =
     dispatch("popstate", {});
     await flush();
   };
-  const inspect = () => vm.runInContext("({period: state.period, view: state.view, selectedReviewId: state.review.selectedReviewId, workItem: state.review.workItem, html: app.innerHTML, disabled: periodSelect.disabled})", context);
+  const inspect = () => vm.runInContext("({period: state.period, view: state.view, selectedReviewId: state.review.selectedReviewId, workItem: state.review.workItem, html: app.innerHTML, disabled: periodSelect.disabled})", __uiCore.prepare(context));
   return {context, window, intervals, requests, deferredRequests, flush, click, clickNav, clickStatusHelp, applyExternalLocation, inspect, app: element("#app"), periodSelect: element("#period-select"), storage, element};
 }
 
@@ -284,14 +286,14 @@ async function main() {
     assert.equal(h.element("#refresh-button").hidden, true);
     await h.click("/contacts");
     assert.equal(h.window.location.pathname, "/settings");
-    await vm.runInContext("changeLocale('en')", h.context);
-    assert.equal(vm.runInContext("state.locale", h.context), "ru");
+    await vm.runInContext("changeLocale('en')", __uiCore.prepare(h.context));
+    assert.equal(vm.runInContext("state.locale", __uiCore.prepare(h.context)), "ru");
     await h.applyExternalLocation("/contacts");
     assert.equal(h.window.location.pathname, "/settings");
     assert.equal(h.app.innerHTML, "Settings mounted");
     controls.allowLeave = true;
-    await vm.runInContext("changeLocale('en')", h.context);
-    assert.equal(vm.runInContext("state.locale", h.context), "en");
+    await vm.runInContext("changeLocale('en')", __uiCore.prepare(h.context));
+    assert.equal(vm.runInContext("state.locale", __uiCore.prepare(h.context)), "en");
     assert.equal(h.app.innerHTML, "Settings mounted");
   });
   await run("posted expense detail returns to the two-section expense query", async () => {
@@ -342,7 +344,7 @@ async function main() {
   });
   await run("R1 table opens a raw-ID detail route with list context", async () => {
     const h = createHarness(); await h.flush();
-    const html = vm.runInContext(`reviewTransactionTable([{transaction_id: ${JSON.stringify(Q2_ID)}, lifecycle_status: "needs_review", transaction_date: "2026-05-15"}])`, h.context);
+    const html = vm.runInContext(`reviewTransactionTable([{transaction_id: ${JSON.stringify(Q2_ID)}, lifecycle_status: "needs_review", transaction_date: "2026-05-15"}])`, __uiCore.prepare(h.context));
     assert.match(html, new RegExp(`href="/review/${Q2_ID}\\?period=2026-Q2"`));
     assert.doesNotMatch(html, /transaction%3A/);
   });
@@ -384,7 +386,7 @@ async function main() {
     assert.equal(h.window.location.pathname + h.window.location.search, initialUrl);
     assert.equal(h.requests.length, requestsBeforeHelpHistory);
     assert.equal(h.window.history.length, initialHistoryLength + 1);
-    vm.runInContext("void renderCurrentView()", h.context);
+    vm.runInContext("void renderCurrentView()", __uiCore.prepare(h.context));
     await h.flush();
     assert.equal(h.element("#status-help-dialog").open, false);
     assert.equal(h.window.history.state.accountingHelp, undefined);

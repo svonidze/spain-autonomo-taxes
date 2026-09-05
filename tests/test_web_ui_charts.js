@@ -1,3 +1,4 @@
+const __uiCore = require('./legacy_core.cjs');
 "use strict";
 
 const assert = require("node:assert");
@@ -15,8 +16,8 @@ const chartsPath = path.join(
 );
 const source = fs.readFileSync(chartsPath, "utf8");
 const sandbox = {};
-vm.createContext(sandbox);
-vm.runInContext(source, sandbox);
+vm.createContext(__uiCore.prepare(sandbox));
+vm.runInContext(source, __uiCore.prepare(sandbox));
 const AutonomoCharts = sandbox.AutonomoCharts;
 assert.ok(AutonomoCharts, "charts.js must register the AutonomoCharts namespace");
 
@@ -739,10 +740,10 @@ const builderContext = {
   intlLocale: () => "en",
   statusLabel: (value) => `status:${value}`,
 };
-vm.createContext(builderContext);
+vm.createContext(__uiCore.prepare(builderContext));
 vm.runInContext(
   extractConstObject(appSource, "AEAT_EXPENSE_CONCEPT_LABELS"),
-  builderContext
+  __uiCore.prepare(builderContext)
 );
 [
   "formatMinorEur",
@@ -764,7 +765,7 @@ vm.runInContext(
   "buildReviewAgingSpec",
   "buildCounterpartySpec",
   "buildAmortizationSpec",
-].forEach((name) => vm.runInContext(extractFunction(appSource, name), builderContext));
+].forEach((name) => vm.runInContext(extractFunction(appSource, name), __uiCore.prepare(builderContext)));
 
 // chartHostWidth measures defensively and subtracts the figure padding.
 {
@@ -780,7 +781,7 @@ vm.runInContext(
 // The versioned AEAT expense dictionary covers every 2026 registry-book code
 // in both locales, while preserving honest fallbacks for future codes.
 {
-  const labels = vm.runInContext("AEAT_EXPENSE_CONCEPT_LABELS", builderContext);
+  const labels = vm.runInContext("AEAT_EXPENSE_CONCEPT_LABELS", __uiCore.prepare(builderContext));
   const expectedCodes = [
     "G01", "G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09", "G10",
     "G11", "G12", "G13", "G14", "G15", "G16", "G17", "G18", "G19", "G20",

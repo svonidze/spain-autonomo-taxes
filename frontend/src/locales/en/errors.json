@@ -1,0 +1,5 @@
+{
+  "errors.apiReturnedHtml": "The API returned HTML instead of data. Another server is probably running at {origin}. Stop it or run autonomo-web on another port.",
+  "errors.malformedJson": "Malformed JSON response from {url} ({status}).",
+  "errors.unexpectedNonJson": "Unexpected non-JSON response from {url} ({status})."
+}

@@ -1,3 +1,4 @@
+const __uiCore = require('./legacy_core.cjs');
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -39,10 +40,6 @@ const context = {
   JSON,
   URLSearchParams,
   state: {locale: "ru", period: "2026-Q3", review: {}},
-  messages: {
-    ru: {"review.issueAutoResolveHint": "Закроется автоматически: {labels}"},
-    en: {},
-  },
   escapeHtml: (value) =>
     String(value).replace(/[&<>"']/g, (char) => ({
       "&": "&amp;",
@@ -80,7 +77,7 @@ const context = {
   "fxChoiceNeeded",
   "initialFxChoice",
 ].forEach((name) => {
-  vm.runInNewContext(`${extractFunction(source, name)}; this.${name} = ${name};`, context);
+  vm.runInNewContext(`${extractFunction(source, name)}; this.${name} = ${name};`, __uiCore.prepare(context));
 });
 
 // Routing
@@ -156,7 +153,7 @@ context.autoResolveCoveredIssues(
   {business_purpose: true, tax_code: true},
 );
 assert.equal(packet.decision.issue_resolutions[0].action, "resolve");
-assert.equal(packet.decision.issue_resolutions[0].reason, "Закроется автоматически: 2");
+assert.equal(packet.decision.issue_resolutions[0].reason, __uiCore.core.formatMessage('review.issueAutoResolveHint', {labels: 2}, 'ru'));
 assert.equal(packet.decision.issue_resolutions[1].action, "keep_open");
 assert.equal(packet.decision.issue_resolutions[1].reason, "");
 

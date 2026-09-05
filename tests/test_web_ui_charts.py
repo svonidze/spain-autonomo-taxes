@@ -1,3 +1,4 @@
+import json
 import re
 import shutil
 import subprocess
@@ -141,18 +142,12 @@ def test_chart_expand_dialog_is_wired_and_closes_with_the_view() -> None:
 
 def test_chart_i18n_keys_exist_in_both_locales() -> None:
     source = APP_JS.read_text(encoding="utf-8")
-    ru_start = source.index("const messages = {")
-    en_start = source.index("  en: {", ru_start)
-    messages_end = source.index("\n};", en_start)
-    pattern = re.compile(r'"(charts\.[A-Za-z0-9.]+)"\s*:')
-    ru_keys = set(pattern.findall(source[ru_start:en_start]))
-    en_keys = set(pattern.findall(source[en_start:messages_end]))
-    assert ru_keys, "chart i18n keys must exist"
-    assert ru_keys == en_keys
-
-    used = set(re.findall(r'[t(]\("(charts\.[A-Za-z0-9.]+)"\)', source[messages_end:]))
-    missing = used - ru_keys
-    assert not missing, f"t() references without dictionary entries: {sorted(missing)}"
+    catalog_root = REPO_ROOT / "frontend/src/locales"
+    ru_keys = set(json.loads((catalog_root / "ru/charts.json").read_text()))
+    en_keys = set(json.loads((catalog_root / "en/charts.json").read_text()))
+    assert ru_keys and ru_keys == en_keys
+    used = set(re.findall(r'"(charts\.[A-Za-z0-9.]+)"', source))
+    assert not used - ru_keys
 
 
 def test_charts_js_respects_csp_and_determinism_rules() -> None:

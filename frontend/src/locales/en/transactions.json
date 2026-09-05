@@ -1,0 +1,11 @@
+{
+  "transactions.amount": "Amount",
+  "transactions.counterpartyDocument": "Counterparty / document",
+  "transactions.date": "Date",
+  "transactions.emptyIncome": "No income in this period yet. Click “Add” to accept an invoice.",
+  "transactions.irpfDeduction": "IRPF deduction",
+  "transactions.noCounterparty": "No counterparty",
+  "transactions.noMatches": "Nothing matches your search.",
+  "transactions.search": "Search by counterparty or number",
+  "transactions.status": "Status"
+}

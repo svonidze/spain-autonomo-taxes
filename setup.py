@@ -16,6 +16,8 @@ class BuildWithFrontend(build_py):
             files = manifest["files"]
             if manifest["contract"] != 1 or not isinstance(files, dict) or "index.html" not in files:
                 raise ValueError("Invalid frontend manifest")
+            if manifest.get("test_only"):
+                raise ValueError("Test-only frontend cannot be packaged")
             for name, checksum in files.items():
                 target = (root / name).resolve()
                 if not target.is_relative_to(root.resolve()) or not target.is_file():

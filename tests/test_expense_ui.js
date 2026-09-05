@@ -1,3 +1,4 @@
+const __uiCore = require('./legacy_core.cjs');
 const assert = require("node:assert/strict");
 require("../src/autonomo_taxes/web_ui/status-help.js");
 require("../src/autonomo_taxes/web_ui/app.js");
