@@ -120,7 +120,14 @@ authenticated unknown-resource responses and settings dirty navigation.
   and the test-only third-locale browser scenario pass. Python: 1,340 passed,
   four skipped. Registry lifetime regression verifies detached record release,
   live siblings and Back/Forward.
-- Stages 4–12: pending.
+- Stage 4: Vue expense detail and follow-up implemented with typed host/services,
+  reactive locale and explicit disposal. Same-record context updates retain pending
+  writes; stale reads and writes cannot update another route. Scoped StatusCell is
+  tested against the actual registry and Vue lifecycle; production adoption begins
+  with authoritative contact contexts in stage 5 (expense detail retains its plain
+  lifecycle badge). Typecheck, 26 module tests, 13 legacy suites, 15 compiled and
+  installed-wheel browser scenarios, and 1,340 Python tests pass (four skips).
+- Stages 5–12: pending.
 
 Stage 2 compatibility note: Vite's CommonJS handling hid the settings global used
 by the old shell. The module now retains that namespace as well as its CommonJS

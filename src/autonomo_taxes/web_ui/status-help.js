@@ -8,6 +8,7 @@
   const fields = AutonomoCore.refs.helpFields;
   const termNames = AutonomoCore.refs.helpTermNames;
   const registry = new Map();
+  const scopedIds = new Set();
   let sequence = 0;
   let contextIds = new WeakMap();
   let currentLocale = "ru";
@@ -139,7 +140,7 @@
     const live = new Set([...document.querySelectorAll("[data-status-help]")]
       .map(button => button.dataset.statusHelp));
     if (dialog()?.open) live.add(window.history.state?.accountingHelp);
-    for (const id of registry.keys()) if (!live.has(id)) registry.delete(id);
+    for (const id of registry.keys()) if (!live.has(id) && !scopedIds.has(id)) registry.delete(id);
   }
   // Legacy renderers replace both roots and table fragments. Sweep after DOM
   // mutations settle so detached records are released without invalidating siblings.
@@ -153,6 +154,28 @@
     registry.set(id, ctx);
     if (ctx && typeof ctx === "object") contextIds.set(ctx, id);
     return id;
+  }
+  function createScope(context) {
+    const id = String(++sequence);
+    registry.set(id, context);
+    scopedIds.add(id);
+    let active = true;
+    return {
+      id,
+      update(next) {if (active) registry.set(id, next);},
+      dispose() {
+        if (!active) return;
+        active = false;
+        scopedIds.delete(id);
+        registry.delete(id);
+        if (typeof window !== "undefined" && window.history.state?.accountingHelp === id) {
+          dismiss();
+          const state = {...window.history.state};
+          delete state.accountingHelp;
+          window.history.replaceState(state, "");
+        }
+      },
+    };
   }
   function cell(ctx) {
     ctx = ctx || { domain: "unknown", state: "unknown" };
@@ -272,6 +295,7 @@
       window.history.replaceState(s, "");
     }
     registry.clear();
+    scopedIds.clear();
     contextIds = new WeakMap();
   }
   let tipTrigger = null;
@@ -391,6 +415,7 @@
   }
   globalThis.AccountingHelp = {
     labelTables,
+    createScope,
     setLocale: (l) => {
       currentLocale = AutonomoCore.normalizeLocale(l);
       const id = typeof window !== "undefined" ? window.history?.state?.accountingHelp : null;

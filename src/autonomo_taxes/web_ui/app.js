@@ -144,6 +144,7 @@ let pendingLocaleRepaint = false;
 const localizedText = new Map();
 let intakeNoticeMessages = [];
 let localeRepaintTimer = null;
+let vueViewHost = null;
 const requestScope = AutonomoCore.createRequestScope(() => scheduleLocaleRepaint());
 let expenseWorkflowController = null;
 let expensePresentation = null;
@@ -333,6 +334,7 @@ function applyRouteFromLocation() {
   ++currentReviewRequest;
   if (!route) {
     ++currentRenderGeneration;
+    vueViewHost?.dispose(); vueViewHost = null;
     AccountingHelp.beforeRender();
     app.innerHTML = unknownRoutePanel();
     app.setAttribute("aria-busy", "false");
@@ -629,6 +631,7 @@ function scheduleLocaleRepaint() {
 
 async function refreshLocalePresentation() {
   AccountingHelp.setLocale(state.locale);
+  if (vueViewHost) return;
   if (chartDialog?.open && chartDialogEntry) {
     const focus = AutonomoCore.captureFocus(chartDialog);
     renderChartDialogFigure();
@@ -1715,6 +1718,7 @@ async function renderSettings(generation) {
 async function renderCurrentView({localeOnly = false} = {}) {
   if (!app || (state.view !== "settings" && !state.period && !state.expenseDetail.transactionId && !state.review.selectedReviewId && !state.contactDetail.id)) return;
   pendingLocaleRepaint = false;
+  vueViewHost?.dispose(); vueViewHost = null;
   closeCounterpartyMenu(false);
   if (!localeOnly) {
     expenseWorkflowController?.dispose?.();
@@ -1733,6 +1737,21 @@ async function renderCurrentView({localeOnly = false} = {}) {
   if (state.view !== "review") closePostingConfirmDialog();
   closeChartDialog();
   viewChartRegistry.clear();
+  if (state.view === "expense-detail" && typeof AutonomoViews !== "undefined") {
+    const id = state.expenseDetail.transactionId;
+    vueViewHost = AutonomoViews.expenseDetail(app, {
+      transactionId: id, returnUrl: safeReturnUrl(state.returnTo, state.period),
+      services: {request: fetchJSON, navigate: navigateToUrl},
+      resolved(data) {
+        applyDetailPeriod(data, "expense-detail", id);
+        state.expenseDetail.data = data;
+        return {returnUrl: safeReturnUrl(state.returnTo, data.period.period_key),
+          wrongTypeUrl: buildRouteUrl(data.transaction.entry_type === "income" ? "income" : "dashboard", {period: data.period.period_key})};
+      },
+      settled() {if (renderGeneration === currentRenderGeneration) {app.setAttribute("aria-busy", "false"); if (refreshButton) refreshButton.disabled = false;}},
+    });
+    return;
+  }
   app.innerHTML = uiLoadingSkeleton();
   try {
     if (state.view === "dashboard") await renderDashboard(renderGeneration);
@@ -4746,7 +4765,7 @@ if (hasDOM) {
   });
 
   document.addEventListener("click", (event) => {
-    if (!(event.target instanceof Element)) return;
+    if (!(event.target instanceof Element) || event.target.closest("[data-vue-owned]")) return;
     closeCounterpartyMenuFromOutside(event.target);
     if (event.target.closest("#counterparty-menu-rename")) {
       const selected = counterpartyMenu;
@@ -4853,7 +4872,7 @@ if (hasDOM) {
   });
 
   app.addEventListener("click", (event) => {
-    if (!(event.target instanceof Element)) return;
+    if (!(event.target instanceof Element) || event.target.closest("[data-vue-owned]")) return;
     const menuButton = event.target.closest("[data-counterparty-menu]");
     if (menuButton) {
       event.preventDefault();

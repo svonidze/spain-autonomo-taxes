@@ -13,7 +13,7 @@
     "test:coverage-map": "node scripts/check_ui_test_map.cjs",
     "test:unit": "npm run locales:check && vitest run",
     "test:browser": "playwright test",
-    "typecheck": "npm run locales:check && tsc --noEmit",
+    "typecheck": "npm run locales:check && vue-tsc --noEmit",
     "build": "npm run check:runtime && npm run locales:check && vite build && node scripts/write_ui_manifest.cjs",
     "test:installed": "python scripts/test_installed_ui.py",
     "locales:check": "node scripts/build_locales.mts",
@@ -25,12 +25,15 @@
     "@playwright/test": "1.63.0",
     "@types/jsdom": "30.0.0",
     "@types/node": "24.13.3",
+    "@vitejs/plugin-vue": "6.0.8",
     "jsdom": "30.0.1",
-    "typescript": "7.0.2",
+    "typescript": "6.0.3",
     "vite": "8.2.2",
-    "vitest": "5.0.0"
+    "vitest": "5.0.0",
+    "vue-tsc": "3.3.11"
   },
   "dependencies": {
-    "@formatjs/intl": "4.1.20"
+    "@formatjs/intl": "4.1.20",
+    "vue": "3.5.42"
   }
 }

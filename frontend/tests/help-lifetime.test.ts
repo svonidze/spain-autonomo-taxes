@@ -49,5 +49,16 @@ test('legacy fragment replacement releases records and preserves live help histo
   dom.window.history.replaceState({accountingHelp: staleId}, '');
   expect(help.handlePopState()).toBe(false);
   expect(dialog.open).toBe(false);
+  const first = help.createScope({domain: 'transaction', state: 'ready'});
+  const second = help.createScope({domain: 'transaction', state: 'blocked'});
+  rows.innerHTML = '<span>Unrelated partial render</span>';
+  await Promise.resolve();
+  expect(maps[0]!.has(first.id)).toBe(true);
+  first.update({domain: 'transaction', state: 'posted'});
+  expect(maps[0]!.get(first.id)).toMatchObject({state: 'posted'});
+  first.dispose(); first.dispose();
+  expect(maps[0]!.has(first.id)).toBe(false);
+  expect(maps[0]!.has(second.id)).toBe(true);
+  second.dispose();
   dom.window.close();
 });
