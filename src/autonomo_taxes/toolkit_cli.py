@@ -23,6 +23,14 @@ from .services.common import (
 
 
 def register_commands(groups):
+    groups = dict(groups)
+    backup_settings = groups["backup"].add_parser(
+        "settings", help="Read or explicitly change local retention policy"
+    )
+    groups["backup-settings"] = backup_settings.add_subparsers(
+        dest="backup_settings_command", required=True
+    )
+
     def command(group, name, help, *, identifier=False, input=False, period=False):
         parser = groups[group].add_parser(name, help=help)
         parser.add_argument("--db", type=Path)
@@ -158,6 +166,55 @@ def register_commands(groups):
         identifier=True,
         input=True,
     )
+
+    command(
+        "counterparties",
+        "name-history",
+        "Read versioned display-name history",
+        identifier=True,
+    )
+    command(
+        "counterparties",
+        "rename",
+        "Change one name with its current row version",
+        identifier=True,
+        input=True,
+    )
+    command(
+        "profile", "inspect", "Read current profiles with identity-lock constraints"
+    )
+    command(
+        "profile",
+        "edit",
+        "Edit a profile by ID and version without bypassing identity locks",
+        input=True,
+    )
+    command(
+        "backup-settings",
+        "show",
+        "Read local retention revision and observed backup/verification results",
+    )
+    command(
+        "backup-settings",
+        "set",
+        "Save explicitly confirmed local retention limits",
+        input=True,
+    )
+    command(
+        "period",
+        "summary",
+        "Read the current financial summary without refreshing it",
+        period=True,
+    )
+    for name in ("taxes", "analytics"):
+        parser = command(
+            "period", name, "Read financial data without writes or filing", period=True
+        )
+        parser.add_argument("--as-of", help="Optional YYYY-MM-DD observation date")
+    assets = command(
+        "assets", "inspect", "Read asset accounting context and blocking reasons"
+    )
+    assets.add_argument("--period")
 
 
 def context(args):
@@ -331,6 +388,35 @@ def dispatch(app, args):
         return app.depreciation_post(
             args.id, read_input(args.input), "cli:" + getpass.getuser()
         )
+    if action == "counterparties.name-history":
+        return app.counterparty_name_history(args.id)
+    if action == "counterparties.rename":
+        return app.rename_counterparty(
+            args.id,
+            read_input(args.input),
+            actor="cli:" + getpass.getuser(),
+            change_source="cli",
+        )
+    if action == "assets.inspect":
+        return app.assets(args.period)
+    if action == "profile.inspect":
+        return {"profiles": app.settings()["profiles"]}
+    if action == "profile.edit":
+        return app.edit_profile(
+            read_input(args.input), actor="cli:" + getpass.getuser()
+        )
+    if action == "backup-settings.show":
+        return app.settings()["backups"]
+    if action == "backup-settings.set":
+        return app.save_backup_settings(read_input(args.input))
+    if action == "period.summary":
+        return app.dashboard(args.period)
+    if action == "period.taxes":
+        return app.taxes(
+            args.period, as_of=date.fromisoformat(args.as_of) if args.as_of else None
+        )
+    if action == "period.analytics":
+        return app.analytics(args.period, as_of=args.as_of)
     raise ValueError("Unsupported toolkit command")
 
 

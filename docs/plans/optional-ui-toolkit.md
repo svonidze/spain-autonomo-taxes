@@ -7,7 +7,7 @@ Each stage gets a separate commit-bearing dependent PR; no automatic merge.
 1. Independent core/UI packages and contract-2 web release preparation — implemented; independent reviews approve/clear.
 2. Shared services, reads, original intake, income review and atomic FX — implemented and verified (1,323 Python tests; four skips).
 3. Native expense workflow, depreciation and retryable follow-up — implemented and reviewed; core-only validation passed.
-4. Counterparties, settings and financial read parity — pending.
+4. Counterparties, settings and financial read parity — implemented; full Python and installed-wheel verification passed.
 5. Complete agent instructions, skills and synthetic acceptance — pending.
 
 The core is `spain-autonomo-taxes` with `autonomo-tax`. Optional

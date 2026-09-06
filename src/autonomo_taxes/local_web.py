@@ -410,9 +410,7 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/bootstrap":
                 self._send_json(self.server.app.bootstrap())
             elif parsed.path == "/api/settings":
-                self._send_json(read_settings(
-                    self.server.app.config.database, self.server.app.config.private_root,
-                ))
+                self._send_json(self.server.app.settings())
             elif parsed.path == "/api/google-picker/config":
                 self._send_json(self.server.app.google_picker_config())
             elif parsed.path == "/api/dashboard":
@@ -548,11 +546,10 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                 self._require_same_origin()
                 self._require_json_content_type()
                 payload = self._read_json(max_bytes=MAX_SETTINGS_BYTES)
-                config = self.server.app.config
                 result = (
-                    save_profile(config.database, payload, actor=principal)
+                    self.server.app.edit_profile(payload, actor=principal)
                     if parsed.path.endswith("/profile")
-                    else save_backups(config.database, config.private_root, payload)
+                    else self.server.app.save_backup_settings(payload)
                 )
                 self._send_json(result)
             elif parsed.path == "/api/dashboard/refresh":
