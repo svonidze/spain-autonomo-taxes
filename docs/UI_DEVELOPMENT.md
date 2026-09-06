@@ -22,6 +22,13 @@ Components receive narrow typed contexts/services. Route changes dispose the
 active screen; intake stays mounted. Locale changes update text in place. Settings
 and contact rename expose dirty/busy guards. Late requests, canonical URL changes
 and posting results retain explicit ownership by route, period or operation.
+Detail ids in URLs are canonicalized (lowercase, hyphenated) before requests and
+comparisons, matching the server's `UUID` normalization.
+
+`frontend/tests/support/mount.ts` is a test-only host. The production shell mounts
+a fresh screen instance for every route change (the `revision` key in `Shell.vue`),
+so the `*-host.test.ts` suites verify component robustness under context
+replacement and pending writes; they are not a shell contract.
 
 Vue Router owns route and same-URL help entries through public force/state APIs.
 Nested return URLs retain URLSearchParams encoding. Contact-local periods stay

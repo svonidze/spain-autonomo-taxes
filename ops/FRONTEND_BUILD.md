@@ -17,7 +17,13 @@ service. Node is used only to build; the running service is still Python.
 
 The gate checks a clean target SHA and reviewed lockfile, runs
 `npm ci --include=dev --no-audit --no-fund`, then `npm run build`. The build
-environment excludes service secrets, ambient VITE variables and Node options.
+environment excludes service secrets, ambient VITE variables and Node options:
+only `HOME`, `USER`, `LOGNAME`, `TMPDIR`/`TEMP`/`TMP`, `LANG`/`LC_ALL`, a `PATH`
+led by the pinned Node and `CI=true` are passed. Proxy variables (`HTTP_PROXY`,
+`HTTPS_PROXY`, `NO_PROXY`) and `npm_config_*` are deliberately not inherited;
+configure a registry mirror or proxy in the build user's `~/.npmrc` (read through
+the preserved `HOME`), or widen the allowlist in `prepare_ui_release.py` as a
+reviewed change.
 The caller installs the Python package, records its schema marker and creates a
 completion receipt only after isolated imports and installed resource hashes pass.
 The receipt is written atomically and includes build SHA, tool versions, lockfile

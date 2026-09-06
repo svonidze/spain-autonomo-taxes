@@ -3,7 +3,8 @@
 ## Source of truth
 - Status: Active; refreshed 2026-09-04.
 - Surfaces: Expenses, dashboard expense metrics, recent operations, and the analytics charts documented below.
-- Evidence: `local_web.py`, `web_ui/app.js`, `web_ui/styles.css`, the accepted
+- Evidence: `local_web.py`, the Vue frontend under `frontend/src` (`features/`,
+  `shell/`, `charts/`, `help/`), `web_ui/styles.css`, the accepted
   expense-clarity plan in `docs/plans/expense-clarity.md`, the user-supplied
   expense-chart screenshot dated 2026-09-04, and AEAT's 2026 `LSI.xlsx`
   registry-book design.
@@ -126,7 +127,8 @@ Keep existing components, routes, source amounts and unrelated design rules.
 
 This contract also covers the read-only context
 from `src/autonomo_taxes/status_context.py` and its presentation in
-`src/autonomo_taxes/web_ui/status-help.js`. For operator-facing meanings and
+`frontend/src/help/presentation.ts` (labels, tones, panel content) and
+`frontend/src/help/registry.ts` (scoped records, dialog and history). For operator-facing meanings and
 actions, see [Understanding accounting statuses](docs/ACCOUNTING_STATUSES.md).
 
 - Present the short reason beside the status and make the next action readable
@@ -213,7 +215,8 @@ This file is the source of truth for measure definitions, status policy, chart
 placement, color/pattern semantics, accessibility rules, and empty states used
 by the analytics endpoint (`/api/analytics`, built by
 `src/autonomo_taxes/analytics_series.py`) and the web charts
-(`src/autonomo_taxes/web_ui/charts.js`). When the SPA, generated artifacts, or
+(`frontend/src/charts/renderer.js` for geometry, `frontend/src/charts/builders.ts`
+for domain mapping and `frontend/src/charts/ChartHost.vue` for lifecycle). When the SPA, generated artifacts, or
 a future server-side SVG renderer disagree with each other, this document
 decides. Change the definitions here first, then the code.
 
@@ -396,11 +399,13 @@ not an empty state.
 - The tax reserve bullet reports `not_checked` when no explicit available-cash
   figure exists (`cash_check.py` receives `available_eur=None`); available
   cash is never inferred from payment rows.
-- Shared UI helpers in `app.js` have one declaration each, guarded by
-  `test_web_ui_helpers_declared_exactly_once`. Chart rendering lives in
-  `charts.js`, contextual explanations in `status-help.js`, and uniquely named
-  `build*Spec` helpers adapt analytics data to charts. Both supporting scripts
-  load before `app.js`; adding a chart must not replace status explanations.
+- Chart geometry lives in `frontend/src/charts/renderer.js`, the only JavaScript
+  module of the frontend, typed through `renderer.d.ts` and `types.ts`.
+  `createChartBuilders` in `charts/builders.ts` adapts analytics data to chart
+  specs and `ChartHost.vue` owns fetching, locale redraws, resize and the expand
+  dialog. Contextual explanations live in `frontend/src/help/`. The former
+  one-declaration guard for `app.js` helpers retired with the monolith; its
+  disposition is recorded in `docs/plans/ui-python-test-map.json`.
 
 ## Expense and equipment workflow
 
