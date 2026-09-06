@@ -76,6 +76,7 @@ class ObligationDetectionTests(unittest.TestCase):
         self.assertEqual(obligations["721"].status, "due")
         self.assertTrue(obligations["721"].blocking)
         self.assertIn("AEAT", obligations["721"].source_citation)
+        self.assertIn("V0516-19", obligations["347"].source_citation)
 
     def test_ambiguous_facts_stay_unknown(self):
         activity = ActivityFact(

@@ -83,7 +83,11 @@ FORM_RULES: dict[str, FormRule] = {
         code="347",
         category="modelo347_report",
         cadence="annual",
-        source_citation="AEAT Modelo 347: Declaracion anual de operaciones con terceras personas.",
+        source_citation=(
+            "AEAT Modelo 347: Declaracion anual de operaciones con terceras personas (arts. 31-35 RD 1065/2007). "
+            "A recipient established outside Spain or the EU is not excluded by itself: DGT consulta vinculante "
+            "V0516-19 (12-03-2019) requires listing services above 3,005.06 EUR supplied to an organisation established in Switzerland."
+        ),
     ),
     "111": FormRule(
         code="111",
