@@ -24,7 +24,7 @@ from .outgoing_invoices import (
     validate_currency,
     validate_withholding_rate,
 )
-from .tax_rules import ALL_FORM_CODES
+from .tax_rules import ALL_FORM_CODES, ANNUAL_FORM_CODES, FORM_RULES, QUARTERLY_FORM_CODES
 from .vat_classification import is_vat_investment_good
 
 
@@ -92,6 +92,11 @@ FINAL_SNAPSHOT_STATUSES = {"filed", "submitted", "final"}
 class LedgerDbError(Exception):
     """Base exception for ledger database failures."""
 
+
+UNREVIEWED_OBLIGATION_EXPLANATION = (
+    "The period was opened without reviewed facts or filing evidence; "
+    "record a decision with obligations mark."
+)
 
 class SchemaVersionError(LedgerDbError):
     """Raised when the database schema version is unsupported."""
@@ -676,6 +681,44 @@ class LedgerDB:
                 period_type=period_type,
                 source_hash=source_hash,
             )
+
+    def seed_unreviewed_obligations(self, period_key: str) -> list[dict[str, Any]]:
+        """Create the standard obligation rows of a period as undecided.
+
+        ``ensure_period`` records the period only. Without obligation rows the
+        taxes view cannot tell "no decision yet" from "not due", so a freshly
+        opened quarter would read as if nothing had to be filed. Existing rows
+        are left untouched.
+        """
+        period = self.ensure_period(period_key)
+        year = int(str(period["period_key"])[:4])
+        codes = QUARTERLY_FORM_CODES if period["period_type"] == "quarter" else ANNUAL_FORM_CODES
+        created: list[dict[str, Any]] = []
+        for code in codes:
+            rule = FORM_RULES[code]
+            if rule.introduced_year is not None and year < rule.introduced_year:
+                continue
+            existing = self._fetch_optional(
+                "SELECT 1 FROM obligations WHERE period_id = ? AND obligation_code = ?",
+                (period["period_id"], code),
+            )
+            if existing is not None:
+                continue
+            created.append(
+                self.add_obligation(
+                    period_key=period_key,
+                    obligation_code=code,
+                    filing_status="unknown",
+                    determination="unknown",
+                    explanation=UNREVIEWED_OBLIGATION_EXPLANATION,
+                    source_citation=rule.source_citation,
+                    blocking=True,
+                    source_hash=_stable_hash(
+                        {"kind": "unreviewed_obligation", "period_key": period_key, "code": code}
+                    ),
+                )
+            )
+        return created
 
     def _ensure_period_uncommitted(
         self,

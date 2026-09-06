@@ -686,6 +686,12 @@ def test_taxes_summary_exposes_partial_payment_and_overpayment(
             filing_status="filed",
             determination="due",
         )
+        db.add_obligation(
+            period_key="2026-Q2",
+            obligation_code="303",
+            filing_status="waived",
+            determination="not_due",
+        )
         db.create_filing_snapshot(
             "2026-Q2",
             filed_on="2026-07-08",
