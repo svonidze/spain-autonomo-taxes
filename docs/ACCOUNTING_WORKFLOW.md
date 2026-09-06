@@ -221,3 +221,27 @@ Advisers frequently assume the opposite for non-EU clients. The obligation engin
 this toolkit therefore keeps foreign-established counterparties reportable and only
 excludes intra-Community operators (reported in Modelo 349) and payments already
 reported through withholding returns.
+
+## Issuing your own invoices and the Verifactu timeline
+
+Outgoing invoice drafts in this toolkit are a numbering and review aid. They are
+not a certified invoicing system (SIF) under the Verifactu regulation, and the
+toolkit does not send invoice records to the AEAT.
+
+Current timeline for the Verifactu obligation (Real Decreto 1007/2023 as amended by
+Real Decreto-ley 15/2025 of 2 December, BOE 3 December 2025):
+
+- taxpayers subject to Impuesto sobre Sociedades: systems adapted by 1 January 2027;
+- all other taxpayers, including autonomos under IRPF: by 1 July 2027;
+- software vendors: since 29 July 2025.
+
+The postponement changed the dates only; the technical requirements (record hash
+chain, unalterability, QR code, optional submission to the AEAT) are unchanged. See
+the AEAT notice on the extension:
+https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/nota-informativa-ampliacion-plazo-adaptacion-facturacion.html
+
+Whether a spreadsheet or template used to produce invoices counts as a SIF is a
+question for the AEAT FAQ and your adviser; plan the answer well before July 2027.
+Suppliers already issuing Verifactu invoices print a "QR tributario" and the text
+"Factura verificable en la sede electronica de la AEAT" on them — such invoices
+still import like any other document.
