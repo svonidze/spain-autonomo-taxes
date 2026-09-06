@@ -4,7 +4,7 @@ import { useLocale } from '../../vue/locale.ts';
 import { eur, formatDateTime } from '../../core/format.ts';
 import { errorDescriptor, errorMessage } from '../../core/error-message.ts';
 import { ApiError } from '../../core/http.ts';
-import { message } from '../../core/i18n.ts';
+import { message, messageText } from '../../core/i18n.ts';
 import ReviewQueue from './ReviewQueue.vue';
 import ReviewDocuments from './ReviewDocuments.vue';
 import PostingRows from './PostingRows.vue';
@@ -188,8 +188,7 @@ async function retryRefresh() {
     clearRefresh(period, token);
     if (current(version, period)) await load();
   } catch (failure) {
-    if (postingState.stale.get(period) === token)
-      markStale(period, errorMessage(failure, locale.value));
+    if (postingState.stale.get(period) === token) markStale(period, errorDescriptor(failure));
     if (current(version, period)) props.context.notify(errorDescriptor(failure), true);
   } finally {
     if (active) refreshing.value = false;
@@ -228,7 +227,7 @@ async function submit() {
         clearRefresh(snapshot.period, token);
       } catch (failure) {
         if (postingState.stale.get(snapshot.period) === token)
-          markStale(snapshot.period, errorMessage(failure, locale.value));
+          markStale(snapshot.period, errorDescriptor(failure));
       }
     }
     if (!current(version, snapshot.period)) return;
@@ -315,7 +314,7 @@ const reload = () => (forbidden() ? window.location.reload() : void load());
             <div v-if="stale" class="period-note posting-warning">
               <div>
                 <strong>{{ t('review.postingStaleWarning') }}</strong>
-                <p v-if="stale.error">{{ stale.error }}</p>
+                <p v-if="stale.error">{{ messageText(stale.error, locale) }}</p>
               </div>
               <button
                 type="button"

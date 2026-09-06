@@ -25,10 +25,12 @@ and posting results retain explicit ownership by route, period or operation.
 Detail ids in URLs are canonicalized (lowercase, hyphenated) before requests and
 comparisons, matching the server's `UUID` normalization.
 
-Successful intake delivery also respects the current screen's leave guard. If a
-dirty editor rejects replacement or a save is still pending, the document stays
-accepted and the editor stays mounted. Refresh manually or navigate after editing
-to load the new data; another upload is not needed.
+Successful intake delivery does not disturb an active editor. While the current
+screen reports a dirty or pending edit, the document stays accepted and the editor
+stays mounted without any prompt; refresh manually or navigate after editing to
+load the new data. Another upload is not needed. The same-screen check compares
+path and period only, so typing a list filter while an upload runs does not
+discard the hand-off.
 
 `frontend/tests/support/mount.ts` is a test-only host. The production shell mounts
 a fresh screen instance for every route change (the `revision` key in `Shell.vue`),

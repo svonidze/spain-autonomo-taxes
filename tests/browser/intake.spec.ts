@@ -74,3 +74,11 @@ test('a long server diagnostic stays inside the 375 px intake footer',async({pag
   expect(statusBox!.width).toBeLessThanOrEqual(375);expect(submitBox!.x+submitBox!.width).toBeLessThanOrEqual(375);
   expect(await status.evaluate(element=>getComputedStyle(element).overflowWrap)).toBe('anywhere');
 });
+test('typing a list filter while the upload runs does not drop the accepted hand-off',async({page})=>{
+  const id='11111111-1111-4111-8111-111111111111';let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
+  await page.route('**/api/intake',async route=>{await gate;await route.fulfill({json:{system_marker:'synthetic-id',kind:'expense_invoice',transaction_id:id,period:'2026-Q3'}});});
+  await page.route(`**/api/transactions/${id}`,route=>route.fulfill({json:{transaction:{transaction_id:id,entry_type:'expense',lifecycle_status:'needs_review',currency:'EUR'},period:{period_key:'2026-Q3'}}}));
+  await open(page,'/expenses?period=2026-Q3');await page.locator('#vue-intake-file').setInputFiles(file);await page.locator('#vue-submit-intake').click();await expect(page.locator('#vue-submit-intake')).toBeDisabled();
+  await page.locator('#vue-close-dialog').click();await page.locator('#expense-search').fill('a');await expect(page).toHaveURL(/q=a/);release();
+  await expect(page.locator('#toast')).toBeVisible();await expect(page).toHaveURL(new RegExp(`/review/${id}\\?period=2026-Q3$`));
+});

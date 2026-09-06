@@ -49,7 +49,7 @@ export function routeUrl(
 ) {
   const root =
     view === 'contact-detail' ? 'contacts' : view === 'expense-detail' ? 'expenses' : view;
-  const path = `/${root}${options.id ? `/${encodeURIComponent(options.id)}` : ''}`;
+  const path = `/${root}${options.id ? `/${encodeURIComponent(canonicalId(options.id))}` : ''}`;
   const query = new URLSearchParams();
   if (period && view !== 'settings' && view !== 'contacts') query.set('period', period);
   if (view === 'expenses' && options.q) query.set('q', options.q);

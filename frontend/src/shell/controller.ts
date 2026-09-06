@@ -97,7 +97,10 @@ export function useShell() {
     contactGlobal = '',
     contactPosition: Position | undefined;
   let presentation: { from: string; to: string } | undefined;
-  const locationKey = () => window.location.pathname + window.location.search;
+  // Screen identity for late intake callbacks: path and period only, so a list
+  // filter typed while an upload runs does not orphan the accepted document.
+  const locationKey = () =>
+    `${window.location.pathname}|${new URLSearchParams(window.location.search).get('period') || ''}`;
   const canLeave = () => view.value?.canLeave?.() ?? true;
   const notify = (value: UiMessage | string, error = false) => {
     toast.value = { value, error };
@@ -457,7 +460,8 @@ export function useShell() {
   function accepted(result: IntakeResult) {
     if (result.kind === 'expense_invoice' && result.transaction_id)
       navigate(routeUrl('review', result.period, { id: result.transaction_id }));
-    else if (canLeave()) void showRoute();
+    // Read-only guard: canLeave() would close a clean dialog or prompt the user.
+    else if (!(view.value?.isDirty?.() || view.value?.isBusy?.())) void showRoute();
   }
   const intakeServices: IntakeServices = { request, notify, locationKey, accepted };
   const beforeUnload = (event: BeforeUnloadEvent) => {
