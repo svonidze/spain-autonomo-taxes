@@ -16,6 +16,7 @@
   let scrollY = 0;
   let panelUrl = "";
   let pendingNavigation = null;
+  let historyAdapter = null;
   const esc = (v) =>
     String(v ?? "").replace(
       /[&<>"']/g,
@@ -243,7 +244,8 @@
     if (pendingNavigation) {
       const url = pendingNavigation;
       pendingNavigation = null;
-      window.location.assign(url);
+      if (historyAdapter) historyAdapter.navigate(url);
+      else window.location.assign(url);
     }
   }
   function open(id, trigger, push = true) {
@@ -262,7 +264,8 @@
       .setAttribute("aria-label", word("close"));
     if (!d.open) d.showModal();
     document.getElementById("status-help-close").focus();
-    if (push)
+    if (push && historyAdapter) historyAdapter.push(id);
+    else if (push)
       window.history.pushState(
         { ...window.history.state, accountingHelp: id },
         "",
@@ -271,7 +274,7 @@
   }
   function close() {
     if (window.history.state?.accountingHelp && dialog()?.open)
-      window.history.back();
+      historyAdapter ? historyAdapter.back() : window.history.back();
     else dismiss();
   }
   function handlePopState() {
@@ -414,6 +417,7 @@
     }
   }
   globalThis.AccountingHelp = {
+    setHistoryAdapter(adapter) {historyAdapter = adapter;},
     labelTables,
     createScope,
     setLocale: (l) => {

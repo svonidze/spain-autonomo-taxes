@@ -1,0 +1,18 @@
+import {expect,test} from 'vitest';
+import {parseRoute,routeUrl,safeReturnUrl,copyTarget} from '../src/shell/routes.ts';
+import {retentionPayload} from '../src/features/settings/model.ts';
+const periods=[{period_key:'2026-Q3',status:'open'},{period_key:'2026-Q2',status:'open'}];
+test('route paths and safe returns retain quarter and nested query contracts',()=>{
+  const id='11111111-1111-4111-8111-111111111111';const back='/expenses?period=2026-Q3&q=Two words';
+  const url=routeUrl('expense-detail','2026-Q2',{id,returnTo:back});expect(new URL(url,'https://app.invalid').searchParams.get('returnTo')).toBe(back);
+  expect(parseRoute(`/contacts/${id}`)).toEqual({view:'contact-detail',id});expect(parseRoute('/unknown')).toBeNull();
+  expect(safeReturnUrl(back,'2026-Q2',periods)).toBe('/expenses?period=2026-Q3&q=Two+words');
+  for(const value of ['//other.invalid/expenses','/expenses?period=2026-Q3&period=2026-Q2','/expenses?period=2026-Q3#other','/settings','/expenses?period=2030-Q1'])expect(safeReturnUrl(value,'2026-Q2',periods)).toBe('/expenses?period=2026-Q2');
+  expect(safeReturnUrl(`/contacts/${id}?period=2026-Q1`,'2026-Q2',periods)).toBe(`/contacts/${id}?period=2026-Q1`);
+});
+test('copy target chooses an open current quarter before the existing fallback',()=>{
+  expect(copyTarget(periods,true,new Date(2026,8,1))).toBe('2026-Q3');expect(copyTarget(periods,false)).toBeNull();expect(copyTarget(periods,true,new Date(2027,0,1))).toBe('2026-Q3');
+});
+test('blank backup limits remain operator managed with explicit pruning consent',()=>{
+  expect(retentionPayload('','3','synthetic-revision')).toEqual({expected_revision:'synthetic-revision',daily_keep:null,monthly_keep:3,confirm_local_pruning:true});
+});
