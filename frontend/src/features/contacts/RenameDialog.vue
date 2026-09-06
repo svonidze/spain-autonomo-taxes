@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, shallowRef } from 'vue';
 import { useLocale } from '../../vue/locale.ts';
-import { errorMessage } from '../../core/error-message.ts';
+import { errorDescriptor } from '../../core/error-message.ts';
 import { ApiError } from '../../core/http.ts';
 import { message, messageText, type UiMessage } from '../../core/i18n.ts';
 import type { ViewServices } from '../../vue/services.ts';
@@ -121,7 +121,7 @@ async function save() {
       error.value = message('contacts.nameBusy');
     else if (failure instanceof ApiError && failure.status === 404)
       error.value = message('contacts.nameMissing');
-    else error.value = errorMessage(failure, locale.value);
+    else error.value = errorDescriptor(failure);
   } finally {
     if (active) busy.value = false;
   }

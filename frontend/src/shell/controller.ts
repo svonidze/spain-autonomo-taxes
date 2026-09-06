@@ -31,7 +31,7 @@ import {
   formatMessage,
   type UiMessage,
 } from '../core/i18n.ts';
-import { errorMessage } from '../core/error-message.ts';
+import { errorDescriptor } from '../core/error-message.ts';
 import { disposeHelp } from '../vue/help.ts';
 import { useLocale } from '../vue/locale.ts';
 import type IntakeDialog from '../features/intake/IntakeDialog.vue';
@@ -422,7 +422,7 @@ export function useShell() {
       }
       if (version === generation) await showRoute();
     } catch (error) {
-      if (version === generation) notify(errorMessage(error, getLocale()), true);
+      if (version === generation) notify(errorDescriptor(error), true);
     } finally {
       busy.value = false;
     }

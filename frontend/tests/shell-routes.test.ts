@@ -1,5 +1,11 @@
 import { expect, test } from 'vitest';
-import { parseRoute, routeUrl, safeReturnUrl, copyTarget } from '../src/shell/routes.ts';
+import {
+  canonicalId,
+  parseRoute,
+  routeUrl,
+  safeReturnUrl,
+  copyTarget,
+} from '../src/shell/routes.ts';
 import { retentionPayload } from '../src/features/settings/model.ts';
 const periods = [
   { period_key: '2026-Q3', status: 'open' },
@@ -37,4 +43,20 @@ test('blank backup limits remain operator managed with explicit pruning consent'
     monthly_keep: 3,
     confirm_local_pruning: true,
   });
+});
+
+test('detail ids are canonicalized the way the server does', () => {
+  const canonical = 'abcdef01-2345-4678-8abc-def012345678';
+  const compact = canonical.replaceAll('-', '').toUpperCase();
+  expect(canonicalId(canonical)).toBe(canonical);
+  expect(canonicalId(compact)).toBe(canonical);
+  expect(parseRoute(`/expenses/${canonical.toUpperCase()}`)).toEqual({
+    view: 'expense-detail',
+    id: canonical,
+  });
+  expect(parseRoute(`/review/${compact}`)).toEqual({ view: 'review', id: canonical });
+  expect(parseRoute(`/contacts/${compact}`)).toEqual({ view: 'contact-detail', id: canonical });
+  expect(safeReturnUrl(`/contacts/${compact}?period=2026-Q1`, '2026-Q2', periods)).toBe(
+    `/contacts/${canonical}?period=2026-Q1`,
+  );
 });
