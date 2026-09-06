@@ -665,6 +665,41 @@ class LedgerDbTests(unittest.TestCase):
                 ["345795641", "SECOND-ID"],
             )
 
+    def test_counterparty_identity_rejects_oss_identifier_as_nif_iva_or_eu_country(self) -> None:
+        with self._database() as db:
+            supplier = db.upsert_counterparty(
+                external_key="synthetic-oss-supplier",
+                display_name="Synthetic OSS Supplier",
+                country_code="US",
+            )
+            with self.assertRaisesRegex(ValueError, "ISO alpha-2"):
+                db.upsert_counterparty_identity(
+                    counterparty_id=supplier["counterparty_id"],
+                    identity_kind="other_proof",
+                    country_code="EU",
+                    identifier="EU123456789",
+                    source_reference="OSS registration extract",
+                    source_hash="oss-registration-hash",
+                )
+            with self.assertRaisesRegex(ValueError, "not a NIF-IVA"):
+                db.upsert_counterparty_identity(
+                    counterparty_id=supplier["counterparty_id"],
+                    identity_kind="vat_id",
+                    country_code="US",
+                    identifier="EU123456789",
+                    source_reference="OSS registration extract",
+                    source_hash="oss-registration-hash",
+                )
+            identity = db.upsert_counterparty_identity(
+                counterparty_id=supplier["counterparty_id"],
+                identity_kind="other_proof",
+                country_code="US",
+                identifier="EU123456789",
+                source_reference="OSS registration extract",
+                source_hash="oss-registration-hash",
+            )
+            self.assertEqual(identity["aeat_id_type"], "06")
+
     def test_detailed_tax_treatment_stores_reviewed_aeat_book_classification(self) -> None:
         with self._database() as db:
             transaction = db.add_transaction(

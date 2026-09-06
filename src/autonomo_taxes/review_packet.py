@@ -8,11 +8,16 @@ from pathlib import Path
 import sqlite3
 from typing import Any, Callable, Mapping
 
+from .counterparty_names import is_oss_non_union_identifier
 from .fx_policy import ALLOWED_PRODUCTION_SOURCES, XOLO_RECORDED_PRODUCTION_THROUGH
 from .fx_reference import ECBRateObservation, FALLBACK_WINDOW_DAYS
 from .ledger_db import FxRateConflictError, LedgerDB, VALID_LIFECYCLE_TRANSITIONS
 from .vat_classification import is_vat_investment_good
-from .tax_engine import MODELO303_SUPPORTED_CODES, WITHHOLDING_TYPE_BY_TAX_CODE
+from .tax_engine import (
+    INTRACOMMUNITY_ACQUISITION_CODES,
+    MODELO303_SUPPORTED_CODES,
+    WITHHOLDING_TYPE_BY_TAX_CODE,
+)
 
 
 PACKET_VERSION = 1
@@ -803,8 +808,14 @@ def _validate_decision(decision_value: Any, state: Mapping[str, Any]) -> dict[st
     effective_counterparty.update(counterparty_changes)
     if not effective_counterparty:
         raise ReviewPacketError("Approved invoice requires a counterparty")
-    if effective_counterparty.get("country_code") in {None, "", "ZZ"}:
+    if effective_counterparty.get("country_code") in {None, "", "ZZ", "EU"}:
         raise ReviewPacketError("Counterparty country must be reviewed before approval")
+    oss_supplier = is_oss_non_union_identifier(effective_counterparty.get("vat_id"))
+    if oss_supplier and effective_counterparty.get("roi_status") == "registered":
+        raise ReviewPacketError(
+            "An OSS non-Union scheme identifier (EU + 9 digits) is not a Member-State VAT "
+            "number and cannot be registered in ROI/VIES"
+        )
 
     asset_decision = decision.get("asset_decision")
     if transaction["entry_type"] == "expense":
@@ -826,6 +837,13 @@ def _validate_decision(decision_value: Any, state: Mapping[str, Any]) -> dict[st
         decision.get("tax_treatment"),
         transaction=transaction,
     )
+    if oss_supplier and tax_treatment["tax_code"] in INTRACOMMUNITY_ACQUISITION_CODES:
+        raise ReviewPacketError(
+            f"Tax code {tax_treatment['tax_code']} needs a Member-State VAT number, but the "
+            "counterparty VAT id is an OSS non-Union scheme identifier (EU + 9 digits) of a "
+            "supplier established outside the EU; use non_eu_service_expense (reverse charge, "
+            "casillas 12/13 and 28/29) or domestic_input when Spanish VAT was charged under OSS"
+        )
     if asset_decision == "asset" and (
         tax_treatment["deductible_irpf_minor"] != 0
         or tax_treatment["include_modelo130"]
@@ -1150,6 +1168,11 @@ def _validate_counterparty_changes(value: Any, current: Any) -> dict[str, Any]:
         country = str(result["country_code"] or "").upper()
         if len(country) != 2 or not country.isalpha() or country == "ZZ":
             raise ReviewPacketError("counterparty country_code must be a reviewed ISO alpha-2 code")
+        if country == "EU":
+            raise ReviewPacketError(
+                "counterparty country_code EU is the OSS non-Union prefix, not a country; "
+                "use the supplier's country of establishment"
+            )
         result["country_code"] = country
     if "roi_status" in result and result["roi_status"] not in ROI_STATUSES:
         raise ReviewPacketError("Unsupported counterparty ROI status")

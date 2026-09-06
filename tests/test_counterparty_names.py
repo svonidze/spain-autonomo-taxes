@@ -11,7 +11,9 @@ from autonomo_taxes.history_migration import (
     _prune_unreferenced_migration_counterparty, _prune_superseded_source_book_records,
     _upsert_counterparty,
 )
-from autonomo_taxes.counterparty_names import CounterpartyMatchError, identity_conflicts
+from autonomo_taxes.counterparty_names import (
+    CounterpartyMatchError, identity_conflicts, is_oss_non_union_identifier, usable_tax_id,
+)
 from autonomo_taxes.ledger_db import LedgerDB, SchemaVersionError, StaleRowVersionError
 from autonomo_taxes.operational_cli import _upsert_intake_counterparty
 
@@ -203,6 +205,24 @@ def test_matching_vat_does_not_hide_conflicting_tax_id(tmp_path):
                                  previous_counterparty_id=party_id)
         assert get_party(db, party_id) == before
         assert not identity_conflicts(before, country_code="ES", tax_id="ESTEST-TAX-ID-001")
+
+
+@pytest.mark.parametrize("value, expected", [
+    ("EU123456789", True),
+    ("eu 123 456 789", True),
+    ("EU12345678", False),
+    ("EU1234567890", False),
+    ("IETEST-TAX-ID-004", False),
+    ("", False),
+    (None, False),
+])
+def test_oss_non_union_identifier_is_eu_prefix_with_nine_digits(value, expected):
+    assert is_oss_non_union_identifier(value) is expected
+
+
+def test_oss_non_union_identifier_stays_usable_for_matching_but_placeholder_digits_do_not():
+    assert usable_tax_id("EU123456789") is True
+    assert usable_tax_id("EU000000000") is False
 
 
 def test_alias_cannot_override_primary_vat_identity(tmp_path):
