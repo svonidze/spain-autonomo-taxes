@@ -32,7 +32,7 @@ def _config(tmp_path: Path) -> LocalWebConfig:
         inbox_root=None,
         archive_root=None,
         cache_root=tmp_path / "cache",
-        static_root=Path(__file__).resolve().parents[1] / "src" / "autonomo_taxes" / "web_ui",
+        static_root=Path(__file__).resolve().parents[1] / "packages/ui/src/autonomo_taxes_ui/dist",
     )
 
 
@@ -277,3 +277,8 @@ def test_transaction_detail_rejects_invalid_id_before_accessing_database(tmp_pat
 
     assert exc_info.value.status == 400
     assert exc_info.value.code == "invalid_transaction_id"
+
+
+# Requires the separately built optional UI assets.
+import pytest
+pytestmark = pytest.mark.web

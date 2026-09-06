@@ -38,9 +38,7 @@ def _config(tmp_path: Path) -> LocalWebConfig:
         cache_root=tmp_path / "cache",
         static_root=(
             Path(__file__).resolve().parents[1]
-            / "src"
-            / "autonomo_taxes"
-            / "web_ui"
+            / "packages/ui/src/autonomo_taxes_ui/dist"
         ),
     )
 
@@ -615,3 +613,8 @@ def test_reject_via_confirm_endpoint_needs_no_fx(
         assert result["transaction"]["lifecycle_status"] == "rejected"
     finally:
         server.close()
+
+
+# Requires the separately built optional UI assets.
+import pytest
+pytestmark = pytest.mark.web

@@ -42,8 +42,9 @@ def test_build_cannot_serve_symlink_escape(tmp_path):
         UiAssets(tmp_path)
 
 
+@pytest.mark.web
 def test_packaged_resource_contract_is_complete():
-    assets = UiAssets(Path(__file__).resolve().parents[1] / "src/autonomo_taxes/web_ui")
+    assets = UiAssets(Path(__file__).resolve().parents[1] / "packages/ui/src/autonomo_taxes_ui/dist")
     assert assets.manifest["source_sha"]
     assert any(name.endswith(".css") for name in assets.files)
     assert all(name == "index.html" or name.startswith("ui-assets/") for name in assets.files)
@@ -58,3 +59,19 @@ def test_pseudolocale_requires_the_explicit_synthetic_test_host(tmp_path):
     with pytest.raises(RuntimeError, match="test-only"):
         UiAssets(tmp_path)
     assert UiAssets(tmp_path, allow_test=True).files
+
+
+@pytest.mark.web
+def test_optional_launcher_rejects_version_mismatch_and_passes_its_assets(monkeypatch):
+    import autonomo_taxes_ui
+    from autonomo_taxes_ui import cli
+    from autonomo_taxes import local_web
+    calls = []
+    monkeypatch.setattr(local_web, 'main', lambda argv, *, static_root: calls.append((argv, static_root)) or 0)
+    monkeypatch.setattr(cli, 'version', lambda name: '0.1.0' if name.endswith('-ui') else '0.2.0')
+    with pytest.raises(SystemExit, match='versions must match'):
+        cli.main(['--help'])
+    assert not calls
+    monkeypatch.setattr(cli, 'version', lambda _: '0.1.0')
+    assert cli.main(['--help']) == 0
+    assert calls == [(['--help'], Path(autonomo_taxes_ui.__file__).resolve().parent / 'dist')]

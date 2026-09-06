@@ -19,7 +19,8 @@
     "test:pseudo": "node scripts/test_pseudolocale.cjs",
     "test:chart-module": "node scripts/test_chart_module.cjs",
     "format:check": "prettier --check 'frontend/src/**/*.{ts,vue}' 'frontend/tests/**/*.ts'",
-    "format": "prettier --write 'frontend/src/**/*.{ts,vue}' 'frontend/tests/**/*.ts'"
+    "format": "prettier --write 'frontend/src/**/*.{ts,vue}' 'frontend/tests/**/*.ts'",
+    "test:core-installed": "python scripts/test_installed_core.py"
   },
   "devDependencies": {
     "@babel/parser": "8.0.4",

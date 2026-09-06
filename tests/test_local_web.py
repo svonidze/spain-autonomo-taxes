@@ -47,9 +47,7 @@ def _config(
 ) -> LocalWebConfig:
     static_root = (
         Path(__file__).resolve().parents[1]
-        / "src"
-        / "autonomo_taxes"
-        / "web_ui"
+        / "packages/ui/src/autonomo_taxes_ui/dist"
     )
     return LocalWebConfig(
         project_root=tmp_path,
@@ -1880,3 +1878,8 @@ def test_host_header_parts_requires_a_valid_same_origin_target() -> None:
     ) == ("ubuntu-16gb-nbg1-2.tail6c29f3.ts.net", 443)
     with pytest.raises(LocalWebApiError, match="Host header is invalid"):
         _host_header_parts("localhost:not-a-port", default_port=8876)
+
+
+# Requires the separately built optional UI assets.
+import pytest
+pytestmark = pytest.mark.web

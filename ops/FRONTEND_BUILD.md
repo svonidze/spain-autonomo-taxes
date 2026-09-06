@@ -3,13 +3,13 @@
 This is a preparation contract, not permission to deploy. Use the existing
 reviewed-SHA, backup, active-mode and rollback procedures in the operations runbook.
 
-## Build contract 1
+## Web build contracts 1 and 2
 
-The target commit declares `[tool.autonomo.web-ui] build-contract = 1` in
+The target commit declares `[tool.autonomo.web-ui] build-contract = 2` in
 `pyproject.toml`. The shared `prepare_ui_release.py` reads that declaration from
 the exact Git object. Missing declaration means legacy; unknown contracts fail.
 
-For a new contract-1 target, provision Node 24.20.0 and bundled npm 11.19.0 on the
+For a new compiled-UI target, provision Node 24.20.0 and bundled npm 11.19.0 on the
 operator's explicit build PATH. Both deployment modes validate and invoke the
 same resolved tools. A working npm registry/cache is required during preparation.
 Dependency or network failure stops preparation before stopping the current
@@ -32,7 +32,7 @@ Old releases do not need the new receipt or assets, and rollback never rebuilds.
 ## Updating an existing ops installation
 
 Application deployment does not update installed ops helpers. Before the first
-contract-1 rollout, compare the reviewed files with the installed active mode:
+compiled-UI rollout, compare the reviewed files with the installed active mode:
 
 1. Back up the currently installed `prepare_ui_release.py` if present,
    `healthcheck.py`, and the active mode's `deploy.sh` to the operator's private
@@ -48,7 +48,8 @@ contract-1 rollout, compare the reviewed files with the installed active mode:
 5. Perform the actual reviewed release only through the existing deployment skill.
 
 Fresh provisioning installers include the helper. The runtime serves only files
-listed in `web_ui/dist/build-manifest.json`; the manifest, maps and source files
+listed in the installed UI manifest (`autonomo_taxes_ui/dist/build-manifest.json`
+for contract 2, the legacy embedded `web_ui/dist` for contract 1); the manifest, maps and source files
 are not public. `/assets` remains an application route. Both shell and resources
 retain `no-store`; there are no lazy UI chunks or service worker.
 
@@ -56,3 +57,12 @@ Health checking discovers JS/CSS references in the served shell, supporting both
 old flat resources and new hashed resources. An HTML 200 alone is insufficient.
 The developer/CI installed-wheel browser check runs outside the checkout; see
 `docs/UI_DEVELOPMENT.md`.
+
+Contract 1 retains its original embedded-package layout and receipt. Contract 2
+builds and retains two wheels in the immutable release's `.ui-wheels`: core first,
+then the optional UI package. The UI requires the exact core version. Preparation
+installs those local artifacts (UI with `--no-deps`), verifies both installed file
+inventories against the wheels, and binds their hashes/versions, source SHA and
+UI manifest in a contract-2 receipt. A partial pair cannot be reused or repaired
+in place. The same checks apply to default and SOPS callers. Core-only users do
+not run this web-release workflow and need no Node or frontend build.

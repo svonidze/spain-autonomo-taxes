@@ -16,7 +16,7 @@ class UiAssets:
         try:
             self.manifest = json.loads((self.root / "build-manifest.json").read_text())
         except (OSError, ValueError) as exc:
-            raise RuntimeError("Frontend build is missing or invalid. Run npm ci --include=dev and npm run build before installing or starting the web application.") from exc
+            raise RuntimeError("Frontend build is missing or invalid. Install the optional spain-autonomo-taxes-ui package with matching core version; source UI builds require npm ci and npm run build.") from exc
         if not isinstance(self.manifest, dict) or self.manifest.get("contract") != 1:
             raise RuntimeError("Unsupported frontend build contract")
         if self.manifest.get("test_only") and not allow_test:

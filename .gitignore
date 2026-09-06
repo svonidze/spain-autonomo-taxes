@@ -52,3 +52,9 @@ evidence/
 *.tar
 *.tgz
 *.gz
+
+/packages/ui/src/autonomo_taxes_ui/dist/
+/packages/ui/build/
+/packages/ui/dist/
+
+/.ui-wheels/

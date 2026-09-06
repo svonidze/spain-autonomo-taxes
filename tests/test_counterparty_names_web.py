@@ -130,3 +130,8 @@ def test_busy_is_retryable_without_writes(name_server, monkeypatch):
     assert exc.value.status == 503
     assert exc.value.code == "counterparty_busy"
     assert app.counterparty_name_history(party["counterparty_id"])["changes"] == []
+
+
+# Requires the separately built optional UI assets.
+import pytest
+pytestmark = pytest.mark.web

@@ -18,7 +18,7 @@ def server_for(tmp_path):
     config = LocalWebConfig(
         project_root=tmp_path, database=database, inbox_root=None, archive_root=None,
         cache_root=tmp_path / "cache",
-        static_root=Path(__file__).parents[1] / "src/autonomo_taxes/web_ui",
+        static_root=Path(__file__).parents[1] / "packages/ui/src/autonomo_taxes_ui/dist",
         private_root=tmp_path,
     )
     server = LocalAccountingServer(("127.0.0.1", 0), LocalAccountingApp(config))
@@ -100,3 +100,8 @@ def test_settings_failure_does_not_disclose_database_path(tmp_path):
         status, _, data = request(client, "GET", "/api/settings", headers)
         assert status == 409 and data["code"] == "schema_upgrade_required"
         assert str(tmp_path) not in json.dumps(data)
+
+
+# Requires the separately built optional UI assets.
+import pytest
+pytestmark = pytest.mark.web

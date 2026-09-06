@@ -5,6 +5,7 @@ import signal
 import tempfile
 
 from autonomo_taxes import local_web
+import autonomo_taxes_ui
 from autonomo_taxes.ledger_db import LedgerDB
 from autonomo_taxes.local_web import LocalAccountingApp, LocalAccountingServer, LocalWebConfig
 
@@ -18,11 +19,11 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="autonomo-browser-test-") as directory:
         root = Path(directory)
         package = Path(local_web.__file__).resolve().parent
-        if os.environ.get("AUTONOMO_BROWSER_INSTALLED") == "1" and "site-packages" not in package.parts:
+        if os.environ.get("AUTONOMO_BROWSER_INSTALLED") == "1" and ("site-packages" not in package.parts or "site-packages" not in Path(autonomo_taxes_ui.__file__).parts):
             raise RuntimeError("Installed browser check imported the source checkout")
         config = LocalWebConfig(project_root=root, database=root / "autonomo.sqlite",
             inbox_root=root / "Inbox", archive_root=root / "Evidence", cache_root=root / "cache",
-            static_root=package / "web_ui", private_root=root, allow_test_ui=os.environ.get("AUTONOMO_PSEUDO") == "1")
+            static_root=Path(autonomo_taxes_ui.__file__).resolve().parent / "dist", private_root=root, allow_test_ui=os.environ.get("AUTONOMO_PSEUDO") == "1")
         with LedgerDB.initialize(config.database) as db:
             db.add_transaction(external_key="web-income", period_key="2026-Q3",
                 transaction_date="2026-07-01", booking_date="2026-07-01", entry_type="income",
