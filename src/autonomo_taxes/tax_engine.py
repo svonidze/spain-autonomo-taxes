@@ -166,6 +166,15 @@ def calculate_modelo303_rows(
         raise CalculationBlocked("Modelo 303 refund is available only for the final period of the year")
     previous_compensation = cents(max(previous_compensation, ZERO))
     selected = [row for row in rows if _in_quarter(row.tax_date, year, quarter) and row.include_modelo303]
+    oss_acquisitions = [
+        row.transaction_id for row in selected
+        if row.tax_code in INTRACOMMUNITY_ACQUISITION_CODES and is_oss_non_union_identifier(row.vat_id)
+    ]
+    if oss_acquisitions:
+        raise CalculationBlocked(
+            "Modelo 303 requires review of intra-Community acquisitions with OSS non-Union "
+            f"identifiers before assigning casillas: {', '.join(oss_acquisitions)}"
+        )
     unknown = [row.transaction_id for row in selected if row.tax_code == "unknown"]
     if unknown:
         raise CalculationBlocked(f"Modelo 303 has unknown tax treatment: {', '.join(unknown)}")

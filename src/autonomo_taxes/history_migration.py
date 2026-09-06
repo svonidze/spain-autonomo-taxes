@@ -695,11 +695,21 @@ def _import_quarterly_row(db: LedgerDB, *, row: dict[str, str], import_batch_id:
     line_key = _row_line_key(row)
     kind = QUARTERLY_BOOK_TYPES[row["source_book_type"].strip()]
     transaction_external_key = _external_key("transaction", line_key)
+    # Add a separate rule token only where this classification changes; other
+    # importer fixes can contribute their own tokens in either merge order.
+    oss_reclassification = (
+        kind == "expense"
+        and (row.get("operation_key") or "").strip() != "09"
+        and _is_yes(row.get("reverse_charge"))
+        and (row.get("counterparty_country_code") or "").strip().upper() in EU_COUNTRY_CODES - {"ES"}
+        and is_oss_non_union_identifier(row.get("counterparty_vat_id"))
+    )
     transaction_source_hash = _stable_payload_hash(
         {
             "kind": "transaction",
             "rule_version": HISTORY_MIGRATION_RULE_VERSION,
             "row": row,
+            **({"oss_non_union_rule": 1} if oss_reclassification else {}),
         }
     )
     treatment_source_hash = _stable_payload_hash(
@@ -707,11 +717,12 @@ def _import_quarterly_row(db: LedgerDB, *, row: dict[str, str], import_batch_id:
             "kind": "tax_treatment",
             "rule_version": HISTORY_MIGRATION_RULE_VERSION,
             "row": row,
+            **({"oss_non_union_rule": 1} if oss_reclassification else {}),
         }
     )
     complete_existing = db.connection.execute(
         """
-        SELECT t.transaction_id, t.source_hash, t.lifecycle_status,
+        SELECT t.transaction_id, t.source_hash, t.lifecycle_status, t.period_id,
                t.counterparty_id AS previous_counterparty_id,
                tt.source_hash AS treatment_source_hash,
                tt.aeat_invoice_type, tt.aeat_operation_key, tt.aeat_reverse_charge
@@ -740,6 +751,10 @@ def _import_quarterly_row(db: LedgerDB, *, row: dict[str, str], import_batch_id:
         and (kind == "income" or complete_existing["aeat_reverse_charge"] is not None)
     ):
         return
+    if complete_existing is not None:
+        # A changed rule or source row must not mutate counterparties/documents
+        # before discovering that the existing financial period is immutable.
+        db._assert_period_mutable(complete_existing["period_id"])
     period_key = _require_quarter_period(row.get("period", ""))
     amount_minor = _minor_from_text(row.get("gross_eur", "0"))
     taxable_base_minor = _optional_minor(row.get("taxable_base_eur"))
