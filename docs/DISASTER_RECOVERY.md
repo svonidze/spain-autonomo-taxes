@@ -201,6 +201,8 @@ does not prove cloud replication or a production cutover.
 
 ### 1. SQLite is damaged
 
+If no usable snapshot exists but the source books do, see [Rebuilding history from source books safely](HISTORY_REPLAY.md) before attempting a replay.
+
 Stop user/CLI writes and scheduled writers. Preserve the failed database with
 its WAL/SHM/journal and any logs in private quarantine; do not discard sidecars
 or overwrite the only copy. Select a backup predating the corruption, perform

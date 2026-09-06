@@ -90,6 +90,7 @@ retention, observed backup status and release requirements.
 
 - [Operations](ops/README.md): safe diagnostics, exact-SHA deployment, migration, rollback, and backup scheduling.
 - [Provisioning](ops/PROVISIONING.md): Google originals versus new uploads, optional Picker, OAuth renewal, and Yandex configuration.
+- [Rebuilding history from source books safely](docs/HISTORY_REPLAY.md): guard rails for a full ledger replay, what stops it, and how to prove the result against filed returns.
 - [Disaster recovery](docs/DISASTER_RECOVERY.md): backup coverage, isolated restore drill, five failure scenarios, and separately marked production cutover.
 - [Optional SOPS](ops/sops/README.md): encrypted configuration bootstrap, paired application/config deployment, and identity recovery.
 
