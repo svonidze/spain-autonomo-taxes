@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from autonomo_taxes import operational_cli
 from autonomo_taxes.cli import main
 from autonomo_taxes.intake import IntakeResult
 from autonomo_taxes.ledger_db import (
@@ -21,6 +22,7 @@ from autonomo_taxes.ledger_db import (
 )
 from autonomo_taxes.parsers import LedgerEntry
 from autonomo_taxes.tax_engine import CalculationBlocked
+from test_fx_manual_rate_guard import synthetic_reference
 
 
 def test_db_init_and_status(tmp_path: Path, capsys) -> None:
@@ -785,7 +787,13 @@ def test_income_intake_infers_q3_and_archives_original(tmp_path: Path, capsys) -
 def test_transaction_apply_fx_converts_original_minor_atomically(
     tmp_path: Path,
     capsys,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Official-source rates are checked against the ECB reference; inject one
+    # so the test stays offline (1.1383 units per EUR is 0.8785 EUR per unit).
+    monkeypatch.setattr(
+        operational_cli, "fetch_eur_rate", lambda *_: synthetic_reference("1.1383")
+    )
     database = tmp_path / "ledger.sqlite"
     with initialize(database) as db:
         rate = db.add_fx_rate(
@@ -836,7 +844,11 @@ def test_transaction_apply_fx_converts_original_minor_atomically(
 def test_review_apply_fx_records_source_and_updates_transaction(
     tmp_path: Path,
     capsys,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(
+        operational_cli, "fetch_eur_rate", lambda *_: synthetic_reference("1.1765")
+    )
     database = tmp_path / "ledger.sqlite"
     payload_path = tmp_path / "fx-review.json"
     with initialize(database) as db:

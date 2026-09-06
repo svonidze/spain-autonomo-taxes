@@ -24,6 +24,44 @@ The lookup date is the transaction date. It is not automatically the document
 issue date, service period or payment date; those facts remain separate and
 must be reviewed for the entry.
 
+## Manual rates
+
+`autonomo-tax review apply-fx` takes the rate from its JSON payload, and
+`autonomo-tax transactions apply-fx` applies a rate stored earlier with
+`autonomo-tax fx add`. Both use the ledger convention above: the rate is euros
+for one unit of the foreign currency, the figure the ledger multiplies by the
+original amount. The ECB, Banco de España and public quote pages publish the
+opposite direction, units for one euro, so a published quote must be inverted
+before it is entered.
+
+```text
+published quote:  1.2500 units per EUR
+rate to enter:    1 / 1.2500 = 0.8000 EUR per unit
+100.00 units   -> 80.00 EUR
+```
+
+Entering the published figure unchanged (`1.2500`) would book 125.00 EUR for
+the same 100.00 units, and nothing downstream distinguishes that from a
+correct entry.
+
+### Reference guard
+
+When `rate_source` is `ecb` or `banco_de_espana`, both commands fetch the ECB
+observation for the rate date (or the latest prior one within the seven-day
+window) before writing anything and compare the entered rate with it.
+
+| Comparison | Outcome |
+|---|---|
+| Within 5% of the ECB EUR-per-unit rate | Recorded. |
+| Within 0.5% of the ECB units-per-EUR figure while more than 5% off the EUR-per-unit rate | Refused as an inverted quote. The error shows both conventions and the expected value; enter the inverse. `--allow-unverified-rate` does not override this. |
+| More than 5% off for any other reason | Refused unless `--allow-unverified-rate` is passed. The recorded `source_reference` then carries a note that the rate was not verified against the ECB reference. |
+| Reference unavailable: offline, HTTP error, unsupported currency or no observation in the window | Recorded, with a warning on stderr. The guard never requires network access. |
+
+`actual_settlement` and `xolo_recorded` rates are not compared: a settlement
+or recorded rate legitimately differs from the fixing. A rate that genuinely
+differs from the official reference should be recorded under the source that
+describes it rather than forced through as `ecb` or `banco_de_espana`.
+
 ## Suggestion states
 
 | State | Meaning | Required action |
@@ -91,4 +129,4 @@ Implementation source of truth:
 - `src/autonomo_taxes/review_packet.py` defines suggestions, EUR rounding and
   atomic confirmation.
 - `src/autonomo_taxes/fx_policy.py` defines sources allowed in production
-  calculations.
+  calculations and the manual-rate reference guard.
