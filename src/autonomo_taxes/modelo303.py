@@ -195,6 +195,44 @@ def values_from_monetary_sequence(sequence: list[Decimal] | tuple[Decimal, ...])
             extraction_status="output_and_deductible",
             monetary_sequence=values,
         )
+    if len(values) == 6:
+        # Reverse-charge services quarter (casillas 10/11 populated, no other
+        # output rows): [rc base (10), total output VAT (27), domestic
+        # deductible base (28), rc deductible base (36), total deductible
+        # VAT (45), result (46/71)].
+        rc_base, output_vat, deductible_domestic, deductible_rc, deductible_vat, result = values
+        return Modelo303Values(
+            output_base=rc_base,
+            output_vat=output_vat,
+            deductible_base=cents(deductible_domestic + deductible_rc),
+            deductible_vat=deductible_vat,
+            result=result,
+            extraction_status="reverse_charge_services",
+            monetary_sequence=values,
+        )
+    if len(values) == 7:
+        # Reverse-charge services plus other reverse-charge output (casillas
+        # 10/11 and 12/13): [rc service base (10), other rc base (12), total
+        # output VAT (27), domestic deductible base (28), rc deductible
+        # base (36), total deductible VAT (45), result (46/71)].
+        (
+            rc_service_base,
+            other_rc_base,
+            output_vat,
+            deductible_domestic,
+            deductible_rc,
+            deductible_vat,
+            result,
+        ) = values
+        return Modelo303Values(
+            output_base=cents(rc_service_base + other_rc_base),
+            output_vat=output_vat,
+            deductible_base=cents(deductible_domestic + deductible_rc),
+            deductible_vat=deductible_vat,
+            result=result,
+            extraction_status="reverse_charge_with_other_output",
+            monetary_sequence=values,
+        )
     return Modelo303Values(
         output_base=Decimal("0.00"),
         output_vat=Decimal("0.00"),

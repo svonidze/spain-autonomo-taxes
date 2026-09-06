@@ -45,6 +45,57 @@ def _m130_values(overrides: dict[str, str]) -> dict[str, str]:
     return values
 
 
+M303_KEYS = (
+    "150",
+    "01",
+    "04",
+    "07",
+    "10",
+    "12",
+    "27",
+    "28",
+    "30",
+    "32",
+    "34",
+    "36",
+    "38",
+    "45",
+    "71",
+)
+
+
+def _m303_values(overrides: dict[str, str]) -> dict[str, str]:
+    values = {key: "0.00" for key in M303_KEYS}
+    values.update(overrides)
+    return values
+
+
+def _reverse_charge_303_calculation() -> dict[str, object]:
+    return {
+        "form": "303",
+        "period": "2026-Q3",
+        "values": {
+            **_m303_values(
+                {
+                    "10": "1000.00",
+                    "27": "210.00",
+                    "28": "400.00",
+                    "36": "1000.00",
+                    "45": "294.00",
+                    "71": "-84.00",
+                }
+            ),
+            "11": "210.00",
+            "29": "84.00",
+            "37": "210.00",
+            "46": "-84.00",
+            "72": "84.00",
+            "compensation_carryforward": "84.00",
+            "rule_source": "official AEAT fixture",
+        },
+    }
+
+
 def _evidence(
     *,
     form: str,
@@ -208,6 +259,97 @@ def test_modelo303_receipt_compares_filed_aggregate_values() -> None:
 
     assert verification["status"] == "matched"
     assert verification["compared_values"]["output_base"]["calculated"] == "150.00"
+
+
+def test_modelo303_receipt_compares_individual_casillas_from_calculation() -> None:
+    filed_values = {
+        "output_base": "1000.00",
+        "output_vat": "210.00",
+        "deductible_base": "1400.00",
+        "deductible_vat": "294.00",
+        "result": "-84.00",
+        "28": "400.00",
+        "29": "84.00",
+        "45": "294.00",
+        "46": "-84.00",
+        "72": "84.00",
+        "compensation_carryforward": "84.00",
+    }
+    evidence = _evidence(
+        form="303",
+        period="2026-Q3",
+        filed_values=filed_values,
+        extraction_status="reverse_charge_services",
+    )
+
+    verification = verify_filing_receipt(
+        evidence,
+        _reverse_charge_303_calculation(),
+        expected_form="303",
+        expected_period="2026-Q3",
+        calculation_sha256="C" * 64,
+    )
+
+    assert verification["status"] == "matched"
+    assert verification["extraction_status"] == "reverse_charge_services"
+    assert set(verification["compared_values"]) == set(filed_values)
+    assert verification["compared_values"]["46"]["calculated"] == "-84.00"
+    assert verification["compared_values"]["compensation_carryforward"]["calculated"] == "84.00"
+
+
+def test_modelo303_receipt_flags_individual_casilla_mismatch() -> None:
+    evidence = _evidence(
+        form="303",
+        period="2026-Q3",
+        filed_values={
+            "output_base": "1000.00",
+            "output_vat": "210.00",
+            "deductible_base": "1400.00",
+            "deductible_vat": "294.00",
+            "result": "-84.00",
+            "72": "84.05",
+        },
+        extraction_status="reverse_charge_services",
+    )
+
+    verification = verify_filing_receipt(
+        evidence,
+        _reverse_charge_303_calculation(),
+        expected_form="303",
+        expected_period="2026-Q3",
+        calculation_sha256="C" * 64,
+    )
+
+    assert verification["status"] == "mismatch"
+    assert verification["mismatches"] == {"72": "-0.05"}
+
+
+def test_modelo303_receipt_rejects_calculation_missing_casillas() -> None:
+    evidence = _evidence(
+        form="303",
+        period="2026-Q3",
+        filed_values={
+            "output_base": "0.00",
+            "output_vat": "0.00",
+            "deductible_base": "0.00",
+            "deductible_vat": "0.00",
+            "result": "0.00",
+        },
+    )
+    calculation = {
+        "form": "303",
+        "period": "2026-Q3",
+        "values": {key: "0.00" for key in M303_KEYS if key not in {"27", "36"}},
+    }
+
+    with pytest.raises(ValueError, match="Calculated Modelo 303 is missing casillas: 27, 36"):
+        verify_filing_receipt(
+            evidence,
+            calculation,
+            expected_form="303",
+            expected_period="2026-Q3",
+            calculation_sha256="C" * 64,
+        )
 
 
 def test_record_receipt_cli_archives_typed_snapshot_and_is_idempotent(

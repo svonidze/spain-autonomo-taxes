@@ -37,6 +37,8 @@ ACCEPTED_EXTRACTION_STATUSES = {
         "no_activity_or_no_page2_vat_values",
         "deductible_only",
         "output_and_deductible",
+        "reverse_charge_services",
+        "reverse_charge_with_other_output",
     },
 }
 
@@ -202,13 +204,18 @@ def _comparison_values(
 ) -> dict[str, Decimal]:
     if form == "130":
         return {key: value for key, value in calculated.items() if key.isdigit()}
-    return {
+    mapped = {
         "output_base": _sum_keys(calculated, "150", "01", "04", "07", "10", "12"),
         "output_vat": _required_value(calculated, "27"),
         "deductible_base": _sum_keys(calculated, "28", "30", "32", "34", "36", "38"),
         "deductible_vat": _required_value(calculated, "45"),
         "result": _required_value(calculated, "71"),
     }
+    # Filed PDFs can expose individual structural/settlement casillas; map them
+    # directly from the calculation so extraction-rich receipts stay verifiable.
+    for key, value in calculated.items():
+        mapped.setdefault(key, value)
+    return mapped
 
 
 def _money_mapping(value: Any, *, label: str) -> dict[str, Decimal]:
@@ -248,8 +255,13 @@ def _calculated_money_mapping(value: Any, *, form: str) -> dict[str, Decimal]:
         str(key): raw_value
         for key, raw_value in value.items()
         if (form == "130" and str(key).isdigit())
-        or (form == "303" and str(key) in required_303)
+        or (form == "303" and (str(key).isdigit() or str(key) == "compensation_carryforward"))
     }
+    missing_303 = required_303 - set(selected)
+    if form == "303" and missing_303:
+        raise ValueError(
+            "Calculated Modelo 303 is missing casillas: " + ", ".join(sorted(missing_303))
+        )
     return _money_mapping(selected, label="calculated values")
 
 
