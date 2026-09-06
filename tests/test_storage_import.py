@@ -92,7 +92,7 @@ def test_google_url_import_promotes_original_drive_replica_without_upload(
     )
     monkeypatch.setattr(
         storage_import,
-        "_run_cli_ingest",
+        "_ingest_original",
         lambda *_args, **_kwargs: {
             "document_id": document["document_id"],
             "document_lifecycle_status": "needs_review",

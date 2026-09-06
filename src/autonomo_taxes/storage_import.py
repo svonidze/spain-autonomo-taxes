@@ -11,8 +11,6 @@ from __future__ import annotations
 from contextlib import suppress
 import json
 from pathlib import Path
-import subprocess
-import sys
 import tempfile
 from typing import Any, Mapping
 
@@ -37,7 +35,7 @@ def ingest_google_drive_url(
 ) -> dict[str, Any]:
     """Create an intake draft backed by an existing verified Drive file.
 
-    A temporary local file is needed only for the existing OCR/extraction CLI.
+    A temporary local file is needed only for the shared OCR/extraction service.
     The durable physical source remains the original Drive file and is promoted
     after its bytes match the content-addressed catalogue record.
     """
@@ -81,7 +79,7 @@ def ingest_google_drive_url(
             temporary_path = Path(handle.name)
         temporary_path.chmod(0o600)
 
-        payload = _run_cli_ingest(config, fields, temporary_path, file_id)
+        payload = _ingest_original(config, fields, temporary_path, file_id)
         document_id = str(payload.get("document_id") or "")
         if not document_id:
             raise GoogleDriveImportError("Intake did not return a document id")
@@ -148,63 +146,12 @@ def _google_readers(database: Path) -> list[tuple[GoogleDriveStorageAdapter, dic
     return readers
 
 
-def _run_cli_ingest(
-    config: Any,
-    fields: Mapping[str, str],
-    temporary_path: Path,
-    drive_file_id: str,
-) -> dict[str, Any]:
-    command = [
-        sys.executable,
-        "-m",
-        "autonomo_taxes.cli",
-        "ingest",
-        str(temporary_path),
-        "--db",
-        str(config.database),
-        "--kind",
-        fields["kind"],
-        "--period",
-        fields["period"],
-        "--archive-root",
-        str(config.archive_root),
-        "--drive-file-id",
-        drive_file_id,
-    ]
-    if fields.get("defer_counterparty") == "1":
-        command.append("--defer-counterparty")
-    for field, option in {
-        "issued_on": "--issued-on",
-        "document_number": "--document-number",
-        "counterparty_name": "--counterparty-name",
-        "gross": "--gross",
-        "taxable_base": "--taxable-base",
-        "vat": "--vat",
-        "currency": "--currency",
-    }.items():
-        value = str(fields.get(field, "")).strip()
-        if value:
-            command.extend((option, value))
-    environment = dict(__import__("os").environ)
-    source_root = str(Path(config.project_root) / "src")
-    environment["PYTHONPATH"] = __import__("os").pathsep.join(
-        value for value in (source_root, environment.get("PYTHONPATH", "")) if value
-    )
-    run = subprocess.run(
-        command,
-        cwd=config.project_root,
-        env=environment,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-        timeout=180,
-    )
-    payload = _json_payload(run.stdout) or _json_payload(run.stderr)
-    if run.returncode != 0 or payload is None:
-        raise GoogleDriveImportError("Google Drive file could not be processed for intake")
-    return payload
+def _ingest_original(config, fields, temporary_path, drive_file_id):
+    from .services.intake_operations import ingest_fields
+    try:
+        return ingest_fields(config, fields, temporary_path, drive_file_id)
+    except (ValueError, OSError) as exc:
+        raise GoogleDriveImportError("Google Drive file could not be processed for intake") from exc
 
 
 def _register_original_drive_replica(
@@ -263,13 +210,6 @@ def _register_original_drive_replica(
         db.promote_file_replica(str(replica["file_replica_id"]))
         return str(attachment["file_id"])
 
-
-def _json_payload(value: str) -> dict[str, Any] | None:
-    try:
-        payload = json.loads(value)
-    except (TypeError, json.JSONDecodeError):
-        return None
-    return dict(payload) if isinstance(payload, Mapping) else None
 
 
 def _utc_now() -> str:

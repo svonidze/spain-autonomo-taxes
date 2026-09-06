@@ -1835,6 +1835,8 @@ def _merge_config(
     private_paths: PrivatePaths,
 ) -> None:
     args._private_paths = private_paths
+    if getattr(args, "_toolkit_action", None):
+        args._runtime_values = config
     if hasattr(args, "db") and getattr(args, "db", None) is None:
         args.db = _config_value_path(config.get("ledger_db"), private_paths) or private_paths.database
     path_defaults = {

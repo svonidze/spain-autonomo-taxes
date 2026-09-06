@@ -191,7 +191,7 @@ def test_review_post_batch_reports_interrupted_cleanup_and_can_resume(
     def fail_cleanup(candidate):
         raise PermissionError("simulated lock")
 
-    monkeypatch.setattr(operational_cli, "cleanup_expense_inbox_source", fail_cleanup)
+    monkeypatch.setattr(posting_operations, "cleanup_expense_inbox_source", fail_cleanup)
     monkeypatch.setattr(
         operational_cli.sys,
         "stdin",
@@ -230,7 +230,7 @@ def test_review_post_batch_reports_interrupted_cleanup_and_can_resume(
     assert interrupted["results"][0]["result"]["reason_code"] == "posted_cleanup_failed"
     assert seeded["source"].is_file()
 
-    monkeypatch.setattr(operational_cli, "cleanup_expense_inbox_source", real_cleanup)
+    monkeypatch.setattr(posting_operations, "cleanup_expense_inbox_source", real_cleanup)
     monkeypatch.setattr(
         operational_cli.sys,
         "stdin",
@@ -379,7 +379,7 @@ def test_review_post_batch_stops_after_unexpected_interruption(
             raise RuntimeError("simulated unexpected interruption")
         return real_post(*args, **kwargs)
 
-    monkeypatch.setattr(operational_cli, "_post_transaction_review", flaky_post)
+    monkeypatch.setattr(posting_operations, "_post_transaction_review", flaky_post)
     monkeypatch.setattr(
         operational_cli.sys,
         "stdin",
@@ -524,7 +524,7 @@ def test_review_post_batch_fails_closed_if_period_closes_after_preflight_before_
         raise LedgerDbError("Period 2026-Q3 is immutable after close")
 
     monkeypatch.setattr(
-        operational_cli,
+        posting_operations,
         "_post_transaction_review",
         close_period_before_first_row,
     )
@@ -550,7 +550,7 @@ def test_review_post_batch_fails_closed_if_period_closes_after_preflight_before_
         ) == 2
     finally:
         monkeypatch.setattr(
-            operational_cli,
+            posting_operations,
             "_post_transaction_review",
             original,
         )
@@ -758,3 +758,6 @@ def _add_review_transaction(
         include_modelo130=True,
     )
     return transaction
+
+
+from autonomo_taxes.services import posting_operations

@@ -16,7 +16,7 @@ python -m pip install -e .
 autonomo-tax --help
 ```
 
-Agents start with [AGENTS.md](AGENTS.md). The additional agent workflows and
+Agents start with [AGENTS.md](AGENTS.md) and [CLI capabilities](docs/CLI_CAPABILITIES.md). The additional agent workflows and
 commands are tracked in [the staged execution record](docs/plans/optional-ui-toolkit.md).
 
 ### Optional browser UI
