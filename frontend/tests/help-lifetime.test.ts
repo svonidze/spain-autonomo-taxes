@@ -1,64 +1,95 @@
-import {readFileSync} from 'node:fs';
-import vm from 'node:vm';
-import {JSDOM} from 'jsdom';
-import {expect, test} from 'vitest';
-import {legacyCore} from '../src/core/legacy.ts';
-
-test('legacy fragment replacement releases records and preserves live help history', async () => {
-  const dom = new JSDOM('<body><div id="rows"></div><div id="sibling"></div><dialog id="status-help-dialog"><h2 id="status-help-title"></h2><div id="status-help-body"></div><button id="status-help-close"></button></dialog></body>', {url: 'https://example.invalid/income', runScripts: 'outside-only'});
-  const context = dom.getInternalVMContext();
-  const maps: Map<unknown, unknown>[] = [];
-  context.Map = class extends Map {constructor() {super(); maps.push(this);}};
-  context.AutonomoCore = legacyCore;
-  context.scrollTo = () => {};
-  const dialog = dom.window.document.querySelector('dialog')!;
-  dialog.showModal = () => {dialog.open = true;};
-  dialog.close = () => {dialog.open = false;};
-  vm.runInContext(readFileSync('src/autonomo_taxes/web_ui/status-help.js', 'utf8'), context);
-  const help = context.AccountingHelp;
-  const rows = dom.window.document.querySelector('#rows')!;
-  const sibling = dom.window.document.querySelector('#sibling')!;
-  const oldRecord = {domain: 'transaction', state: 'ready', title: 'Discarded record'};
-  rows.innerHTML = help.cell(oldRecord);
-  sibling.innerHTML = help.cell({domain: 'transaction', state: 'ready', title: 'Live record'});
-  const staleId = rows.querySelector('button')!.dataset.statusHelp;
-  const liveId = sibling.querySelector('button')!.dataset.statusHelp;
-  await Promise.resolve();
-  rows.innerHTML = '';
-  await Promise.resolve();
-  expect(maps[0]!.has(staleId)).toBe(false);
-  expect(maps[0]!.has(liveId)).toBe(true);
-  sibling.querySelector('button')!.click();
-  expect(dialog.open).toBe(true);
-  expect(dom.window.document.querySelector('#status-help-title')!.textContent).toBe('Live record');
-  dom.window.addEventListener('popstate', () => help.handlePopState());
-  const navigate = (direction: 'back' | 'forward') => new Promise<void>(resolve => {
-    dom.window.addEventListener('popstate', () => resolve(), {once: true});
-    dom.window.history[direction]();
+import { expect, test, vi } from 'vitest';
+import { createAccountingHelp } from '../src/help/registry.ts';
+import { createPresentation } from '../src/help/presentation.ts';
+for (const locale of ['ru', 'en'] as const)
+  test(`help presents amounts, blockers and hostile text safely in ${locale}`, () => {
+    const help = createPresentation(locale);
+    expect(help.money(0)).not.toBe(help.word('missing'));
+    expect(help.money(null)).toBe(help.word('missing'));
+    expect(help.money('')).toBe(help.word('missing'));
+    const context = {
+      domain: 'asset',
+      state: 'needs_review',
+      reasons: [{ code: 'advance_documents_overlap' }, { code: 'iva_prior_deduction_unconfirmed' }],
+      source_message: '<img src=x onerror="alert(1)">',
+    };
+    expect(help.label(context)).toBe(help.text('help.inline.awaitingAdvanceAndVatReview'));
+    expect(help.tone(context)).toBe('attention');
+    expect(help.tone({ domain: 'transaction', state: 'posted' })).toBe('positive');
+    expect(help.content(context)).toContain('&lt;img');
+    expect(help.content(context)).not.toContain('<img');
+    expect(help.reasonInfo({ code: 'unknown' })).toHaveLength(3);
   });
-  await navigate('back');
-  expect(dialog.open).toBe(false);
-  await navigate('forward');
+test('scoped help survives history and locale changes, and releases disposed records', async () => {
+  document.body.innerHTML =
+    '<button id="opener">Open</button><dialog id="status-help-dialog"><h2 id="status-help-title"></h2><div id="status-help-body"></div><button id="status-help-close"></button></dialog><div id="accounting-tooltip" hidden></div>';
+  const dialog = document.querySelector('dialog')!,
+    button = document.querySelector<HTMLButtonElement>('#opener')!;
+  dialog.showModal = () => {
+    dialog.open = true;
+  };
+  dialog.close = () => {
+    dialog.open = false;
+  };
+  vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+  const helper = createAccountingHelp();
+  let id: string | undefined;
+  const state = (value?: string) => history.replaceState({ accountingHelp: value }, '');
+  helper.setHistoryAdapter({
+    push(value) {
+      id = value;
+      state(value);
+    },
+    back() {
+      state();
+      helper.handlePopState();
+    },
+    clear() {
+      state();
+    },
+    navigate: vi.fn(),
+  });
+  const scope = helper.createScope({
+    domain: 'asset',
+    state: 'needs_review',
+    reasons: [{ code: 'advance_documents_overlap' }],
+  });
+  button.dataset.statusHelp = scope.id;
+  button.click();
   expect(dialog.open).toBe(true);
-  sibling.innerHTML = '';
+  const clipboard = vi.fn(async () => {});
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText: clipboard },
+  });
+  helper.setLocale('en');
+  document.querySelector<HTMLButtonElement>('[data-copy-question]')!.click();
   await Promise.resolve();
-  expect(maps[0]!.has(liveId)).toBe(true);
-  await navigate('back');
-  expect(maps[0]!.has(liveId)).toBe(false);
-  help.beforeRender();
-  dom.window.history.replaceState({accountingHelp: staleId}, '');
-  expect(help.handlePopState()).toBe(false);
+  expect(clipboard).toHaveBeenCalledTimes(1);
+  expect(document.querySelector('.copy-feedback')!.textContent).toBe(helper.word('copied'));
+  clipboard.mockRejectedValueOnce(new Error('Denied'));
+  document.querySelector<HTMLButtonElement>('[data-copy-question]')!.click();
+  await Promise.resolve();
+  expect(document.querySelector('.copy-feedback')!.textContent).not.toBe(helper.word('copied'));
+  state();
+  helper.handlePopState();
   expect(dialog.open).toBe(false);
-  const first = help.createScope({domain: 'transaction', state: 'ready'});
-  const second = help.createScope({domain: 'transaction', state: 'blocked'});
-  rows.innerHTML = '<span>Unrelated partial render</span>';
-  await Promise.resolve();
-  expect(maps[0]!.has(first.id)).toBe(true);
-  first.update({domain: 'transaction', state: 'posted'});
-  expect(maps[0]!.get(first.id)).toMatchObject({state: 'posted'});
-  first.dispose(); first.dispose();
-  expect(maps[0]!.has(first.id)).toBe(false);
-  expect(maps[0]!.has(second.id)).toBe(true);
-  second.dispose();
-  dom.window.close();
+  expect(document.activeElement).toBe(button);
+  state(id);
+  helper.handlePopState();
+  expect(dialog.open).toBe(true);
+  const sibling = helper.createScope({ domain: 'transaction', state: 'ready' });
+  scope.dispose();
+  scope.dispose();
+  expect(dialog.open).toBe(false);
+  state(id);
+  expect(helper.handlePopState()).toBe(false);
+  sibling.update({ domain: 'transaction', state: 'posted' });
+  button.dataset.statusHelp = sibling.id;
+  button.click();
+  expect(dialog.open).toBe(true);
+  helper.dispose();
+  expect(dialog.open).toBe(false);
+  document.body.innerHTML = '';
+  state();
 });

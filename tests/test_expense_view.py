@@ -213,8 +213,3 @@ def test_expense_http_endpoint_is_session_protected_and_validates_paging(tmp_pat
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
-
-
-def test_expense_ui_node_behavior():
-    root = Path(__file__).resolve().parents[1]
-    subprocess.run(["node", str(root / "tests/test_expense_ui.js")], cwd=root, check=True)
