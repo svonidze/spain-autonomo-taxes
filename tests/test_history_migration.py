@@ -2052,3 +2052,43 @@ def _write_csv(path: Path, fieldnames: list[str], rows: list[dict[str, str]]) ->
 def _load_csv(path: Path) -> list[dict[str, str]]:
     with path.open("r", newline="", encoding="utf-8-sig") as handle:
         return list(csv.DictReader(handle))
+
+
+@pytest.mark.parametrize("deductible_vat", ["210.00", "105.00", "0.00"])
+def test_clave09_output_is_independent_of_the_input_deduction(tmp_path: Path, deductible_vat: str) -> None:
+    from autonomo_taxes.tax_engine import calculate_modelo303_rows
+    from autonomo_taxes.tax_row_loader import load_tax_rows
+
+    source_csv, _ = _write_fixture_csvs(tmp_path)
+    row = _load_csv(source_csv)[1]
+    row.update(
+        supplier="Synthetic Reverse Charge Supplier", document_number="SYNTH-RC-001",
+        original_currency="EUR", original_amount="1000.00", gross_eur="1000.00",
+        invoice_total_eur="1000.00", taxable_base_eur="1000.00", vat_rate_percent="21%",
+        vat_eur="0.00", deductible_vat_eur=deductible_vat, operation_key="09", reverse_charge="",
+        counterparty_country_code="IE", counterparty_vat_id="IETEST-RC-001",
+    )
+    _write_csv(source_csv, SOURCE_BOOK_FIELDS, [row])
+    with LedgerDB.initialize(tmp_path / "ledger.sqlite3") as db:
+        migrate_xolo_history(db, source_csv)
+        report = calculate_modelo303_rows(load_tax_rows(db, 2026, mode="verify_history"), year=2026, quarter=2)
+    assert report.values["11"] == Decimal("210.00")
+    assert report.values["37"] == Decimal(deductible_vat)
+    assert report.values["71"] == Decimal("210.00") - Decimal(deductible_vat)
+
+
+@pytest.mark.parametrize("base, rate", [("", "21%"), ("1000.00", ""), ("1000.00", "0%"), ("1000.00", "unknown 21%")])
+def test_clave09_missing_output_evidence_does_not_create_a_transaction(
+    tmp_path: Path, base: str, rate: str,
+) -> None:
+    source_csv, _ = _write_fixture_csvs(tmp_path)
+    row = _load_csv(source_csv)[1]
+    row.update(gross_eur="1000.00", taxable_base_eur=base, deductible_base_eur="1000.00",
+               vat_rate_percent=rate, vat_eur="0.00", deductible_vat_eur="105.00",
+               operation_key="09", reverse_charge="")
+    _write_csv(source_csv, SOURCE_BOOK_FIELDS, [row])
+    with LedgerDB.initialize(tmp_path / "ledger.sqlite3") as db:
+        with pytest.raises(ValueError, match="clave 09"):
+            migrate_xolo_history(db, source_csv)
+        assert db.table_counts()["transactions"] == 0
+        assert db.table_counts()["documents"] == 0

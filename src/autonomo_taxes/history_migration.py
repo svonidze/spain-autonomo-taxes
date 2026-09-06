@@ -694,10 +694,14 @@ def _obligation_exists(db: LedgerDB, period_key: str, code: str) -> bool:
 def _import_quarterly_row(db: LedgerDB, *, row: dict[str, str], import_batch_id: str) -> None:
     line_key = _row_line_key(row)
     kind = QUARTERLY_BOOK_TYPES[row["source_book_type"].strip()]
+    # A scoped rule token refreshes affected old rows without invalidating all
+    # history or colliding with independently versioned classification rules.
+    infer_clave09 = _should_infer_clave09_output(row, kind)
     transaction_external_key = _external_key("transaction", line_key)
     transaction_source_hash = _stable_payload_hash(
         {
             "kind": "transaction",
+            **({"clave09_output_rule": 1} if infer_clave09 else {}),
             "rule_version": HISTORY_MIGRATION_RULE_VERSION,
             "row": row,
         }
@@ -705,13 +709,14 @@ def _import_quarterly_row(db: LedgerDB, *, row: dict[str, str], import_batch_id:
     treatment_source_hash = _stable_payload_hash(
         {
             "kind": "tax_treatment",
+            **({"clave09_output_rule": 1} if infer_clave09 else {}),
             "rule_version": HISTORY_MIGRATION_RULE_VERSION,
             "row": row,
         }
     )
     complete_existing = db.connection.execute(
         """
-        SELECT t.transaction_id, t.source_hash, t.lifecycle_status,
+        SELECT t.transaction_id, t.source_hash, t.lifecycle_status, t.period_id,
                t.counterparty_id AS previous_counterparty_id,
                tt.source_hash AS treatment_source_hash,
                tt.aeat_invoice_type, tt.aeat_operation_key, tt.aeat_reverse_charge
@@ -740,6 +745,10 @@ def _import_quarterly_row(db: LedgerDB, *, row: dict[str, str], import_batch_id:
         and (kind == "income" or complete_existing["aeat_reverse_charge"] is not None)
     ):
         return
+    if complete_existing is not None:
+        # A changed rule or source row must not mutate counterparties/documents
+        # before discovering that the existing financial period is immutable.
+        db._assert_period_mutable(complete_existing["period_id"])
     period_key = _require_quarter_period(row.get("period", ""))
     amount_minor = _minor_from_text(row.get("gross_eur", "0"))
     taxable_base_minor = _optional_minor(row.get("taxable_base_eur"))
@@ -767,7 +776,11 @@ def _import_quarterly_row(db: LedgerDB, *, row: dict[str, str], import_batch_id:
         and (row.get("operation_key") or "").strip() == "09"
     )
     vat_minor = explicit_vat_minor if explicit_vat_minor is not None else amount_minor - taxable_base_minor
-    if reverse_charge and vat_minor == 0 and deductible_vat_minor:
+    if infer_clave09:
+        # The input deduction may be partial or zero. It cannot establish the
+        # output VAT due on an intra-Community acquisition.
+        vat_minor = _clave09_output_vat(row)
+    elif reverse_charge and vat_minor == 0 and deductible_vat_minor:
         vat_minor = deductible_vat_minor
     terminal_existing = (
         complete_existing is not None
@@ -1978,6 +1991,38 @@ def _aeat_code_prefix(value: str | None, allowed: set[str]) -> str | None:
         if text == code or text.startswith(f"{code} ") or text.startswith(f"{code}-"):
             return code
     return None
+
+
+def _should_infer_clave09_output(row: dict[str, str], kind: str) -> bool:
+    if kind != "expense" or (row.get("operation_key") or "").strip() != "09":
+        return False
+    explicit_vat = _optional_minor(row.get("vat_eur"))
+    if explicit_vat is not None:
+        return explicit_vat == 0
+    amount = _minor_from_text(row.get("gross_eur", "0"))
+    base = _optional_minor(row.get("taxable_base_eur"))
+    if base is None:
+        base = _optional_minor(row.get("deductible_base_eur"))
+    return base is None or amount == base
+
+
+def _clave09_output_vat(row: dict[str, str]) -> int:
+    base = _optional_minor(row.get("taxable_base_eur"))
+    if base == 0:
+        return 0
+    rate_text = (row.get("vat_rate_percent") or "").strip()
+    if base is None or re.fullmatch(r"\d+(?:[.,]\d{1,2})?\s*%?", rate_text) is None:
+        raise ValueError(
+            f"Source row {_row_line_key(row)}: clave 09 requires an explicit taxable "
+            "base and reviewed VAT rate to infer output VAT; the deductible amount is insufficient"
+        )
+    rate = Decimal(rate_text.removesuffix("%").strip().replace(",", "."))
+    if not Decimal("0") < rate <= Decimal("100"):
+        raise ValueError(
+            f"Source row {_row_line_key(row)}: review the positive VAT rate for clave 09 "
+            "before inferring output VAT; a supplier's zero rate does not establish the Spanish rate"
+        )
+    return int((Decimal(base) * rate / 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
 def _reviewed_vat_rate_basis_points(
