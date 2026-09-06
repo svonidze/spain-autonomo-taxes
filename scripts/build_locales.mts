@@ -129,9 +129,9 @@ function pseudolocalize(elements: MessageFormatElement[]): MessageFormatElement[
 export function generate(directory = resolve('frontend/src/locales'), destination = resolve('frontend/src/generated'), pseudo = false) {
   const result = compileCatalogs(directory);
   if (directory === resolve('frontend/src/locales')) {
-    const references = JSON.parse(readFileSync(resolve('frontend/src/core/legacy-spec.json'), 'utf8'));
+    const references = JSON.parse(readFileSync(resolve('frontend/src/help/references.json'), 'utf8'));
     function check(value: unknown) {
-      if (typeof value === 'string' && !result.keys.includes(value)) throw new Error(`Unknown legacy message reference: ${value}`);
+      if (typeof value === 'string' && !result.keys.includes(value)) throw new Error(`Unknown help message reference: ${value}`);
       if (Array.isArray(value)) value.forEach(check);
       else if (value && typeof value === 'object') Object.values(value).forEach(check);
     }

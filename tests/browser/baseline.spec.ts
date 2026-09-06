@@ -13,8 +13,8 @@ test('real backend serves routes, scripts and guarded history under CSP', async 
   expect(response?.headers()['content-security-policy']).toContain("script-src 'self'");
   await expect(page.locator('#app')).toHaveAttribute('aria-busy', 'false');
   await expect(page.locator('#app')).toContainText('Example expense');
-  const globals = await page.evaluate(() => ['AccountingHelp', 'AutonomoCharts', 'ExpenseWorkflow', 'AutonomoSettings'].every(name => Boolean((window as any)[name])));
-  expect(globals).toBe(true);
+  const globals = await page.evaluate(() => ['AccountingHelp','AutonomoCharts','ExpenseWorkflow','AutonomoSettings','AutonomoCore','AutonomoViews','__AUTONOMO_WEB_UI_TEST_HOOKS__'].some(name => name in window));
+  expect(globals).toBe(false);
   const help = page.locator('#app [data-status-help]').first();
   await help.click();
   await expect(page.locator('#status-help-dialog')).toBeVisible();

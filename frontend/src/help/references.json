@@ -1,0 +1,203 @@
+{
+  "Statuses": {
+    "received": "help.statuses.received",
+    "extracted": "help.statuses.extracted",
+    "needs_review": "help.statuses.needs_review",
+    "approved": "help.statuses.approved",
+    "ready": "help.statuses.ready",
+    "deferred": "help.statuses.deferred",
+    "blocked": "help.statuses.blocked",
+    "posted": "help.statuses.posted",
+    "included_in_snapshot": "help.statuses.included_in_snapshot",
+    "duplicate": "help.statuses.duplicate",
+    "rejected": "help.statuses.rejected",
+    "void": "help.statuses.void",
+    "unknown": "help.statuses.unknown",
+    "recorded_information": "help.statuses.recorded_information",
+    "warning": "help.statuses.warning",
+    "due": "help.statuses.due",
+    "not_due": "help.statuses.not_due",
+    "filed": "help.statuses.filed",
+    "waived": "help.statuses.waived"
+  },
+  "Reasons": {
+    "inbox_roots_not_configured": [
+      "help.reasons.inbox_roots_not_configured.title",
+      "help.reasons.inbox_roots_not_configured.description",
+      "help.reasons.inbox_roots_not_configured.action"
+    ],
+    "cleanup_precondition_failed": [
+      "help.reasons.cleanup_precondition_failed.title",
+      "help.reasons.cleanup_precondition_failed.description",
+      "help.reasons.cleanup_precondition_failed.action"
+    ],
+    "advance_documents_overlap": [
+      "help.reasons.advance_documents_overlap.title",
+      "help.reasons.advance_documents_overlap.description",
+      "help.reasons.advance_documents_overlap.action"
+    ],
+    "iva_prior_deduction_unconfirmed": [
+      "help.reasons.iva_prior_deduction_unconfirmed.title",
+      "help.reasons.iva_prior_deduction_unconfirmed.description",
+      "help.reasons.iva_prior_deduction_unconfirmed.action"
+    ],
+    "future_dated": [
+      "help.reasons.future_dated.title",
+      "help.reasons.future_dated.description",
+      "help.reasons.future_dated.action"
+    ],
+    "period_not_open": [
+      "help.reasons.period_not_open.title",
+      "help.reasons.period_not_open.description",
+      "help.reasons.period_not_open.action"
+    ],
+    "lifecycle_not_approved": [
+      "help.reasons.lifecycle_not_approved.title",
+      "help.reasons.lifecycle_not_approved.description",
+      "help.reasons.lifecycle_not_approved.action"
+    ],
+    "tax_treatment_missing": [
+      "help.reasons.tax_treatment_missing.title",
+      "help.reasons.tax_treatment_missing.description",
+      "help.reasons.tax_treatment_missing.action"
+    ],
+    "tax_treatment_unknown": [
+      "help.reasons.tax_treatment_unknown.title",
+      "help.reasons.tax_treatment_unknown.description",
+      "help.reasons.tax_treatment_unknown.action"
+    ],
+    "fx_missing": [
+      "help.reasons.fx_missing.title",
+      "help.reasons.fx_missing.description",
+      "help.reasons.fx_missing.action"
+    ],
+    "fx_unsourced": [
+      "help.reasons.fx_unsourced.title",
+      "help.reasons.fx_unsourced.description",
+      "help.reasons.fx_unsourced.action"
+    ],
+    "fx_historical_only": [
+      "help.reasons.fx_historical_only.title",
+      "help.reasons.fx_historical_only.description",
+      "help.reasons.fx_historical_only.action"
+    ],
+    "document_not_ready": [
+      "help.reasons.document_not_ready.title",
+      "help.reasons.document_not_ready.description",
+      "help.reasons.document_not_ready.action"
+    ],
+    "amount_mismatch": [
+      "help.reasons.amount_mismatch.title",
+      "help.reasons.amount_mismatch.description",
+      "help.reasons.amount_mismatch.action"
+    ],
+    "counterparty_tax_profile_review": [
+      "help.reasons.counterparty_tax_profile_review.title",
+      "help.reasons.counterparty_tax_profile_review.description",
+      "help.reasons.counterparty_tax_profile_review.action"
+    ],
+    "foreign_counterparty_identity_missing": [
+      "help.reasons.foreign_counterparty_identity_missing.title",
+      "help.reasons.foreign_counterparty_identity_missing.description",
+      "help.reasons.foreign_counterparty_identity_missing.action"
+    ],
+    "deductibility_pending_confirmation": [
+      "help.reasons.deductibility_pending_confirmation.title",
+      "help.reasons.deductibility_pending_confirmation.description",
+      "help.reasons.deductibility_pending_confirmation.action"
+    ],
+    "document_classification_review": [
+      "help.reasons.document_classification_review.title",
+      "help.reasons.document_classification_review.description",
+      "help.reasons.document_classification_review.action"
+    ],
+    "document_structural_review": [
+      "help.reasons.document_structural_review.title",
+      "help.reasons.document_structural_review.description",
+      "help.reasons.document_structural_review.action"
+    ],
+    "missing_locally": [
+      "help.reasons.missing_locally.title",
+      "help.reasons.missing_locally.description",
+      "help.reasons.missing_locally.action"
+    ],
+    "transaction_tax_review": [
+      "help.reasons.transaction_tax_review.title",
+      "help.reasons.transaction_tax_review.description",
+      "help.reasons.transaction_tax_review.action"
+    ],
+    "modelo100_deferral_submission_unconfirmed": [
+      "help.reasons.modelo100_deferral_submission_unconfirmed.title",
+      "help.reasons.modelo100_deferral_submission_unconfirmed.description",
+      "help.reasons.modelo100_deferral_submission_unconfirmed.action"
+    ],
+    "modelo130_difficult_expense_filed_method_conflict": [
+      "help.reasons.modelo130_difficult_expense_filed_method_conflict.title",
+      "help.reasons.modelo130_difficult_expense_filed_method_conflict.description",
+      "help.reasons.modelo130_difficult_expense_filed_method_conflict.action"
+    ],
+    "modelo303_q1_notary_vat_base_unverified": [
+      "help.reasons.modelo303_q1_notary_vat_base_unverified.title",
+      "help.reasons.modelo303_q1_notary_vat_base_unverified.description",
+      "help.reasons.modelo303_q1_notary_vat_base_unverified.action"
+    ],
+    "modelo303_q1_output_vat_classification_mismatch": [
+      "help.reasons.modelo303_q1_output_vat_classification_mismatch.title",
+      "help.reasons.modelo303_q1_output_vat_classification_mismatch.description",
+      "help.reasons.modelo303_q1_output_vat_classification_mismatch.action"
+    ],
+    "nonresident_payee_legal_form_review": [
+      "help.reasons.nonresident_payee_legal_form_review.title",
+      "help.reasons.nonresident_payee_legal_form_review.description",
+      "help.reasons.nonresident_payee_legal_form_review.action"
+    ],
+    "nonresident_professional_irnr_review": [
+      "help.reasons.nonresident_professional_irnr_review.title",
+      "help.reasons.nonresident_professional_irnr_review.description",
+      "help.reasons.nonresident_professional_irnr_review.action"
+    ]
+  },
+  "Terms": {
+    "IVA": "help.terms.IVA",
+    "IRPF": "help.terms.IRPF",
+    "ROI": "help.terms.ROI",
+    "base": "help.terms.base",
+    "rate": "help.terms.rate",
+    "posting": "help.terms.posting",
+    "forecast": "help.terms.forecast",
+    "paymentDeadline": "help.terms.paymentDeadline",
+    "cost": "help.terms.cost",
+    "use": "help.terms.use"
+  },
+  "Fields": {
+    "transaction_date": "help.fields.transaction_date",
+    "issued_on": "help.fields.issued_on",
+    "amount_minor": "help.fields.amount_minor",
+    "cost_minor": "help.fields.cost_minor",
+    "amortizable_base_minor": "help.fields.amortizable_base_minor",
+    "placed_in_service_on": "help.fields.placed_in_service_on",
+    "business_use_ratio": "help.fields.business_use_ratio",
+    "annual_rate_basis_points": "help.fields.annual_rate_basis_points",
+    "advisor_decision": "help.fields.advisor_decision",
+    "determination": "help.fields.determination",
+    "filing_status": "help.fields.filing_status",
+    "filed_at": "help.fields.filed_at",
+    "statutory_due_on": "help.fields.statutory_due_on",
+    "direct_debit_cutoff_on": "help.fields.direct_debit_cutoff_on",
+    "deadline_status": "help.fields.deadline_status",
+    "country_code": "help.fields.country_code",
+    "tax_id": "help.fields.tax_id",
+    "vat_id": "help.fields.vat_id",
+    "roi_status": "help.fields.roi_status",
+    "lifecycle_status": "help.fields.lifecycle_status"
+  },
+  "TermNames": {
+    "base": "help.termNames.base",
+    "cost": "help.termNames.cost",
+    "rate": "help.termNames.rate",
+    "use": "help.termNames.use",
+    "posting": "help.termNames.posting",
+    "forecast": "help.termNames.forecast",
+    "paymentDeadline": "help.termNames.paymentDeadline"
+  }
+}

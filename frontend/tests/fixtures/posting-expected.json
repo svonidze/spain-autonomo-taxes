@@ -1,0 +1,649 @@
+{
+  "items": [
+    {
+      "raw": {
+        "review_id": "transaction:synthetic-one",
+        "row_version": 7,
+        "amount_eur": "121.00",
+        "reasons": [
+          {
+            "code": "cleanup_apply",
+            "message": "Synthetic cleanup"
+          }
+        ],
+        "cleanup_applies": true
+      },
+      "expected": {
+        "reviewId": "transaction:synthetic-one",
+        "transactionId": "synthetic-one",
+        "expectedRowVersion": 7,
+        "transactionDate": "",
+        "entryType": "",
+        "description": "",
+        "amountEur": "121.00",
+        "rowStatus": "unknown",
+        "previewBucket": null,
+        "postingDeferredUntil": null,
+        "structuredReasons": [],
+        "documentId": null,
+        "message": "Synthetic cleanup",
+        "reasons": [
+          "Synthetic cleanup"
+        ],
+        "cleanupApplied": true,
+        "cleanupBlocked": false,
+        "readyToPost": false
+      }
+    },
+    {
+      "raw": {
+        "result": {
+          "transaction_id": "synthetic-two",
+          "expected_row_version": 3,
+          "amount_eur": "0.00"
+        },
+        "blocked": true,
+        "blockers": [
+          {
+            "code": "future",
+            "message": "Synthetic blocker"
+          }
+        ]
+      },
+      "expected": {
+        "reviewId": "",
+        "transactionId": "synthetic-two",
+        "expectedRowVersion": 3,
+        "transactionDate": "",
+        "entryType": "",
+        "description": "",
+        "amountEur": "0.00",
+        "rowStatus": "unknown",
+        "previewBucket": null,
+        "postingDeferredUntil": null,
+        "structuredReasons": [
+          {
+            "code": "future",
+            "message": "Synthetic blocker"
+          }
+        ],
+        "documentId": null,
+        "message": "Synthetic blocker",
+        "reasons": [
+          "Synthetic blocker"
+        ],
+        "cleanupApplied": false,
+        "cleanupBlocked": false,
+        "readyToPost": false
+      }
+    },
+    {
+      "raw": {
+        "transaction_id": "synthetic-three",
+        "outcome": "posted",
+        "reason_code": "posted_cleanup_failed",
+        "effective_amount_eur_minor": -12100,
+        "cleanup_blocked": true
+      },
+      "expected": {
+        "reviewId": "",
+        "transactionId": "synthetic-three",
+        "expectedRowVersion": null,
+        "transactionDate": "",
+        "entryType": "",
+        "description": "",
+        "amountEur": "-121",
+        "rowStatus": "posted",
+        "previewBucket": null,
+        "postingDeferredUntil": null,
+        "structuredReasons": [],
+        "documentId": null,
+        "message": "posted_cleanup_failed · проведено, очистка не завершена",
+        "reasons": [],
+        "cleanupApplied": false,
+        "cleanupBlocked": true,
+        "readyToPost": false
+      }
+    },
+    {
+      "raw": {
+        "transaction_id": "synthetic-zero",
+        "expected_row_version": 0,
+        "amount_eur": 0,
+        "ready_to_post": true
+      },
+      "expected": {
+        "reviewId": "",
+        "transactionId": "synthetic-zero",
+        "expectedRowVersion": 0,
+        "transactionDate": "",
+        "entryType": "",
+        "description": "",
+        "amountEur": "0",
+        "rowStatus": "unknown",
+        "previewBucket": null,
+        "postingDeferredUntil": null,
+        "structuredReasons": [],
+        "documentId": null,
+        "message": "",
+        "reasons": [],
+        "cleanupApplied": false,
+        "cleanupBlocked": false,
+        "readyToPost": true
+      }
+    }
+  ],
+  "previews": [
+    {
+      "raw": {
+        "period": "2026-Q3",
+        "period_status": "open",
+        "ready": [
+          {
+            "review_id": "transaction:synthetic-one",
+            "row_version": 7,
+            "amount_eur": "121.00",
+            "reasons": [
+              {
+                "code": "cleanup_apply",
+                "message": "Synthetic cleanup"
+              }
+            ],
+            "cleanup_applies": true
+          }
+        ],
+        "deferred": [
+          {
+            "result": {
+              "transaction_id": "synthetic-two",
+              "expected_row_version": 3,
+              "amount_eur": "0.00"
+            },
+            "blocked": true,
+            "blockers": [
+              {
+                "code": "future",
+                "message": "Synthetic blocker"
+              }
+            ]
+          }
+        ],
+        "blocked": [],
+        "summary": {
+          "ready_count": 1,
+          "approved_count": 3,
+          "cleanup_count": 1
+        }
+      },
+      "expected": {
+        "period": "2026-Q3",
+        "periodStatus": "open",
+        "generatedAt": null,
+        "asOf": null,
+        "summary": {
+          "readyCount": 1,
+          "deferredCount": 1,
+          "blockedCount": 0,
+          "approvedCount": 3,
+          "readyTotalEur": "0.00",
+          "cleanupCount": 1,
+          "cleanupBlockedCount": 0
+        },
+        "ready": [
+          {
+            "reviewId": "transaction:synthetic-one",
+            "transactionId": "synthetic-one",
+            "expectedRowVersion": 7,
+            "transactionDate": "",
+            "entryType": "",
+            "description": "",
+            "amountEur": "121.00",
+            "rowStatus": "unknown",
+            "previewBucket": null,
+            "postingDeferredUntil": null,
+            "structuredReasons": [],
+            "documentId": null,
+            "message": "Synthetic cleanup",
+            "reasons": [
+              "Synthetic cleanup"
+            ],
+            "cleanupApplied": true,
+            "cleanupBlocked": false,
+            "readyToPost": false
+          }
+        ],
+        "deferred": [
+          {
+            "reviewId": "",
+            "transactionId": "synthetic-two",
+            "expectedRowVersion": 3,
+            "transactionDate": "",
+            "entryType": "",
+            "description": "",
+            "amountEur": "0.00",
+            "rowStatus": "unknown",
+            "previewBucket": null,
+            "postingDeferredUntil": null,
+            "structuredReasons": [
+              {
+                "code": "future",
+                "message": "Synthetic blocker"
+              }
+            ],
+            "documentId": null,
+            "message": "Synthetic blocker",
+            "reasons": [
+              "Synthetic blocker"
+            ],
+            "cleanupApplied": false,
+            "cleanupBlocked": false,
+            "readyToPost": false
+          }
+        ],
+        "blocked": []
+      }
+    },
+    {
+      "raw": {
+        "items": [
+          {
+            "review_id": "transaction:synthetic-one",
+            "row_version": 7,
+            "amount_eur": "121.00",
+            "reasons": [
+              {
+                "code": "cleanup_apply",
+                "message": "Synthetic cleanup"
+              }
+            ],
+            "cleanup_applies": true
+          },
+          {
+            "result": {
+              "transaction_id": "synthetic-two",
+              "expected_row_version": 3,
+              "amount_eur": "0.00"
+            },
+            "blocked": true,
+            "blockers": [
+              {
+                "code": "future",
+                "message": "Synthetic blocker"
+              }
+            ]
+          },
+          {
+            "transaction_id": "synthetic-three",
+            "outcome": "posted",
+            "reason_code": "posted_cleanup_failed",
+            "effective_amount_eur_minor": -12100,
+            "cleanup_blocked": true
+          },
+          {
+            "transaction_id": "synthetic-zero",
+            "expected_row_version": 0,
+            "amount_eur": 0,
+            "ready_to_post": true
+          }
+        ],
+        "as_of": "2026-09-01"
+      },
+      "expected": {
+        "period": "2026-Q3",
+        "periodStatus": "open",
+        "generatedAt": "2026-09-01",
+        "asOf": "2026-09-01",
+        "summary": {
+          "readyCount": 1,
+          "deferredCount": 0,
+          "blockedCount": 0,
+          "approvedCount": 1,
+          "readyTotalEur": "0.00",
+          "cleanupCount": 0,
+          "cleanupBlockedCount": 0
+        },
+        "ready": [
+          {
+            "reviewId": "",
+            "transactionId": "synthetic-zero",
+            "expectedRowVersion": 0,
+            "transactionDate": "",
+            "entryType": "",
+            "description": "",
+            "amountEur": "0",
+            "rowStatus": "unknown",
+            "previewBucket": null,
+            "postingDeferredUntil": null,
+            "structuredReasons": [],
+            "documentId": null,
+            "message": "",
+            "reasons": [],
+            "cleanupApplied": false,
+            "cleanupBlocked": false,
+            "readyToPost": true
+          }
+        ],
+        "deferred": [],
+        "blocked": []
+      }
+    },
+    {
+      "raw": {},
+      "expected": {
+        "period": "2026-Q3",
+        "periodStatus": "open",
+        "generatedAt": null,
+        "asOf": null,
+        "summary": {
+          "readyCount": 0,
+          "deferredCount": 0,
+          "blockedCount": 0,
+          "approvedCount": 0,
+          "readyTotalEur": "0.00",
+          "cleanupCount": 0,
+          "cleanupBlockedCount": 0
+        },
+        "ready": [],
+        "deferred": [],
+        "blocked": []
+      }
+    }
+  ],
+  "results": [
+    {
+      "raw": {
+        "status": "partial",
+        "results": [
+          {
+            "transaction_id": "synthetic-one",
+            "outcome": "posted"
+          },
+          {
+            "transaction_id": "synthetic-two",
+            "outcome": "blocked",
+            "blockers": [
+              {
+                "code": "stale_row_version"
+              }
+            ]
+          }
+        ],
+        "summary": {
+          "posted_count": 1
+        }
+      },
+      "expected": {
+        "status": "partial",
+        "interrupted": false,
+        "summary": {
+          "postedCount": 1
+        },
+        "results": [
+          {
+            "reviewId": "",
+            "transactionId": "synthetic-one",
+            "expectedRowVersion": null,
+            "transactionDate": "",
+            "entryType": "",
+            "description": "",
+            "amountEur": "121.00",
+            "rowStatus": "posted",
+            "previewBucket": null,
+            "postingDeferredUntil": null,
+            "structuredReasons": [],
+            "documentId": null,
+            "message": "",
+            "reasons": [],
+            "cleanupApplied": false,
+            "cleanupBlocked": false,
+            "readyToPost": false
+          },
+          {
+            "reviewId": "",
+            "transactionId": "synthetic-two",
+            "expectedRowVersion": null,
+            "transactionDate": "",
+            "entryType": "",
+            "description": "",
+            "amountEur": "0.00",
+            "rowStatus": "blocked",
+            "previewBucket": null,
+            "postingDeferredUntil": null,
+            "structuredReasons": [
+              {
+                "code": "stale_row_version"
+              }
+            ],
+            "documentId": null,
+            "message": "stale_row_version",
+            "reasons": [
+              "stale_row_version"
+            ],
+            "cleanupApplied": false,
+            "cleanupBlocked": false,
+            "readyToPost": false
+          }
+        ]
+      }
+    },
+    {
+      "raw": {
+        "status": "completed",
+        "processed": 2
+      },
+      "expected": {
+        "status": "completed",
+        "interrupted": false,
+        "summary": {
+          "postedCount": 2
+        },
+        "results": [
+          {
+            "reviewId": "transaction:synthetic-one",
+            "transactionId": "synthetic-one",
+            "expectedRowVersion": 7,
+            "transactionDate": "",
+            "entryType": "",
+            "description": "",
+            "amountEur": "121.00",
+            "rowStatus": "posted",
+            "previewBucket": null,
+            "postingDeferredUntil": null,
+            "structuredReasons": [],
+            "documentId": null,
+            "message": "",
+            "reasons": [
+              "Synthetic cleanup"
+            ],
+            "cleanupApplied": true,
+            "cleanupBlocked": false,
+            "readyToPost": false
+          },
+          {
+            "reviewId": "",
+            "transactionId": "synthetic-two",
+            "expectedRowVersion": 3,
+            "transactionDate": "",
+            "entryType": "",
+            "description": "",
+            "amountEur": "0.00",
+            "rowStatus": "posted",
+            "previewBucket": null,
+            "postingDeferredUntil": null,
+            "structuredReasons": [
+              {
+                "code": "future",
+                "message": "Synthetic blocker"
+              }
+            ],
+            "documentId": null,
+            "message": "",
+            "reasons": [
+              "Synthetic blocker"
+            ],
+            "cleanupApplied": false,
+            "cleanupBlocked": false,
+            "readyToPost": false
+          },
+          {
+            "reviewId": "",
+            "transactionId": "synthetic-three",
+            "expectedRowVersion": null,
+            "transactionDate": "",
+            "entryType": "",
+            "description": "",
+            "amountEur": "-121",
+            "rowStatus": "posted",
+            "previewBucket": null,
+            "postingDeferredUntil": null,
+            "structuredReasons": [],
+            "documentId": null,
+            "message": "",
+            "reasons": [],
+            "cleanupApplied": false,
+            "cleanupBlocked": true,
+            "readyToPost": false
+          },
+          {
+            "reviewId": "",
+            "transactionId": "synthetic-zero",
+            "expectedRowVersion": 0,
+            "transactionDate": "",
+            "entryType": "",
+            "description": "",
+            "amountEur": "0",
+            "rowStatus": "posted",
+            "previewBucket": null,
+            "postingDeferredUntil": null,
+            "structuredReasons": [],
+            "documentId": null,
+            "message": "",
+            "reasons": [],
+            "cleanupApplied": false,
+            "cleanupBlocked": false,
+            "readyToPost": true
+          }
+        ]
+      }
+    },
+    {
+      "raw": {
+        "status": "interrupted",
+        "interrupted": true,
+        "posted_count": 0
+      },
+      "expected": {
+        "status": "interrupted",
+        "interrupted": true,
+        "summary": {
+          "postedCount": 0
+        },
+        "results": [
+          {
+            "reviewId": "transaction:synthetic-one",
+            "transactionId": "synthetic-one",
+            "expectedRowVersion": 7,
+            "transactionDate": "",
+            "entryType": "",
+            "description": "",
+            "amountEur": "121.00",
+            "rowStatus": "interrupted",
+            "previewBucket": null,
+            "postingDeferredUntil": null,
+            "structuredReasons": [],
+            "documentId": null,
+            "message": "",
+            "reasons": [
+              "Synthetic cleanup"
+            ],
+            "cleanupApplied": true,
+            "cleanupBlocked": false,
+            "readyToPost": false
+          },
+          {
+            "reviewId": "",
+            "transactionId": "synthetic-two",
+            "expectedRowVersion": 3,
+            "transactionDate": "",
+            "entryType": "",
+            "description": "",
+            "amountEur": "0.00",
+            "rowStatus": "interrupted",
+            "previewBucket": null,
+            "postingDeferredUntil": null,
+            "structuredReasons": [
+              {
+                "code": "future",
+                "message": "Synthetic blocker"
+              }
+            ],
+            "documentId": null,
+            "message": "",
+            "reasons": [
+              "Synthetic blocker"
+            ],
+            "cleanupApplied": false,
+            "cleanupBlocked": false,
+            "readyToPost": false
+          },
+          {
+            "reviewId": "",
+            "transactionId": "synthetic-three",
+            "expectedRowVersion": null,
+            "transactionDate": "",
+            "entryType": "",
+            "description": "",
+            "amountEur": "-121",
+            "rowStatus": "interrupted",
+            "previewBucket": null,
+            "postingDeferredUntil": null,
+            "structuredReasons": [],
+            "documentId": null,
+            "message": "",
+            "reasons": [],
+            "cleanupApplied": false,
+            "cleanupBlocked": true,
+            "readyToPost": false
+          },
+          {
+            "reviewId": "",
+            "transactionId": "synthetic-zero",
+            "expectedRowVersion": 0,
+            "transactionDate": "",
+            "entryType": "",
+            "description": "",
+            "amountEur": "0",
+            "rowStatus": "interrupted",
+            "previewBucket": null,
+            "postingDeferredUntil": null,
+            "structuredReasons": [],
+            "documentId": null,
+            "message": "",
+            "reasons": [],
+            "cleanupApplied": false,
+            "cleanupBlocked": false,
+            "readyToPost": true
+          }
+        ]
+      }
+    }
+  ],
+  "postItems": [
+    {
+      "transaction_id": "synthetic-one",
+      "expected_row_version": 7
+    },
+    {
+      "transaction_id": "synthetic-two",
+      "expected_row_version": 3
+    },
+    {
+      "transaction_id": "synthetic-three",
+      "expected_row_version": null
+    },
+    {
+      "transaction_id": "synthetic-zero",
+      "expected_row_version": 0
+    }
+  ]
+}
