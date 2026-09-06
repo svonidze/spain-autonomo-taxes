@@ -5,6 +5,7 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 import json
+import getpass
 import os
 import re
 import sqlite3
@@ -124,6 +125,39 @@ def register_commands(groups):
     rows.add_argument("--period")
     rows.add_argument("--offset", type=int, default=0)
     rows.add_argument("--limit", type=int, default=100)
+
+    draft = command(
+        "expense",
+        "draft",
+        "Read the exact expense draft into a private file",
+        identifier=True,
+    )
+    draft.add_argument("--out", type=Path, required=True)
+    for name, description in [
+        ("save", "Save one draft with its source hash and version"),
+        ("preview", "Validate one saved draft without posting"),
+        ("confirm", "Post exactly the accepted expense preview"),
+    ]:
+        command("expense", name, description, identifier=True, input=True)
+    command(
+        "expense",
+        "follow-up",
+        "Retry cleanup and calculation only for a posted expense",
+        identifier=True,
+    )
+    command(
+        "assets",
+        "schedule",
+        "Read the native asset schedule and posting eligibility",
+        identifier=True,
+    )
+    command(
+        "assets",
+        "post-depreciation",
+        "Post one due schedule entry with a durable request ID",
+        identifier=True,
+        input=True,
+    )
 
 
 def context(args):
@@ -263,6 +297,40 @@ def dispatch(app, args):
         return app.counterparty_transactions(
             args.id, period_key=args.period, offset=args.offset, limit=args.limit
         )
+    if action == "expense.draft":
+        return app.expense_draft(args.id)
+    if action == "expense.save":
+        draft = app.expense_save(
+            args.id, read_input(args.input), "cli:" + getpass.getuser()
+        )
+        return {
+            "saved": True,
+            **{
+                key: draft[key]
+                for key in (
+                    "transaction_id",
+                    "draft_version",
+                    "source_snapshot_hash",
+                    "current_snapshot_hash",
+                    "editable",
+                    "conflict",
+                )
+            },
+        }
+    if action == "expense.preview":
+        return app.expense_preview(args.id, read_input(args.input))
+    if action == "expense.confirm":
+        return app.expense_confirm(
+            args.id, read_input(args.input), "cli:" + getpass.getuser()
+        )
+    if action == "expense.follow-up":
+        return app.expense_follow_up(args.id)
+    if action == "assets.schedule":
+        return app.depreciation_schedule(args.id)
+    if action == "assets.post-depreciation":
+        return app.depreciation_post(
+            args.id, read_input(args.input), "cli:" + getpass.getuser()
+        )
     raise ValueError("Unsupported toolkit command")
 
 
@@ -287,6 +355,21 @@ def run(args):
                 "supported": raw.get("supported"),
                 "review_allowed": raw.get("review_allowed"),
             }
+            if args._toolkit_action == "expense.draft":
+                result = {
+                    "written": output.name,
+                    **{
+                        key: raw[key]
+                        for key in (
+                            "transaction_id",
+                            "draft_version",
+                            "source_snapshot_hash",
+                            "current_snapshot_hash",
+                            "editable",
+                            "conflict",
+                        )
+                    },
+                }
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except Exception as error:

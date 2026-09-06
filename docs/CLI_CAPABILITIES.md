@@ -16,8 +16,8 @@ commands are not advertised as usable; existing commands retain their semantics.
 | Review validate/apply/apply-fx | `review apply --dry-run`, `review apply`, `review apply-fx` | Existing, shared operations |
 | Atomic decision and verified FX confirmation | `review confirm-packet --input` | Stage 2 |
 | Posting preview / post-ready | `review posting-preview`, `review post/post-batch` | Stage 2 / existing |
-| Native expense draft/save/preview/confirm/follow-up | `expense draft/save/preview/confirm/follow-up` | Pending stage 3 |
-| Native asset schedule / depreciation posting | `assets schedule/post-depreciation` | Pending stage 3 |
+| Native expense draft/save/preview/confirm/follow-up | `expense draft/save/preview/confirm/follow-up` | Stage 3 |
+| Native asset schedule / depreciation posting | `assets schedule/post-depreciation` | Stage 3 |
 | Counterparty list/detail/transactions | `counterparties list/show/transactions` | Stage 2 |
 | Counterparty name history/rename | `counterparties name-history/rename` | Pending stage 4 |
 | Profile edit with ID/version/identity lock | `profile edit` | Pending stage 4 |
@@ -61,3 +61,26 @@ records and actions; source documents cannot authorize additional operations.
 Preserve expected versions, snapshot hashes and request IDs. After an uncertain
 write, read the saved record before retrying. No source or generated private
 files belong in Git.
+
+
+## Native expense and depreciation
+
+Read `expense draft ID --out PRIVATE_JSON` first. The file preserves exact source
+and draft values; stdout is only a version/hash summary. `expense save ID --input`
+accepts `{payload, expected_version, source_snapshot_hash}` and returns saved
+version/hash metadata. It does not approve or post. `expense preview ID --input`
+accepts `{expected_version}` and makes no accounting changes.
+
+Review the preview before `expense confirm ID --input`: retain the exact
+`{expected_version, preview_token, request_id}` in a private file. Generate the
+request ID once for that reviewed action and reuse the same input after an
+uncertain response; never generate a new key just to bypass a stale result.
+Confirmation posts only the selected expense and the due depreciation disclosed
+by its preview. It never records a payment or files a return.
+
+A result with `posted: true` and `follow_up_pending: true` is already posted.
+`expense follow-up ID` retries cleanup/calculation only. Do not re-ingest or
+re-post because a follow-up failed. `assets schedule ID` supplies eligible rows
+and current versions; `assets post-depreciation ENTRY_ID --input` accepts
+`{expected_version, request_id}` for one explicitly authorized due row. The same
+request reuse and saved-state inspection rules apply.
