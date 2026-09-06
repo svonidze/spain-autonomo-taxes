@@ -56,7 +56,7 @@ async function rename(page: Page) {
   await page.locator('#vue-counterparty-actions-menu button').click();
   await page.locator('#vue-counterparty-name-input').fill('Synthetic unsaved rename');
 }
-test('closed intake preserves a declined rename draft and permits later manual refresh', async ({
+test('closed intake leaves a dirty rename untouched without prompting and permits later manual refresh', async ({
   page,
 }) => {
   const { upload, calls } = await intakeOnContacts(page);
@@ -67,7 +67,8 @@ test('closed intake preserves a declined rename draft and permits later manual r
     await dialog.dismiss();
   });
   upload.release();
-  await expect.poll(() => confirmations).toBe(1);
+  await expect(page.locator('#toast')).toContainText('2026-Q3');
+  expect(confirmations).toBe(0);
   await expect(page.locator('#vue-counterparty-name-input')).toHaveValue(
     'Synthetic unsaved rename',
   );

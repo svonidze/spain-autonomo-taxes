@@ -9,7 +9,7 @@ export interface HttpContext {
   origin: string;
   t(id: string, variables?: Record<string, unknown>): string;
 }
-export type JsonOptions = RequestInit & { fallbackMessage?: string; fallbackCode?: string };
+export type JsonOptions = RequestInit & { fallbackCode?: string };
 export class ApiError extends Error {
   status?: number;
   code?: string;
@@ -41,7 +41,7 @@ export async function fetchJSON(
   options: JsonOptions,
   context: HttpContext,
 ): Promise<unknown> {
-  const { fallbackMessage, fallbackCode, ...fetchOptions } = options;
+  const { fallbackCode, ...fetchOptions } = options;
   const transport = context.fetch;
   const response = await transport(url, fetchOptions);
   const responseUrl = new URL(url, context.origin);
@@ -58,19 +58,25 @@ export async function fetchJSON(
           ? (parsed.value as Record<string, unknown>)
           : {};
       const serverText = payload.error ? String(payload.error) : '';
-      const error = new ApiError(
-        serverText ||
-          fallbackMessage ||
-          (fallbackCode ? context.t(fallbackCode) : `HTTP ${response.status}`),
-      );
+      // A server diagnostic wins; an application fallback stays a re-translatable key.
+      // Format it defensively: a parameterized key must not turn an HTTP failure into a
+      // formatter exception that escapes fetchJSON as something other than ApiError.
+      let fallbackText = '';
+      if (!serverText && fallbackCode) {
+        try {
+          fallbackText = context.t(fallbackCode);
+        } catch {
+          fallbackText = '';
+        }
+      }
+      const error = new ApiError(serverText || fallbackText || `HTTP ${response.status}`);
       error.status = response.status;
       error.code = typeof payload.code === 'string' ? payload.code : undefined;
       error.current = payload.current;
-      // A server diagnostic wins; an application fallback stays a re-translatable key.
       error.messageCode =
         typeof payload.message_code === 'string'
           ? payload.message_code
-          : !serverText && fallbackCode
+          : fallbackText
             ? fallbackCode
             : undefined;
       error.params =

@@ -87,3 +87,13 @@ test('UUID normalization handles irregular hyphens without repairing invalid IDs
     expect(canonicalId(invalid)).toBe(invalid);
   }
 });
+
+test('generated detail URLs canonicalize ids regardless of the caller', () => {
+  const canonical = 'abcdef01-2345-4678-8abc-def012345678';
+  expect(
+    routeUrl('expense-detail', '2026-Q2', { id: canonical.replaceAll('-', '').toUpperCase() }),
+  ).toBe(`/expenses/${canonical}?period=2026-Q2`);
+  expect(routeUrl('review', '2026-Q2', { id: canonical.toUpperCase() })).toBe(
+    `/review/${canonical}?period=2026-Q2`,
+  );
+});

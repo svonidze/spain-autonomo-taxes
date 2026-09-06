@@ -205,3 +205,19 @@ test('bare diagnostic keys requiring parameters stay safe to render', async () =
     );
   }
 });
+
+test('a parameterized fallback code degrades to the HTTP status instead of escaping fetchJSON', async () => {
+  const failure = (await fetchJSON(
+    '/api/test',
+    { fallbackCode: 'errors.unexpectedNonJson' },
+    {
+      fetch: async () => response(500, 'application/json', '{}'),
+      origin: 'https://example.invalid',
+      t: formatMessage,
+    },
+  ).catch((value: unknown) => value)) as ApiError;
+  expect(failure).toBeInstanceOf(ApiError);
+  expect(failure.status).toBe(500);
+  expect(failure.message).toBe('HTTP 500');
+  expect(failure.messageCode).toBeUndefined();
+});

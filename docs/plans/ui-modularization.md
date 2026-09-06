@@ -242,3 +242,10 @@ Validation: 67 module tests, 61 source/installed-wheel browser scenarios,
 pseudolocale and 1,306 Python tests pass (four expected skips), alongside
 format/type/catalog/coverage/chart/privacy checks. Independent code review
 APPROVE and architecture CLEAR cover these follow-up changes.
+
+Second follow-up (Claude two-lane review of #60): the refresh gate reads the
+non-mutating dirty/busy state instead of `canLeave()`, so no dialog is closed or
+prompted by a background upload; same-screen identity ignores list filters;
+`fallbackMessage` is removed and `fallbackCode` formats defensively; `routeUrl`
+canonicalizes ids; expense paging restarts share one request token; the stale
+posting banner stores a re-translatable descriptor.
