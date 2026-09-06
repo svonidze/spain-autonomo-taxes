@@ -21,6 +21,7 @@
   "intake.googlePickerHint": "Google Picker will be available after narrow drive.file access is configured.",
   "intake.googlePickerUnavailable": "Google Drive folder selection is not configured yet.",
   "intake.incomeFile": "Choose an issued invoice or drop a file",
+  "intake.invalidResponse": "Could not confirm the result. Refresh the list before uploading again.",
   "intake.kindAria": "Entry type",
   "intake.processing": "Extracting and recording…",
   "intake.selectFile": "Choose a file.",

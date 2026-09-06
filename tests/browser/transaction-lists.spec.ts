@@ -26,19 +26,24 @@ test('income search ignores old replies and keeps current records on a failed re
   await expect(page.locator('#transactions-table')).toContainText('New reply');
   await expect(page.locator('#transactions-table')).not.toContainText('Old reply');
 });
-test('income copy intent preserves source currency and amount in the legacy intake', async ({page}) => {
+test('income copy preserves original values and cancellation leaves an untouched saved draft', async ({page}) => {
   const source = row(ID, 'income', 'Synthetic copy'); source.amount_original = '0.00';
   await page.route(/\/api\/transactions\?/, route => route.fulfill({json: [source]}));
   await page.goto('/income?period=2026-Q3');
+  await page.evaluate(()=>localStorage.setItem('autonomo.intake-draft',JSON.stringify({schema:1,values:{document_number:'SYN-OLDER'}})));
   await page.locator('[data-copy-transaction-id]').click();
-  await expect(page.locator('#intake-dialog')).toBeVisible();
-  await expect(page.locator('#intake-form [name="currency"]')).toHaveValue('USD');
-  await expect(page.locator('#intake-form [name="gross"]')).toHaveValue('0.00');
-  await expect(page.locator('#intake-form [name="document_number"]')).toBeFocused();
-  await page.locator('#intake-form [name="document_number"]').fill('Synthetic new invoice');
+  await expect(page.locator('#vue-intake-dialog')).toBeVisible();
+  await expect(page.locator('#vue-intake-form [name="currency"]')).toHaveValue('USD');
+  await expect(page.locator('#vue-intake-form [name="gross"]')).toHaveValue('0.00');
+  await expect(page.locator('#vue-intake-form [name="document_number"]')).toBeFocused();
+  await page.locator('#vue-close-dialog').click();
+  await page.locator('#new-entry-button').click();await expect(page.locator('#vue-intake-form [name="document_number"]')).toHaveValue('SYN-OLDER');await page.locator('#vue-close-dialog').click();
+  await page.locator('[data-copy-transaction-id]').click();
+  await page.locator('#vue-intake-form [name="document_number"]').fill('Synthetic new invoice');
   await page.locator('[data-locale="en"]').evaluate((button: HTMLElement) => button.click());
-  await expect(page.locator('#intake-form [name="document_number"]')).toHaveValue('Synthetic new invoice');
-  await expect(page.locator('#intake-form [name="gross"]')).toHaveValue('0.00');
+  await expect(page.locator('#vue-intake-form [name="document_number"]')).toHaveValue('Synthetic new invoice');
+  await expect(page.locator('#vue-intake-form [name="gross"]')).toHaveValue('0.00');
+  await page.locator('#vue-close-dialog').click();await page.locator('#new-entry-button').click();await expect(page.locator('#vue-intake-form [name="document_number"]')).toHaveValue('Synthetic new invoice');
 });
 test('expense paging restarts a changed revision and search preserves the detail return query', async ({page}) => {
   let changed = false; const offsets: number[] = [];

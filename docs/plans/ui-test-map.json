@@ -99,7 +99,12 @@
     "source": "tests/test_web_ui_states.js",
     "behavior": "web ui states",
     "stage": 12,
-    "replacements": []
+    "replacements": [
+      "tests/browser/intake.spec.ts",
+      "tests/browser/transaction-lists.spec.ts",
+      "frontend/tests/intake-model.test.ts",
+      "frontend/tests/picker.test.ts"
+    ]
   },
   {
     "source": "tests/test_web_ui_taxes.js",

@@ -162,7 +162,15 @@ authenticated unknown-resource responses and settings dirty navigation.
   markers; retry never reposts. Mismatched previews fail closed. Forty-four unit
   tests, 13 legacy suites, 36 source/installed-wheel browser scenarios and
   1,342 Python tests pass (four skips). Code review APPROVE; architecture CLEAR.
-- Stages 10–12: pending.
+- Stage 10: persistent Vue intake owns upload, Drive, folder Picker and copied
+  forms. Runtime credentials stay in memory; actual files/fields survive language
+  changes and failures. Accepted replies match captured kind/period, unchanged
+  drafts clear only on acceptance, and untouched copies preserve older drafts.
+  Forty-nine unit tests, 13 legacy suites, 43 source/installed-wheel browser
+  scenarios, pseudolocale and 1,342 Python tests pass (four skips). Independent
+  code and architecture reviews have no remaining code findings. Live OAuth is
+  intentionally mocked; no external Drive/accounting operations performed.
+- Stages 11–12: pending.
 
 Stage 2 compatibility note: Vite's CommonJS handling hid the settings global used
 by the old shell. The module now retains that namespace as well as its CommonJS

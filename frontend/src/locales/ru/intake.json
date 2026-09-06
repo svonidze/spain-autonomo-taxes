@@ -21,6 +21,7 @@
   "intake.googlePickerHint": "Google Picker будет доступен после настройки узкого доступа drive.file.",
   "intake.googlePickerUnavailable": "Выбор папки Google Drive пока не настроен.",
   "intake.incomeFile": "Выберите выставленный счет или перетащите файл",
+  "intake.invalidResponse": "Не удалось подтвердить результат. Обновите список перед повторной загрузкой.",
   "intake.kindAria": "Тип записи",
   "intake.processing": "Извлечение и запись…",
   "intake.selectFile": "Выберите файл.",

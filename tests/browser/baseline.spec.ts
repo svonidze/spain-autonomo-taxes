@@ -38,7 +38,7 @@ test('intake keeps selected file and typed fields across a locale change', async
   await page.goto('/income?period=2026-Q3');
   await expect(page.locator('#app')).toHaveAttribute('aria-busy', 'false');
   await page.locator('#new-entry-button').click();
-  const dialog = page.locator('#intake-dialog');
+  const dialog = page.locator('#vue-intake-dialog');
   await expect(dialog).toBeVisible();
   await dialog.locator('[name="document_number"]').fill('SYNTHETIC-UI-1');
   await dialog.locator('input[type="file"]').setInputFiles({name: 'synthetic.txt', mimeType: 'text/plain', buffer: Buffer.from('Synthetic browser test document')});

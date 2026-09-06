@@ -50,7 +50,7 @@ test('a late detail response cannot replace a new route', async ({page}) => {
   const gate = new Promise<void>(resolve => {release = resolve;});
   await page.route(`**/api/transactions/${ID}`, async route => {await gate; await route.fulfill({json: fixture()});});
   await page.goto(DETAIL);
-  await expect(page.locator('[data-vue-owned]')).toHaveCount(1);
+  await expect(page.locator('#app[data-vue-owned]')).toHaveCount(1);
   await page.locator('a[data-view="income"]').click();
   release();
   await expect(page).toHaveURL(/\/income/);
