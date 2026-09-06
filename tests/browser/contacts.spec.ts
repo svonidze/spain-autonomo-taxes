@@ -122,3 +122,11 @@ test('appended contact pages deduplicate records and menu dismissal restores foc
   await page.keyboard.press('Escape');  await expect(trigger).toBeFocused();
   await expect(page.locator('#vue-counterparty-actions-menu')).toHaveCount(0);
 });
+
+test('a new global period replaces the old contact-chain period',async({page})=>{
+  await page.route('**/api/bootstrap',async route=>{const response=await route.fetch();const data=await response.json();await route.fulfill({json:{...data,periods:[{period_key:'2026-Q3',status:'open'},{period_key:'2026-Q2',status:'open'}]}});});
+  await fixture(page);await page.goto(`/contacts/${ID}`);await expect(page.locator('#contact-identity')).toBeVisible();
+  await page.locator('a[data-view="dashboard"]').click();await page.locator('#period-select').selectOption('2026-Q2');await expect(page).toHaveURL(/period=2026-Q2/);
+  await page.locator('a[data-view="contacts"]').click();await page.locator('.counterparty-link').click();await expect(page.locator('#contact-identity')).toBeVisible();await expect(page.locator('a[data-view="dashboard"]')).toHaveAttribute('href','/dashboard?period=2026-Q2');
+  await page.locator('#contact-identity [data-status-help]').click();await expect.poll(()=>page.evaluate(()=>history.state.accountingHelp)).toBeTruthy();await page.reload();await expect(page.locator('#contact-identity')).toBeVisible();await expect(page.locator('#status-help-dialog')).not.toBeVisible();await expect(page.locator('a[data-view="dashboard"]')).toHaveAttribute('href','/dashboard?period=2026-Q2');
+});

@@ -3,7 +3,10 @@
     "source": "tests/test_account_settings_ui.js",
     "behavior": "account settings ui",
     "stage": 11,
-    "replacements": []
+    "replacements": [
+      "tests/browser/settings-shell.spec.ts",
+      "frontend/tests/shell-routes.test.ts"
+    ]
   },
   {
     "source": "tests/test_expense_ui.js",
@@ -83,7 +86,13 @@
     "source": "tests/test_web_ui_navigation.js",
     "behavior": "web ui navigation",
     "stage": 12,
-    "replacements": []
+    "replacements": [
+      "tests/browser/baseline.spec.ts",
+      "tests/browser/contacts.spec.ts",
+      "tests/browser/settings-shell.spec.ts",
+      "frontend/tests/shell-routes.test.ts",
+      "frontend/tests/shell-lifecycle.test.ts"
+    ]
   },
   {
     "source": "tests/test_web_ui_posting_behavior.js",

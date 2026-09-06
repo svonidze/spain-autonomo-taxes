@@ -108,3 +108,16 @@ unchanged draft. Session and origin checks fence late callbacks and success time
 Google Picker configuration stays in memory from the runtime API. Browser tests
 mock the [official PickerBuilder contract](https://developers.google.com/workspace/drive/picker/reference/picker.pickerbuilder); live OAuth was not exercised.
 The separate intake mount adapter is temporary until shell migration.
+
+The shell now owns one Vue tree, including persistent intake and settings.
+Vue Router 5.3.1 owns route transitions and same-URL help history via its public
+force/state API. Query serialization retains URLSearchParams encoding, including
+nested return URLs. Presentation-only canonicalization retains the mounted editor
+and checks route generation before continuing. Settings use in-memory drafts,
+expected revisions and explicit backup pruning confirmation. Their dirty/busy
+leave policy applies to navigation, reload, locale selection and browser unload.
+Transient help state is cleared on reload; contact global period is preserved.
+The remaining read-only help/global adapters are retired in stage 12.
+
+Run Python resource tests after builds and pseudolocale have finished, as CI does.
+Do not rebuild the same worktree's dist while Python is reading its manifest.
