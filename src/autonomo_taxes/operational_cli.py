@@ -6,7 +6,7 @@ import argparse
 import csv
 from dataclasses import asdict
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 import hashlib
 import json
 from pathlib import Path
@@ -14,7 +14,8 @@ import sqlite3
 import sys
 from typing import Any, Callable, Iterable, Mapping
 
-from .fx_policy import ALLOWED_PRODUCTION_SOURCES
+from .fx_policy import ALLOWED_PRODUCTION_SOURCES, FXRateDeviationError, check_manual_rate
+from .fx_reference import fetch_eur_rate
 from .intake import (
     ExpenseInboxCleanupCandidate,
     InboxCleanupError,
@@ -405,9 +406,32 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     review_apply_fx = review_sub.add_parser(
         "apply-fx",
         help="Atomically record a sourced FX rate and apply it to a review transaction",
+        description=(
+            "Atomically record a sourced FX rate and apply it to a review transaction. "
+            "The payload rate is EUR per one unit of the transaction currency, not the "
+            "units-per-EUR figure published by the ECB and public quote pages: a 1.2500 "
+            "units-per-EUR quote must be entered as 0.8000. Rates labeled ecb or "
+            "banco_de_espana are checked against the ECB reference for rate_date."
+        ),
     )
     _db_arg(review_apply_fx)
-    review_apply_fx.add_argument("--input", type=Path, required=True)
+    review_apply_fx.add_argument(
+        "--input",
+        type=Path,
+        required=True,
+        help=(
+            "JSON object with review_id, expected_row_version, rate_date, rate "
+            "(EUR per unit of the foreign currency), rate_source and source_reference"
+        ),
+    )
+    review_apply_fx.add_argument(
+        "--allow-unverified-rate",
+        action="store_true",
+        help=(
+            "Record an official-source rate that deviates more than 5%% from the ECB "
+            "reference; the stored source_reference notes that it was not verified"
+        ),
+    )
     review_apply_fx.set_defaults(_operational_handler=_cmd_review_apply_fx)
     review_confirm = review_sub.add_parser(
         "confirm",
@@ -495,12 +519,28 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     transaction_activity.add_argument("--expected-row-version", type=int, required=True)
     transaction_activity.set_defaults(_operational_handler=_cmd_transaction_set_activity)
     transaction_fx = transaction_sub.add_parser(
-        "apply-fx", help="Apply a stored FX rate to an unposted transaction"
+        "apply-fx",
+        help="Apply a stored FX rate to an unposted transaction",
+        description=(
+            "Apply a stored FX rate to an unposted transaction. The stored rate is EUR "
+            "per one unit of the transaction currency, not the units-per-EUR figure "
+            "published by the ECB and public quote pages: a 1.2500 units-per-EUR quote "
+            "must be stored as 0.8000. Rates labeled ecb or banco_de_espana are checked "
+            "against the ECB reference for their rate_date before they are applied."
+        ),
     )
     _db_arg(transaction_fx)
     transaction_fx.add_argument("transaction_id")
     transaction_fx.add_argument("--fx-rate-id", required=True)
     transaction_fx.add_argument("--expected-row-version", type=int, required=True)
+    transaction_fx.add_argument(
+        "--allow-unverified-rate",
+        action="store_true",
+        help=(
+            "Apply an official-source rate that deviates more than 5%% from the ECB "
+            "reference; the stored source_reference notes that it was not verified"
+        ),
+    )
     transaction_fx.set_defaults(_operational_handler=_cmd_transaction_apply_fx)
 
     treatment = subparsers.add_parser("tax-treatment", help="Classify a reviewed transaction for IRPF and IVA")
@@ -2031,16 +2071,71 @@ def _cmd_review_apply_fx(args: argparse.Namespace) -> int:
                     f"found {len(rows)}"
                 )
             transaction_id = str(rows[0]["transaction_id"])
+        source_reference = str(payload["source_reference"])
+        transaction = db.connection.execute(
+            "SELECT original_currency, currency FROM transactions WHERE transaction_id = ?",
+            (transaction_id,),
+        ).fetchone()
+        if transaction is not None:
+            note = _check_manual_fx_rate(
+                str(payload["rate"]),
+                currency=str(transaction["original_currency"] or transaction["currency"]),
+                rate_date=str(payload["rate_date"]),
+                rate_source=str(payload["rate_source"]),
+                allow_unverified=args.allow_unverified_rate,
+            )
+            if note:
+                source_reference = f"{source_reference} ({note})"
         result = db.review_transaction_fx_rate(
             transaction_id,
             expected_row_version=int(payload["expected_row_version"]),
             rate_date=str(payload["rate_date"]),
             rate=str(payload["rate"]),
             rate_source=str(payload["rate_source"]),
-            source_reference=str(payload["source_reference"]),
+            source_reference=source_reference,
         )
     _emit(result)
     return 0
+
+
+def _check_manual_fx_rate(
+    rate: str,
+    *,
+    currency: str,
+    rate_date: str,
+    rate_source: str,
+    allow_unverified: bool,
+) -> str | None:
+    """Guard a manual official rate; return the note to record for an allowed override.
+
+    The reference lookup runs before any ledger write so an unreachable ECB
+    service neither holds a database lock nor blocks offline use.
+    """
+
+    normalized_currency = currency.strip().upper()
+    if normalized_currency == "EUR":
+        return None
+    try:
+        decimal_rate = Decimal(rate)
+    except InvalidOperation as exc:
+        raise ValueError("FX rate must be a valid Decimal") from exc
+    try:
+        check = check_manual_rate(
+            decimal_rate,
+            currency=normalized_currency,
+            rate_date=date.fromisoformat(rate_date),
+            rate_source=rate_source.strip(),
+            reference_lookup=fetch_eur_rate,
+            allow_unverified=allow_unverified,
+        )
+    except FXRateDeviationError as exc:
+        raise FXRateDeviationError(
+            f"{exc}; pass --allow-unverified-rate to record it anyway"
+        ) from exc
+    if check.status == "unavailable":
+        print(f"warning: {check.detail}", file=sys.stderr)
+        return None
+    return check.detail if check.status == "unverified" else None
 
 
 def _cmd_review_confirm(args: argparse.Namespace) -> int:
@@ -2919,10 +3014,24 @@ def _cmd_transaction_set_activity(args: argparse.Namespace) -> int:
 
 def _cmd_transaction_apply_fx(args: argparse.Namespace) -> int:
     with open_ledger_db(args.db) as db:
+        fx_rate = db.connection.execute(
+            "SELECT rate, base_currency, rate_date, rate_source FROM fx_rates WHERE fx_rate_id = ?",
+            (args.fx_rate_id,),
+        ).fetchone()
+        note = None
+        if fx_rate is not None:
+            note = _check_manual_fx_rate(
+                str(fx_rate["rate"]),
+                currency=str(fx_rate["base_currency"]),
+                rate_date=str(fx_rate["rate_date"]),
+                rate_source=str(fx_rate["rate_source"]),
+                allow_unverified=args.allow_unverified_rate,
+            )
         row = db.apply_transaction_fx(
             args.transaction_id,
             fx_rate_id=args.fx_rate_id,
             expected_row_version=args.expected_row_version,
+            source_reference_note=note,
         )
     _emit(row)
     return 0

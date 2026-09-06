@@ -2579,6 +2579,7 @@ class LedgerDB:
         *,
         fx_rate_id: str,
         expected_row_version: int,
+        source_reference_note: str | None = None,
     ) -> dict[str, Any]:
         existing = self._fetch_one(
             "SELECT * FROM transactions WHERE transaction_id = ?",
@@ -2609,24 +2610,41 @@ class LedgerDB:
                 Decimal("1"), rounding=ROUND_HALF_UP
             )
         )
-        if existing["fx_rate_id"] == fx_rate_id and existing["amount_eur_minor"] == eur_minor:
+        current_reference = _normalize_source_reference(rate["source_reference"])
+        note = _normalize_source_reference(source_reference_note)
+        if note is not None and current_reference is not None and note in current_reference:
+            note = None
+        unchanged = existing["fx_rate_id"] == fx_rate_id and existing["amount_eur_minor"] == eur_minor
+        if unchanged and note is None:
             return existing
         timestamp = _utc_now()
         with self.connection:
-            self.connection.execute(
-                """
-                UPDATE transactions
-                SET amount_eur_minor = ?, fx_rate_id = ?, row_version = ?, updated_at = ?
-                WHERE transaction_id = ?
-                """,
-                (
-                    eur_minor,
-                    fx_rate_id,
-                    existing["row_version"] + 1,
-                    timestamp,
-                    transaction_id,
-                ),
-            )
+            if note is not None:
+                # The override note belongs to the rate, not to this transaction:
+                # every later application of the rate must see it too.
+                self.connection.execute(
+                    "UPDATE fx_rates SET source_reference = ?, updated_at = ? WHERE fx_rate_id = ?",
+                    (
+                        f"{current_reference} ({note})" if current_reference else note,
+                        timestamp,
+                        fx_rate_id,
+                    ),
+                )
+            if not unchanged:
+                self.connection.execute(
+                    """
+                    UPDATE transactions
+                    SET amount_eur_minor = ?, fx_rate_id = ?, row_version = ?, updated_at = ?
+                    WHERE transaction_id = ?
+                    """,
+                    (
+                        eur_minor,
+                        fx_rate_id,
+                        existing["row_version"] + 1,
+                        timestamp,
+                        transaction_id,
+                    ),
+                )
         return self._fetch_one(
             "SELECT * FROM transactions WHERE transaction_id = ?",
             (transaction_id,),
