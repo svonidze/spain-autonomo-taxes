@@ -1,9 +1,13 @@
-# Design
+# Optional UI design
+
+This document governs the optional browser interface. The primary toolkit and
+agent workflow are defined in README.md, AGENTS.md and docs/AGENT_WORKFLOW.md.
+Accounting behavior belongs to shared Python services.
 
 ## Source of truth
 - Status: Active; refreshed 2026-09-04.
 - Surfaces: Expenses, dashboard expense metrics, recent operations, and the analytics charts documented below.
-- Evidence: `local_web.py`, `web_ui/app.js`, `web_ui/styles.css`, the accepted
+- Evidence: `src/autonomo_taxes/local_web.py`, `frontend/src/main.ts`, `src/autonomo_taxes/web_ui/styles.css`, the accepted
   expense-clarity plan in `docs/plans/expense-clarity.md`, the user-supplied
   expense-chart screenshot dated 2026-09-04, and AEAT's 2026 `LSI.xlsx`
   registry-book design.
@@ -64,7 +68,7 @@
 - Asset matching inferred from party and document date is labelled as inferred.
 
 ## Implementation constraints
-- Vanilla JS/CSS and Python/SQLite, no framework or schema migration.
+- Optional Vue/TypeScript UI over shared Python/SQLite services; preserve schema and accounting rules.
 - Only existing `historical_g03` expense transactions are depreciation in this iteration. This code is produced by the importer; asset ownership alone is not a classification rule.
 - Preserve existing API fields and tax results. New display sums use integer minor units and retain missing/zero/negative values.
 - Test data must be invented, never copied from operational accounting records.
@@ -126,7 +130,7 @@ Keep existing components, routes, source amounts and unrelated design rules.
 
 This contract also covers the read-only context
 from `src/autonomo_taxes/status_context.py` and its presentation in
-`src/autonomo_taxes/web_ui/status-help.js`. For operator-facing meanings and
+`frontend/src/help/presentation.ts`. For operator-facing meanings and
 actions, see [Understanding accounting statuses](docs/ACCOUNTING_STATUSES.md).
 
 - Present the short reason beside the status and make the next action readable
@@ -156,8 +160,8 @@ When resolving overlapping UI changes, preserve both status explanations and
 analytics. A textual merge without conflicts is not evidence that shared
 helpers or mounted components survived. Check the effective loaded scripts,
 single helper declarations, combined asset status/chart rendering and stale
-render handling using `tests/test_status_help.js`, `tests/test_status_context.py`
-and `tests/test_web_ui_guided.py`. Keyboard, mobile reflow and browser-native
+render handling using `frontend/tests/help-lifetime.test.ts`, `tests/test_status_context.py`
+and the Playwright scenarios in `tests/browser`. Keyboard, mobile reflow and browser-native
 zoom are separate checks; equivalent-width reflow does not certify 200% zoom.
 
 ## Interface states and review navigation
@@ -201,11 +205,8 @@ navigation added by the clarity redesign.
   non-blocking hint. Server failures report through the dialog status line
   only; toasts announce success. Error toasts persist until closed.
 
-The behavior is pinned by `tests/test_web_ui_states.js` (state helpers,
-category chip, drafts, euro previews), `tests/test_web_ui_i18n.py` (locale
-parity and inline-style hygiene), the tab cases in
-`tests/test_web_ui_guided.js`, and the navigation contract in
-`tests/test_web_ui_navigation.js`.
+The behavior is checked by the Vue unit tests and browser scenarios listed in
+`docs/plans/ui-test-map.json`, including state, locale, route and guided-review coverage.
 
 ## Analytics and charts
 
@@ -213,7 +214,7 @@ This file is the source of truth for measure definitions, status policy, chart
 placement, color/pattern semantics, accessibility rules, and empty states used
 by the analytics endpoint (`/api/analytics`, built by
 `src/autonomo_taxes/analytics_series.py`) and the web charts
-(`src/autonomo_taxes/web_ui/charts.js`). When the SPA, generated artifacts, or
+(`frontend/src/charts/renderer.js`). When the SPA, generated artifacts, or
 a future server-side SVG renderer disagree with each other, this document
 decides. Change the definitions here first, then the code.
 
@@ -396,16 +397,15 @@ not an empty state.
 - The tax reserve bullet reports `not_checked` when no explicit available-cash
   figure exists (`cash_check.py` receives `available_eur=None`); available
   cash is never inferred from payment rows.
-- Shared UI helpers in `app.js` have one declaration each, guarded by
-  `test_web_ui_helpers_declared_exactly_once`. Chart rendering lives in
-  `charts.js`, contextual explanations in `status-help.js`, and uniquely named
-  `build*Spec` helpers adapt analytics data to charts. Both supporting scripts
-  load before `app.js`; adding a chart must not replace status explanations.
+- The optional Vue/TypeScript interface lives in `frontend/src`; feature modules and
+  shared components adapt Python service results for display. See
+  `docs/UI_DEVELOPMENT.md` for build, translation and testing boundaries.
+  Adding a chart must not replace status explanations.
 
 ## Expense and equipment workflow
 
 The approved expense workflow extends the earlier display-only scope. Routine
-bookkeeping uses the existing authenticated service, never sudo/SSH, deployments,
+bookkeeping uses shared services through CLI or authenticated HTTP, never sudo/SSH, deployments,
 service stops or full-root backups. Keep the current palette, components and RU/EN voice.
 
 - Unposted expenses offer a durable server draft: original alongside editable

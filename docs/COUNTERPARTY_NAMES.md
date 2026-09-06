@@ -1,5 +1,9 @@
 # Correcting a counterparty name
 
+These rules also apply without a browser. See [the agent workflow](AGENT_WORKFLOW.md)
+and [CLI capabilities](CLI_CAPABILITIES.md) for supported commands and recovery.
+
+
 Use **Counterparties → ⋯ → Correct name** to fix a typo in the name of the same
 person or organisation. The action is not a way to replace one counterparty
 with another.

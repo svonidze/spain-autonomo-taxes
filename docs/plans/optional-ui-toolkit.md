@@ -8,7 +8,7 @@ Each stage gets a separate commit-bearing dependent PR; no automatic merge.
 2. Shared services, reads, original intake, income review and atomic FX — implemented and verified (1,323 Python tests; four skips).
 3. Native expense workflow, depreciation and retryable follow-up — implemented and reviewed; core-only validation passed.
 4. Counterparties, settings and financial read parity — implemented; full Python and installed-wheel verification passed.
-5. Complete agent instructions, skills and synthetic acceptance — pending.
+5. Complete agent instructions, skills and synthetic acceptance — implemented; isolated core guide/FX/expense/depreciation acceptance, HTTP parity and full UI/Python checks passed.
 
 The core is `spain-autonomo-taxes` with `autonomo-tax`. Optional
 `spain-autonomo-taxes-ui` owns `autonomo-web` and its assets. Core never imports
@@ -23,3 +23,8 @@ synthetic private roots and cannot contact real storage or production services.
 The current interface matrix is [CLI capabilities](../CLI_CAPABILITIES.md).
 Stage 1: draft PR #66, commit `582d589`; core/UI paired preparation and Node-free
 reuse exercised against that exact local SHA.
+
+Stages 2–4: draft PRs #67, #68 and #69, respectively. Each depends on the
+preceding stage and keeps the PR #52 baseline; production SHA is unchanged.
+The final guide is [Agent workflow](../AGENT_WORKFLOW.md), with a synthetic CLI
+example executed against an isolated installed core wheel in CI.

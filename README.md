@@ -16,24 +16,15 @@ python -m pip install -e .
 autonomo-tax --help
 ```
 
-Agents start with [AGENTS.md](AGENTS.md) and [CLI capabilities](docs/CLI_CAPABILITIES.md). The additional agent workflows and
-commands are tracked in [the staged execution record](docs/plans/optional-ui-toolkit.md).
+On macOS/Linux activate with `source .venv/bin/activate` instead. A wheel can be
+built with `python -m pip install build` and `python -m build --wheel`; neither
+source installation nor wheel building needs the frontend directory.
 
-### Optional browser UI
-
-Install core first. Building the optional UI from this checkout requires the
-Node/npm versions in `.nvmrc` and `package.json`:
-
-```powershell
-npm ci --include=dev --no-audit --no-fund
-npm run build
-python -m pip install -e packages/ui --no-deps
-autonomo-web --help
-```
-
-A prebuilt UI wheel needs no Node during installation or runtime; install its
-matching core wheel first. The `autonomo-web` launcher belongs only to the UI
-package. UI release preparation does not apply to core-only installations.
+Start with [the complete agent workflow](docs/AGENT_WORKFLOW.md), including
+private inputs, income/FX, expenses, depreciation and interruption recovery.
+[AGENTS.md](AGENTS.md) is the entry point for any agent;
+[CLI capabilities](docs/CLI_CAPABILITIES.md) maps every accounting operation.
+No particular AI vendor, agent daemon or web service is required.
 
 Runtime data defaults to an OS-local private directory. On Windows the default is:
 
@@ -54,6 +45,22 @@ autonomo-tax --help
 ```
 
 Configuration precedence is explicit `--config`, then `AUTONOMO_PRIVATE_ROOT`, then the OS-local default. A repository-local `.local/config.yaml` is supported only as a warned migration fallback.
+
+### Optional browser UI
+
+Install core first. Building the optional UI from this checkout requires the
+Node/npm versions in `.nvmrc` and `package.json`:
+
+```powershell
+npm ci --include=dev --no-audit --no-fund
+npm run build
+python -m pip install -e packages/ui --no-deps
+autonomo-web --help
+```
+
+A prebuilt UI wheel needs no Node during installation or runtime; install its
+matching core wheel first. The `autonomo-web` launcher belongs only to the UI
+package. UI release preparation does not apply to core-only installations.
 
 ## Private data boundary
 
@@ -88,8 +95,7 @@ Routine accounting uses supported CLI commands or the optional browser UI.
 Administrator maintenance is a separate operation.
 
 Use [the accounting workflow](docs/ACCOUNTING_WORKFLOW.md) for shared status and
-source-document rules and the optional UI walkthrough. CLI additions and the
-complete agent walkthrough are tracked in the staged execution record above. When a needed
+source-document rules and the optional UI walkthrough. Use [the agent walkthrough](docs/AGENT_WORKFLOW.md) for the complete CLI path. When a needed
 correction is unavailable in the installed interface, an operator follows
 [scoped accounting maintenance](ops/README.md#scoped-accounting-maintenance).
 Exceptional maintenance is separate from the routine workflow.
@@ -104,7 +110,7 @@ convention, date selection, EUR rounding, provenance and settlement fallback.
 See [Account settings](docs/ACCOUNT_SETTINGS.md) for taxpayer details, local backup
 retention, observed backup status and release requirements.
 
-## Operating and recovering the service
+## Optional web service and recovery
 
 - [Correcting counterparty names](docs/COUNTERPARTY_NAMES.md): manual corrections,
   history, import protection, conflicts and schema compatibility.
@@ -135,8 +141,12 @@ CI performs the history scan with a full clone. The scanner fails closed on proh
 ## Tests
 
 ```powershell
-python -m pytest -q
+python -m pip install pytest build
+python scripts/test_installed_core.py
+python -m pytest -q -m "not web"
 ```
+
+UI tests require the optional package/build; see [UI development](docs/UI_DEVELOPMENT.md).
 
 Test fixtures are synthetic and use reserved domains or explicit placeholder identities.
 

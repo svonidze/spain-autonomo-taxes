@@ -9,9 +9,12 @@ Approval and posting do not transfer money, prove that an invoice was paid,
 or send a tax return to AEAT. A posted entry also does not establish that a
 whole period is complete or ready to file.
 
-Routine review and posting use the application. You do not need administrator
-access, a terminal, or a maintenance script for these actions. Missing editing
-features and service failures may require an operator, as described below.
+These rules belong to the shared Python accounting layer. Routine work can use
+only the CLI and [agent instructions](AGENT_WORKFLOW.md), without Node or a web
+service. The UI is an optional way to invoke those same operations. No direct
+SQL writes or administrative maintenance is needed for supported routine actions.
+The screen walkthrough below describes that optional interface; it does not
+make a browser a prerequisite.
 
 ## Expenses: document to posting in one screen
 

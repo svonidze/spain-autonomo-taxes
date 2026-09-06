@@ -1,8 +1,8 @@
 # Accounting interfaces and delivery status
 
 The CLI and optional HTTP interface use shared Python application services.
-This matrix is the coverage contract for the five-stage toolkit work. Pending
-commands are not advertised as usable; existing commands retain their semantics.
+This matrix is the implemented coverage contract. Existing commands retain their
+semantics. For end-to-end examples use [the agent workflow](AGENT_WORKFLOW.md).
 
 | Capability / HTTP interface | Agent CLI | Status |
 |---|---|---|
@@ -27,7 +27,8 @@ commands are not advertised as usable; existing commands retain their semantics.
 | Calculation refresh | `period dashboard` | Existing, shared operation |
 
 Browser sessions, Origin/cookies, Picker credential delivery/chooser, HTML preview,
-translated labels, charts and history are UI-only. Financial values, status codes,
+translated labels, charts and navigation history are UI-only. Counterparty audit
+history is available through the CLI. Financial values, status codes,
 blocking reasons, original access and explicitly selected cloud destinations are
 application capabilities.
 

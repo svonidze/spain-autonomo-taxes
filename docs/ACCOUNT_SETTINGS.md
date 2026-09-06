@@ -1,5 +1,9 @@
 # Account settings
 
+These rules also apply without a browser. See [the agent workflow](AGENT_WORKFLOW.md)
+and [CLI capabilities](CLI_CAPABILITIES.md) for supported commands and recovery.
+
+
 Open **Settings / Настройки** in the navigation or the SQLite footer. Settings are
 available even when the database has no tax periods.
 

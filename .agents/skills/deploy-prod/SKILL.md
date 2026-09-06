@@ -5,6 +5,9 @@ description: Deploy a reviewed Spain autonomo taxes release to the existing prod
 
 # Deploy the existing production service
 
+This skill deploys the optional web service. Core installation and the
+[agent workflow](../../../docs/AGENT_WORKFLOW.md) do not invoke it.
+
 Use the installed operations control plane, not an improvised copy/upload-and-restart flow. This skill supplies routing and acceptance gates; the repository runbooks own command details.
 
 ## Resolve the target and authority
