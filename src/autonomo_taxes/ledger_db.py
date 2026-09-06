@@ -14,7 +14,9 @@ from uuid import uuid4
 
 from .fx_policy import ALLOWED_PRODUCTION_SOURCES, XOLO_RECORDED_PRODUCTION_THROUGH
 from .fx_reference import ECBRateObservation
-from .counterparty_names import normalize_counterparty_name, validate_counterparty_name
+from .counterparty_names import (
+    is_oss_non_union_identifier, normalize_counterparty_name, validate_counterparty_name,
+)
 from .outgoing_invoices import (
     calculate_invoice_totals,
     canonical_lines_json,
@@ -1023,8 +1025,13 @@ class LedgerDB:
         source_hash = source_hash.strip().lower()
         if identity_kind not in aeat_types:
             raise ValueError(f"Unsupported counterparty identity kind: {identity_kind}")
-        if len(country_code) != 2 or not country_code.isalpha():
+        if len(country_code) != 2 or not country_code.isalpha() or country_code == "EU":
             raise ValueError("Counterparty identity country_code must be an ISO alpha-2 code")
+        if identity_kind == "vat_id" and is_oss_non_union_identifier(identifier):
+            raise ValueError(
+                "An OSS non-Union scheme identifier (EU + 9 digits) is not a NIF-IVA; "
+                "record it as other_proof under the supplier's country of establishment"
+            )
         if not identifier or len(identifier) > 20:
             raise ValueError("Counterparty identity identifier must contain 1 to 20 characters")
         if not source_reference or not source_hash:

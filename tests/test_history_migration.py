@@ -14,6 +14,7 @@ from autonomo_taxes.history_migration import (
     _find_acquisition_transaction,
     _prune_unreferenced_migration_counterparty,
     _prune_superseded_source_book_records,
+    _tax_code_for_row,
     _upsert_counterparty,
     _usable_tax_id,
     migrate_xolo_history,
@@ -1209,6 +1210,21 @@ def test_domestic_expense_without_reverse_charge_flag_keeps_zero_output_vat(
 
     assert treatment["deductible_vat_minor"] == 360
     assert treatment["vat_minor"] == 0
+
+
+def test_reverse_charge_from_oss_non_union_supplier_is_not_intra_community() -> None:
+    source_row = {
+        "supplier": "Synthetic OSS Supplier",
+        "counterparty_country_code": "IE",
+        "counterparty_vat_id": "EU123456789",
+        "reverse_charge": "S",
+        "taxable_base_eur": "100.00",
+    }
+
+    assert _tax_code_for_row(source_row, "expense") == "non_eu_service_expense"
+    assert _tax_code_for_row(
+        {**source_row, "counterparty_vat_id": "IETEST-TAX-ID-004"}, "expense"
+    ) == "eu_service_expense"
 
 
 def test_intra_community_source_book_row_makes_modelo349_due(tmp_path: Path) -> None:
