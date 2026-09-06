@@ -1,22 +1,39 @@
 # Spain autónomo accounting toolkit
 
-A local-first Python toolkit for bookkeeping review, evidence tracking, accounting books, and Spanish tax-preparation workflows. The code is designed to be shareable; taxpayer records, source documents, generated reports, browser sessions, and credentials are not part of the repository.
+A local-first toolkit of instructions, Python services and CLI commands for people and their agents: bookkeeping review, evidence tracking, accounting books, and Spanish tax-preparation workflows. The browser UI is an optional adapter over the same accounting operations. The code is designed to be shareable; taxpayer records, source documents, generated reports, browser sessions, and credentials are not part of the repository.
 
 This project does not provide legal or tax advice. Review generated filing data against official sources and a qualified professional before submission.
 
 ## Setup
 
-Python 3.11 or newer is required. Installing from source also requires Node
-24.20.0 and npm 11.19.0 (see `.nvmrc`) to build the interface. A prebuilt Python
-wheel already contains those assets and does not require Node at runtime.
+Python 3.11 or newer is required. Core installation and CLI use do not require
+Node, UI assets or a running web server.
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
+python -m pip install -e .
+autonomo-tax --help
+```
+
+Agents start with [AGENTS.md](AGENTS.md). The additional agent workflows and
+commands are tracked in [the staged execution record](docs/plans/optional-ui-toolkit.md).
+
+### Optional browser UI
+
+Install core first. Building the optional UI from this checkout requires the
+Node/npm versions in `.nvmrc` and `package.json`:
+
+```powershell
 npm ci --include=dev --no-audit --no-fund
 npm run build
-python -m pip install -e .
+python -m pip install -e packages/ui --no-deps
+autonomo-web --help
 ```
+
+A prebuilt UI wheel needs no Node during installation or runtime; install its
+matching core wheel first. The `autonomo-web` launcher belongs only to the UI
+package. UI release preparation does not apply to core-only installations.
 
 Runtime data defaults to an OS-local private directory. On Windows the default is:
 
@@ -34,7 +51,6 @@ Copy `config/example.yaml` to `config.yaml` inside the private root and replace 
 
 ```powershell
 autonomo-tax --help
-autonomo-web --help
 ```
 
 Configuration precedence is explicit `--config`, then `AUTONOMO_PRIVATE_ROOT`, then the OS-local default. A repository-local `.local/config.yaml` is supported only as a warned migration fallback.
@@ -68,11 +84,12 @@ Routine bookkeeping and tax calculation are local. Guided review of a foreign-cu
 Posting makes an approved income or expense transaction eligible for the
 working accounting calculations. Approval and posting are separate actions.
 Neither action transfers money, proves payment, or submits a return to AEAT.
-Routine review and posting use the application and do not require administrator
-scripts or a terminal.
+Routine accounting uses supported CLI commands or the optional browser UI.
+Administrator maintenance is a separate operation.
 
-Start with the [accounting workflow](docs/ACCOUNTING_WORKFLOW.md) for the normal
-steps, status meanings, source-document rules and common problems. When a needed
+Use [the accounting workflow](docs/ACCOUNTING_WORKFLOW.md) for shared status and
+source-document rules and the optional UI walkthrough. CLI additions and the
+complete agent walkthrough are tracked in the staged execution record above. When a needed
 correction is unavailable in the installed interface, an operator follows
 [scoped accounting maintenance](ops/README.md#scoped-accounting-maintenance).
 Exceptional maintenance is separate from the routine workflow.

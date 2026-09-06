@@ -123,3 +123,8 @@ def test_counterparty_routes_keep_existing_history_route_and_protect_reads(name_
     from autonomo_taxes.local_web import _is_spa_route
     assert _is_spa_route(f"/contacts/{party_id}")
     assert not _is_spa_route("/contacts/not-a-uuid")
+
+
+# Requires the separately built optional UI assets.
+import pytest
+pytestmark = pytest.mark.web

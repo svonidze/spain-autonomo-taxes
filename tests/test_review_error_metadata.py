@@ -29,3 +29,8 @@ def test_unrecognized_review_diagnostic_is_not_reclassified_for_translation():
     assert str(failure) == "Synthetic unknown validation"
     assert failure.message_code is None
     assert failure.field is None
+
+
+# Requires the separately built optional UI assets.
+import pytest
+pytestmark = pytest.mark.web

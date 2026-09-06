@@ -2,7 +2,7 @@ const {createHash} = require('node:crypto');
 const {readFileSync, writeFileSync, readdirSync, lstatSync, existsSync} = require('node:fs');
 const {execFileSync} = require('node:child_process');
 const path = require('node:path');
-const root = path.resolve('src/autonomo_taxes/web_ui/dist');
+const root = path.resolve('packages/ui/src/autonomo_taxes_ui/dist');
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const files = {};
 for (const name of ['index.html', ...readdirSync(path.join(root, 'ui-assets')).map(name => `ui-assets/${name}`)].sort()) {

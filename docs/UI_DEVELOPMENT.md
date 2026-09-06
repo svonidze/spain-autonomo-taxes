@@ -44,7 +44,7 @@ environment, then run the checks in this order:
 python -m pip install pytest build
 npm ci --include=dev --no-audit --no-fund
 npm run build
-python -m pip install -e .
+python -m pip install -e . -e packages/ui
 npm run check:runtime
 npm run format:check
 npm run test:coverage-map
@@ -75,9 +75,9 @@ the same dist while tests read its manifest creates transient failures.
 
 ## Packaging and review
 
-Build before Python installation or startup. The server serves only verified
+Build the optional UI before installing its source package or starting it. Core installation does not need a frontend build. The server serves only verified
 packaged assets, with no source fallback, public maps or dev server. Installed
-acceptance builds a fresh wheel and Python environment outside the checkout, then
+acceptance builds a fresh core/UI wheel pair and Python environment outside the checkout, then
 runs the browser suite with isolated imports. Eager bundling intentionally keeps
 open sessions independent of later release asset changes.
 

@@ -10,7 +10,7 @@ export default defineConfig({
   envDir: false,
   envPrefix: [],
   build: {
-    outDir: 'dist',
+    outDir: fileURLToPath(new URL('./packages/ui/src/autonomo_taxes_ui/dist', import.meta.url)),
     assetsDir: 'ui-assets',
     emptyOutDir: true,
     target: 'es2022',

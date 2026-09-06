@@ -497,9 +497,10 @@ units, environment files, or rollback scripts with the default control plane.
 
 ## Compiled frontend releases
 
-Releases that declare frontend build contract 1 require the pinned Node/npm
-build tools during preparation, and include their compiled resources in the
-installed Python package. Before the first such release on an existing host,
+Web releases declaring frontend build contract 1 or 2 require the pinned Node/npm
+build tools during preparation. Contract 1 uses its legacy embedded UI; contract 2
+installs matched core and optional UI wheels, verifying both before downtime.
+Core-only CLI installation does not require this preparation or Node. Before the first such release on an existing host,
 follow [Frontend build and installed-helper update](FRONTEND_BUILD.md). Update
 only the active deployment caller and its shared helpers; do not run the general
 installer or change timers for this update. Legacy rollback remains build-free.

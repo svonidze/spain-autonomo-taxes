@@ -80,7 +80,7 @@ def test_both_modes_gate_installation_before_downtime(path):
     preflight = source.index('prepare_ui_release.py" preflight')
     create = source.index('worktree add --detach')
     build = source.index('prepare_ui_release.py" build')
-    install = source.index('-m pip install')
+    install = source.index('prepare_ui_release.py" install')
     receipt = source.index('prepare_ui_release.py" receipt')
     verify = source.index('prepare_ui_release.py" verify')
     stop = source.index('systemctl --user stop')

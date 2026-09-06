@@ -2670,7 +2670,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, *, static_root: Path | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.host not in {"127.0.0.1", "localhost", "::1"}:
         raise SystemExit("autonomo-web only accepts a loopback --host")
@@ -2687,6 +2687,17 @@ def main(argv: list[str] | None = None) -> int:
             assert_storage_startup_ready(config.database)
         except StorageMigrationError as exc:
             raise SystemExit(str(exc)) from exc
+    if static_root is None:
+        try:
+            from autonomo_taxes_ui import __file__ as ui_file
+        except ImportError:
+            raise SystemExit("Install the optional spain-autonomo-taxes-ui package to run the web interface") from None
+        from importlib.metadata import version
+        if version("spain-autonomo-taxes") != version("spain-autonomo-taxes-ui"):
+            raise SystemExit("Core and optional UI package versions must match")
+        static_root = Path(ui_file).resolve().parent / "dist"
+    from dataclasses import replace
+    config = replace(config, static_root=static_root)
     app = LocalAccountingApp(config)
     display_host = f"[{args.host}]" if ":" in args.host else args.host
     bind_url = f"http://{display_host}:{args.port}"

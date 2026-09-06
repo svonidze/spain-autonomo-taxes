@@ -24,20 +24,32 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="autonomo-wheel-test-") as directory:
         temporary = Path(directory)
         wheels = temporary / "wheels"
-        checked([sys.executable, "-m", "build", "--wheel", "--outdir", str(wheels)], cwd=root)
-        wheel, = wheels.glob("*.whl")
-        with zipfile.ZipFile(wheel) as archive:
-            prefix = "autonomo_taxes/web_ui/dist/"
+        for package in (root, root / "packages/ui"):
+            checked([sys.executable, "-m", "build", "--wheel", "--outdir", str(wheels)], cwd=package)
+        artifacts = sorted(wheels.glob("*.whl"))
+        if len(artifacts) != 2:
+            raise RuntimeError("Expected a core and UI wheel")
+        core = next(path for path in artifacts if not path.name.startswith("spain_autonomo_taxes_ui-"))
+        ui = next(path for path in artifacts if path != core)
+        with zipfile.ZipFile(core) as archive:
+            if any("web_ui/" in name or name.endswith((".js", ".css", ".html")) for name in archive.namelist()):
+                raise RuntimeError("Core wheel contains UI resources")
+            entry = next(name for name in archive.namelist() if name.endswith("entry_points.txt"))
+            if b"autonomo-web" in archive.read(entry):
+                raise RuntimeError("Core owns the optional web launcher")
+        with zipfile.ZipFile(ui) as archive:
+            prefix = "autonomo_taxes_ui/dist/"
             manifest = json.loads(archive.read(prefix + "build-manifest.json"))
             expected = {prefix + name for name in manifest["files"]} | {prefix + "build-manifest.json"}
-            actual = {name for name in archive.namelist() if name.startswith("autonomo_taxes/web_ui/")}
+            actual = {name for name in archive.namelist() if name.startswith(prefix)}
             if actual != expected:
-                raise RuntimeError("Wheel UI inventory differs from its build (missing, stale or source files)")
+                raise RuntimeError("UI wheel inventory differs from its manifest")
         environment = temporary / "venv"
         venv.EnvBuilder(with_pip=True).create(environment)
         bin_directory = environment / ("Scripts" if os.name == "nt" else "bin")
         python = bin_directory / ("python.exe" if os.name == "nt" else "python")
-        checked([str(python), "-m", "pip", "install", "--disable-pip-version-check", "--quiet", str(wheel)], cwd=temporary)
+        checked([str(python), "-m", "pip", "install", "--disable-pip-version-check", "--quiet", str(core)], cwd=temporary)
+        checked([str(python), "-m", "pip", "install", "--disable-pip-version-check", "--quiet", "--no-deps", str(ui)], cwd=temporary)
         env = dict(os.environ, PATH=str(bin_directory) + os.pathsep + os.environ["PATH"], AUTONOMO_BROWSER_INSTALLED="1")
         env.pop("PYTHONPATH", None)
         node = os.environ.get("NODE") or "node"

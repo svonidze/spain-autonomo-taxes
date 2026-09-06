@@ -17,16 +17,17 @@ dependencies = [
 
 [project.scripts]
 autonomo-tax = "autonomo_taxes.cli:main"
-autonomo-web = "autonomo_taxes.local_web:main"
+
+[tool.setuptools]
+include-package-data = false
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.setuptools.package-data]
-autonomo_taxes = ["web_ui/dist/index.html", "web_ui/dist/build-manifest.json", "web_ui/dist/ui-assets/*.js", "web_ui/dist/ui-assets/*.css"]
+exclude = ["autonomo_taxes.web_ui*"]
 
 [tool.autonomo.web-ui]
-build-contract = 1
+build-contract = 2
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+markers = ["web: optional web adapter, assets, or browser integration"]
