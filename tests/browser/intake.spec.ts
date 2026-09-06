@@ -56,3 +56,21 @@ test('a mismatched acknowledgement retains the draft and permits correction',asy
   await expect(page.locator('#vue-intake-status')).not.toHaveText('');await expect(page.locator('#vue-submit-intake')).toBeEnabled();await expect(page.locator('#vue-intake-form [name="document_number"]')).toHaveValue('SYN-MISMATCH');
   expect(await page.evaluate(()=>localStorage.getItem('autonomo.intake-draft'))).toContain('SYN-MISMATCH');await expect(page.locator('#vue-intake-dialog')).toBeVisible();
 });
+
+test('closing intake during the upload still delivers the accepted result on the same route',async({page})=>{
+  const id='11111111-1111-4111-8111-111111111111';let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
+  await page.route('**/api/intake',async route=>{await gate;await route.fulfill({json:{system_marker:'synthetic-id',kind:'expense_invoice',transaction_id:id,period:'2026-Q3'}});});
+  await page.route(`**/api/transactions/${id}`,route=>route.fulfill({json:{transaction:{transaction_id:id,entry_type:'expense',lifecycle_status:'needs_review',currency:'EUR'},period:{period_key:'2026-Q3'}}}));
+  await open(page,'/expenses?period=2026-Q3');await page.locator('#vue-intake-file').setInputFiles(file);await page.locator('#vue-submit-intake').click();await expect(page.locator('#vue-submit-intake')).toBeDisabled();
+  await page.locator('#vue-close-dialog').click();await expect(page.locator('#vue-intake-dialog')).not.toBeVisible();release();
+  await expect(page.locator('#toast')).toBeVisible();await expect(page).toHaveURL(new RegExp(`/review/${id}\\?period=2026-Q3$`));
+});
+test('a long server diagnostic stays inside the 375 px intake footer',async({page})=>{
+  await page.setViewportSize({width:375,height:812});
+  await page.route('**/api/intake',route=>route.fulfill({status:503,json:{error:'SyntheticUnbrokenDiagnostic'.repeat(12)}}));
+  await open(page);await page.locator('#vue-intake-file').setInputFiles(file);await page.locator('#vue-submit-intake').click();
+  const status=page.locator('#vue-intake-status');await expect(status).toContainText('SyntheticUnbrokenDiagnostic');
+  const [statusBox,submitBox]=await Promise.all([status.boundingBox(),page.locator('#vue-submit-intake').boundingBox()]);
+  expect(statusBox!.width).toBeLessThanOrEqual(375);expect(submitBox!.x+submitBox!.width).toBeLessThanOrEqual(375);
+  expect(await status.evaluate(element=>getComputedStyle(element).overflowWrap)).toBe('anywhere');
+});

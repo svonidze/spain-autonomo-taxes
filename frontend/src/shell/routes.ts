@@ -18,6 +18,13 @@ export interface Period {
   period_key: string;
   status?: string;
 }
+/** The server canonicalizes UUIDs (lowercase, hyphenated); compare and link in the same form. */
+export function canonicalId(value: string): string {
+  const id = value.toLowerCase();
+  return /^[0-9a-f]{32}$/.test(id)
+    ? `${id.slice(0, 8)}-${id.slice(8, 12)}-${id.slice(12, 16)}-${id.slice(16, 20)}-${id.slice(20)}`
+    : id;
+}
 export function parseRoute(path: string): ScreenRoute | null {
   const detail = /^\/(contacts|expenses|review)\/([0-9a-fA-F-]{32,36})$/.exec(
     path.split('?')[0].split('#')[0],
@@ -30,7 +37,7 @@ export function parseRoute(path: string): ScreenRoute | null {
           : detail[1] === 'expenses'
             ? 'expense-detail'
             : 'review',
-      id: detail[1] === 'contacts' ? detail[2].toLowerCase() : detail[2],
+      id: canonicalId(detail[2]),
     };
   const view = path.slice(1) as ListView;
   return views.includes(view) ? { view } : null;
@@ -85,7 +92,7 @@ export function safeReturnUrl(
     if (contact) {
       const local = url.searchParams.get('period') || '';
       return !local || /^\d{4}-Q[1-4]$/.test(local)
-        ? routeUrl('contact-detail', local, { id: contact[1].toLowerCase() })
+        ? routeUrl('contact-detail', local, { id: canonicalId(contact[1]) })
         : defaultUrl;
     }
     const source = knownPeriod(url.search, periods);

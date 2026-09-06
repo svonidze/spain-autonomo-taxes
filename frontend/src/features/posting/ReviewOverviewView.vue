@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue';
 import { useLocale } from '../../vue/locale.ts';
 import { eur, formatDateTime } from '../../core/format.ts';
-import { errorMessage } from '../../core/error-message.ts';
+import { errorDescriptor, errorMessage } from '../../core/error-message.ts';
 import { ApiError } from '../../core/http.ts';
 import { message } from '../../core/i18n.ts';
 import ReviewQueue from './ReviewQueue.vue';
@@ -190,7 +190,7 @@ async function retryRefresh() {
   } catch (failure) {
     if (postingState.stale.get(period) === token)
       markStale(period, errorMessage(failure, locale.value));
-    if (current(version, period)) props.context.notify(errorMessage(failure, locale.value), true);
+    if (current(version, period)) props.context.notify(errorDescriptor(failure), true);
   } finally {
     if (active) refreshing.value = false;
   }
@@ -241,7 +241,7 @@ async function submit() {
   } catch (failure) {
     if (current(version, snapshot.period)) {
       dialogError.value = failure;
-      props.context.notify(errorMessage(failure, locale.value), true);
+      props.context.notify(errorDescriptor(failure), true);
     }
   } finally {
     submitting.value = false;

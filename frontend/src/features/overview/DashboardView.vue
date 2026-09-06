@@ -223,11 +223,7 @@ const retry = () => (forbidden() ? window.location.reload() : void load(!!data.v
         id="dashboard-ready-banner"
         @click="review()"
       >
-        <strong>{{
-          t(ready === 1 ? 'dashboard.readyBannerOne' : 'dashboard.readyBannerOther', {
-            count: ready,
-          })
-        }}</strong
+        <strong>{{ t('dashboard.readyBanner', { count: ready }) }}</strong
         ><span>{{ t('dashboard.readyBannerAction') }}</span>
       </button>
       <div v-if="nextDue" class="deadline-strip">

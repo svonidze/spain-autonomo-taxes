@@ -58,8 +58,16 @@ let touched = false,
   session = 0,
   draftTimer: ReturnType<typeof setTimeout> | undefined,
   successTimer: ReturnType<typeof setTimeout> | undefined,
-  picker: ReturnType<typeof chooseFolder> | undefined;
+  picker: ReturnType<typeof chooseFolder> | undefined,
+  delivery: { result: IntakeResult; origin: string } | undefined;
 const owns = (id: number) => active && session === id;
+/** Hand an accepted document to the shell exactly once, on the route that submitted it. */
+function deliver() {
+  const pending = delivery;
+  delivery = undefined;
+  if (pending && props.services.locationKey() === pending.origin)
+    props.services.accepted(pending.result);
+}
 function flushDraft(force = false) {
   clearTimeout(draftTimer);
   if (form.value && (touched || force)) saveDraft(readValues(form.value.elements));
@@ -73,6 +81,7 @@ async function open(value: IntakeKind, options: IntakeOptions) {
   session++;
   touched = false;
   accepted.value = false;
+  delivery = undefined;
   clearTimeout(successTimer);
   clearTimeout(draftTimer);
   picker?.close();
@@ -113,6 +122,8 @@ function close() {
   folder.value = undefined;
   picker?.close();
   picker = undefined;
+  // Closing during the success pause must not lose the list refresh or review hand-off.
+  if (accepted.value) deliver();
 }
 async function availability(id: number) {
   try {
@@ -233,7 +244,7 @@ async function submit() {
     const result = intakeResult(
       await props.services.request(request.url, {
         ...request.options,
-        fallbackMessage: t('intake.failed'),
+        fallbackCode: 'intake.failed',
       }),
       expected,
     );
@@ -244,13 +255,19 @@ async function submit() {
       id: result.system_marker ? String(result.system_marker).slice(0, 8) : t('common.noId'),
     });
     props.services.notify(message('intake.acceptedToast', { period: result.period }));
+    delivery = { result, origin };
     if (dialog.value?.open)
       successTimer = setTimeout(() => {
-        if (!owns(id) || !dialog.value?.open) return;
-        dialog.value.close();
+        if (!owns(id)) {
+          delivery = undefined;
+          return;
+        }
+        if (dialog.value?.open) dialog.value.close();
         folder.value = undefined;
-        if (props.services.locationKey() === origin) props.services.accepted(result);
+        deliver();
       }, 700);
+    // The dialog was closed while the upload ran: deliver now instead of never.
+    else deliver();
   } catch (error) {
     if (owns(id)) {
       failure.value = error;
@@ -283,6 +300,7 @@ async function focusDocumentNumber() {
 onBeforeUnmount(() => {
   active = false;
   session++;
+  delivery = undefined;
   clearTimeout(draftTimer);
   clearTimeout(successTimer);
   picker?.close();
