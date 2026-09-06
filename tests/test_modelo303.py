@@ -6,6 +6,8 @@ import unittest
 
 from autonomo_taxes.history import RawXoloExpense
 from autonomo_taxes.modelo303 import (
+    Modelo303CasillaEvidence,
+    REVERSE_CHARGE_BOXES,
     _raw_vat_bearing_totals_from_csv,
     _raw_vat_bearing_totals_by_period,
     _settlement_casilla_evidence_from_fragments,
@@ -169,7 +171,11 @@ class Modelo303Tests(unittest.TestCase):
                 Decimal("1000.00"),  # 36: reverse-charge deductible base
                 Decimal("294.00"),  # 45: total deductible VAT
                 Decimal("-84.00"),  # 46/71: result
-            ]
+            ],
+            structural_evidence=_reverse_evidence({
+                "10": "1000", "11": "210", "27": "210", "28": "400", "29": "84",
+                "36": "1000", "37": "210", "45": "294", "46": "-84",
+            }),
         )
 
         self.assertEqual(values.extraction_status, "reverse_charge_services")
@@ -191,7 +197,11 @@ class Modelo303Tests(unittest.TestCase):
                 Decimal("1000.00"),  # 36: reverse-charge deductible base
                 Decimal("336.00"),  # 45: total deductible VAT
                 Decimal("-84.00"),  # 46/71: result
-            ]
+            ],
+            structural_evidence=_reverse_evidence({
+                "10": "1000", "11": "210", "12": "200", "13": "42", "27": "252",
+                "28": "600", "29": "126", "36": "1000", "37": "210", "45": "336", "46": "-84",
+            }),
         )
 
         self.assertEqual(values.extraction_status, "reverse_charge_with_other_output")
@@ -254,6 +264,104 @@ class Modelo303Tests(unittest.TestCase):
 
         self.assertEqual(totals["2026-Q1"]["vat"], Decimal("28.80"))
         self.assertEqual(totals["2026-Q1"]["base"], Decimal("137.14"))
+
+
+
+
+def _reverse_evidence(overrides):
+    boxes = {key: Decimal(0) for key in REVERSE_CHARGE_BOXES}
+    boxes.update({key: Decimal(value) for key, value in overrides.items()})
+    return Modelo303CasillaEvidence(tuple(boxes.items()), (), (), "casillas_extracted")
+
+
+def _synthetic_reverse_charge_pdf(path, *, repeated_vat=False, previous_compensation=False):
+    from pypdf import PdfWriter
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=595, height=842)
+    empty = DecodedStreamObject()
+    empty.set_data(b" ")
+    page[NameObject("/Contents")] = writer._add_object(empty)
+    font = DictionaryObject({NameObject("/Type"): NameObject("/Font"),
+                             NameObject("/Subtype"): NameObject("/Type1"),
+                             NameObject("/BaseFont"): NameObject("/Helvetica")})
+    font_ref = writer._add_object(font)
+
+    def add_page(items):
+        page = writer.add_blank_page(width=595, height=842)
+        page[NameObject("/Resources")] = DictionaryObject({NameObject("/Font"): DictionaryObject({NameObject("/F1"): font_ref})})
+        commands = ["BT"]
+        for text, x, y, size in items:
+            commands.append(f"1 0 0 1 {x} {y} Tm /F1 {size} Tf ({text}) Tj")
+        commands.append("/F1 1 Tf ET")
+        stream = DecodedStreamObject()
+        stream.set_data("\n".join(commands).encode())
+        page[NameObject("/Contents")] = writer._add_object(stream)
+
+    if repeated_vat:
+        boxes = {"10": "1000.00", "11": "210.00", "27": "210.00", "36": "1000.00", "37": "210.00", "45": "210.00", "46": "0.00"}
+    elif previous_compensation:
+        boxes = {"10": "1000.00", "11": "210.00", "27": "210.00", "28": "500.00", "29": "0.00", "36": "1000.00", "37": "105.00", "45": "105.00", "46": "105.00"}
+    else:
+        boxes = {"10": "1000.00", "11": "210.00", "27": "210.00", "28": "400.00", "29": "84.00", "36": "1000.00", "37": "210.00", "45": "294.00", "46": "-84.00"}
+    groups = [("150",), ("01",), ("04",), ("07",), ("10", "11"), ("12", "13"), ("27",), ("28", "29"), ("30", "31"), ("32", "33"), ("34", "35"), ("36", "37"), ("38", "39"), ("45",), ("46",)]
+    items = []
+    for index, group in enumerate(groups):
+        y = 790 - index * 24
+        for column, key in enumerate(group):
+            x = 60 + column * 240
+            items.append((key, x, y, 1))
+            if key in boxes:
+                size = 9 if repeated_vat or key not in {"11", "29", "37"} else 4
+                items.append((boxes[key].replace(".", ","), x + 45, y, size))
+    add_page(items)
+    if previous_compensation:
+        items = []
+        positions = {"64": (460, 550), "110": (460, 500), "78": (460, 480), "87": (460, 460), "69": (460, 435), "71": (460, 385), "72": (88, 740), "73": (161, 527)}
+        for key, (x, y) in positions.items():
+            value = "105,00" if key in {"64", "110", "78"} else "0,00"
+            items.extend([(key, x, y, 1), (value, x + 45, y, 9)])
+        add_page(items)
+    writer.write(path)
+
+
+def test_reverse_charge_lengths_without_casilla_evidence_stay_unverified():
+    for values in ([1000, 210, 400, 1000, 294, -84], [1000, 210, 210, 1000, 210, 210, 0]):
+        parsed = values_from_monetary_sequence([Decimal(x) for x in values])
+        assert parsed.extraction_status.startswith("unexpected_monetary_sequence")
+
+
+def test_reverse_charge_pdf_requires_matching_structural_evidence(tmp_path):
+    from autonomo_taxes.modelo303 import extract_modelo303_values
+
+    path = tmp_path / "synthetic-303.pdf"
+    _synthetic_reverse_charge_pdf(path)
+    parsed = extract_modelo303_values(path)
+    assert parsed.extraction_status == "reverse_charge_services"
+    assert parsed.output_base == Decimal("1000.00")
+    assert parsed.deductible_base == Decimal("1400.00")
+    assert parsed.result == Decimal("-84.00")
+    assert parsed.structural_extraction_status == "casillas_extracted"
+
+    _synthetic_reverse_charge_pdf(path, repeated_vat=True)
+    ambiguous = extract_modelo303_values(path)
+    assert len(ambiguous.monetary_sequence) == 7
+    assert ambiguous.extraction_status == "unexpected_monetary_sequence_len_7"
+
+
+def test_reverse_charge_pdf_uses_final_settlement_after_compensation(tmp_path):
+    from autonomo_taxes.modelo303 import extract_modelo303_values
+
+    path = tmp_path / "synthetic-303-compensation.pdf"
+    _synthetic_reverse_charge_pdf(path, previous_compensation=True)
+    parsed = extract_modelo303_values(path)
+    assert parsed.extraction_status == "reverse_charge_services"
+    assert dict(parsed.structural_casillas)["46"] == Decimal("105.00")
+    assert parsed.result == Decimal("0.00")
+    assert parsed.settlement_values["110"] == Decimal("105.00")
+    assert parsed.settlement_values["78"] == Decimal("105.00")
+    assert parsed.compensation_carryforward == Decimal("0.00")
 
 
 if __name__ == "__main__":
