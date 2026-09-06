@@ -154,6 +154,6 @@ test('pseudolocale comes from the catalog registry and leaves record data intact
   await expect(page.locator('nav [data-i18n="nav.income"]')).toContainText('⟦');
   await expect(page.locator('#app')).toContainText('Example income');
   await page.locator('#new-entry-button').click();
-  await expect(page.locator('#intake-dialog')).toBeVisible();
-  await expect(page.locator('#intake-dialog [data-i18n="intake.title"]')).toContainText('⟦');
+  await expect(page.locator('#vue-intake-dialog')).toBeVisible();
+  await expect(page.locator('#vue-intake-dialog h2')).toContainText('⟦');
 });
