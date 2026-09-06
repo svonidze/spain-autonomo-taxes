@@ -170,7 +170,15 @@ authenticated unknown-resource responses and settings dirty navigation.
   scenarios, pseudolocale and 1,342 Python tests pass (four skips). Independent
   code and architecture reviews have no remaining code findings. Live OAuth is
   intentionally mocked; no external Drive/accounting operations performed.
-- Stages 11–12: pending.
+- Stage 11: one Vue shell owns settings and persistent intake; Vue Router owns
+  navigation and same-URL help entries. Canonical route continuations are fenced,
+  contact global periods stay separate, and review tabs survive period changes.
+  Settings retain opaque backup revisions, private drafts, conflict feedback and
+  explicit pruning consent. Fifty-three unit tests, 13 legacy suites, 50 source
+  and installed-wheel browser scenarios, pseudolocale and all 1,342 Python tests
+  pass (four skips). Two Python resource reads overlapped a local rebuild and
+  passed when rerun against stable assets. CI sequences these gates already.
+- Stage 12: pending.
 
 Stage 2 compatibility note: Vite's CommonJS handling hid the settings global used
 by the old shell. The module now retains that namespace as well as its CommonJS

@@ -75,6 +75,10 @@ PROHIBITED_SUFFIXES = (
 # reviewable digest entry.
 ALLOWED_SYNTHETIC_VALUE_SHA256 = frozenset(
     {
+        # Settings mocks: Synthetic profile, Synthetic other, Synthetic saved.
+        "2bee2dea5521d7ec91ea382bb3dcfec086f5259e3c63e18875cb90393cdf2efe",
+        "96d161b1b7c0054120ca9758eb45684f02dedff646cb1a9e256dcb22c0bb9f6f",
+        "9ca7fc4f63e6b89b542dd9f410501498d6cfe7e775013bdc10c1c038c5dc0ffe",
         # Intake mocks: synthetic-access-token and synthetic-file-123 Drive/Docs
         # URLs, including deliberately invalid URL credentials/ports. Exact values.
         "167b789905a7f0dfb52e42c0cf27d60361dcc8c3ae664de8e4e0cb7b63825639",
