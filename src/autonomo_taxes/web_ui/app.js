@@ -509,11 +509,13 @@ const messages = {
     "taxes.filed": "Подана",
     "taxes.notFiled": "Ещё не подана",
     "taxes.filingNotRequired": "Подача не требуется",
+    "taxes.filingUndecided": "Решение по подаче не принято",
     "taxes.carryforward": "Всего IVA к переносу",
     "taxes.generatedCredit": "Добавлено в этом квартале",
     "taxes.refundRequested": "Запрошен возврат",
     "taxes.noTaxPayment": "По этой декларации платить не нужно.",
     "taxes.otherForms": "Остальные декларации — подача не требуется",
+    "taxes.undecidedForms": "Декларации без решения — проверьте обязательства",
     "taxes.additionalDueForms": "Дополнительные обязательные декларации",
     "taxes.additionalAnalytics": "Дополнительная аналитика",
     "taxes.amendedNotice": "Период был исправлен. Суммы оплаты требуют сверки с актуальной декларацией.",
@@ -1067,11 +1069,13 @@ const messages = {
     "taxes.filed": "Filed",
     "taxes.notFiled": "Not filed yet",
     "taxes.filingNotRequired": "Filing not required",
+    "taxes.filingUndecided": "Filing decision pending",
     "taxes.carryforward": "Total IVA carry-forward",
     "taxes.generatedCredit": "Added this quarter",
     "taxes.refundRequested": "Refund requested",
     "taxes.noTaxPayment": "No payment is required for this return.",
     "taxes.otherForms": "Other returns — filing not required",
+    "taxes.undecidedForms": "Returns without a decision — review the obligations",
     "taxes.additionalDueForms": "Additional required returns",
     "taxes.additionalAnalytics": "Additional analytics",
     "taxes.amendedNotice": "This period was amended. Reconcile payments against the current filed return.",
@@ -4640,11 +4644,14 @@ function taxFormCard(formCode, formView, summary) {
   const status = summary?.settlement_status || "undetermined";
   const filed = summary?.filing_status === "filed";
   const title = t(isIrpf ? "taxes.irpf" : "taxes.iva");
-  const filingText = summary?.determination !== "due"
-    ? t("taxes.filingNotRequired")
-    : filed
+  const determination = summary?.determination || "unknown";
+  const filingText = determination === "due"
+    ? filed
       ? `${t("taxes.filed")}${summary.filed_on ? ` · ${formatDate(summary.filed_on)}` : ""}`
-      : t("taxes.notFiled");
+      : t("taxes.notFiled")
+    : determination === "unknown"
+      ? t("taxes.filingUndecided")
+      : t("taxes.filingNotRequired");
   const secondaryLines = [];
   if (!isIrpf && summary?.disposition === "carryforward") {
     if (summary.carryforward_minor != null) secondaryLines.push(`${t("taxes.carryforward")}: ${formatMinorEur(summary.carryforward_minor)}`);
@@ -4700,7 +4707,8 @@ async function renderTaxes(renderGeneration = currentRenderGeneration) {
   const m303 = formCardData(data.tax_forms?.[FORM_KEYS[303]], obligations[303]);
   const headline = taxHeadlineModel(data.period_state, data.tax_summary);
   const extraDue = data.obligations.filter((row) => row.determination === "due" && !["130", "303"].includes(String(row.obligation_code)));
-  const otherForms = data.obligations.filter((row) => row.determination !== "due");
+  const undecidedForms = data.obligations.filter((row) => row.determination === "unknown");
+  const otherForms = data.obligations.filter((row) => !["due", "unknown"].includes(row.determination));
   app.innerHTML = `
     <div class="tax-page">
       <section class="tax-hero tax-hero-${escapeHtml(headline.tone)}">
@@ -4718,6 +4726,7 @@ async function renderTaxes(renderGeneration = currentRenderGeneration) {
         ${taxFormCard("303", m303, data.tax_summary?.forms?.["303"])}
       </div>
       ${taxObligationList(extraDue, t("taxes.additionalDueForms"), true)}
+      ${taxObligationList(undecidedForms, t("taxes.undecidedForms"), true)}
       ${taxObligationList(otherForms, t("taxes.otherForms"))}
       <section class="panel tax-analytics-panel">
         <header class="panel-header"><h2>${escapeHtml(t("taxes.additionalAnalytics"))}</h2></header>

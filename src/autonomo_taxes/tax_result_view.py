@@ -592,9 +592,18 @@ def build_tax_summary(
         if str(row.get("obligation_code")) not in TAX_FORM_KEYS
     )
     unresolved_obligations = sorted(
-        str(row.get("obligation_code"))
-        for row in obligations
-        if row.get("determination") == "unknown"
+        {
+            str(row.get("obligation_code"))
+            for row in obligations
+            if row.get("determination") == "unknown"
+        }
+        | {
+            # A quarter with no recorded decision for a core return is
+            # undecided, not exempt; it must never read as "not required".
+            form_code
+            for form_code in TAX_FORM_KEYS
+            if form_code not in obligation_by_code
+        }
     )
     due_forms = [
         forms[str(row["obligation_code"])]

@@ -802,6 +802,15 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     period_annual_status.set_defaults(
         _operational_handler=_cmd_period_annual_status
     )
+    period_open = period_sub.add_parser(
+        "open",
+        help="Create an accounting period and seed its obligations as undecided",
+    )
+    _db_arg(period_open)
+    period_open.add_argument("period")
+    period_open.add_argument("--starts-on")
+    period_open.add_argument("--ends-on")
+    period_open.set_defaults(_operational_handler=_cmd_period_open)
     period_close = period_sub.add_parser("close")
     _db_arg(period_close)
     period_close.add_argument("period")
@@ -3675,6 +3684,19 @@ def _cmd_period_shadow_close(args: argparse.Namespace) -> int:
             },
         }
     )
+    return 0
+
+
+def _cmd_period_open(args: argparse.Namespace) -> int:
+    with open_ledger_db(args.db) as db:
+        period = db.ensure_period(args.period, starts_on=args.starts_on, ends_on=args.ends_on)
+        seeded = db.seed_unreviewed_obligations(args.period)
+        _emit(
+            {
+                "period": period,
+                "seeded_obligations": [row["obligation_code"] for row in seeded],
+            }
+        )
     return 0
 
 
