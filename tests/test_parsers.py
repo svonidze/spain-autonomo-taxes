@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 import tempfile
 import unittest
@@ -7,6 +8,7 @@ from autonomo_taxes.money import parse_amount
 from autonomo_taxes.parsers import (
     LedgerEntry,
     apply_fx,
+    parse_date_from_filename,
     parse_income_invoice,
     parse_expense,
     parse_us_numeric_date,
@@ -125,6 +127,24 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(parsed, [])
         self.assertEqual(len(manual), 1)
         self.assertEqual(manual[0].category, "unsupported income invoice")
+
+
+class FilenameDateTests(unittest.TestCase):
+    def test_valid_compact_and_dashed_dates_still_parse(self):
+        self.assertEqual(parse_date_from_filename("scan 20260315 invoice.pdf"), date(2026, 3, 15))
+        self.assertEqual(parse_date_from_filename("2026-03-15 receipt.pdf"), date(2026, 3, 15))
+
+    def test_impossible_date_like_digits_do_not_raise(self):
+        # Document numbers routinely contain eight-digit runs that start with
+        # "20" but are not calendar dates; they must not abort ingestion.
+        self.assertIsNone(parse_date_from_filename("ticket 20269931 summary.pdf"))
+        self.assertIsNone(parse_date_from_filename("order 2026-13-45.pdf"))
+
+    def test_impossible_compact_run_falls_through_to_dashed_date(self):
+        self.assertEqual(
+            parse_date_from_filename("ref 20261399 issued 2026-04-02.pdf"),
+            date(2026, 4, 2),
+        )
 
 
 if __name__ == "__main__":
