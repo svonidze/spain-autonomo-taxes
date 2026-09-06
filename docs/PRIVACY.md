@@ -48,6 +48,33 @@ The secrets repository is a ciphertext distribution and recovery layer, not an a
 - Commit-message email addresses are ignored because Git attribution trailers routinely contain them. Email addresses in tracked files remain findings, and commit messages are still checked for credentials and other private identifiers.
 - Any new default output path must resolve under the private root, independent of the current working directory.
 
+### Reviewing synthetic scanner matches
+
+When a fixture legitimately matches a privacy pattern, inspect its exact value
+and originating test before permitting it. Confirm it was independently invented
+and is not an operational record, provider credential, or real evidence locator.
+A `synthetic` prefix or a location under `tests/` is not an automatic exception.
+
+URL-validation tests may need the real Google Drive or Docs hostname to exercise
+accepted and rejected URL forms. Use explicitly synthetic file/folder identifiers
+and mocked provider responses. Replacing the hostname with `example.invalid`
+would not exercise the same validation contract. A rejected URL containing fake
+userinfo can also match the email pattern; review that match in its URL context.
+
+Add new approvals to `ALLOWED_SYNTHETIC_FINDINGS` in the privacy guard as exact
+`(category, SHA-256 of matched value)` pairs, with the fixture purpose documented.
+Keep existing approvals compatible. Do not add directory, hostname, prefix, or
+category-wide exemptions. For patterns with a captured value, hash that value,
+not the entire assignment or source line. Record the category, fingerprint,
+historical blob and test location when investigating CI, without logging secrets.
+
+Add regression coverage for the approved value, changed/unreviewed values,
+cross-category matches, and historical fixtures on another branch. Stage the
+intended changes, run the guard tests and `python scripts/privacy_guard.py
+--history`, then repeat the full-history scan in a fresh clone of the published
+refs. An exact reviewed exception handles old fixture blobs as well as current
+files; editing a fixture at a branch tip does not remove its historical matches.
+
 ## What each scan covers
 
 All modes inspect the Git index and working-tree versions of indexed paths.
