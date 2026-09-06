@@ -26,6 +26,7 @@ def _invoice_fixture(
     currency: str = "EUR",
     country_code: str = "ES",
     transaction_date: str | None = None,
+    display_name: str | None = None,
 ) -> dict[str, object]:
     database = tmp_path / "ledger.sqlite"
     source = tmp_path / "private" / "supplier-invoice.pdf"
@@ -38,7 +39,8 @@ def _invoice_fixture(
     with initialize(database) as db:
         counterparty = db.upsert_counterparty(
             external_key="review-packet-counterparty",
-            display_name="Supplier Example SL" if entry_type == "expense" else "Foreign Customer Inc",
+            display_name=display_name
+            or ("Supplier Example SL" if entry_type == "expense" else "Foreign Customer Inc"),
             country_code=country_code,
         )
         document = db.upsert_document(
@@ -714,6 +716,99 @@ def test_income_rejects_input_tax_code_and_expense_deductions(
                 str(packet_path),
             ]
         )
+    capsys.readouterr()
+
+
+def _oss_supplier_changes(**overrides: object) -> dict[str, object]:
+    return {
+        "country_code": "US",
+        "tax_id": None,
+        "vat_id": "EU123456789",
+        "roi_status": "not_registered",
+        "legal_form": "legal_entity",
+        "professional_supplier": False,
+        "retention_expected": False,
+        **overrides,
+    }
+
+
+def _apply(fixture: dict[str, object], packet_path: Path) -> int:
+    return main(
+        [
+            "review",
+            "apply",
+            "--db",
+            str(fixture["database"]),
+            "--input",
+            str(packet_path),
+        ]
+    )
+
+
+def test_oss_non_union_supplier_is_not_an_intra_community_acquisition(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    fixture = _invoice_fixture(
+        tmp_path,
+        country_code="US",
+        display_name="Synthetic OSS Supplier",
+    )
+    packet_path = tmp_path / "oss-supplier.json"
+    packet = _prepare(fixture, packet_path, capsys)
+    _approve_expense(packet)
+    packet["decision"]["counterparty_changes"] = _oss_supplier_changes()
+    treatment = packet["decision"]["tax_treatment"]
+    treatment.update(
+        {"tax_code": "eu_service_expense", "aeat_operation_key": "09", "aeat_reverse_charge": True}
+    )
+    _write_packet(packet_path, packet)
+
+    with pytest.raises(ReviewPacketError, match="OSS non-Union .* use non_eu_service_expense"):
+        _apply(fixture, packet_path)
+    capsys.readouterr()
+
+    treatment["tax_code"] = "non_eu_service_expense"
+    _write_packet(packet_path, packet)
+    assert _apply(fixture, packet_path) == 0
+    applied = json.loads(capsys.readouterr().out)
+    assert applied["transaction"]["lifecycle_status"] == "approved"
+    with initialize(fixture["database"]) as db:
+        stored = db.connection.execute(
+            """
+            SELECT tt.tax_code, c.vat_id, c.country_code
+            FROM tax_treatments tt
+            JOIN transactions t ON t.transaction_id = tt.transaction_id
+            JOIN counterparties c ON c.counterparty_id = t.counterparty_id
+            WHERE tt.treatment_id = ?
+            """,
+            (fixture["treatment_id"],),
+        ).fetchone()
+        assert tuple(stored) == ("non_eu_service_expense", "EU123456789", "US")
+
+
+def test_oss_identifier_is_neither_an_eu_country_nor_roi_registered(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    fixture = _invoice_fixture(
+        tmp_path,
+        country_code="US",
+        display_name="Synthetic OSS Supplier",
+    )
+    packet_path = tmp_path / "oss-identity.json"
+    packet = _prepare(fixture, packet_path, capsys)
+    _approve_expense(packet)
+
+    packet["decision"]["counterparty_changes"] = _oss_supplier_changes(country_code="EU")
+    _write_packet(packet_path, packet)
+    with pytest.raises(ReviewPacketError, match="EU is the OSS non-Union prefix, not a country"):
+        _apply(fixture, packet_path)
+
+    packet["decision"]["counterparty_changes"] = _oss_supplier_changes(roi_status="registered")
+    _write_packet(packet_path, packet)
+    with pytest.raises(ReviewPacketError, match="cannot be registered in ROI/VIES"):
+        _apply(fixture, packet_path)
     capsys.readouterr()
 
 

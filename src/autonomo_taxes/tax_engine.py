@@ -5,6 +5,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Iterable
 
+from .counterparty_names import is_oss_non_union_identifier
 from .modelo130 import Modelo130Result, calculate_modelo130
 from .money import cents
 from .vat_classification import LEGACY_VAT_CLASSIFICATION_WARNING, is_vat_investment_good
@@ -377,6 +378,12 @@ def calculate_modelo349_rows(rows: Iterable[TaxRow], *, year: int, quarter: int)
     missing_vat_id = [row.transaction_id for row in selected if not row.vat_id]
     if missing_vat_id:
         raise CalculationBlocked(f"Modelo 349 requires EU VAT IDs: {', '.join(missing_vat_id)}")
+    oss_vat_id = [row.transaction_id for row in selected if is_oss_non_union_identifier(row.vat_id)]
+    if oss_vat_id:
+        raise CalculationBlocked(
+            "Modelo 349 requires Member-State VAT IDs; OSS non-Union scheme identifiers "
+            f"(EU + 9 digits) belong to suppliers established outside the EU: {', '.join(oss_vat_id)}"
+        )
 
     aggregates: dict[tuple[str, str], Decimal] = {}
     lineage: dict[str, list[str]] = {}

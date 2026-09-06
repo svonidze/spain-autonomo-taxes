@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from .counterparty_names import (
     CounterpartyMatchError, find_name_candidates, identity_conflicts,
-    normalize_counterparty_name, usable_tax_id,
+    is_oss_non_union_identifier, normalize_counterparty_name, usable_tax_id,
 )
 
 import csv
@@ -2003,7 +2003,9 @@ def _tax_code_for_row(row: dict[str, str], kind: str) -> str:
     if kind == "expense" and reverse_charge:
         if country_code == "ES":
             return "domestic_reverse_charge_expense"
-        if country_code in EU_COUNTRY_CODES:
+        if country_code in EU_COUNTRY_CODES and not is_oss_non_union_identifier(
+            row.get("counterparty_vat_id")
+        ):
             return "eu_service_expense"
         return "non_eu_service_expense"
     if kind == "expense" and has_vat_evidence and deductible_vat_minor:

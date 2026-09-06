@@ -484,6 +484,17 @@ def test_modelo349_requires_vat_id() -> None:
         calculate_modelo349_rows([item], year=2026, quarter=2)
 
 
+def test_modelo349_rejects_oss_non_union_identifier_but_keeps_member_state_vat_id() -> None:
+    member_state = row("ie-supplier", tax_code="eu_service_expense", vat_id="IETEST-TAX-ID-004")
+    oss_supplier = row("oss-supplier", tax_code="eu_service_expense", vat_id="EU123456789")
+
+    report = calculate_modelo349_rows([member_state], year=2026, quarter=2)
+
+    assert report.values == {"IETEST-TAX-ID-004:I": Decimal("100.00")}
+    with pytest.raises(CalculationBlocked, match="OSS non-Union scheme identifiers .* oss-supplier"):
+        calculate_modelo349_rows([member_state, oss_supplier], year=2026, quarter=2)
+
+
 def test_modelo390_uses_inventory_periods_instead_of_fixed_quarter_count() -> None:
     reports = [
         calculate_modelo303_rows([], year=2026, quarter=quarter)

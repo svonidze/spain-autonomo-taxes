@@ -34,6 +34,14 @@ def usable_tax_id(value: str) -> bool:
     return re.fullmatch(r"0{7,9}[A-Z]?|9{7,9}[A-Z]?", local) is None
 
 
+def is_oss_non_union_identifier(value: str | None) -> bool:
+    # Directive 2006/112/EC art. 362 (LIVA arts. 163 octiesdecies ff.) assigns "EU" + 9 digits
+    # to suppliers in the One-Stop-Shop non-Union scheme, who are established outside the EU.
+    # "EU" is not an ISO country code and the value is not a Member-State VAT number.
+    compact = re.sub(r"[^0-9A-Z]", "", (value or "").upper())
+    return re.fullmatch(r"EU[0-9]{9}", compact) is not None
+
+
 def identity_conflicts(
     counterparty: Mapping[str, Any], *, country_code: str | None = None,
     tax_id: str | None = None, vat_id: str | None = None,
