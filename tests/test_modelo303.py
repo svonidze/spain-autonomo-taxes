@@ -160,6 +160,49 @@ class Modelo303Tests(unittest.TestCase):
         self.assertEqual(values.net_local_input_base, Decimal("1553.03"))
         self.assertEqual(values.net_local_input_vat, Decimal("326.14"))
 
+    def test_reverse_charge_only_sequence_sums_deductible_bases(self):
+        values = values_from_monetary_sequence(
+            [
+                Decimal("1000.00"),  # 10: reverse-charge services base
+                Decimal("210.00"),  # 27: total output VAT
+                Decimal("400.00"),  # 28: domestic deductible base
+                Decimal("1000.00"),  # 36: reverse-charge deductible base
+                Decimal("294.00"),  # 45: total deductible VAT
+                Decimal("-84.00"),  # 46/71: result
+            ]
+        )
+
+        self.assertEqual(values.extraction_status, "reverse_charge_services")
+        self.assertEqual(values.output_base, Decimal("1000.00"))
+        self.assertEqual(values.output_vat, Decimal("210.00"))
+        self.assertEqual(values.deductible_base, Decimal("1400.00"))
+        self.assertEqual(values.deductible_vat, Decimal("294.00"))
+        self.assertEqual(values.result, Decimal("-84.00"))
+        self.assertEqual(values.net_local_input_base, Decimal("400.00"))
+        self.assertEqual(values.net_local_input_vat, Decimal("84.00"))
+
+    def test_reverse_charge_with_other_output_sequence_sums_both_bases(self):
+        values = values_from_monetary_sequence(
+            [
+                Decimal("1000.00"),  # 10: reverse-charge services base
+                Decimal("200.00"),  # 12: other reverse-charge base
+                Decimal("252.00"),  # 27: total output VAT
+                Decimal("600.00"),  # 28: domestic deductible base
+                Decimal("1000.00"),  # 36: reverse-charge deductible base
+                Decimal("336.00"),  # 45: total deductible VAT
+                Decimal("-84.00"),  # 46/71: result
+            ]
+        )
+
+        self.assertEqual(values.extraction_status, "reverse_charge_with_other_output")
+        self.assertEqual(values.output_base, Decimal("1200.00"))
+        self.assertEqual(values.output_vat, Decimal("252.00"))
+        self.assertEqual(values.deductible_base, Decimal("1600.00"))
+        self.assertEqual(values.deductible_vat, Decimal("336.00"))
+        self.assertEqual(values.result, Decimal("-84.00"))
+        self.assertEqual(values.net_local_input_base, Decimal("400.00"))
+        self.assertEqual(values.net_local_input_vat, Decimal("84.00"))
+
     def test_raw_vat_bearing_totals_ignore_usd_and_zero_vat_rows(self):
         rows = [
             RawXoloExpense(
