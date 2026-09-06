@@ -1026,6 +1026,79 @@ def test_prune_does_not_mutate_superseded_document_in_closed_period(tmp_path: Pa
         assert db.table_counts()["document_sources"] == 2
 
 
+def _treatment_vat_for_document(db: LedgerDB, document_number: str):
+    return db.connection.execute(
+        """
+        SELECT tt.vat_minor, tt.deductible_vat_minor, tt.tax_code, tt.aeat_operation_key
+        FROM tax_treatments tt
+        JOIN transactions t ON t.transaction_id = tt.transaction_id
+        JOIN documents d ON d.document_id = t.document_id
+        WHERE d.document_number = ?
+        """,
+        (document_number,),
+    ).fetchone()
+
+
+def test_clave_09_expense_without_reverse_charge_flag_self_assesses_output_vat(
+    tmp_path: Path,
+) -> None:
+    # Xolo exports mark intra-EU service purchases with operation key 09 and
+    # leave the reverse-charge column blank, so the output VAT has to be
+    # inferred from the deductible VAT for the Modelo 303 chain to close.
+    source_csv, reconciliation_csv = _write_fixture_csvs(tmp_path)
+    rows = _load_csv(source_csv)
+    rows[1].update(
+        {
+            "counterparty_country_code": "IE",
+            "counterparty_tax_id": "TEST-TAX-ID-004",
+            "counterparty_vat_id": "IETEST-TAX-ID-004",
+            "operation_key": "09",
+            "reverse_charge": "",
+            "gross_eur": "17,14",
+            "invoice_total_eur": "17.14",
+            "taxable_base_eur": "17.14",
+            "vat_rate_percent": "21%",
+            "vat_eur": "",
+            "deductible_vat_eur": "3.60",
+        }
+    )
+    _write_csv(source_csv, SOURCE_BOOK_FIELDS, rows)
+
+    with LedgerDB.initialize(tmp_path / "ledger.sqlite3") as db:
+        migrate_xolo_history(db, source_csv, reconciliation_csv)
+        treatment = _treatment_vat_for_document(db, "204355514")
+
+    assert treatment["aeat_operation_key"] == "09"
+    assert treatment["deductible_vat_minor"] == 360
+    assert treatment["vat_minor"] == 360
+
+
+def test_domestic_expense_without_reverse_charge_flag_keeps_zero_output_vat(
+    tmp_path: Path,
+) -> None:
+    source_csv, reconciliation_csv = _write_fixture_csvs(tmp_path)
+    rows = _load_csv(source_csv)
+    rows[1].update(
+        {
+            "operation_key": "01",
+            "reverse_charge": "",
+            "gross_eur": "17,14",
+            "invoice_total_eur": "17.14",
+            "taxable_base_eur": "17.14",
+            "vat_eur": "",
+            "deductible_vat_eur": "3.60",
+        }
+    )
+    _write_csv(source_csv, SOURCE_BOOK_FIELDS, rows)
+
+    with LedgerDB.initialize(tmp_path / "ledger.sqlite3") as db:
+        migrate_xolo_history(db, source_csv, reconciliation_csv)
+        treatment = _treatment_vat_for_document(db, "204355514")
+
+    assert treatment["deductible_vat_minor"] == 360
+    assert treatment["vat_minor"] == 0
+
+
 def test_intra_community_source_book_row_makes_modelo349_due(tmp_path: Path) -> None:
     source_csv, reconciliation_csv = _write_fixture_csvs(tmp_path)
     rows = _load_csv(source_csv)

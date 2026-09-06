@@ -760,7 +760,12 @@ def _import_quarterly_row(db: LedgerDB, *, row: dict[str, str], import_batch_id:
 
     explicit_vat_minor = _optional_minor(row.get("vat_eur"))
     deductible_vat_minor = _optional_minor(row.get("deductible_vat_eur")) or 0
-    reverse_charge = _is_yes(row.get("reverse_charge"))
+    reverse_charge = _is_yes(row.get("reverse_charge")) or (
+        # Xolo source books mark intra-EU service reverse charge via
+        # operation key 09 and leave the explicit reverse-charge column blank.
+        kind == "expense"
+        and (row.get("operation_key") or "").strip() == "09"
+    )
     vat_minor = explicit_vat_minor if explicit_vat_minor is not None else amount_minor - taxable_base_minor
     if reverse_charge and vat_minor == 0 and deductible_vat_minor:
         vat_minor = deductible_vat_minor
