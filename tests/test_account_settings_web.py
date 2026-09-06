@@ -100,9 +100,3 @@ def test_settings_failure_does_not_disclose_database_path(tmp_path):
         status, _, data = request(client, "GET", "/api/settings", headers)
         assert status == 409 and data["code"] == "schema_upgrade_required"
         assert str(tmp_path) not in json.dumps(data)
-
-
-def test_account_settings_ui_behavior():
-    import subprocess
-    root = Path(__file__).resolve().parents[1]
-    subprocess.run(["node", str(root / "tests/test_account_settings_ui.js")], cwd=root, check=True)

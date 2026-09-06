@@ -28,9 +28,9 @@ formatting uses FormatJS, not a separate hand-written interpolation engine.
 
 `t()` provides checked IDs/parameters for typed components. `message()` creates a
 descriptor for an error, notice or toast whose wording must change with locale.
-Keep raw server diagnostics distinct from application-authored messages. The
-temporary `AutonomoCore` adapter supplies these same real modules to legacy views
-and their existing VM tests; it is removed at the end of the migration.
+Keep raw server diagnostics distinct from application-authored messages. The thin
+Vue locale adapter uses this shared engine; no runtime global dictionaries remain.
+The help reference map contains stable message IDs, never translated prose.
 
 ## Verify layout and state
 
@@ -40,8 +40,8 @@ The normal web host and Python package builder reject test-only artifacts even
 if a test was interrupted. The browser fixture explicitly opts in and uses only
 ephemeral synthetic data. `npm run build` always produces the normal profile.
 
-Changing language does not navigate a Vue host or invalidate a pending write.
-Legacy review/workflow adapters preserve their draft fields; modal labels update
+Changing language does not navigate a screen or invalidate a pending write.
+Review/workflow components preserve their draft fields; modal labels update
 without replacing selected file inputs. Settings retain the latest master's
 explicit dirty/busy leave policy. Existing names, amounts, reasons and document
 data stay intact; number/date presentation follows the selected Intl locale.

@@ -1,7 +1,44 @@
 # Frontend development and verification
 
-Use Node from `.nvmrc` (24.20.0, bundled npm 11.19.0) and Python 3.11. Create and
-activate a virtual environment, then install the editable Python package and tests:
+The application uses Vue 3, strict TypeScript, Vue Router and Vite. Python/SQLite
+remain the server and accounting engine. The old app.js monolith and runtime
+namespaces are removed. There is one Vue tree; adding a framework or splitting
+another application service is unnecessary.
+
+## Source ownership
+
+| Directory | Responsibility |
+|---|---|
+| `frontend/src/shell` | Bootstrap, URLs, navigation guards, toolbar and notifications |
+| `frontend/src/features` | Contacts, transactions, review/posting, overview, intake and settings |
+| `frontend/src/core` | HTTP errors, ICU formatting, browser drafts, focus and request IDs |
+| `frontend/src/help` | Read-only accounting explanations, scoped records and dialog lifecycle |
+| `frontend/src/charts` | Chart domain mapping, Vue lifecycle and geometry |
+| `frontend/src/locales` | Per-language/domain JSON catalogs and language registry |
+| `frontend/tests` | Direct module/component tests and synthetic baseline data |
+| `tests/browser` | Browser scenarios against a real temporary Python server |
+
+Components receive narrow typed contexts/services. Route changes dispose the
+active screen; intake stays mounted. Locale changes update text in place. Settings
+and contact rename expose dirty/busy guards. Late requests, canonical URL changes
+and posting results retain explicit ownership by route, period or operation.
+
+Vue Router owns route and same-URL help entries through public force/state APIs.
+Nested return URLs retain URLSearchParams encoding. Contact-local periods stay
+separate from the global quarter; help is transient and does not reopen on reload.
+Help records are released by their owning StatusCell, and its registry contains no
+persistent user data. Notifications retain their original timeout policy.
+
+Chart geometry is the intentional JavaScript exception: `charts/renderer.js`
+retains the numerical/SVG algorithm with a typed API in `renderer.d.ts`/`types.ts`.
+The renderer has no global namespace. Its direct-module geometry suite and frozen
+chart/financial presentation data preserve zero/missing/negative distinctions.
+These fixtures contain expected synthetic data, not executable legacy code.
+
+## Run locally
+
+Use Node 24.20.0/npm 11.19.0 from `.nvmrc` and Python 3.11. Activate a Python virtual
+environment, then run the checks in this order:
 
 ```sh
 python -m pip install pytest build
@@ -9,115 +46,48 @@ npm ci --include=dev --no-audit --no-fund
 npm run build
 python -m pip install -e .
 npm run check:runtime
+npm run format:check
 npm run test:coverage-map
-npm run test:legacy
 npm run typecheck
 npm run test:unit
+npm run test:chart-module
 npx playwright install chromium
+npm run test:pseudo
 npm run test:browser
 npm run test:installed
 python -m pytest -q
 ```
 
-Playwright starts a real Python server on 127.0.0.1:8765 using only an ephemeral
-synthetic database. It refuses to reuse an already running server. Activate the
-Python environment before running it. The test server does not discover personal
-configuration or contact real storage providers. Tests do not submit real records.
+`npm run format` formats TypeScript/Vue sources and their unit tests. Generated
+catalogs and the unchanged geometry kernel are excluded. TypeScript 6.0.3 is pinned
+with vue-tsc 3.3.11; upgrade them together after verifying the compiler API boundary.
+Dependencies and lockfile versions are exact; Node is a build/test dependency.
 
-The migration keeps existing Node suites until their behavior is covered through
-real module imports, component tests or browser tests. Maintain
-`docs/plans/ui-test-map.json` whenever a suite is added or removed. Generated test
-traces, browser reports, dependencies and build output remain untracked.
+Playwright starts its own server on 127.0.0.1:8765 with an ephemeral synthetic
+database and refuses to reuse another process. It does not discover personal
+configuration. Google OAuth/Picker and external Drive endpoints are mocked; live
+OAuth was not exercised. Credentials stay in memory from the runtime API. Intake
+retains native File objects, while schema-1 browser drafts contain allowed text
+fields only. Settings drafts remain exclusively in memory.
 
-See [the staged migration contract](plans/ui-modularization.md) for accepted
-boundaries, commit/PR policy, baseline evidence and progress.
+Run Python resource tests after builds/pseudolocale finish, as CI does: rebuilding
+the same dist while tests read its manifest creates transient failures.
 
-`npm run build` must precede Python installation and startup. The runtime serves
-only verified built assets, with no source fallback. `test:installed` builds a
-wheel, creates a fresh environment outside the repository and runs the browser
-suite with isolated Python imports. Node is a build/test dependency, not a
-separate application service.
+## Packaging and review
 
-Localization uses one ICU catalog set for legacy views and typed components.
-See [Interface languages](UI_LOCALIZATION.md) for adding languages, generated
-types, pseudolocale checks and state-preserving language updates.
+Build before Python installation or startup. The server serves only verified
+packaged assets, with no source fallback, public maps or dev server. Installed
+acceptance builds a fresh wheel and Python environment outside the checkout, then
+runs the browser suite with isolated imports. Eager bundling intentionally keeps
+open sessions independent of later release asset changes.
 
-Vue components use `<script setup lang="ts">`; `npm run typecheck` runs vue-tsc
-for both scripts and templates. TypeScript 6.0.3 is pinned because vue-tsc 3.3.11
-currently requires the JavaScript compiler API absent from TypeScript 7's package
-exports. Upgrade them together after verifying component type checking.
+The original 13 JS suites and Python source-layout checks have explicit replacement
+records in `docs/plans/ui-test-map.json` and `ui-python-test-map.json`. Accounting,
+API, storage and security tests remain in Python. A path-existence check alone is
+not evidence of behavioral coverage; review the named module/browser cases too.
 
-During migration the shell mounts each Vue view through `vue/host.ts`, disposes it
-before route replacement, and supplies narrow context/services. Views subscribe
-to the core locale rather than remounting. StatusCell owns its help record with
-update/dispose; the dialog/history adapter stays shell-owned until stage 11.
-Old expense markup is an execution oracle for existing VM tests until stage 12;
-production expense-detail routing mounts the Vue component.
-
-The expense detail API supplies a plain lifecycle status, not an accounting
-`ui_context`, so this screen retains its existing badge. StatusCell's scoped
-registry lifecycle is verified at the real helper and component boundaries in
-stage 4; its first production consumer is the contacts view in stage 5, which
-already receives an authoritative accounting context. Do not invent contexts
-for screens whose API supplies only lifecycle status.
-
-Contacts use guarded host updates: `updateContext` returns false when the current
-view rejects leaving a dirty or busy rename. Browser history and unload use the
-same exposed guards. ChartHost owns rendering and cached locale updates; a successful rename
-invalidates the contact chart data. The legacy contact renderers and their
-VM suites remain independent comparison oracles until finalization.
-
-Transaction lists own request generations and expense polling. Expense pages
-rebuild from offset zero when the server revision or as-of date changes, keeping
-the expanded count. Vue row keys and scoped help records preserve controls across
-locale updates. Income-copy intent is typed and uses original amount/currency;
-only opening/populating the existing intake remains a temporary shell service.
-
-The chart geometry is an intentional JavaScript exception: `charts/renderer.js`
-retains the existing numerical/SVG algorithms without semantic edits. Its public
-API is declared in `renderer.d.ts`/`types.ts`; chart domain mapping, locale handling
-and Vue lifecycle are strict TypeScript. The full legacy chart suite also runs
-against the ES module via `npm run test:chart-module`. Legacy global exposure is
-temporary and removed in stage 12; the isolated geometry module may remain JS.
-
-Review detail owns separate native expense and guided editor state. A completed
-preflight and same-record context update preserve the current editor and pending
-write; initial or different-record reads still fence stale replies. Guided drafts
-merge all decision fields only for the matching snapshot, otherwise retaining
-only counterparty corrections. Confirmation removes a browser draft only if it
-has not changed since submission. Resolution controls target backend issue IDs,
-even when the decision array uses a different order.
-
-Review errors may add `message_code`, `params`, and `field` to the existing
-`error`/`code`/`current` envelope. Three exact required-field diagnostics now carry
-localized IDs; unknown or malformed metadata keeps the original diagnostic.
-No financial validation rule, status code or accounting operation changed.
-
-Review overview and batch posting share one feature owner, separate from review
-detail. Confirmation captures a deep snapshot of the period, rows and expected
-versions. Busy state and the latest captured-period result survive route disposal;
-stale calculations are tracked by period. Refresh tokens prevent an earlier
-calculation from clearing a later marker. Recovery only refreshes calculations
-and reads the overview; it never submits the batch again.
-
-Intake owns one persistent Vue dialog, retaining its native file input through
-language/source changes, failures and temporary Google Picker visibility. Draft
-schema 1 remains values-only; untouched copied forms never replace a saved draft.
-Accepted responses must match the submitted kind and period before clearing the
-unchanged draft. Session and origin checks fence late callbacks and success timers.
-Google Picker configuration stays in memory from the runtime API. Browser tests
-mock the [official PickerBuilder contract](https://developers.google.com/workspace/drive/picker/reference/picker.pickerbuilder); live OAuth was not exercised.
-The separate intake mount adapter is temporary until shell migration.
-
-The shell now owns one Vue tree, including persistent intake and settings.
-Vue Router 5.3.1 owns route transitions and same-URL help history via its public
-force/state API. Query serialization retains URLSearchParams encoding, including
-nested return URLs. Presentation-only canonicalization retains the mounted editor
-and checks route generation before continuing. Settings use in-memory drafts,
-expected revisions and explicit backup pruning confirmation. Their dirty/busy
-leave policy applies to navigation, reload, locale selection and browser unload.
-Transient help state is cleared on reload; contact global period is preserved.
-The remaining read-only help/global adapters are retired in stage 12.
-
-Run Python resource tests after builds and pseudolocale have finished, as CI does.
-Do not rebuild the same worktree's dist while Python is reading its manifest.
+See [the twelve-stage execution record](plans/ui-modularization.md),
+[adding interface languages](UI_LOCALIZATION.md), and
+[release build/install compatibility](../ops/FRONTEND_BUILD.md). The twelve PRs
+are dependent drafts for bottom-up review. Merging and production rollout require
+separate authorization; neither is performed by this migration.

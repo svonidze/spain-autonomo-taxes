@@ -6,7 +6,8 @@
     "replacements": [
       "tests/browser/settings-shell.spec.ts",
       "frontend/tests/shell-routes.test.ts"
-    ]
+    ],
+    "disposition": "retired after module/browser replacement"
   },
   {
     "source": "tests/test_expense_ui.js",
@@ -15,7 +16,8 @@
     "replacements": [
       "tests/browser/transaction-lists.spec.ts",
       "frontend/tests/transaction-state.test.ts"
-    ]
+    ],
+    "disposition": "retired after module/browser replacement"
   },
   {
     "source": "tests/test_expense_workflow_ui.js",
@@ -26,23 +28,30 @@
       "tests/browser/locale.spec.ts",
       "frontend/tests/review-host.test.ts",
       "frontend/tests/review-helpers.test.ts"
-    ]
+    ],
+    "disposition": "retired after module/browser replacement"
   },
   {
     "source": "tests/test_status_help.js",
     "behavior": "status help",
     "stage": 12,
-    "replacements": []
+    "replacements": [
+      "frontend/tests/help-lifetime.test.ts",
+      "tests/browser/locale.spec.ts",
+      "tests/browser/settings-shell.spec.ts"
+    ],
+    "disposition": "retired after module/browser replacement"
   },
   {
     "source": "tests/test_web_ui_charts.js",
     "behavior": "web ui charts",
     "stage": 7,
     "replacements": [
+      "frontend/tests/chart-renderer.cjs",
       "frontend/tests/chart-parity.test.ts",
-      "scripts/test_chart_module.cjs",
       "tests/browser/overview.spec.ts"
-    ]
+    ],
+    "disposition": "retired after module/browser replacement"
   },
   {
     "source": "tests/test_web_ui_contacts.js",
@@ -51,7 +60,8 @@
     "replacements": [
       "tests/browser/contacts.spec.ts",
       "frontend/tests/contacts-host.test.ts"
-    ]
+    ],
+    "disposition": "retired after module/browser replacement"
   },
   {
     "source": "tests/test_web_ui_counterparty_names.js",
@@ -60,7 +70,8 @@
     "replacements": [
       "tests/browser/contacts.spec.ts",
       "frontend/tests/contacts-host.test.ts"
-    ]
+    ],
+    "disposition": "retired after module/browser replacement"
   },
   {
     "source": "tests/test_web_ui_expense_detail.js",
@@ -69,7 +80,8 @@
     "replacements": [
       "tests/browser/expense-detail.spec.ts",
       "frontend/tests/vue-host.test.ts"
-    ]
+    ],
+    "disposition": "retired after module/browser replacement"
   },
   {
     "source": "tests/test_web_ui_guided.js",
@@ -80,7 +92,8 @@
       "tests/browser/locale.spec.ts",
       "frontend/tests/review-host.test.ts",
       "frontend/tests/review-helpers.test.ts"
-    ]
+    ],
+    "disposition": "retired after module/browser replacement"
   },
   {
     "source": "tests/test_web_ui_navigation.js",
@@ -92,7 +105,8 @@
       "tests/browser/settings-shell.spec.ts",
       "frontend/tests/shell-routes.test.ts",
       "frontend/tests/shell-lifecycle.test.ts"
-    ]
+    ],
+    "disposition": "retired after module/browser replacement"
   },
   {
     "source": "tests/test_web_ui_posting_behavior.js",
@@ -102,7 +116,8 @@
       "tests/browser/review-posting.spec.ts",
       "frontend/tests/posting-host.test.ts",
       "frontend/tests/posting-state.test.ts"
-    ]
+    ],
+    "disposition": "retired after module/browser replacement"
   },
   {
     "source": "tests/test_web_ui_states.js",
@@ -112,8 +127,11 @@
       "tests/browser/intake.spec.ts",
       "tests/browser/transaction-lists.spec.ts",
       "frontend/tests/intake-model.test.ts",
-      "frontend/tests/picker.test.ts"
-    ]
+      "frontend/tests/picker.test.ts",
+      "frontend/tests/core.test.ts",
+      "tests/browser/final-acceptance.spec.ts"
+    ],
+    "disposition": "retired after module/browser replacement"
   },
   {
     "source": "tests/test_web_ui_taxes.js",
@@ -122,6 +140,7 @@
     "replacements": [
       "frontend/tests/finance-parity.test.ts",
       "tests/browser/overview.spec.ts"
-    ]
+    ],
+    "disposition": "retired after module/browser replacement"
   }
 ]

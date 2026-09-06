@@ -178,7 +178,38 @@ authenticated unknown-resource responses and settings dirty navigation.
   and installed-wheel browser scenarios, pseudolocale and all 1,342 Python tests
   pass (four skips). Two Python resource reads overlapped a local rebuild and
   passed when rerun against stable assets. CI sequences these gates already.
-- Stage 12: pending.
+- Stage 12: old app/settings/workflow/help/chart scripts and all temporary
+  global adapters removed. Typed help presentation/registry have explicit shell
+  teardown; the accepted geometry module remains unchanged JavaScript. Prior
+  parity outputs are frozen synthetic data, not source-code oracles. All 13 old
+  JS suites and 35 Python source-test checks have replacement dispositions;
+  financial/API/security Python coverage remains. New acceptance cases cover
+  errors, native links, copy eligibility, minor-unit previews and help cleanup.
+  Local gates: 61 module tests, direct renderer suite, 55 source and isolated-wheel
+  browser scenarios, pseudolocale, formatting/types/catalogs, and 1,306 Python
+  tests passed with four expected skips. All eleven preceding draft PRs have
+  green GitHub test/privacy checks. The latest fetched master is still `27522dec`.
+
+## Final runtime
+
+The historical interfaces above record the migration sequence. The current
+entrypoint is `frontend/src/main.ts`, mounting one Vue shell. Production uses
+TypeScript ES modules with no legacy global namespaces; only the unchanged chart
+geometry leaf remains JavaScript. See `docs/UI_DEVELOPMENT.md` for the current
+module map and checks, and `docs/UI_LOCALIZATION.md` for adding languages.
+
+Draft review chain: [#41](https://github.com/svonidze/spain-autonomo-taxes/pull/41)
+→ [#42](https://github.com/svonidze/spain-autonomo-taxes/pull/42)
+→ [#43](https://github.com/svonidze/spain-autonomo-taxes/pull/43)
+→ [#44](https://github.com/svonidze/spain-autonomo-taxes/pull/44)
+→ [#45](https://github.com/svonidze/spain-autonomo-taxes/pull/45)
+→ [#46](https://github.com/svonidze/spain-autonomo-taxes/pull/46)
+→ [#47](https://github.com/svonidze/spain-autonomo-taxes/pull/47)
+→ [#48](https://github.com/svonidze/spain-autonomo-taxes/pull/48)
+→ [#49](https://github.com/svonidze/spain-autonomo-taxes/pull/49)
+→ [#50](https://github.com/svonidze/spain-autonomo-taxes/pull/50)
+→ [#51](https://github.com/svonidze/spain-autonomo-taxes/pull/51)
+→ the `codex/ui-12-finalize` PR. No PR has been merged or deployed by this work.
 
 Stage 2 compatibility note: Vite's CommonJS handling hid the settings global used
 by the old shell. The module now retains that namespace as well as its CommonJS
