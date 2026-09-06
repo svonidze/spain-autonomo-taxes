@@ -303,6 +303,8 @@ def _ready_cutover_fixture(
             "RETA-2026-07",
             "--archive-root",
             str(archive_root),
+            "--counterparty-name",
+            "Synthetic Party 011",
         ]
     ) == 0
     tgss = json.loads(capsys.readouterr().out)

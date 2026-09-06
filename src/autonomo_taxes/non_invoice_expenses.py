@@ -31,7 +31,7 @@ PRESETS = {
     "social-security": NonInvoiceExpensePreset(
         kind="social-security",
         document_type="social_security_evidence",
-        default_counterparty_name="Synthetic Party 011",
+        default_counterparty_name=None,
         default_counterparty_country="ES",
         default_description="Autonomo social security contribution",
         default_business_purpose=(
@@ -544,6 +544,12 @@ def _resolve_counterparty(
         _validate_counterparty(connection, counterparty, request)
         _require_book_identity(connection, counterparty, request)
         return counterparty
+
+    if not (request.counterparty_id or request.counterparty_tax_id or request.counterparty_name):
+        raise NonInvoiceExpenseError(
+            "Counterparty is required: pass --counterparty-id for an existing ledger "
+            "counterparty or --counterparty-name to match or create one"
+        )
 
     counterparty = None
     if request.counterparty_id:
