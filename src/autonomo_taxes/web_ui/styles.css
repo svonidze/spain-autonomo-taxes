@@ -1421,7 +1421,7 @@ tbody tr:hover td {
   flex: 0 0 auto;
 }
 
-#intake-status {
+#vue-intake-status {
   flex: 1 0 100%;
   color: var(--muted);
   font-size: 0.75rem;

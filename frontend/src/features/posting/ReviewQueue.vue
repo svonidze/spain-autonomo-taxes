@@ -1,0 +1,155 @@
+<script setup lang="ts">
+import { computed } from 'vue';
+import { useLocale } from '../../vue/locale.ts';
+import { eur, formatDateText } from '../../core/format.ts';
+import { formatMessage, messageIds } from '../../core/i18n.ts';
+import { followSpaLink } from '../../vue/services.ts';
+import StatusCell from '../../components/StatusCell.vue';
+import ChartHost from '../../charts/ChartHost.vue';
+import type { ReviewRow, ReviewOverviewContext } from './model.ts';
+const props = defineProps<{ rows: ReviewRow[]; context: ReviewOverviewContext }>();
+const { locale, t } = useLocale();
+const summary = computed(() =>
+  props.rows.reduce(
+    (result, row) => {
+      const code = row.ui_context?.state || 'blocked';
+      result[
+        code === 'needs_review'
+          ? 'needsReview'
+          : code === 'ready'
+            ? 'ready'
+            : code === 'deferred'
+              ? 'later'
+              : 'blocked'
+      ]++;
+      return result;
+    },
+    { needsReview: 0, ready: 0, later: 0, blocked: 0 },
+  ),
+);
+const labels = [
+  ['needsReview', 'review.summaryNeedsReview', 'needs-review'],
+  ['ready', 'review.summaryReady', 'ready'],
+  ['later', 'review.summaryLater', 'later'],
+  ['blocked', 'review.summaryBlocked', 'blocked'],
+] as const;
+const posting = (row: ReviewRow) => {
+  const value = row.ui_context.posting as
+    { preview_bucket?: string; posting_deferred_until?: string } | undefined;
+  return !value
+    ? t('review.postingBlocked')
+    : value.preview_bucket === 'deferred'
+      ? t('review.postingLater', {
+          date: formatDateText(value.posting_deferred_until, locale.value),
+        })
+      : value.preview_bucket === 'ready'
+        ? t('review.postingReady')
+        : t(
+            row.ui_context.state === 'needs_review'
+              ? 'review.needsReview'
+              : 'review.postingBlocked',
+          );
+};
+const tax = (row: ReviewRow) =>
+  row.tax_code
+    ? messageIds.includes(`taxCodeLabels.${row.tax_code}`)
+      ? formatMessage(`taxCodeLabels.${row.tax_code}`, {}, locale.value)
+      : row.tax_code
+    : t('taxCodeLabels.unknown');
+</script>
+<template>
+  <section class="panel review-summary-panel">
+    <header class="panel-header">
+      <h2>{{ t('review.summary') }}</h2>
+      <small>{{ context.period }}</small>
+    </header>
+    <div class="review-summary-grid">
+      <article
+        v-for="[key, label, tone] in labels"
+        :key="key"
+        class="review-summary-card"
+        :class="tone"
+      >
+        <span>{{ t(label) }}</span
+        ><strong>{{ summary[key] }}</strong>
+      </article>
+    </div>
+  </section>
+  <section class="panel">
+    <header class="panel-header">
+      <h2>{{ t('review.transactions') }}</h2>
+      <small>{{ rows.length }}</small>
+    </header>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>{{ t('transactions.date') }}</th>
+            <th>{{ t('transactions.counterpartyDocument') }}</th>
+            <th>{{ t('review.taxDecision') }}</th>
+            <th>{{ t('review.result') }}</th>
+            <th>{{ t('transactions.amount') }}</th>
+            <th>
+              <span class="visually-hidden">{{ t('tables.actions') }}</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="row in rows" :key="row.transaction_id">
+            <td :data-label="t('transactions.date')">
+              {{ formatDateText(row.transaction_date, locale) }}
+            </td>
+            <td class="cell-primary" :data-label="t('transactions.counterpartyDocument')">
+              <strong>{{
+                row.counterparty_name || row.description || t('transactions.noCounterparty')
+              }}</strong
+              ><small>{{ row.document_number || row.description || '' }}</small>
+            </td>
+            <td :data-label="t('review.taxDecision')"><StatusCell :context="row.ui_context" /></td>
+            <td class="cell-primary" :data-label="t('review.result')">
+              <strong>{{ posting(row) }}</strong
+              ><small>{{ tax(row) }}</small>
+            </td>
+            <td class="amount" :data-label="t('transactions.amount')">
+              {{
+                row.amount_eur
+                  ? eur(row.amount_eur, locale)
+                  : `${row.amount_original || '—'} ${row.currency || ''}`
+              }}
+            </td>
+            <td class="table-actions">
+              <a
+                v-if="row.document_id"
+                class="text-button"
+                :href="`/api/document/${encodeURIComponent(row.document_id)}/content`"
+                target="_blank"
+                rel="noreferrer"
+                >{{ t('review.documentLink') }}</a
+              ><a
+                v-if="row.lifecycle_status === 'needs_review'"
+                class="secondary-button compact-button"
+                :href="`/review/${encodeURIComponent(row.transaction_id)}?period=${encodeURIComponent(context.period)}`"
+                :data-open-review-id="`transaction:${row.transaction_id}`"
+                @click="followSpaLink($event, context.services.navigate)"
+                >{{ t('review.openWorkspace') }}</a
+              >
+            </td>
+          </tr>
+          <tr v-if="!rows.length">
+            <td colspan="6">
+              <div class="empty-state">{{ t('review.queueEmpty') }}</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="panel">
+    <ChartHost
+      id="chart-review-aging"
+      kind="reviewAging"
+      :period="context.period"
+      :request="context.services.request"
+    />
+  </section>
+</template>

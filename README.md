@@ -6,11 +6,15 @@ This project does not provide legal or tax advice. Review generated filing data 
 
 ## Setup
 
-Python 3.11 or newer is required.
+Python 3.11 or newer is required. Installing from source also requires Node
+24.20.0 and npm 11.19.0 (see `.nvmrc`) to build the interface. A prebuilt Python
+wheel already contains those assets and does not require Node at runtime.
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
+npm ci --include=dev --no-audit --no-fund
+npm run build
 python -m pip install -e .
 ```
 

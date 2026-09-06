@@ -1,0 +1,6 @@
+{
+  "toolbar.period": "Period",
+  "toolbar.periodAria": "Tax period",
+  "toolbar.periodLocked": "The period is locked while a record card is open.",
+  "toolbar.refresh": "Refresh calculation"
+}

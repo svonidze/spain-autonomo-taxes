@@ -1,0 +1,206 @@
+{
+  "packet": {
+    "review_id": "transaction:11111111-1111-4111-8111-111111111111",
+    "snapshot_hash": "synthetic-snapshot",
+    "state": {
+      "period": {
+        "period_key": "2026-Q3"
+      },
+      "transaction": {
+        "transaction_id": "11111111-1111-4111-8111-111111111111",
+        "entry_type": "income",
+        "transaction_date": "2026-07-02",
+        "currency": "EUR"
+      },
+      "counterparty": {
+        "country_code": "ES"
+      },
+      "issues": [
+        {
+          "validation_issue_id": "synthetic-issue",
+          "issue_code": "synthetic_code"
+        }
+      ]
+    },
+    "decision": {
+      "business_purpose": "Synthetic purpose",
+      "reason": "Synthetic reason",
+      "tax_treatment": {
+        "tax_code": "domestic_output"
+      },
+      "counterparty_changes": {},
+      "issue_resolutions": [
+        {
+          "issue_id": "synthetic-issue",
+          "action": null,
+          "reason": ""
+        }
+      ]
+    }
+  },
+  "coverage": {
+    "synthetic_code": [
+      "business_purpose",
+      "reason"
+    ]
+  },
+  "choice": {
+    "mode": "settlement",
+    "rate": "0.92",
+    "rateDate": "2026-07-01",
+    "sourceReference": "Synthetic evidence"
+  },
+  "answers": {
+    "business_purpose": true,
+    "tax_code": true,
+    "deductible_irpf_minor": false,
+    "asset_decision": false,
+    "vat_investment_good": false,
+    "counterparty_country": true,
+    "fx_rate": true,
+    "reason": true,
+    "document_valid": false
+  },
+  "fx": [
+    {
+      "choice": null,
+      "suggestion": {
+        "status": "exact",
+        "rate_date": "2026-07-01",
+        "eur_per_unit": "0.92"
+      },
+      "expected": null
+    },
+    {
+      "choice": {
+        "mode": "ecb"
+      },
+      "suggestion": {
+        "status": "exact",
+        "rate_date": "2026-07-01",
+        "eur_per_unit": "0.92"
+      },
+      "expected": {
+        "rate_date": "2026-07-01",
+        "rate": "0.92",
+        "rate_source": "ecb",
+        "source_reference": null,
+        "raw_observation": null,
+        "raw_observation_hash": null,
+        "supersedes_rate_id": null
+      }
+    },
+    {
+      "choice": {
+        "mode": "settlement",
+        "rate": "",
+        "rateDate": "",
+        "sourceReference": ""
+      },
+      "suggestion": {
+        "status": "exact",
+        "rate_date": "2026-07-01",
+        "eur_per_unit": "0.92"
+      },
+      "expected": null
+    },
+    {
+      "choice": {
+        "mode": "settlement",
+        "rate": "0.92",
+        "rateDate": "2026-07-01",
+        "sourceReference": "Synthetic evidence"
+      },
+      "suggestion": {
+        "status": "exact",
+        "rate_date": "2026-07-01",
+        "eur_per_unit": "0.92"
+      },
+      "expected": {
+        "rate_date": "2026-07-01",
+        "rate": "0.92",
+        "rate_source": "actual_settlement",
+        "source_reference": "Synthetic evidence",
+        "raw_observation": "{\"kind\":\"documented_settlement\",\"rate\":\"0.92\",\"rate_date\":\"2026-07-01\",\"source_reference\":\"Synthetic evidence\"}",
+        "raw_observation_hash": null,
+        "supersedes_rate_id": null
+      }
+    }
+  ],
+  "errors": [
+    {
+      "error": "business_purpose is required",
+      "expected": "business_purpose"
+    },
+    {
+      "error": "vat_investment_good",
+      "expected": "vat_investment_good"
+    },
+    {
+      "error": "missing counterparty country",
+      "expected": "counterparty_country"
+    },
+    {
+      "error": "fx rate missing",
+      "expected": "fx_rate"
+    },
+    {
+      "error": "reason is required",
+      "expected": "reason"
+    },
+    {
+      "error": "Synthetic unknown",
+      "expected": "general"
+    }
+  ],
+  "resolved": {
+    "business_purpose": "Synthetic purpose",
+    "reason": "Synthetic reason",
+    "tax_treatment": {
+      "tax_code": "domestic_output"
+    },
+    "counterparty_changes": {},
+    "issue_resolutions": [
+      {
+        "issue_id": "synthetic-issue",
+        "action": "resolve",
+        "reason": "Закроется автоматически: подтверждены ответы 2."
+      }
+    ]
+  },
+  "merge": {
+    "base": {
+      "tax_treatment": {
+        "tax_code": "domestic_output",
+        "vat_minor": 0
+      },
+      "counterparty_changes": {
+        "country_code": "ZZ"
+      }
+    },
+    "override": {
+      "counterparty_changes": {
+        "country_code": "ES"
+      },
+      "issue_resolutions": [
+        {
+          "action": "resolve"
+        }
+      ]
+    },
+    "expected": {
+      "tax_treatment": {
+        "tax_code": "domestic_output",
+        "vat_minor": 0
+      },
+      "counterparty_changes": {
+        "country_code": "ES"
+      },
+      "issue_resolutions": [
+        {
+          "action": "resolve"
+        }
+      ]
+    }
+  }
+}

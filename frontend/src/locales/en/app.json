@@ -1,0 +1,9 @@
+{
+  "app.inline.depreciationPosted": "Depreciation posted.",
+  "app.inline.enGb": "en-GB",
+  "app.inline.equipmentSchedule": "Equipment schedule",
+  "app.inline.postedCalculationRefreshNeedsRetry": "Posted; calculation refresh needs retry.",
+  "app.inline.postedCalculationRefreshOrInboxCleanupIsPending": "Posted; calculation refresh or Inbox cleanup is pending.",
+  "app.inline.retryFollowUp": "Retry follow-up",
+  "app.title": "Autónomo accounting"
+}

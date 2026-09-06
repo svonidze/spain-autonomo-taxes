@@ -1,0 +1,13 @@
+{
+  "taxCodeLabels.domestic_input": "Расход в Испании",
+  "taxCodeLabels.domestic_output": "Доход в Испании (облагаемый)",
+  "taxCodeLabels.domestic_output_zero": "Доход в Испании (нулевая ставка)",
+  "taxCodeLabels.eu_goods_income": "Доход: товары в ЕС",
+  "taxCodeLabels.eu_service_income": "Доход: услуги в ЕС",
+  "taxCodeLabels.export": "Экспорт",
+  "taxCodeLabels.outside_scope": "Вне обложения",
+  "taxCodeLabels.reverse_charge": "Обратное начисление IVA",
+  "taxCodeLabels.unknown": "Код не определён",
+  "taxCodeLabels.withholding_rent": "Удержание IRPF: аренда",
+  "taxCodeLabels.withholding_service": "Удержание IRPF: услуги"
+}

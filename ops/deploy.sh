@@ -36,16 +36,20 @@ git -C "$source_repo" fetch --quiet origin "$release_ref"
 git -C "$source_repo" cat-file -e "$sha^{commit}"
 git -C "$source_repo" merge-base --is-ancestor "$sha" FETCH_HEAD \
   || die "release SHA is not reachable from fetched origin/$release_ref: $sha"
+python3 "$script_dir/prepare_ui_release.py" preflight "$source_repo" "$sha" "$target"
 if [[ ! -d "$target" ]]; then
   git -C "$source_repo" worktree add --detach "$target" "$sha"
   printf '%s\n' "$sha" > "$target/.release-sha"
+  python3 "$script_dir/prepare_ui_release.py" build "$source_repo" "$sha" "$target"
   python3 -m venv "$target/.venv"
   "$target/.venv/bin/python" -m pip install --disable-pip-version-check --no-input "$target"
   "$target/.venv/bin/python" - <<'PY' > "$target/.schema-version"
 from autonomo_taxes.ledger_db import LATEST_SCHEMA_VERSION
 print(LATEST_SCHEMA_VERSION)
 PY
+  python3 "$script_dir/prepare_ui_release.py" receipt "$source_repo" "$sha" "$target"
 fi
+python3 "$script_dir/prepare_ui_release.py" verify "$source_repo" "$sha" "$target"
 [[ "$(<"$target/.release-sha")" == "$sha" ]] || die "release marker mismatch: $target"
 if [[ ! -s "$target/.schema-version" ]]; then
   "$target/.venv/bin/python" - <<'PY' > "$target/.schema-version"

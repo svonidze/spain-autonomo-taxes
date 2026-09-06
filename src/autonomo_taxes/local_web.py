@@ -29,6 +29,7 @@ from typing import Any, Mapping
 from urllib.parse import parse_qs, unquote, urlencode, urlparse
 from uuid import UUID
 
+from .ui_assets import UiAssets
 from . import expense_workflow
 from .expense_workflow import ExpenseWorkflowError
 
@@ -153,11 +154,17 @@ class LocalWebApiError(LocalWebError):
     def __init__(
         self, status: HTTPStatus, code: str, message: str, *,
         current: Mapping[str, Any] | None = None,
+        message_code: str | None = None,
+        params: Mapping[str, Any] | None = None,
+        field: str | None = None,
     ) -> None:
         super().__init__(message)
         self.status = status
         self.code = code
         self.current = current
+        self.message_code = message_code
+        self.params = params
+        self.field = field
 
 
 def _validated_counterparty_id(value: str) -> str:
@@ -205,6 +212,7 @@ class LocalWebConfig:
     google_picker_developer_key: str | None = None
     google_picker_app_id: str | None = None
     private_root: Path | None = None
+    allow_test_ui: bool = False
 
 
 def load_config(
@@ -321,6 +329,7 @@ class LocalAccountingApp:
         if not config.database.is_file():
             raise FileNotFoundError(f"SQLite database does not exist: {config.database}")
         self.config = config
+        self.ui_assets = UiAssets(config.static_root, allow_test=config.allow_test_ui)
         self.session_token = session_token or secrets.token_urlsafe(32)
         self.principal_session_secret = (
             _coerce_session_secret(principal_session_secret)
@@ -1960,7 +1969,14 @@ class LocalAccountingApp:
 
     def _review_api_error(self, exc: ReviewPacketError) -> LocalWebApiError:
         code, status = classify_review_packet_failure(str(exc))
-        return LocalWebApiError(HTTPStatus(status), code, str(exc))
+        metadata = {
+            "decision.business_purpose is required": ("review.validationBusinessPurpose", "business_purpose"),
+            "decision.reason is required": ("review.validationReason", "reason"),
+            "Approved review requires document_valid=true": ("review.validationDocumentConfirmation", "document_valid"),
+        }.get(str(exc))
+        return LocalWebApiError(HTTPStatus(status), code, str(exc),
+            message_code=metadata[0] if metadata else None,
+            field=metadata[1] if metadata else None)
 
     def _run_cli_json(
         self,
@@ -2037,7 +2053,7 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             if parsed.path == "/":
                 self._serve_static("index.html", set_cookie=True, principal=principal)
                 return
-            if parsed.path in {"/app.js", "/charts.js", "/status-help.js", "/expense-workflow.js", "/settings.js", "/styles.css"}:
+            if parsed.path.startswith("/ui-assets/"):
                 self._serve_static(parsed.path.removeprefix("/"))
                 return
             if parsed.path == "/favicon.ico":
@@ -2148,7 +2164,8 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
         except (ExpenseWorkflowError, AccountSettingsError) as exc:
             self._send_error_json(HTTPStatus(exc.status), str(exc), code=exc.code)
         except LocalWebApiError as exc:
-            self._send_error_json(exc.status, str(exc), code=exc.code, current=exc.current)
+            self._send_error_json(exc.status, str(exc), code=exc.code, current=exc.current,
+                message_code=exc.message_code, params=exc.params, field=exc.field)
         except FileNotFoundError as exc:
             self._send_error_json(HTTPStatus.NOT_FOUND, str(exc))
         except (LocalWebError, ValueError) as exc:
@@ -2296,7 +2313,8 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
         except (ExpenseWorkflowError, AccountSettingsError) as exc:
             self._send_error_json(HTTPStatus(exc.status), str(exc), code=exc.code)
         except LocalWebApiError as exc:
-            self._send_error_json(exc.status, str(exc), code=exc.code, current=exc.current)
+            self._send_error_json(exc.status, str(exc), code=exc.code, current=exc.current,
+                message_code=exc.message_code, params=exc.params, field=exc.field)
         except FileNotFoundError as exc:
             self._send_error_json(HTTPStatus.NOT_FOUND, str(exc))
         except LocalWebPostingCommandError as exc:
@@ -2427,11 +2445,7 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
         set_cookie: bool = False,
         principal: str | None = None,
     ) -> None:
-        path = (self.server.app.config.static_root / name).resolve()
-        if not _is_relative_to(path, self.server.app.config.static_root):
-            raise LocalWebError("Invalid static path")
-        if not path.is_file():
-            raise FileNotFoundError(path)
+        path = self.server.app.ui_assets.path(name)
         content = path.read_bytes()
         mime_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
         self.send_response(HTTPStatus.OK)
@@ -2586,6 +2600,9 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
         *,
         code: str | None = None,
         current: Mapping[str, Any] | None = None,
+        message_code: str | None = None,
+        params: Mapping[str, Any] | None = None,
+        field: str | None = None,
     ) -> None:
         if self.wfile.closed:
             return
@@ -2594,6 +2611,12 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             payload["code"] = code
         if current is not None:
             payload["current"] = dict(current)
+        if message_code is not None:
+            payload["message_code"] = message_code
+        if params is not None:
+            payload["params"] = dict(params)
+        if field is not None:
+            payload["field"] = field
         self._send_json(payload, status=status)
 
     def _security_headers(self, *, document_preview: bool = False) -> None:

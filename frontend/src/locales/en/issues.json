@@ -1,0 +1,19 @@
+{
+  "issues.default": "Manual review is required.",
+  "issues.messages.amount_mismatch": "The amount does not match its source. Reconcile the document, currency, and tax base.",
+  "issues.messages.counterparty_tax_profile_review": "Review the counterparty''s country and tax identity before posting.",
+  "issues.messages.deductibility_pending_confirmation": "Confirm the amount eligible for deduction.",
+  "issues.messages.default": "Manual review is required.",
+  "issues.messages.document_classification_review": "The document could not be classified reliably.",
+  "issues.messages.foreign_counterparty_identity_missing": "Verified tax identity is missing for the foreign counterparty.",
+  "issues.messages.missing_locally": "The register contains this document, but its local original is missing.",
+  "issues.messages.modelo100_deferral_submission_unconfirmed": "Submission of the Modelo 100 deferral request is not confirmed.",
+  "issues.messages.modelo130_difficult_expense_filed_method_conflict": "Xolo''s treatment of the 5% difficult-to-justify allowance conflicts with AEAT instructions.",
+  "issues.messages.modelo303_q1_notary_vat_base_unverified": "The VAT base of the notary invoice requires reconciliation.",
+  "issues.messages.modelo303_q1_output_vat_classification_mismatch": "Output VAT classification does not match the filed Modelo 303.",
+  "issues.messages.nonresident_payee_legal_form_review": "The foreign payee legal form still needs review.",
+  "issues.messages.nonresident_professional_irnr_review": "A separate IRNR review is required after payment to the foreign professional.",
+  "issues.messages.transaction_tax_review": "Review the business purpose and the IRPF and VAT treatment.",
+  "issues.none": "No open issues",
+  "issues.sourceDetails": "Source details"
+}

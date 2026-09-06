@@ -1,0 +1,11 @@
+{
+  "transactions.amount": "Сумма",
+  "transactions.counterpartyDocument": "Контрагент / документ",
+  "transactions.date": "Дата",
+  "transactions.emptyIncome": "Доходов в этом периоде пока нет. Нажмите «Добавить», чтобы принять счёт.",
+  "transactions.irpfDeduction": "Вычет IRPF",
+  "transactions.noCounterparty": "Без контрагента",
+  "transactions.noMatches": "По запросу ничего не найдено.",
+  "transactions.search": "Поиск по контрагенту или номеру",
+  "transactions.status": "Статус"
+}
