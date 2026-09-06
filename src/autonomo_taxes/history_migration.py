@@ -13,6 +13,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+from collections.abc import Mapping
 from typing import Any
 from uuid import UUID, uuid5
 
@@ -1467,6 +1468,47 @@ def _resolve_stale_reconciliation_issues(
     return resolved
 
 
+def _row_reference(row: dict[str, str], supplier: str) -> str:
+    line_id = (row.get("source_book_line_id") or "").strip() or "?"
+    return f"row {line_id}, supplier '{supplier}'"
+
+
+def _record_counterparty_divergence(
+    db: LedgerDB,
+    *,
+    row: dict[str, str],
+    counterparty: Mapping[str, Any],
+    country_code: str,
+) -> None:
+    period_key = (row.get("period") or "").strip().upper()
+    if not period_key:
+        return
+    line_id = (row.get("source_book_line_id") or "").strip() or "?"
+    known_country = str(counterparty["country_code"] or "").strip().upper() or "ZZ"
+    db.add_validation_issue(
+        period_key=period_key,
+        issue_code="counterparty_country_divergence",
+        severity="warning",
+        message=(
+            f"Source row {line_id} lists {counterparty['display_name']} in {country_code} "
+            f"with placeholder identifiers only, while the ledger identity is {known_country}; "
+            "the existing counterparty was kept."
+        ),
+        blocking=False,
+        subject_table="counterparties",
+        subject_id=str(counterparty["counterparty_id"]),
+        dedupe_key=f"counterparty-country-divergence:{counterparty['counterparty_id']}:{country_code}",
+        source_hash=_stable_payload_hash(
+            {
+                "kind": "counterparty_country_divergence",
+                "counterparty_id": str(counterparty["counterparty_id"]),
+                "country_code": country_code,
+                "source_book_line_id": line_id,
+            }
+        ),
+    )
+
+
 def _upsert_counterparty(
     db: LedgerDB, row: dict[str, str], *, previous_counterparty_id: str | None = None,
 ) -> str:
@@ -1503,6 +1545,7 @@ def _upsert_counterparty(
             candidate, country_code=country_code, tax_id=tax_id, vat_id=vat_id, connection=db.connection,
         )
 
+    placeholder_divergence = False
     previous = None
     if previous_counterparty_id:
         previous = db.connection.execute(
@@ -1513,7 +1556,16 @@ def _upsert_counterparty(
             f"Historical counterparty conflict for source row {row.get('source_book_line_id', '')}; review explicitly"
         )
     if existing is not None and conflicts(existing) and not trusted_source_binding(existing):
-        raise CounterpartyMatchError("Counterparty source key conflicts with known identity")
+        if tax_id is not None or vat_id is not None:
+            raise CounterpartyMatchError(
+                f"Counterparty source key conflicts with known identity ({_row_reference(row, supplier)})"
+            )
+        # Provider exports record the same supplier with placeholder identifiers
+        # and inconsistent country codes across months. A row without any usable
+        # identifier cannot contradict a known identity, so keep the counterparty
+        # and surface the divergence for review instead of aborting the import.
+        _record_counterparty_divergence(db, row=row, counterparty=existing, country_code=country_code)
+        placeholder_divergence = True
     all_name_matches = find_name_candidates(db.connection, supplier)
     name_matches = [
         candidate for candidate in all_name_matches
@@ -1522,7 +1574,9 @@ def _upsert_counterparty(
     if existing is None and not name_matches and any(
         candidate["name_is_manual"] for candidate in all_name_matches
     ):
-        raise CounterpartyMatchError("Imported alias conflicts with reviewed counterparty identity")
+        raise CounterpartyMatchError(
+            f"Imported alias conflicts with reviewed counterparty identity ({_row_reference(row, supplier)})"
+        )
     if existing is None and len(name_matches) == 1:
         existing = name_matches[0]
     if tax_id is None and vat_id is None:
@@ -1574,7 +1628,7 @@ def _upsert_counterparty(
         or _source_matches_existing_identity(existing, tax_id=tax_id, vat_id=vat_id)
     ):
         effective_display_name = existing["display_name"]
-    if reusing_reviewed_identity or primary_identity is not None:
+    if reusing_reviewed_identity or primary_identity is not None or placeholder_divergence:
         effective_country_code = existing["country_code"]
     if (
         existing is not None
