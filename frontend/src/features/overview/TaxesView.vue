@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue';
 import { useLocale } from '../../vue/locale.ts';
 import { eur, formatDateText } from '../../core/format.ts';
-import { errorMessage } from '../../core/error-message.ts';
+import { errorDescriptor, errorMessage } from '../../core/error-message.ts';
 import { ApiError } from '../../core/http.ts';
 import { formatMessage, message, messageIds } from '../../core/i18n.ts';
 import ChartHost from '../../charts/ChartHost.vue';
@@ -60,8 +60,7 @@ async function refresh() {
       await load();
     }
   } catch (failure) {
-    if (active && revision === generation)
-      context.notify(errorMessage(failure, locale.value), true);
+    if (active && revision === generation) context.notify(errorDescriptor(failure), true);
   } finally {
     if (active) refreshing.value = false;
   }

@@ -5,7 +5,12 @@ export function createExpensePager(
   let version = 0,
     current: ExpensePage | null = null,
     currentQuery = '';
-  async function load(query: string, append = false, targetCount = 0): Promise<ExpensePage | null> {
+  async function load(
+    query: string,
+    append = false,
+    targetCount = 0,
+    restarts = 0,
+  ): Promise<ExpensePage | null> {
     const request = ++version,
       previous = append && query === currentQuery ? current : null;
     try {
@@ -19,12 +24,16 @@ export function createExpensePager(
         if (
           snapshot &&
           (snapshot.as_of !== page.as_of || snapshot.view_revision !== page.view_revision)
-        )
+        ) {
+          // A server whose revision moves on every page never converges; report instead of looping.
+          if (restarts >= 3) throw new Error('expense.invalidPage');
           return load(
             query,
             false,
             Math.max(targetCount, rows.length + (append ? page.rows.length : 0)),
+            restarts + 1,
           );
+        }
         snapshot = page;
         rows = [
           ...new Map([...rows, ...page.rows].map((row) => [row.transaction_id, row])).values(),

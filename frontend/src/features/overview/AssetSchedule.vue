@@ -3,7 +3,7 @@ import { onBeforeUnmount, ref, shallowRef, watch } from 'vue';
 import { useLocale } from '../../vue/locale.ts';
 import { localeTag, message, messageText, type UiMessage } from '../../core/i18n.ts';
 import { operationRequest } from '../../core/operation-request.ts';
-import { errorMessage } from '../../core/error-message.ts';
+import { errorDescriptor, errorMessage } from '../../core/error-message.ts';
 import type { ViewServices } from '../../vue/services.ts';
 import type { AssetScheduleData, ScheduleRow } from './model.ts';
 const props = defineProps<{
@@ -87,7 +87,7 @@ async function post(row: ScheduleRow) {
       postedButStale.value = posted;
       if (posted)
         status.value = message('workflow.depreciationPostedReloadThePageToRetrieveCurrentData');
-      else status.value = errorMessage(failure, locale.value);
+      else status.value = errorDescriptor(failure);
     }
   } finally {
     if (active) busy.value = false;

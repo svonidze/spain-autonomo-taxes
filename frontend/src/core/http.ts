@@ -9,7 +9,7 @@ export interface HttpContext {
   origin: string;
   t(id: string, variables?: Record<string, unknown>): string;
 }
-export type JsonOptions = RequestInit & { fallbackMessage?: string };
+export type JsonOptions = RequestInit & { fallbackMessage?: string; fallbackCode?: string };
 export class ApiError extends Error {
   status?: number;
   code?: string;
@@ -41,7 +41,7 @@ export async function fetchJSON(
   options: JsonOptions,
   context: HttpContext,
 ): Promise<unknown> {
-  const { fallbackMessage, ...fetchOptions } = options;
+  const { fallbackMessage, fallbackCode, ...fetchOptions } = options;
   const transport = context.fetch;
   const response = await transport(url, fetchOptions);
   const responseUrl = new URL(url, context.origin);
@@ -57,14 +57,22 @@ export async function fetchJSON(
         parsed.value && typeof parsed.value === 'object'
           ? (parsed.value as Record<string, unknown>)
           : {};
+      const serverText = payload.error ? String(payload.error) : '';
       const error = new ApiError(
-        String(payload.error || fallbackMessage || `HTTP ${response.status}`),
+        serverText ||
+          fallbackMessage ||
+          (fallbackCode ? context.t(fallbackCode) : `HTTP ${response.status}`),
       );
       error.status = response.status;
       error.code = typeof payload.code === 'string' ? payload.code : undefined;
       error.current = payload.current;
+      // A server diagnostic wins; an application fallback stays a re-translatable key.
       error.messageCode =
-        typeof payload.message_code === 'string' ? payload.message_code : undefined;
+        typeof payload.message_code === 'string'
+          ? payload.message_code
+          : !serverText && fallbackCode
+            ? fallbackCode
+            : undefined;
       error.params =
         payload.params && typeof payload.params === 'object'
           ? (payload.params as Record<string, unknown>)
@@ -74,12 +82,19 @@ export async function fetchJSON(
     }
     return parsed.value;
   }
+  const transportError = (key: string, params: Record<string, unknown>) => {
+    // Client-authored diagnostics keep their key so a locale change can re-render them.
+    const error = new ApiError(context.t(key, params));
+    error.messageCode = key;
+    error.params = params;
+    return error;
+  };
   if (response.ok && looksLikeHtmlResponse(contentType, body))
-    throw new ApiError(context.t('errors.apiReturnedHtml', { origin: responseUrl.origin }));
+    throw transportError('errors.apiReturnedHtml', { origin: responseUrl.origin });
   const key = looksLikeJsonResponse(contentType, body)
     ? 'errors.malformedJson'
     : 'errors.unexpectedNonJson';
-  throw new ApiError(context.t(key, { url: responseUrl.href, status: response.status }));
+  throw transportError(key, { url: responseUrl.href, status: response.status });
 }
 
 export function createRequestScope(onSettled: () => void = () => {}) {

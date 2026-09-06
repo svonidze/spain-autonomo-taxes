@@ -134,3 +134,12 @@ test('copy eligibility, invalid amounts and out-of-quarter dates remain explicit
     buildIncomeCopy({ ...source, transaction_date: '2026-04-01' }, context).prefill.issued_on,
   ).toBe('');
 });
+
+test('a revision that moves on every page stops restarting instead of looping forever', async () => {
+  let calls = 0;
+  const pager = createExpensePager(async ({ offset }) =>
+    page(`revision-${++calls}`, [row(`row-${calls}`)], offset + 1, true),
+  );
+  await expect(pager.load('', false, 3)).rejects.toThrow('expense.invalidPage');
+  expect(calls).toBeLessThanOrEqual(8);
+});

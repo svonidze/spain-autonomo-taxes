@@ -125,3 +125,59 @@ test('additive error messages retain legacy text when a server key is unknown', 
   error.messageCode = 'contacts.invalidName';
   expect(errorMessage(error, 'en')).toBe(formatMessage('contacts.invalidName', {}, 'en'));
 });
+
+test('transport and fallback errors keep message codes that re-render in the current locale', async () => {
+  const { errorMessage, errorDescriptor } = await import('../src/core/error-message.ts');
+  const call = (options: Parameters<typeof fetchJSON>[1], payload: HttpResponse) =>
+    fetchJSON('/api/test', options, {
+      fetch: async () => payload,
+      origin: 'https://example.invalid',
+      t: formatMessage,
+    }).catch((value: unknown) => value as ApiError);
+  const html = (await call(
+    {},
+    response(200, 'text/html', '<html>wrong service</html>'),
+  )) as ApiError;
+  expect(html.messageCode).toBe('errors.apiReturnedHtml');
+  expect(errorMessage(html, 'en')).toBe(
+    formatMessage('errors.apiReturnedHtml', { origin: 'https://example.invalid' }, 'en'),
+  );
+  expect(errorMessage(html, 'ru')).not.toBe(errorMessage(html, 'en'));
+  const fallback = (await call(
+    { fallbackCode: 'intake.failed' },
+    response(500, 'application/json', '{}'),
+  )) as ApiError;
+  expect(fallback.messageCode).toBe('intake.failed');
+  expect(fallback.message).toBe(formatMessage('intake.failed', {}, 'ru'));
+  expect(errorDescriptor(fallback)).toEqual({ key: 'intake.failed', params: undefined });
+  const server = (await call(
+    { fallbackCode: 'intake.failed' },
+    response(500, 'application/json', JSON.stringify({ error: 'Synthetic server text' })),
+  )) as ApiError;
+  expect(server.messageCode).toBeUndefined();
+  expect(errorDescriptor(server)).toBe('Synthetic server text');
+});
+
+test('dashboard banners follow the plural categories of the interface language', () => {
+  expect(t('dashboard.readyBanner', { count: 1 }, 'ru')).toBe(
+    '1 операция уже проверена и может быть проведена',
+  );
+  expect(t('dashboard.readyBanner', { count: 5 }, 'ru')).toBe(
+    '5 операций уже проверены и могут быть проведены',
+  );
+  expect(t('dashboard.readyBanner', { count: 22 }, 'ru')).toBe(
+    '22 операции уже проверены и могут быть проведены',
+  );
+  expect(t('dashboard.readyBanner', { count: 1 }, 'en')).toBe(
+    '1 reviewed transaction can be posted now',
+  );
+  expect(t('dashboard.postingBannerTitle', { count: 1 }, 'en')).toBe(
+    '1 approved transaction is waiting to post',
+  );
+  expect(t('dashboard.postingBannerTitle', { count: 3 }, 'ru')).toBe(
+    '3 подтвержденные операции ждут проведения',
+  );
+  expect(t('dashboard.postingBannerTitle', { count: 11 }, 'ru')).toBe(
+    '11 подтвержденных операций ждут проведения',
+  );
+});

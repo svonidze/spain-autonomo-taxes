@@ -93,3 +93,12 @@ test('missing, forbidden and wrong-type detail states retain usable navigation',
   await page.reload();
   await expect(page.locator('.expense-detail a[href="/income?period=2026-Q2"]')).toBeVisible();
 });
+
+test('a direct link with a non-canonical UUID loads and is rewritten to the canonical id', async ({page}) => {
+  const canonical = 'abcdef01-2345-4678-8abc-def012345678';
+  const data = fixture(); data.transaction.transaction_id = canonical;
+  await page.route(`**/api/transactions/${canonical}`, route => route.fulfill({json: data}));
+  await page.goto(`/expenses/${canonical.replaceAll('-', '').toUpperCase()}?period=2026-Q3`);
+  await expect(page.locator('[data-vue-owned] h2').first()).toHaveText('SYN-EXPENSE');
+  await expect(page).toHaveURL(new RegExp(`/expenses/${canonical}\\?period=2026-Q2$`));
+});
