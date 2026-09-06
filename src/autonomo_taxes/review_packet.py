@@ -841,8 +841,10 @@ def _validate_decision(decision_value: Any, state: Mapping[str, Any]) -> dict[st
         raise ReviewPacketError(
             f"Tax code {tax_treatment['tax_code']} needs a Member-State VAT number, but the "
             "counterparty VAT id is an OSS non-Union scheme identifier (EU + 9 digits) of a "
-            "supplier established outside the EU; use non_eu_service_expense (reverse charge, "
-            "casillas 12/13 and 28/29) or domestic_input when Spanish VAT was charged under OSS"
+            "supplier established outside the EU; use non_eu_service_expense for a reviewed "
+            "B2B service with reverse charge (casillas 12/13 and 28/29). If Spanish VAT was "
+            "charged under OSS, verify the B2B facts and obtain a corrected supplier invoice "
+            "where needed before claiming a deduction"
         )
     if asset_decision == "asset" and (
         tax_treatment["deductible_irpf_minor"] != 0

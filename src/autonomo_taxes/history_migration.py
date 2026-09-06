@@ -700,12 +700,22 @@ def _import_quarterly_row(db: LedgerDB, *, row: dict[str, str], import_batch_id:
     # history or colliding with independently versioned classification rules.
     infer_clave09 = _should_infer_clave09_output(row, kind)
     transaction_external_key = _external_key("transaction", line_key)
+    # Add a separate rule token only where this classification changes; other
+    # importer fixes can contribute their own tokens in either merge order.
+    oss_reclassification = (
+        kind == "expense"
+        and (row.get("operation_key") or "").strip() != "09"
+        and _is_yes(row.get("reverse_charge"))
+        and (row.get("counterparty_country_code") or "").strip().upper() in EU_COUNTRY_CODES - {"ES"}
+        and is_oss_non_union_identifier(row.get("counterparty_vat_id"))
+    )
     transaction_source_hash = _stable_payload_hash(
         {
             "kind": "transaction",
             **({"clave09_output_rule": 1} if infer_clave09 else {}),
             "rule_version": HISTORY_MIGRATION_RULE_VERSION,
             "row": row,
+            **({"oss_non_union_rule": 1} if oss_reclassification else {}),
         }
     )
     treatment_source_hash = _stable_payload_hash(
@@ -714,6 +724,7 @@ def _import_quarterly_row(db: LedgerDB, *, row: dict[str, str], import_batch_id:
             **({"clave09_output_rule": 1} if infer_clave09 else {}),
             "rule_version": HISTORY_MIGRATION_RULE_VERSION,
             "row": row,
+            **({"oss_non_union_rule": 1} if oss_reclassification else {}),
         }
     )
     complete_existing = db.connection.execute(
