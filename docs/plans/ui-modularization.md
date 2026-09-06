@@ -231,3 +231,14 @@ The remaining legacy renderer is 4,997 lines; feature ownership moves to Vue in
 stages 4–11. Old VM contexts now receive the real typed core explicitly, while new
 module tests import it directly. Browser tests cover live locale changes during a
 POST, rejection drafts/focus, native expense drafts and help history.
+
+PR #60 follow-up: acceptance-triggered same-screen refresh now consults the
+existing dirty/busy guard, preserving active contact edits without repeating
+intake. Partially hyphenated UUIDs normalize through the shared route helper;
+invalid IDs remain invalid. Bare diagnostic keys without required ICU parameters
+remain safe raw text. Regression coverage exercises declined and pending renames,
+manual/idle refresh, UUID variants, and parameterized/non-parameterized errors.
+Validation: 67 module tests, 61 source/installed-wheel browser scenarios,
+pseudolocale and 1,306 Python tests pass (four expected skips), alongside
+format/type/catalog/coverage/chart/privacy checks. Independent code review
+APPROVE and architecture CLEAR cover these follow-up changes.
