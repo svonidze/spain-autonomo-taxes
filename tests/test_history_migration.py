@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from autonomo_taxes.cli import main
+from autonomo_taxes.counterparty_names import CounterpartyMatchError
 from autonomo_taxes.filing_evidence import FilingEvidence
 from autonomo_taxes.history_migration import (
     _find_acquisition_transaction,
@@ -299,6 +300,117 @@ def test_placeholder_vat_id_never_merges_unrelated_counterparties(tmp_path: Path
     assert repeated_legacy_id == legacy_id
     assert cleaned_legacy["external_key"] == "counterparty-name:syntheticparty008"
     assert cleaned_legacy["vat_id"] is None
+
+
+def _placeholder_rows_for_same_supplier(tmp_path: Path) -> tuple[Path, Path, list[dict[str, str]]]:
+    source_csv, reconciliation_csv = _write_fixture_csvs(tmp_path)
+    rows = _load_csv(source_csv)
+    first = rows[1]
+    first.update(
+        {
+            "supplier": "Synthetic Supplier 021",
+            "document_number": "SUP-021-1",
+            "counterparty_country_code": "ES",
+            "counterparty_tax_id": "0000000T",
+            "counterparty_vat_id": "ES0000000T",
+        }
+    )
+    second = dict(first)
+    second.update(
+        {
+            "source_row_number": "4",
+            "source_book_line_id": "expense-line-2",
+            "document_number": "SUP-021-2",
+            "counterparty_country_code": "DE",
+            "counterparty_tax_id": "9999999",
+            "counterparty_vat_id": "",
+        }
+    )
+    rows.insert(2, second)
+    return source_csv, reconciliation_csv, rows
+
+
+def test_placeholder_only_rows_with_divergent_country_merge_and_raise_a_warning(
+    tmp_path: Path,
+) -> None:
+    source_csv, reconciliation_csv, rows = _placeholder_rows_for_same_supplier(tmp_path)
+    _write_csv(source_csv, SOURCE_BOOK_FIELDS, rows)
+
+    with LedgerDB.initialize(tmp_path / "ledger.sqlite3") as db:
+        migrate_xolo_history(db, source_csv, reconciliation_csv)
+        counterparties = db.connection.execute(
+            "SELECT counterparty_id, country_code FROM counterparties WHERE display_name = 'Synthetic Supplier 021'"
+        ).fetchall()
+        issues = db.connection.execute(
+            """
+            SELECT issue_code, severity, blocking, issue_status, subject_table, subject_id, message
+            FROM validation_issues
+            WHERE issue_code = 'counterparty_country_divergence'
+            """
+        ).fetchall()
+        linked = db.connection.execute(
+            """
+            SELECT COUNT(DISTINCT t.counterparty_id) FROM transactions t
+            JOIN documents d ON d.document_id = t.document_id
+            WHERE d.document_number IN ('SUP-021-1', 'SUP-021-2')
+            """
+        ).fetchone()[0]
+
+    assert len(counterparties) == 1
+    assert counterparties[0]["country_code"] == "ES"
+    assert linked == 1
+    assert len(issues) == 1
+    issue = issues[0]
+    assert issue["severity"] == "warning"
+    assert issue["blocking"] == 0
+    assert issue["issue_status"] == "open"
+    assert issue["subject_table"] == "counterparties"
+    assert issue["subject_id"] == counterparties[0]["counterparty_id"]
+    assert "expense-line-2" in issue["message"]
+    assert "DE" in issue["message"] and "ES" in issue["message"]
+
+
+def test_placeholder_divergence_warning_is_not_duplicated_on_reimport(tmp_path: Path) -> None:
+    source_csv, reconciliation_csv, rows = _placeholder_rows_for_same_supplier(tmp_path)
+    _write_csv(source_csv, SOURCE_BOOK_FIELDS, rows)
+
+    with LedgerDB.initialize(tmp_path / "ledger.sqlite3") as db:
+        migrate_xolo_history(db, source_csv, reconciliation_csv)
+        migrate_xolo_history(db, source_csv, reconciliation_csv)
+        count = db.connection.execute(
+            "SELECT COUNT(*) FROM validation_issues WHERE issue_code = 'counterparty_country_divergence'"
+        ).fetchone()[0]
+
+    assert count == 1
+
+
+def test_usable_identity_conflict_names_the_source_row_and_supplier(tmp_path: Path) -> None:
+    source_csv, reconciliation_csv, rows = _placeholder_rows_for_same_supplier(tmp_path)
+    rows[1].update(
+        {
+            "counterparty_country_code": "DE",
+            "counterparty_tax_id": "TEST-TAX-ID-777",
+            "counterparty_vat_id": "",
+        }
+    )
+    rows[2].update(
+        {
+            "counterparty_country_code": "FR",
+            "counterparty_tax_id": "TEST-TAX-ID-777",
+            "counterparty_vat_id": "",
+        }
+    )
+    _write_csv(source_csv, SOURCE_BOOK_FIELDS, rows)
+
+    with (
+        LedgerDB.initialize(tmp_path / "ledger.sqlite3") as db,
+        pytest.raises(CounterpartyMatchError) as excinfo,
+    ):
+        migrate_xolo_history(db, source_csv, reconciliation_csv)
+
+    message = str(excinfo.value)
+    assert "expense-line-2" in message
+    assert "Synthetic Supplier 021" in message
 
 
 def test_placeholder_row_reuses_unique_reviewed_identity_for_exact_supplier_name(
