@@ -1,3 +1,5 @@
+import {mountIntake} from '../features/intake/mount.ts';
+import {currencies as intakeCurrencies} from '../features/intake/model.ts';
 import ReviewOverviewView from '../features/posting/ReviewOverviewView.vue';
 import type {ReviewOverviewContext} from '../features/posting/model.ts';
 import {refreshToken as postingRefreshToken, clearRefresh as clearPostingRefresh} from '../features/posting/state.ts';
@@ -15,6 +17,6 @@ import type {ContactsContext} from '../features/contacts/model.ts';
 import {mountView} from './host.ts';
 import ExpenseDetail from '../features/expense-detail/ExpenseDetail.vue';
 import type {ExpenseDetailContext} from '../features/expense-detail/model.ts';
-const views = {postingRefreshToken, clearPostingRefresh, reviewOverview: (root: HTMLElement, context: ReviewOverviewContext) => mountView(root, ReviewOverviewView, context), reviewDetail: (root: HTMLElement, context: ReviewDetailContext) => mountView(root, ReviewDetailView, context), overview: (root: HTMLElement, context: OverviewContext) => mountView(root, {dashboard: DashboardView, assets: AssetsView, taxes: TaxesView}[context.view], context), buildIncomeCopy, copyable, transactions: (root: HTMLElement, context: TransactionListContext) => mountView(root, TransactionListsView, context), contacts: (root: HTMLElement, context: ContactsContext) => mountView(root, ContactsView, context), expenseDetail: (root: HTMLElement, context: ExpenseDetailContext) => mountView(root, ExpenseDetail, context)};
+const views = {mountIntake, intakeCurrencies, postingRefreshToken, clearPostingRefresh, reviewOverview: (root: HTMLElement, context: ReviewOverviewContext) => mountView(root, ReviewOverviewView, context), reviewDetail: (root: HTMLElement, context: ReviewDetailContext) => mountView(root, ReviewDetailView, context), overview: (root: HTMLElement, context: OverviewContext) => mountView(root, {dashboard: DashboardView, assets: AssetsView, taxes: TaxesView}[context.view], context), buildIncomeCopy, copyable, transactions: (root: HTMLElement, context: TransactionListContext) => mountView(root, TransactionListsView, context), contacts: (root: HTMLElement, context: ContactsContext) => mountView(root, ContactsView, context), expenseDetail: (root: HTMLElement, context: ExpenseDetailContext) => mountView(root, ExpenseDetail, context)};
 declare global {var AutonomoViews: typeof views;}
 globalThis.AutonomoViews = views;

@@ -144,6 +144,7 @@ let pendingLocaleRepaint = false;
 const localizedText = new Map();
 let intakeNoticeMessages = [];
 let localeRepaintTimer = null;
+let intakeController = null;
 let vueViewHost = null;
 let vueViewNavigation = null;
 const requestScope = AutonomoCore.createRequestScope(() => scheduleLocaleRepaint());
@@ -1688,6 +1689,16 @@ function renderDashboardCharts(analyticsResult) {
 }
 
 async function init() {
+  if (typeof AutonomoViews !== "undefined" && !intakeController) {
+    intakeController = AutonomoViews.mountIntake({
+      request: fetchJSON, notify: showToast,
+      locationKey: () => window.location.pathname + window.location.search,
+      accepted(result) {
+        if (result.kind === "expense_invoice" && result.transaction_id) navigateToRoute("review", {reviewId: "transaction:" + result.transaction_id, period: result.period});
+        else void renderCurrentView();
+      },
+    });
+  }
   try {
     state.bootstrap = await fetchJSON("/api/bootstrap");
     profileName.textContent = state.bootstrap.profile_name;
@@ -1783,10 +1794,10 @@ async function renderCurrentView({localeOnly = false} = {}) {
         const {prefill, noticeLines} = AutonomoViews.buildIncomeCopy(row, {
           sourcePeriodKey: period, targetPeriodKey: state.copyTargetPeriodKey,
           targetIsCurrentQuarter: state.copyTargetIsCurrentQuarter,
-          currencyOptions: Array.from(intakeForm.elements.currency.options, option => option.value),
+          currencyOptions: AutonomoViews.intakeCurrencies,
         });
         openIntake("income_invoice", {targetPeriodKey: state.copyTargetPeriodKey, prefill, noticeLines});
-        intakeForm.elements.document_number.focus(); intakeForm.elements.document_number.select();
+        intakeController.focusDocumentNumber();
       },
     });
     return;
@@ -1809,10 +1820,10 @@ async function renderCurrentView({localeOnly = false} = {}) {
         const {prefill, noticeLines} = AutonomoViews.buildIncomeCopy(row, {
           sourcePeriodKey: period, targetPeriodKey: state.copyTargetPeriodKey,
           targetIsCurrentQuarter: state.copyTargetIsCurrentQuarter,
-          currencyOptions: Array.from(intakeForm.elements.currency.options, option => option.value),
+          currencyOptions: AutonomoViews.intakeCurrencies,
         });
         openIntake("income_invoice", {targetPeriodKey: state.copyTargetPeriodKey, prefill, noticeLines});
-        intakeForm.elements.document_number.focus(); intakeForm.elements.document_number.select();
+        intakeController.focusDocumentNumber();
       },
     });
     return;
@@ -4459,6 +4470,7 @@ function copyTransactionAction(transactionId, targetPeriodKey = state.copyTarget
 }
 
 function openIntake(kind, {targetPeriodKey = state.period, prefill = null, noticeLines = []} = {}) {
+  if (typeof intakeController !== "undefined" && intakeController) {void intakeController.open(kind, {targetPeriodKey, prefill, noticeLines});return;}
   intakeForm.reset();
   state.googleFolder = null;
   renderGoogleFolderSelection();
@@ -4483,6 +4495,7 @@ function openIntake(kind, {targetPeriodKey = state.period, prefill = null, notic
 }
 
 function closeIntake() {
+  if (typeof intakeController !== "undefined" && intakeController) {intakeController.close();return;}
   if (dialog.open) dialog.close();
   state.googleFolder = null;
   renderGoogleFolderSelection();

@@ -99,3 +99,12 @@ versions. Busy state and the latest captured-period result survive route disposa
 stale calculations are tracked by period. Refresh tokens prevent an earlier
 calculation from clearing a later marker. Recovery only refreshes calculations
 and reads the overview; it never submits the batch again.
+
+Intake owns one persistent Vue dialog, retaining its native file input through
+language/source changes, failures and temporary Google Picker visibility. Draft
+schema 1 remains values-only; untouched copied forms never replace a saved draft.
+Accepted responses must match the submitted kind and period before clearing the
+unchanged draft. Session and origin checks fence late callbacks and success timers.
+Google Picker configuration stays in memory from the runtime API. Browser tests
+mock the [official PickerBuilder contract](https://developers.google.com/workspace/drive/picker/reference/picker.pickerbuilder); live OAuth was not exercised.
+The separate intake mount adapter is temporary until shell migration.
