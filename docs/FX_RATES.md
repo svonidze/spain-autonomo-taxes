@@ -55,7 +55,14 @@ window) before writing anything and compare the entered rate with it.
 | Within 5% of the ECB EUR-per-unit rate | Recorded. |
 | Within 0.5% of the ECB units-per-EUR figure while more than 5% off the EUR-per-unit rate | Refused as an inverted quote. The error shows both conventions and the expected value; enter the inverse. `--allow-unverified-rate` does not override this. |
 | More than 5% off for any other reason | Refused unless `--allow-unverified-rate` is passed. The recorded `source_reference` then carries a note that the rate was not verified against the ECB reference. |
-| Reference unavailable: offline, HTTP error, unsupported currency or no observation in the window | Recorded, with a warning on stderr. The guard never requires network access. |
+| Reference unavailable: offline, HTTP error, unsupported currency or no observation in the window | Recorded, with a warning on stderr and an audit note in `source_reference`. The JSON result carries the unavailable status so API clients can show the warning. |
+
+Both commands include `fx_rate_check` in their JSON result, with `status` and
+`detail`. Status is `verified`, `unverified` (an explicit deviation override),
+`unavailable` or `exempt`. `/api/review/apply-fx` preserves this object beside the
+refreshed review item. Clients must show `unavailable` and `unverified` details;
+a successful write does not establish that the reference was checked. The audit
+note remains in the stored source reference after the response is gone.
 
 `actual_settlement` and `xolo_recorded` rates are not compared: a settlement
 or recorded rate legitimately differs from the fixing. A rate that genuinely

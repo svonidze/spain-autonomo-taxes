@@ -38,6 +38,10 @@ class ManualRateCheck:
     status: str  # "exempt" | "verified" | "unverified" | "unavailable"
     detail: str = ""
 
+    @property
+    def source_reference_note(self) -> str | None:
+        return self.detail if self.status in {"unverified", "unavailable"} else None
+
 
 @dataclass(frozen=True)
 class FXRate:

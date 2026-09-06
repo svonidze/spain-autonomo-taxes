@@ -1493,7 +1493,7 @@ class LocalAccountingApp:
             "-",
         ]
         try:
-            self._run_cli_with_input(
+            applied = self._run_cli_with_input(
                 command,
                 input_text=json.dumps(dict(payload), ensure_ascii=False) + "\n",
             )
@@ -1514,7 +1514,10 @@ class LocalAccountingApp:
             raise LocalWebApiError(
                 HTTPStatus.BAD_REQUEST, "fx_review_invalid", message
             ) from exc
-        return self.review_work_item(review_id)
+        work_item = self.review_work_item(review_id)
+        if "fx_rate_check" in applied:
+            work_item["fx_rate_check"] = applied["fx_rate_check"]
+        return work_item
 
     def document_file(self, document_id: str) -> tuple[Path, str]:
         if not UUID_RE.fullmatch(document_id):

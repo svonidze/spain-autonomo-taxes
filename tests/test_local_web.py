@@ -2559,12 +2559,14 @@ def test_review_apply_fx_uses_cli_boundary_and_refreshes_packet(
         {"review_id": review_id, "packet": {"snapshot_hash": "before"}},
         {"review_id": review_id, "packet": {"snapshot_hash": "after"}},
     ]
+    check = {"status": "unavailable", "detail": "Synthetic ECB outage"}
 
     monkeypatch.setattr(app, "review_work_item", lambda _review_id: work_items.pop(0))
     monkeypatch.setattr(
         app,
         "_run_cli_with_input",
-        lambda command, *, input_text: calls.append((command, input_text)) or {},
+        lambda command, *, input_text: calls.append((command, input_text))
+        or {"fx_rate_check": check},
     )
     payload = {
         "review_id": review_id,
@@ -2578,6 +2580,7 @@ def test_review_apply_fx_uses_cli_boundary_and_refreshes_packet(
     refreshed = app.review_apply_fx(payload)
 
     assert refreshed["packet"]["snapshot_hash"] == "after"
+    assert refreshed["fx_rate_check"] == check
     command, input_text = calls[0]
     assert command[3:5] == ["review", "apply-fx"]
     assert json.loads(input_text or "{}") == payload

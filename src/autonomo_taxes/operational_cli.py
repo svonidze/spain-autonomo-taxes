@@ -14,7 +14,9 @@ import sqlite3
 import sys
 from typing import Any, Callable, Iterable, Mapping
 
-from .fx_policy import ALLOWED_PRODUCTION_SOURCES, FXRateDeviationError, check_manual_rate
+from .fx_policy import (
+    ALLOWED_PRODUCTION_SOURCES, FXRateDeviationError, ManualRateCheck, check_manual_rate,
+)
 from .fx_reference import fetch_eur_rate
 from .intake import (
     ExpenseInboxCleanupCandidate,
@@ -2071,21 +2073,25 @@ def _cmd_review_apply_fx(args: argparse.Namespace) -> int:
                     f"found {len(rows)}"
                 )
             transaction_id = str(rows[0]["transaction_id"])
-        source_reference = str(payload["source_reference"])
+        source_reference = payload["source_reference"]
+        if not isinstance(source_reference, str) or not source_reference.strip():
+            raise ValueError("FX review requires a nonblank source_reference")
+        source_reference = source_reference.strip()
+        check = None
         transaction = db.connection.execute(
             "SELECT original_currency, currency FROM transactions WHERE transaction_id = ?",
             (transaction_id,),
         ).fetchone()
         if transaction is not None:
-            note = _check_manual_fx_rate(
+            check = _check_manual_fx_rate(
                 str(payload["rate"]),
                 currency=str(transaction["original_currency"] or transaction["currency"]),
                 rate_date=str(payload["rate_date"]),
                 rate_source=str(payload["rate_source"]),
                 allow_unverified=args.allow_unverified_rate,
             )
-            if note:
-                source_reference = f"{source_reference} ({note})"
+            if check.source_reference_note:
+                source_reference = f"{source_reference} ({check.source_reference_note})"
         result = db.review_transaction_fx_rate(
             transaction_id,
             expected_row_version=int(payload["expected_row_version"]),
@@ -2094,7 +2100,7 @@ def _cmd_review_apply_fx(args: argparse.Namespace) -> int:
             rate_source=str(payload["rate_source"]),
             source_reference=source_reference,
         )
-    _emit(result)
+    _emit({**result, "fx_rate_check": asdict(check) if check else None})
     return 0
 
 
@@ -2105,8 +2111,8 @@ def _check_manual_fx_rate(
     rate_date: str,
     rate_source: str,
     allow_unverified: bool,
-) -> str | None:
-    """Guard a manual official rate; return the note to record for an allowed override.
+) -> ManualRateCheck:
+    """Return the reference outcome for both the audit record and CLI/API clients.
 
     The reference lookup runs before any ledger write so an unreachable ECB
     service neither holds a database lock nor blocks offline use.
@@ -2114,7 +2120,7 @@ def _check_manual_fx_rate(
 
     normalized_currency = currency.strip().upper()
     if normalized_currency == "EUR":
-        return None
+        return ManualRateCheck("exempt")
     try:
         decimal_rate = Decimal(rate)
     except InvalidOperation as exc:
@@ -2134,8 +2140,7 @@ def _check_manual_fx_rate(
         ) from exc
     if check.status == "unavailable":
         print(f"warning: {check.detail}", file=sys.stderr)
-        return None
-    return check.detail if check.status == "unverified" else None
+    return check
 
 
 def _cmd_review_confirm(args: argparse.Namespace) -> int:
@@ -3018,9 +3023,9 @@ def _cmd_transaction_apply_fx(args: argparse.Namespace) -> int:
             "SELECT rate, base_currency, rate_date, rate_source FROM fx_rates WHERE fx_rate_id = ?",
             (args.fx_rate_id,),
         ).fetchone()
-        note = None
+        check = None
         if fx_rate is not None:
-            note = _check_manual_fx_rate(
+            check = _check_manual_fx_rate(
                 str(fx_rate["rate"]),
                 currency=str(fx_rate["base_currency"]),
                 rate_date=str(fx_rate["rate_date"]),
@@ -3031,9 +3036,9 @@ def _cmd_transaction_apply_fx(args: argparse.Namespace) -> int:
             args.transaction_id,
             fx_rate_id=args.fx_rate_id,
             expected_row_version=args.expected_row_version,
-            source_reference_note=note,
+            source_reference_note=check.source_reference_note if check else None,
         )
-    _emit(row)
+    _emit({**row, "fx_rate_check": asdict(check) if check else None})
     return 0
 
 
