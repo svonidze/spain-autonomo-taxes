@@ -1,5 +1,9 @@
 # Foreign-currency exchange rates
 
+These rules also apply without a browser. See [the agent workflow](AGENT_WORKFLOW.md)
+and [CLI capabilities](CLI_CAPABILITIES.md) for supported commands and recovery.
+
+
 Foreign-currency income and expenses need a sourced EUR conversion before
 they can be approved and posted. The application proposes a reference rate in
 the guided review, but the user or authorized operator still confirms the
