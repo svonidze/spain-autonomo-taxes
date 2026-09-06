@@ -86,6 +86,7 @@ def migrate_xolo_history(
 ) -> dict[str, Any]:
     source_path = Path(source_book_csv)
     source_rows = _load_rows(source_path)
+    _require_legacy_country_reviews(db, source_rows)
     source_batch = db.add_import_batch(
         source_name="xolo_source_book_rows",
         source_hash=_file_hash(source_path),
@@ -1468,6 +1469,29 @@ def _resolve_stale_reconciliation_issues(
     return resolved
 
 
+def _require_legacy_country_reviews(db: LedgerDB, source_rows: list[dict[str, str]]) -> None:
+    periods = {(row.get("period") or "").strip().upper() for row in source_rows}
+    issues = [
+        dict(issue) for issue in db.connection.execute(
+            """SELECT v.*, p.period_key FROM validation_issues v
+               JOIN periods p ON p.period_id = v.period_id
+               WHERE v.issue_code = 'counterparty_country_divergence'
+                 AND v.issue_status = 'open' AND v.blocking = 0"""
+        ) if issue["period_key"] in periods
+    ]
+    for issue in issues:
+        db._assert_period_mutable(issue["period_id"])
+    with db.transaction():
+        for issue in issues:
+            db.add_validation_issue(
+                period_key=issue["period_key"], issue_code=issue["issue_code"],
+                severity=issue["severity"], message=issue["message"], blocking=True,
+                subject_table=issue["subject_table"], subject_id=issue["subject_id"],
+                source_hash=issue["source_hash"], dedupe_key=issue["dedupe_key"],
+                expected_row_version=issue["row_version"],
+            )
+
+
 def _row_reference(row: dict[str, str], supplier: str) -> str:
     line_id = (row.get("source_book_line_id") or "").strip() or "?"
     return f"row {line_id}, supplier '{supplier}'"
@@ -1485,6 +1509,19 @@ def _record_counterparty_divergence(
         return
     line_id = (row.get("source_book_line_id") or "").strip() or "?"
     known_country = str(counterparty["country_code"] or "").strip().upper() or "ZZ"
+    dedupe_key = f"counterparty-country-divergence:{counterparty['counterparty_id']}:{country_code}"
+    source_hash = _stable_payload_hash({
+        "kind": "counterparty_country_divergence", "counterparty_id": str(counterparty["counterparty_id"]),
+        "country_code": country_code, "known_country": known_country, "source_book_line_id": line_id,
+    })
+    resolved = db.connection.execute(
+        """SELECT 1 FROM validation_issues v JOIN periods p ON p.period_id = v.period_id
+           WHERE p.period_key = ? AND v.dedupe_key = ? AND v.source_hash = ?
+             AND v.issue_status = 'resolved'""",
+        (period_key, dedupe_key, source_hash),
+    ).fetchone()
+    if resolved is not None:
+        return
     db.add_validation_issue(
         period_key=period_key,
         issue_code="counterparty_country_divergence",
@@ -1494,18 +1531,11 @@ def _record_counterparty_divergence(
             f"with placeholder identifiers only, while the ledger identity is {known_country}; "
             "the existing counterparty was kept."
         ),
-        blocking=False,
+        blocking=True,
         subject_table="counterparties",
         subject_id=str(counterparty["counterparty_id"]),
-        dedupe_key=f"counterparty-country-divergence:{counterparty['counterparty_id']}:{country_code}",
-        source_hash=_stable_payload_hash(
-            {
-                "kind": "counterparty_country_divergence",
-                "counterparty_id": str(counterparty["counterparty_id"]),
-                "country_code": country_code,
-                "source_book_line_id": line_id,
-            }
-        ),
+        dedupe_key=dedupe_key,
+        source_hash=source_hash,
     )
 
 
@@ -1551,7 +1581,10 @@ def _upsert_counterparty(
         previous = db.connection.execute(
             "SELECT * FROM counterparties WHERE counterparty_id = ?", (previous_counterparty_id,)
         ).fetchone()
-    if previous is not None and conflicts(previous) and not trusted_source_binding(previous):
+    if (
+        previous is not None and conflicts(previous) and not trusted_source_binding(previous)
+        and not (tax_id is None and vat_id is None and previous["external_key"] == external_key)
+    ):
         raise CounterpartyMatchError(
             f"Historical counterparty conflict for source row {row.get('source_book_line_id', '')}; review explicitly"
         )
@@ -1562,8 +1595,8 @@ def _upsert_counterparty(
             )
         # Provider exports record the same supplier with placeholder identifiers
         # and inconsistent country codes across months. A row without any usable
-        # identifier cannot contradict a known identity, so keep the counterparty
-        # and surface the divergence for review instead of aborting the import.
+        # identifier needs an explicit identity review. Keep the source binding
+        # provisional and block the period until that review is resolved.
         _record_counterparty_divergence(db, row=row, counterparty=existing, country_code=country_code)
         placeholder_divergence = True
     all_name_matches = find_name_candidates(db.connection, supplier)

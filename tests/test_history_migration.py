@@ -19,7 +19,7 @@ from autonomo_taxes.history_migration import (
     migrate_xolo_history,
     refresh_filing_inventory,
 )
-from autonomo_taxes.ledger_db import BlockingIssueError, LedgerDB
+from autonomo_taxes.ledger_db import BlockingIssueError, ClosedPeriodError, LedgerDB
 
 
 SOURCE_BOOK_FIELDS = [
@@ -362,7 +362,7 @@ def test_placeholder_only_rows_with_divergent_country_merge_and_raise_a_warning(
     assert len(issues) == 1
     issue = issues[0]
     assert issue["severity"] == "warning"
-    assert issue["blocking"] == 0
+    assert issue["blocking"] == 1
     assert issue["issue_status"] == "open"
     assert issue["subject_table"] == "counterparties"
     assert issue["subject_id"] == counterparties[0]["counterparty_id"]
@@ -2204,3 +2204,61 @@ def test_clave09_missing_output_evidence_does_not_create_a_transaction(
             migrate_xolo_history(db, source_csv)
         assert db.table_counts()["transactions"] == 0
         assert db.table_counts()["documents"] == 0
+
+
+def test_placeholder_country_refresh_remains_blocking_until_explicit_review(tmp_path: Path) -> None:
+    from autonomo_taxes.posting import evaluate_transaction_posting
+
+    source, reconciliation, rows = _placeholder_rows_for_same_supplier(tmp_path)
+    _write_csv(source, SOURCE_BOOK_FIELDS, rows)
+    with LedgerDB.initialize(tmp_path / "ledger.sqlite3") as db:
+        migrate_xolo_history(db, source, reconciliation)
+        rows[2]["notes"] = "Updated export note; identity facts unchanged"
+        _write_csv(source, SOURCE_BOOK_FIELDS, rows)
+        migrate_xolo_history(db, source, reconciliation)
+        issues = db.connection.execute(
+            "SELECT * FROM validation_issues WHERE issue_code = 'counterparty_country_divergence'"
+        ).fetchall()
+        assert len(issues) == 1
+        assert issues[0]["blocking"] == 1
+        affected = [t for t in db.list_transactions(period_key="2026-Q2") if t["counterparty_id"] == issues[0]["subject_id"]]
+        assert len(affected) == 2
+        for transaction in affected:
+            evaluation = evaluate_transaction_posting(db, transaction)
+            assert any(x["code"] == "counterparty_country_divergence" for x in evaluation.blocking_issues)
+        with pytest.raises(BlockingIssueError, match="counterparty_country_divergence"):
+            db.close_period("2026-Q2")
+        db.resolve_issue(
+            issues[0]["validation_issue_id"], reason="Reviewed supplier registration evidence",
+            expected_row_version=issues[0]["row_version"],
+        )
+        rows[2]["notes"] = "Another note with unchanged reviewed identity facts"
+        _write_csv(source, SOURCE_BOOK_FIELDS, rows)
+        migrate_xolo_history(db, source, reconciliation)
+        assert all(x["issue_code"] != "counterparty_country_divergence" for x in db.validate_period("2026-Q2")["blocking_issues"])
+
+
+def test_unchanged_reimport_promotes_an_old_nonblocking_country_warning(tmp_path: Path) -> None:
+    source, reconciliation, rows = _placeholder_rows_for_same_supplier(tmp_path)
+    _write_csv(source, SOURCE_BOOK_FIELDS, rows)
+    with LedgerDB.initialize(tmp_path / "ledger.sqlite3") as db:
+        migrate_xolo_history(db, source, reconciliation)
+        db.connection.execute("UPDATE validation_issues SET blocking=0 WHERE issue_code='counterparty_country_divergence'")
+        db.connection.commit()
+        migrate_xolo_history(db, source, reconciliation)
+        assert any(x["issue_code"] == "counterparty_country_divergence" for x in db.validate_period("2026-Q2")["blocking_issues"])
+
+
+@pytest.mark.parametrize("status", ["closed", "amended"])
+def test_legacy_country_warning_in_immutable_period_requires_explicit_correction(tmp_path: Path, status: str) -> None:
+    source, reconciliation, rows = _placeholder_rows_for_same_supplier(tmp_path)
+    _write_csv(source, SOURCE_BOOK_FIELDS, rows)
+    with LedgerDB.initialize(tmp_path / "ledger.sqlite3") as db:
+        migrate_xolo_history(db, source, reconciliation)
+        db.connection.execute("UPDATE validation_issues SET blocking=0 WHERE issue_code='counterparty_country_divergence'")
+        db.connection.execute("UPDATE periods SET status=? WHERE period_key='2026-Q2'", (status,))
+        db.connection.commit()
+        before = list(db.connection.iterdump())
+        with pytest.raises(ClosedPeriodError, match="immutable"):
+            migrate_xolo_history(db, source, reconciliation)
+        assert list(db.connection.iterdump()) == before
