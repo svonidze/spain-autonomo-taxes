@@ -58,6 +58,8 @@ def test_social_security_cli_creates_reviewed_unposted_g45_expense(
         "RETA-2026-07",
         "--archive-root",
         str(tmp_path / "Evidence"),
+        "--counterparty-name",
+        "Synthetic Party 011",
     ]
     assert main(command) == 0
     output = json.loads(capsys.readouterr().out)
@@ -329,7 +331,87 @@ def test_posted_social_security_projects_to_aeat_expense_book(tmp_path: Path) ->
     assert projection["expense_rows"][0]["cuota_iva_soportado_eur"] == ""
 
 
-def _social_security_setup(tmp_path: Path) -> tuple[Path, Path]:
+def test_social_security_accepts_an_existing_counterparty_id_without_a_name(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    database, evidence = _social_security_setup(tmp_path, display_name="Synthetic Party 012")
+    with initialize(database) as db:
+        counterparty = db.connection.execute(
+            "SELECT * FROM counterparties WHERE external_key = 'tgss'"
+        ).fetchone()
+    command = _social_security_command(
+        database,
+        evidence,
+        tmp_path / "Evidence",
+        counterparty=("--counterparty-id", counterparty["counterparty_id"]),
+    )
+
+    assert main(command) == 0
+    output = json.loads(capsys.readouterr().out)
+
+    assert output["status"] == "created"
+    assert output["counterparty_id"] == counterparty["counterparty_id"]
+    with initialize(database) as db:
+        stored = db.connection.execute(
+            "SELECT display_name FROM counterparties WHERE counterparty_id = ?",
+            (counterparty["counterparty_id"],),
+        ).fetchone()
+        assert stored["display_name"] == "Synthetic Party 012"
+        assert db.connection.execute("SELECT COUNT(*) FROM counterparties").fetchone()[0] == 1
+
+
+def test_social_security_without_counterparty_id_or_name_is_rejected(tmp_path: Path) -> None:
+    database, evidence = _social_security_setup(tmp_path)
+    archive_root = tmp_path / "Evidence"
+    command = _social_security_command(database, evidence, archive_root, counterparty=())
+
+    with pytest.raises(NonInvoiceExpenseError, match="--counterparty-id .* --counterparty-name"):
+        main(command)
+
+    assert not archive_root.exists()
+    with initialize(database) as db:
+        assert db.table_counts()["documents"] == 0
+        assert db.table_counts()["transactions"] == 0
+
+
+def test_social_security_creates_a_new_counterparty_from_an_explicit_name(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    database, evidence = _social_security_setup(tmp_path)
+    command = _social_security_command(
+        database,
+        evidence,
+        tmp_path / "Evidence",
+        counterparty=(
+            "--counterparty-name",
+            "Synthetic Party 012",
+            "--counterparty-tax-id",
+            "TEST-TAX-ID-012",
+        ),
+    )
+
+    assert main(command) == 0
+    output = json.loads(capsys.readouterr().out)
+
+    assert output["status"] == "created"
+    with initialize(database) as db:
+        created = db.connection.execute(
+            "SELECT * FROM counterparties WHERE counterparty_id = ?",
+            (output["counterparty_id"],),
+        ).fetchone()
+        assert created["display_name"] == "Synthetic Party 012"
+        assert created["tax_id"] == "TEST-TAX-ID-012"
+        assert created["country_code"] == "ES"
+        assert db.connection.execute("SELECT COUNT(*) FROM counterparties").fetchone()[0] == 2
+
+
+def _social_security_setup(
+    tmp_path: Path,
+    *,
+    display_name: str = "Synthetic Party 011",
+) -> tuple[Path, Path]:
     database = tmp_path / "ledger.sqlite"
     source = tmp_path / "tgss-debit.txt"
     source.write_text(
@@ -341,7 +423,7 @@ def _social_security_setup(tmp_path: Path) -> tuple[Path, Path]:
         db.upsert_counterparty(
             external_key="tgss",
             tax_id="Q2827003A",
-            display_name="Synthetic Party 011",
+            display_name=display_name,
             country_code="ES",
         )
     return database, source
@@ -367,7 +449,13 @@ def _activity(db):
     )
 
 
-def _social_security_command(database: Path, evidence: Path, archive_root: Path) -> list[str]:
+def _social_security_command(
+    database: Path,
+    evidence: Path,
+    archive_root: Path,
+    *,
+    counterparty: tuple[str, ...] = ("--counterparty-name", "Synthetic Party 011"),
+) -> list[str]:
     return [
         "expense",
         "record",
@@ -387,6 +475,7 @@ def _social_security_command(database: Path, evidence: Path, archive_root: Path)
         "RETA-2026-07",
         "--archive-root",
         str(archive_root),
+        *counterparty,
     ]
 
 
@@ -408,4 +497,5 @@ def _request(
         reference="RETA-2026-07",
         business_purpose="Mandatory contribution for the registered activity",
         description="Autonomo social security contribution",
+        counterparty_name="Synthetic Party 011",
     )
