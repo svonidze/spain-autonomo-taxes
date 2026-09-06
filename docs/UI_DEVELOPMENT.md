@@ -25,6 +25,11 @@ and posting results retain explicit ownership by route, period or operation.
 Detail ids in URLs are canonicalized (lowercase, hyphenated) before requests and
 comparisons, matching the server's `UUID` normalization.
 
+Successful intake delivery also respects the current screen's leave guard. If a
+dirty editor rejects replacement or a save is still pending, the document stays
+accepted and the editor stays mounted. Refresh manually or navigate after editing
+to load the new data; another upload is not needed.
+
 `frontend/tests/support/mount.ts` is a test-only host. The production shell mounts
 a fresh screen instance for every route change (the `revision` key in `Shell.vue`),
 so the `*-host.test.ts` suites verify component robustness under context

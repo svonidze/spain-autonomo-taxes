@@ -20,10 +20,10 @@ export interface Period {
 }
 /** The server canonicalizes UUIDs (lowercase, hyphenated); compare and link in the same form. */
 export function canonicalId(value: string): string {
-  const id = value.toLowerCase();
+  const id = value.replaceAll('-', '').toLowerCase();
   return /^[0-9a-f]{32}$/.test(id)
     ? `${id.slice(0, 8)}-${id.slice(8, 12)}-${id.slice(12, 16)}-${id.slice(16, 20)}-${id.slice(20)}`
-    : id;
+    : value.toLowerCase();
 }
 export function parseRoute(path: string): ScreenRoute | null {
   const detail = /^\/(contacts|expenses|review)\/([0-9a-fA-F-]{32,36})$/.exec(

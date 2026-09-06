@@ -60,3 +60,30 @@ test('detail ids are canonicalized the way the server does', () => {
     `/contacts/${canonical}?period=2026-Q1`,
   );
 });
+
+test('UUID normalization handles irregular hyphens without repairing invalid IDs', () => {
+  const canonical = 'abcdef01-2345-4678-8abc-def012345678';
+  const variants = [
+    canonical,
+    canonical.toUpperCase(),
+    canonical.replaceAll('-', ''),
+    'ABCDEF01-234546788ABCDEF012345678',
+    'abcdef012345-4678-8abc-def012345678',
+  ];
+  for (const value of variants) {
+    expect(canonicalId(value)).toBe(canonical);
+    for (const path of ['contacts', 'expenses', 'review']) {
+      expect(parseRoute(`/${path}/${value}`)?.id).toBe(canonical);
+    }
+    expect(safeReturnUrl(`/contacts/${value}?period=2026-Q1`, '2026-Q2', periods)).toBe(
+      `/contacts/${canonical}?period=2026-Q1`,
+    );
+  }
+  for (const invalid of [
+    'abcdef01-2345-4678-8abc-def01234567',
+    'abcdef01-2345-4678-8abc-def0123456789',
+    'gbcdef01-2345-4678-8abc-def012345678',
+  ]) {
+    expect(canonicalId(invalid)).toBe(invalid);
+  }
+});
