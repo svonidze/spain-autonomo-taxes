@@ -17,7 +17,7 @@ from autonomo_taxes.fx_reference import (
     ECBRateResult,
     FXRateUnavailableError,
 )
-from autonomo_taxes.ledger_db import LedgerDB, initialize
+from autonomo_taxes.ledger_db import LedgerDB, StaleRowVersionError, initialize
 
 RATE_DATE = date(2026, 7, 1)
 # A round synthetic quote: 1.2500 units per EUR is exactly 0.8000 EUR per unit.
@@ -148,6 +148,7 @@ def test_rate_matching_reference_is_recorded_unchanged(
     assert _review_apply_fx(tmp_path, database, transaction, "0.8000") == 0
     applied = json.loads(capsys.readouterr().out)
     assert applied["amount_eur_minor"] == 8000
+    assert applied["fx_rate_check"]["status"] == "verified"
     _, references = _stored_state(database)
     assert references == ["Synthetic official bulletin"]
 
@@ -187,7 +188,12 @@ def test_unavailable_reference_warns_but_does_not_block(
 
     assert _review_apply_fx(tmp_path, database, transaction, UNITS_PER_EUR) == 0
     captured = capsys.readouterr()
-    assert json.loads(captured.out)["amount_eur_minor"] == 12500
+    applied = json.loads(captured.out)
+    assert applied["amount_eur_minor"] == 12500
+    assert applied["fx_rate_check"]["status"] == "unavailable"
+    detail = applied["fx_rate_check"]["detail"]
+    assert "could not be verified against the ECB reference" in detail
+    assert _stored_state(database)[1] == [f"Synthetic official bulletin ({detail})"]
     assert "could not be verified against the ECB reference" in captured.err
     assert "ECB reference service is unreachable" in captured.err
 
@@ -301,3 +307,65 @@ def test_stored_rate_matching_reference_applies_without_annotation(
     assert applied["amount_eur_minor"] == 8000
     _, references = _stored_state(database)
     assert references == ["Synthetic official bulletin"]
+
+
+def test_stored_unavailable_reference_preserves_outcome_and_deduplicates_audit(
+    tmp_path: Path, capsys, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def offline(*_args):
+        raise FXRateUnavailableError("Synthetic network outage")
+
+    monkeypatch.setattr(operational_cli, "fetch_eur_rate", offline)
+    database, transaction = _ledger(tmp_path)
+    rate = _stored_rate(database, "0.8000")
+
+    assert _transaction_apply_fx(database, transaction, rate) == 0
+    applied = json.loads(capsys.readouterr().out)
+    check = applied["fx_rate_check"]
+    assert check["status"] == "unavailable"
+    assert _stored_state(database)[1] == [f"Synthetic official bulletin ({check['detail']})"]
+
+    assert _transaction_apply_fx(database, applied, rate) == 0
+    repeated = json.loads(capsys.readouterr().out)
+    assert repeated["row_version"] == applied["row_version"]
+    assert repeated["fx_rate_check"] == check
+    assert _stored_state(database)[1] == [f"Synthetic official bulletin ({check['detail']})"]
+
+
+def test_unavailable_check_does_not_write_audit_when_transaction_is_stale(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def offline(*_args):
+        raise FXRateUnavailableError("Synthetic network outage")
+
+    monkeypatch.setattr(operational_cli, "fetch_eur_rate", offline)
+    database, transaction = _ledger(tmp_path)
+    rate = _stored_rate(database, "0.8000")
+    with pytest.raises(StaleRowVersionError, match="Expected row_version"):
+        _transaction_apply_fx(database, {**transaction, "row_version": 999}, rate)
+    stored, references = _stored_state(database)
+    assert stored["fx_rate_id"] is None
+    assert references == ["Synthetic official bulletin"]
+
+
+@pytest.mark.parametrize("reference", ["", "   ", None])
+def test_warning_cannot_replace_a_missing_source_reference(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reference,
+) -> None:
+    def offline(*_args):
+        raise FXRateUnavailableError("Synthetic network outage")
+
+    monkeypatch.setattr(operational_cli, "fetch_eur_rate", offline)
+    database, transaction = _ledger(tmp_path)
+    payload = tmp_path / "missing-reference.json"
+    payload.write_text(json.dumps({
+        "review_id": f"transaction:{transaction['transaction_id']}",
+        "expected_row_version": transaction["row_version"],
+        "rate_date": RATE_DATE.isoformat(), "rate": "0.8000", "rate_source": "ecb",
+        "source_reference": reference,
+    }))
+    with pytest.raises(ValueError, match="nonblank source_reference"):
+        main(["review", "apply-fx", "--db", str(database), "--input", str(payload)])
+    stored, references = _stored_state(database)
+    assert stored["fx_rate_id"] is None
+    assert references == []
