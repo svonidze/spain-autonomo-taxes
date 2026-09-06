@@ -111,10 +111,16 @@ def parse_us_numeric_date(text: str) -> date | None:
 def parse_date_from_filename(name: str) -> date | None:
     compact = re.search(r"\b(20\d{2})(\d{2})(\d{2})\b", name)
     if compact:
-        return date(int(compact.group(1)), int(compact.group(2)), int(compact.group(3)))
+        try:
+            return date(int(compact.group(1)), int(compact.group(2)), int(compact.group(3)))
+        except ValueError:
+            pass
     dashed = re.search(r"\b(20\d{2})[-_](\d{2})[-_](\d{2})\b", name)
     if dashed:
-        return date(int(dashed.group(1)), int(dashed.group(2)), int(dashed.group(3)))
+        try:
+            return date(int(dashed.group(1)), int(dashed.group(2)), int(dashed.group(3)))
+        except ValueError:
+            return None
     return None
 
 
