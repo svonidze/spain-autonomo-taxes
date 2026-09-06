@@ -204,3 +204,20 @@ Modelo 303 and the corresponding Modelo 390 totals, plus `bien_inversion` in
 the expense book. The IRPF asset and its amortization remain in the unified
 asset register independently. The read-only expense card shows the saved choice
 or that the IVA classification has not been reviewed.
+
+## Modelo 347 and clients established abroad
+
+The annual third-party report lists every person or entity with whom operations
+exceeded 3,005.06 EUR in the calendar year (art. 33.1 RD 1065/2007). The client's
+country does not exclude the relationship: the exclusions in art. 33.2 are specific
+(operations for which no invoice had to be issued, goods imports and exports, and a
+few others), and none of them covers services invoiced to a customer established
+outside Spain or outside the EU. The Direccion General de Tributos confirmed this in
+binding ruling V0516-19 (12 March 2019): a self-employed designer working for an
+organisation established in Switzerland had to include those services in Modelo 347
+once they exceeded the threshold.
+
+Advisers frequently assume the opposite for non-EU clients. The obligation engine in
+this toolkit therefore keeps foreign-established counterparties reportable and only
+excludes intra-Community operators (reported in Modelo 349) and payments already
+reported through withholding returns.
