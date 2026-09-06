@@ -29,6 +29,13 @@ export function errorDescriptor(value: unknown): UiMessage | string {
     }
   }
   const text = value instanceof Error ? value.message : String(value || '');
-  if (messageIds.includes(text)) return { key: text } as unknown as UiMessage;
+  if (messageIds.includes(text)) {
+    try {
+      formatMessage(text, {});
+      return { key: text } as unknown as UiMessage;
+    } catch {
+      return text;
+    }
+  }
   return text;
 }

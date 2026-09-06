@@ -457,7 +457,7 @@ export function useShell() {
   function accepted(result: IntakeResult) {
     if (result.kind === 'expense_invoice' && result.transaction_id)
       navigate(routeUrl('review', result.period, { id: result.transaction_id }));
-    else void showRoute();
+    else if (canLeave()) void showRoute();
   }
   const intakeServices: IntakeServices = { request, notify, locationKey, accepted };
   const beforeUnload = (event: BeforeUnloadEvent) => {

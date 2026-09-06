@@ -181,3 +181,27 @@ test('dashboard banners follow the plural categories of the interface language',
     '11 подтвержденных операций ждут проведения',
   );
 });
+
+test('bare diagnostic keys requiring parameters stay safe to render', async () => {
+  const { errorDescriptor } = await import('../src/core/error-message.ts');
+  const { messageText } = await import('../src/core/i18n.ts');
+  const key = 'errors.unexpectedNonJson';
+  for (const value of [key, new Error(key), new ApiError(key)]) {
+    const descriptor = errorDescriptor(value);
+    expect(descriptor).toBe(key);
+    for (const locale of ['ru', 'en']) expect(messageText(descriptor, locale)).toBe(key);
+  }
+  const simple = errorDescriptor(new Error('intake.failed'));
+  expect(simple).toEqual({ key: 'intake.failed' });
+  for (const locale of ['ru', 'en']) {
+    expect(messageText(simple, locale)).toBe(formatMessage('intake.failed', {}, locale));
+  }
+  const detailed = new ApiError('Synthetic transport diagnostic');
+  detailed.messageCode = key;
+  detailed.params = { url: 'https://example.invalid/api/test', status: 503 };
+  for (const locale of ['ru', 'en']) {
+    expect(messageText(errorDescriptor(detailed), locale)).toBe(
+      formatMessage(key, detailed.params, locale),
+    );
+  }
+});
