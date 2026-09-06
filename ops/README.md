@@ -479,14 +479,120 @@ mode replaces the live database. Production replacement is described only in
 
 ### Adding the manual-operation wrapper to an existing default installation
 
-Publishing an application release does not add this helper to an already
-installed ops root. After the helper's reviewed source commit passes tests, take
-the shared operations lock in a short separate process, retain the prior state
-privately, install `run-with-service-env.sh` as a temporary sibling with mode
-`0755`, and atomically replace the installed helper. Then run its `rclone`
-readiness command against the actual runtime file. Do not rerun the general
-installer: it also rewrites units and enables timers. Leave SOPS callers
-untouched in this default-only update.
+This procedure also updates an existing wrapper. Publishing application code does
+not update installed ops. Compare the installed `run-with-service-env.sh` with the
+reviewed source at the pinned SHA before relying on one-shot controls.
+
+Take the shared operations lock in a short separate process. Retain the prior
+wrapper privately with its mode and digest, or record that it was absent. Install
+the reviewed wrapper through a temporary sibling with mode `0755` and the existing
+service ownership; validate with `bash -n`, then atomically replace it. Run the
+diagnostic below and the service-environment `rclone` check. On validation failure,
+atomically restore the saved wrapper and recheck the baseline service; if it was
+previously absent, preserve the failed candidate privately and remove only that
+new installation. Stop using the failed wrapper. Exit the lock-owning process
+before invoking backup, deploy or rollback.
+
+Do not run the general installer, rewrite units/runtime or change timers for this
+update. Leave SOPS callers untouched in a default-only update.
+
+### Verify the installed service-environment wrapper
+
+Older installed wrappers passed overrides as `systemd-run --setenv` properties;
+values from `EnvironmentFile` can override those values. The reviewed wrapper
+instead applies one-shot assignments with `env` to the command after systemd has
+loaded the runtime file. A correct source checkout does not prove the installed
+wrapper has this behavior.
+
+Run this read-only diagnostic before maintenance, in the default-mode checklist
+shell. Use the same transport ref and migration setting intended for deployment.
+It asserts values inside the child process without printing the environment.
+
+```bash
+read -r -p 'Reviewed transport ref: ' deploy_ref
+read -r -p 'This deployment needs migration (0 or 1): ' migration_flag
+[[ "$migration_flag" == 0 || "$migration_flag" == 1 ]]
+expected_runtime="$(runtime_env_path)"
+"$run" --setenv "AUTONOMO_DEPLOY_REF=$deploy_ref" \
+  --setenv "AUTONOMO_ENABLE_STORAGE_MIGRATION=$migration_flag" -- /bin/bash -c '
+    set -euo pipefail
+    test "$AUTONOMO_DEPLOY_REF" = "$1"
+    test "$AUTONOMO_ENABLE_STORAGE_MIGRATION" = "$2"
+    test "$AUTONOMO_RUNTIME_ENV_PATH" = "$3"
+    command -v rclone >/dev/null
+    printf "service environment overrides verified\n"
+  ' -- "$deploy_ref" "$migration_flag" "$expected_runtime"
+```
+
+For a compiled frontend, additionally check tools through the exact build launcher
+from [frontend preparation](FRONTEND_BUILD.md#install-and-select-the-pinned-build-tools).
+Do not persist deployment flags or weaken the wrapper's argument validation to
+make the diagnostic pass. A failed assertion requires diagnosis/update before
+retrying deployment; a successful probe with values identical to runtime defaults
+does not by itself prove override precedence. Compare the installed reviewed code
+as well; exercise conflicting values only in an isolated synthetic runtime.
+
+### Retry after a preparation failure
+
+Keep each attempt's log and result in the private maintenance record. First inspect
+`current`, the actual process/unit, live schema/integrity, and target directory;
+do not infer the failure stage from the last displayed progress message.
+
+| Observed state | Next action |
+|---|---|
+| Target absent; deployment has not changed the baseline release/unit or database | Resolve the authorized preparation issue, repeat the installed wrapper/tool preflights and retry the same approved SHA. |
+| Compiled-UI target (contract 1 or 2) exists without a valid completion receipt | Preserve it and stop this rollout for separately scoped recovery; do not repair, delete or retry the partial release in place. |
+| Compiled-UI target (contract 1 or 2) has a valid receipt and installed resources | Verify it with the installed preparation helper; reuse without Node/npm or rebuilding. |
+| Service switched, schema changed, or state is uncertain | Follow deployment acceptance/rollback rules; do not treat this as a preparation retry. |
+
+Before a retry, recheck exact-SHA CI, remote-ref reachability, local backup age and
+schema binding, and absence of concurrent jobs. Preserve the accounting baseline
+after the completed backup; configured backup reconciliation can itself change
+storage records. Do not silently replace the target with a newer branch head.
+If maintenance is paused or abandoned, finish it safely as below. A later retry
+needs a new write-free window and fresh baseline checks.
+
+### Finish or pause the maintenance window
+
+Before stopping any timer, record its `ActiveState`, `UnitFileState`, and configured
+schedule privately. Stop only the daily, monthly and monthly-verification timers
+involved in this operation; stopping a timer does not stop an already-running job.
+Wait for those jobs to finish without killing them, then perform the authorized
+backup. Exclude other CLI/user writes through final acceptance. Timer suspension
+and an announcement alone do not technically prevent application writes.
+
+Restore scheduling only after either final acceptance or verification that an
+early failure left the baseline service healthy and its database compatible with
+its release. If the service was manually stopped, first follow the early-failure
+restart checks. Restore only timers that were active before maintenance; leave
+previously inactive timers inactive. Do not use `enable`, `disable` or the general
+installer, and do not rewrite calendar settings. Compare enabled states and
+schedule expressions to the saved record, not randomized next-run timestamps.
+
+For the three recorded timers, this is the restoration decision, after the safety
+checks above. Repeat it with each timer's saved state; it is not an unconditional
+shell-exit trap:
+
+```bash
+# timer and prior_active come from the private pre-maintenance record.
+case "$timer" in
+  autonomo-backup.timer|autonomo-backup-monthly.timer|autonomo-backup-verification-monthly.timer) ;;
+  *) exit 1 ;;
+esac
+case "$prior_active" in
+  active) systemctl --user start "$timer" ;;
+  inactive) test "$(systemctl --user show "$timer" -p ActiveState --value)" = inactive ;;
+  *) printf 'Resolve unexpected saved timer state before resuming\n' >&2; exit 1 ;;
+esac
+```
+
+Confirm the monthly verification timer is active when it was active originally;
+if it was already inactive, report that pre-existing gap rather than activating it
+as a side effect. Explicitly announce completion or a safe pause and whether users
+may resume writes. When code/schema compatibility or possible later writes are
+uncertain, retain the write-free window and keep operational writers suspended
+pending recovery direction. Preserve the timer record so a later operator can
+restore the intended state.
 
 ## Optional SOPS control plane
 
