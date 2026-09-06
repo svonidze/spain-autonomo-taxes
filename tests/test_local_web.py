@@ -1792,7 +1792,7 @@ def test_bootstrap_does_not_leak_file_descriptors(tmp_path: Path) -> None:
     assert fd_count() <= baseline + 3
 
 
-def test_review_apply_fx_uses_cli_boundary_and_refreshes_packet(
+def test_review_apply_fx_uses_shared_operation_and_refreshes_packet(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1808,9 +1808,9 @@ def test_review_apply_fx_uses_cli_boundary_and_refreshes_packet(
 
     monkeypatch.setattr(app, "review_work_item", lambda _review_id: work_items.pop(0))
     monkeypatch.setattr(
-        app,
-        "_run_cli_with_input",
-        lambda command, *, input_text: calls.append((command, input_text)) or {},
+        invoice_services,
+        "apply_fx",
+        lambda database, payload: calls.append((database, payload)) or ({}, 0),
     )
     payload = {
         "review_id": review_id,
@@ -1824,12 +1824,12 @@ def test_review_apply_fx_uses_cli_boundary_and_refreshes_packet(
     refreshed = app.review_apply_fx(payload)
 
     assert refreshed["packet"]["snapshot_hash"] == "after"
-    command, input_text = calls[0]
-    assert command[3:5] == ["review", "apply-fx"]
-    assert json.loads(input_text or "{}") == payload
+    database, submitted = calls[0]
+    assert database == config.database
+    assert submitted == payload
 
 
-def test_review_apply_fx_maps_stale_cli_failure_to_conflict(
+def test_review_apply_fx_maps_stale_operation_failure_to_conflict(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1841,7 +1841,7 @@ def test_review_apply_fx_maps_stale_cli_failure_to_conflict(
     def fail(*_args: object, **_kwargs: object) -> dict[str, object]:
         raise LocalWebError("Expected row_version 1, found 2")
 
-    monkeypatch.setattr(app, "_run_cli_with_input", fail)
+    monkeypatch.setattr(invoice_services, "apply_fx", fail)
     with pytest.raises(LocalWebApiError) as raised:
         app.review_apply_fx(
             {
@@ -1883,3 +1883,5 @@ def test_host_header_parts_requires_a_valid_same_origin_target() -> None:
 # Requires the separately built optional UI assets.
 import pytest
 pytestmark = pytest.mark.web
+
+from autonomo_taxes.services import invoices as invoice_services

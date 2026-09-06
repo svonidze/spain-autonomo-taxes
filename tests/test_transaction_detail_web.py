@@ -148,10 +148,10 @@ def test_transaction_detail_returns_closed_posted_snapshot_without_side_effects(
     def forbidden(*_args, **_kwargs):
         raise AssertionError("transaction detail must not invoke workflow helpers")
 
-    monkeypatch.setattr(local_web, "prepare_review_packet", forbidden)
-    monkeypatch.setattr(local_web, "prepare_review_work_item", forbidden)
-    monkeypatch.setattr(local_web, "build_posting_preview", forbidden)
-    monkeypatch.setattr(local_web, "fetch_eur_rate", forbidden)
+    monkeypatch.setattr(invoice_services, "prepare_review_packet", forbidden)
+    monkeypatch.setattr(invoice_services, "prepare_review_work_item", forbidden)
+    monkeypatch.setattr(query_services, "build_posting_preview", forbidden)
+    monkeypatch.setattr(invoice_services, "fetch_eur_rate", forbidden)
 
     detail = app.transaction_detail(fixture["transaction_id"])
 
@@ -282,3 +282,5 @@ def test_transaction_detail_rejects_invalid_id_before_accessing_database(tmp_pat
 # Requires the separately built optional UI assets.
 import pytest
 pytestmark = pytest.mark.web
+
+from autonomo_taxes.services import invoices as invoice_services, queries as query_services

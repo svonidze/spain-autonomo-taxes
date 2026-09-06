@@ -915,7 +915,7 @@ def test_expense_intake_persists_parsed_total_and_number(
         notes="Business-use allocation requires review",
     )
     monkeypatch.setattr(
-        "autonomo_taxes.operational_cli.inspect_document",
+        "autonomo_taxes.services.intake_operations.inspect_document",
         lambda *args, **kwargs: IntakeResult(
             source_path=str(invoice),
             sha256=digest,
@@ -928,7 +928,7 @@ def test_expense_intake_persists_parsed_total_and_number(
         ),
     )
     monkeypatch.setattr(
-        "autonomo_taxes.operational_cli._document_suggestion",
+        "autonomo_taxes.services.intake_operations._document_suggestion",
         lambda *args, **kwargs: suggestion,
     )
     with initialize(database):

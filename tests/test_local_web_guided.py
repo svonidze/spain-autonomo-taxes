@@ -155,7 +155,7 @@ class _Server:
         self.port = self.server.server_address[1]
         self.connection = HTTPConnection("127.0.0.1", self.port, timeout=5)
         if ecb is not None:
-            monkeypatch.setattr(local_web, "fetch_eur_rate", ecb)
+            monkeypatch.setattr(invoice_services, "fetch_eur_rate", ecb)
 
     def close(self) -> None:
         self.connection.close()
@@ -260,7 +260,7 @@ def test_review_deep_link_packet_keeps_its_period_when_bootstrap_defaults_to_q3(
     fixture = _usd_invoice_fixture(config, transaction_date=date(2026, 5, 15))
     with LedgerDB.open(config.database) as db:
         db.ensure_period("2026-Q3")
-    monkeypatch.setattr(local_web, "_current_or_latest_period", lambda periods: "2026-Q3")
+    monkeypatch.setattr(query_services, "_current_or_latest_period", lambda periods: "2026-Q3")
 
     def offline_fx(currency: str, as_of: date) -> ECBRateResult:
         raise FXRateUnavailableError("Synthetic fixture: no external FX lookup")
@@ -618,3 +618,5 @@ def test_reject_via_confirm_endpoint_needs_no_fx(
 # Requires the separately built optional UI assets.
 import pytest
 pytestmark = pytest.mark.web
+
+from autonomo_taxes.services import invoices as invoice_services, queries as query_services
