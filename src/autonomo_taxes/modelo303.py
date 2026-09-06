@@ -31,6 +31,10 @@ _NUMBER_PATTERN = r"(?:\d{1,3}(?:\.\d{3})*|\d+),\d{2}"
 _AMOUNT_PATTERN = rf"-?{_NUMBER_PATTERN}"
 STRUCTURAL_BOXES = ("12", "13", "27", "28", "29", "30", "31", "45", "46")
 STRUCTURAL_PAIRS = (("12", "13"), ("28", "29"), ("30", "31"))
+REVERSE_CHARGE_BOXES = STRUCTURAL_BOXES + (
+    "150", "01", "04", "07", "10", "11", "32", "33", "34", "35", "36", "37", "38", "39",
+)
+REVERSE_CHARGE_PAIRS = STRUCTURAL_PAIRS + (("10", "11"), ("32", "33"), ("34", "35"), ("36", "37"), ("38", "39"))
 STRUCTURAL_SINGLE_CONTEXT = {
     "27": "total cuota devengada",
     "45": "total a deducir",
@@ -146,10 +150,17 @@ def extract_modelo303_values(path: Path) -> Modelo303Values:
     reader = PdfReader(str(path))
     if len(reader.pages) < 2:
         raise ValueError(f"Modelo 303 report has no form page: {path}")
-    values = values_from_monetary_sequence(_extract_page2_monetary_sequence(reader.pages[1]))
+    sequence = _extract_page2_monetary_sequence(reader.pages[1])
     layout_pages, positioned_pages = _extract_page_evidence(reader.pages)
-    structural = _structural_casilla_evidence_from_pages(layout_pages, positioned_pages)
+    extended = len(sequence) in {6, 7}
+    structural = _structural_casilla_evidence_from_pages(
+        layout_pages, positioned_pages, extended=extended,
+    )
     settlement = _settlement_casilla_evidence_from_fragments(positioned_pages)
+    values = values_from_monetary_sequence(sequence, structural_evidence=structural if extended else None)
+    if values.extraction_status.startswith("reverse_charge_"):
+        if settlement.status == "casillas_extracted":
+            values = replace(values, result=dict(settlement.casillas)["71"])
     return replace(
         values,
         structural_casillas=structural.casillas,
@@ -161,7 +172,11 @@ def extract_modelo303_values(path: Path) -> Modelo303Values:
     )
 
 
-def values_from_monetary_sequence(sequence: list[Decimal] | tuple[Decimal, ...]) -> Modelo303Values:
+def values_from_monetary_sequence(
+    sequence: list[Decimal] | tuple[Decimal, ...],
+    *,
+    structural_evidence: Modelo303CasillaEvidence | None = None,
+) -> Modelo303Values:
     values = tuple(cents(value) for value in sequence)
     if len(values) == 0:
         return Modelo303Values(
@@ -195,7 +210,8 @@ def values_from_monetary_sequence(sequence: list[Decimal] | tuple[Decimal, ...])
             extraction_status="output_and_deductible",
             monetary_sequence=values,
         )
-    if len(values) == 6:
+    corroborated = _reverse_charge_sequence_is_corroborated(values, structural_evidence)
+    if len(values) == 6 and corroborated:
         # Reverse-charge services quarter (casillas 10/11 populated, no other
         # output rows): [rc base (10), total output VAT (27), domestic
         # deductible base (28), rc deductible base (36), total deductible
@@ -210,7 +226,7 @@ def values_from_monetary_sequence(sequence: list[Decimal] | tuple[Decimal, ...])
             extraction_status="reverse_charge_services",
             monetary_sequence=values,
         )
-    if len(values) == 7:
+    if len(values) == 7 and corroborated:
         # Reverse-charge services plus other reverse-charge output (casillas
         # 10/11 and 12/13): [rc service base (10), other rc base (12), total
         # output VAT (27), domestic deductible base (28), rc deductible
@@ -312,6 +328,28 @@ def _extract_page2_monetary_sequence(page) -> list[Decimal]:
 SETTLEMENT_BOXES = ("64", "110", "78", "87", "69", "71", "72", "73")
 
 
+def _reverse_charge_sequence_is_corroborated(
+    values: tuple[Decimal, ...], evidence: Modelo303CasillaEvidence | None,
+) -> bool:
+    if len(values) not in {6, 7} or evidence is None or evidence.status != "casillas_extracted":
+        return False
+    boxes = dict(evidence.casillas)
+    if not set(REVERSE_CHARGE_BOXES) <= boxes.keys():
+        return False
+    if any(boxes[key] != 0 for key in ("150", "01", "04", "07", "30", "32", "34", "38")):
+        return False
+    if boxes["10"] == 0 or (len(values) == 6 and (boxes["12"] != 0 or boxes["13"] != 0)):
+        return False
+    if boxes["27"] != cents(boxes["11"] + boxes["13"]):
+        return False
+    if boxes["45"] != cents(sum((boxes[k] for k in ("29", "31", "33", "35", "37", "39")), Decimal(0))):
+        return False
+    if boxes["46"] != cents(boxes["27"] - boxes["45"]):
+        return False
+    keys = ("10", "27", "28", "36", "45", "46") if len(values) == 6 else ("10", "12", "27", "28", "36", "45", "46")
+    return values == tuple(boxes[key] for key in keys)
+
+
 def _extract_settlement_casillas(pages) -> tuple[tuple[tuple[str, Decimal], ...], str]:
     _layouts, positioned_pages = _extract_page_evidence(pages)
     evidence = _settlement_casilla_evidence_from_fragments(positioned_pages)
@@ -349,14 +387,18 @@ def _structural_casilla_evidence_from_pages(
     layout_pages: list[str] | tuple[str, ...],
     positioned_pages: list[list[PositionedFragment]]
     | tuple[tuple[PositionedFragment, ...], ...],
+    *,
+    extended: bool = False,
 ) -> Modelo303CasillaEvidence:
+    boxes = REVERSE_CHARGE_BOXES if extended else STRUCTURAL_BOXES
+    pairs = REVERSE_CHARGE_PAIRS if extended else STRUCTURAL_PAIRS
     recognized: set[str] = set()
-    candidates: dict[str, set[Decimal]] = {box: set() for box in STRUCTURAL_BOXES}
-    sources: dict[str, set[str]] = {box: set() for box in STRUCTURAL_BOXES}
+    candidates: dict[str, set[Decimal]] = {box: set() for box in boxes}
+    sources: dict[str, set[str]] = {box: set() for box in boxes}
 
     for page in layout_pages:
         for line in page.splitlines():
-            for left, right in STRUCTURAL_PAIRS:
+            for left, right in pairs:
                 match = re.search(
                     rf"(?<!\d){left}(?!\d)[ \t]*(?P<left>{_AMOUNT_PATTERN})?"
                     rf"[ \t]*{right}(?!\d)[ \t]*(?P<right>{_AMOUNT_PATTERN})?",
@@ -391,13 +433,18 @@ def _structural_casilla_evidence_from_pages(
 
     for fragments in positioned_pages:
         for label, label_x, label_y, font_size in fragments:
-            if label not in STRUCTURAL_BOXES or font_size > Decimal("4"):
+            if label not in boxes or font_size > Decimal("4"):
                 continue
             recognized.add(label)
             if label_x == 0 and label_y == 0:
                 continue
+            next_label_x = min((
+                x for raw, x, y, size in fragments
+                if extended and raw.isdigit() and size <= 4
+                and x > label_x and abs(y - label_y) <= 5
+            ), default=Decimal("Infinity"))
             for raw, x, y, value_font_size in fragments:
-                if x <= label_x + Decimal("5") or abs(y - label_y) > Decimal("5"):
+                if x <= label_x + Decimal("5") or x >= next_label_x or abs(y - label_y) > Decimal("5"):
                     continue
                 if value_font_size < Decimal("5") or re.fullmatch(_AMOUNT_PATTERN, raw) is None:
                     continue
@@ -405,7 +452,7 @@ def _structural_casilla_evidence_from_pages(
                 sources[label].add("positioned_row")
 
     return _build_casilla_evidence(
-        boxes=STRUCTURAL_BOXES,
+        boxes=boxes,
         recognized=recognized,
         candidates=candidates,
         sources=sources,
