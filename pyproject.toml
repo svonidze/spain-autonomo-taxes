@@ -23,7 +23,10 @@ autonomo-web = "autonomo_taxes.local_web:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-autonomo_taxes = ["web_ui/*.html", "web_ui/*.css", "web_ui/*.js"]
+autonomo_taxes = ["web_ui/dist/index.html", "web_ui/dist/build-manifest.json", "web_ui/dist/ui-assets/*.js", "web_ui/dist/ui-assets/*.css"]
+
+[tool.autonomo.web-ui]
+build-contract = 1
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

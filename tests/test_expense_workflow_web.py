@@ -99,10 +99,3 @@ def test_corrected_period_cleans_only_the_original_inbox_file(tmp_path,monkeypat
         assert not source.exists() and archive.read_bytes()==original
         assert not server.server.app.expense_follow_up(fixture['transaction_id'])['follow_up_pending']
     finally:server.close()
-
-
-def test_expense_ui_keeps_retry_identity_and_legacy_asset_route(tmp_path):
-    import subprocess
-    _,draft=setup_draft(tmp_path)
-    root=Path(__file__).resolve().parents[1]
-    subprocess.run(['node',str(root/'tests/test_expense_workflow_ui.js')],input=json.dumps(draft),text=True,cwd=root,check=True)

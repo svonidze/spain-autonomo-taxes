@@ -312,10 +312,11 @@ def test_get_array_contract_and_controlled_unknown_period(context_app):
         with pytest.raises(urllib.error.HTTPError) as error:
             client.open(base + "/api/assets?period=2032-Q4")
         assert error.value.code == 404
-        with client.open(base + "/status-help.js") as response:
-            assert b"AccountingHelp" in response.read()
-        with client.open(base + "/charts.js") as response:
-            assert b"AutonomoCharts" in response.read()
+        for resource in server.app.ui_assets.files:
+            if resource.endswith(".js"):
+                with client.open(base + "/" + resource) as response:
+                    assert "javascript" in response.headers["Content-Type"]
+                    assert response.read()
     finally:
         server.shutdown()
         server.server_close()

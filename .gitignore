@@ -23,6 +23,7 @@ node_modules/
 test-results/
 playwright-report/
 .vite/
+frontend/src/generated/
 tmp/
 *.egg-info/
 .env*

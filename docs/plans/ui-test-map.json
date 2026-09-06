@@ -3,78 +3,144 @@
     "source": "tests/test_account_settings_ui.js",
     "behavior": "account settings ui",
     "stage": 11,
-    "replacements": []
+    "replacements": [
+      "tests/browser/settings-shell.spec.ts",
+      "frontend/tests/shell-routes.test.ts"
+    ],
+    "disposition": "retired after module/browser replacement"
   },
   {
     "source": "tests/test_expense_ui.js",
     "behavior": "expense ui",
-    "stage": 12,
-    "replacements": []
+    "stage": 6,
+    "replacements": [
+      "tests/browser/transaction-lists.spec.ts",
+      "frontend/tests/transaction-state.test.ts"
+    ],
+    "disposition": "retired after module/browser replacement"
   },
   {
     "source": "tests/test_expense_workflow_ui.js",
     "behavior": "expense workflow ui",
     "stage": 8,
-    "replacements": []
+    "replacements": [
+      "tests/browser/review-detail.spec.ts",
+      "tests/browser/locale.spec.ts",
+      "frontend/tests/review-host.test.ts",
+      "frontend/tests/review-helpers.test.ts"
+    ],
+    "disposition": "retired after module/browser replacement"
   },
   {
     "source": "tests/test_status_help.js",
     "behavior": "status help",
     "stage": 12,
-    "replacements": []
+    "replacements": [
+      "frontend/tests/help-lifetime.test.ts",
+      "tests/browser/locale.spec.ts",
+      "tests/browser/settings-shell.spec.ts"
+    ],
+    "disposition": "retired after module/browser replacement"
   },
   {
     "source": "tests/test_web_ui_charts.js",
     "behavior": "web ui charts",
     "stage": 7,
-    "replacements": []
+    "replacements": [
+      "frontend/tests/chart-renderer.cjs",
+      "frontend/tests/chart-parity.test.ts",
+      "tests/browser/overview.spec.ts"
+    ],
+    "disposition": "retired after module/browser replacement"
   },
   {
     "source": "tests/test_web_ui_contacts.js",
     "behavior": "web ui contacts",
     "stage": 5,
-    "replacements": []
+    "replacements": [
+      "tests/browser/contacts.spec.ts",
+      "frontend/tests/contacts-host.test.ts"
+    ],
+    "disposition": "retired after module/browser replacement"
   },
   {
     "source": "tests/test_web_ui_counterparty_names.js",
     "behavior": "web ui counterparty names",
     "stage": 5,
-    "replacements": []
+    "replacements": [
+      "tests/browser/contacts.spec.ts",
+      "frontend/tests/contacts-host.test.ts"
+    ],
+    "disposition": "retired after module/browser replacement"
   },
   {
     "source": "tests/test_web_ui_expense_detail.js",
     "behavior": "web ui expense detail",
     "stage": 4,
-    "replacements": []
+    "replacements": [
+      "tests/browser/expense-detail.spec.ts",
+      "frontend/tests/vue-host.test.ts"
+    ],
+    "disposition": "retired after module/browser replacement"
   },
   {
     "source": "tests/test_web_ui_guided.js",
     "behavior": "web ui guided",
     "stage": 8,
-    "replacements": []
+    "replacements": [
+      "tests/browser/review-detail.spec.ts",
+      "tests/browser/locale.spec.ts",
+      "frontend/tests/review-host.test.ts",
+      "frontend/tests/review-helpers.test.ts"
+    ],
+    "disposition": "retired after module/browser replacement"
   },
   {
     "source": "tests/test_web_ui_navigation.js",
     "behavior": "web ui navigation",
     "stage": 12,
-    "replacements": []
+    "replacements": [
+      "tests/browser/baseline.spec.ts",
+      "tests/browser/contacts.spec.ts",
+      "tests/browser/settings-shell.spec.ts",
+      "frontend/tests/shell-routes.test.ts",
+      "frontend/tests/shell-lifecycle.test.ts"
+    ],
+    "disposition": "retired after module/browser replacement"
   },
   {
     "source": "tests/test_web_ui_posting_behavior.js",
     "behavior": "web ui posting behavior",
     "stage": 9,
-    "replacements": []
+    "replacements": [
+      "tests/browser/review-posting.spec.ts",
+      "frontend/tests/posting-host.test.ts",
+      "frontend/tests/posting-state.test.ts"
+    ],
+    "disposition": "retired after module/browser replacement"
   },
   {
     "source": "tests/test_web_ui_states.js",
     "behavior": "web ui states",
     "stage": 12,
-    "replacements": []
+    "replacements": [
+      "tests/browser/intake.spec.ts",
+      "tests/browser/transaction-lists.spec.ts",
+      "frontend/tests/intake-model.test.ts",
+      "frontend/tests/picker.test.ts",
+      "frontend/tests/core.test.ts",
+      "tests/browser/final-acceptance.spec.ts"
+    ],
+    "disposition": "retired after module/browser replacement"
   },
   {
     "source": "tests/test_web_ui_taxes.js",
     "behavior": "web ui taxes",
     "stage": 7,
-    "replacements": []
+    "replacements": [
+      "frontend/tests/finance-parity.test.ts",
+      "tests/browser/overview.spec.ts"
+    ],
+    "disposition": "retired after module/browser replacement"
   }
 ]

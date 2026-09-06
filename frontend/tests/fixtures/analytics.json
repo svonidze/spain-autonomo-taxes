@@ -1,0 +1,178 @@
+{
+  "quality": {
+    "missing_fx_transaction_count": 0
+  },
+  "datasets": {
+    "business_result": {
+      "monthly": {
+        "buckets": [
+          "2026-01",
+          "2026-02"
+        ],
+        "actual": {
+          "income_base_minor": [
+            10000,
+            null
+          ],
+          "deductible_expense_minor": [
+            5000,
+            null
+          ]
+        },
+        "approved_unposted": {
+          "income_base_minor": [
+            0,
+            0
+          ],
+          "deductible_expense_minor": [
+            0,
+            2000
+          ]
+        },
+        "approved_future": {
+          "income_base_minor": [
+            0,
+            3000
+          ],
+          "deductible_expense_minor": [
+            0,
+            0
+          ]
+        }
+      }
+    },
+    "cumulative_net": {
+      "buckets": [
+        "2026-01",
+        "2026-02"
+      ],
+      "actual_minor": [
+        5000,
+        null
+      ],
+      "projected_minor": [
+        5000,
+        6000
+      ]
+    },
+    "quarterly_tax_due": {
+      "points": [
+        {
+          "period_key": "2026-Q1",
+          "modelo130": {
+            "result_minor": 26391,
+            "payable_minor": 26391,
+            "source": "filed"
+          },
+          "modelo303": {
+            "result_minor": -4074,
+            "payable_minor": 0,
+            "source": "filed"
+          }
+        },
+        {
+          "period_key": "2026-Q2",
+          "modelo130": {
+            "result_minor": null,
+            "payable_minor": null,
+            "source": "filed_without_values"
+          },
+          "modelo303": {
+            "result_minor": null,
+            "payable_minor": null,
+            "source": "unavailable"
+          }
+        }
+      ]
+    },
+    "iva_position": {
+      "points": [
+        {
+          "period_key": "2026-Q1",
+          "output_vat_minor": 10000,
+          "deductible_input_vat_minor": 14074,
+          "result_minor": -4074,
+          "source": "filed"
+        }
+      ]
+    },
+    "reserve_bullet": {
+      "status": "not_checked",
+      "required_tax_minor": 26391,
+      "recommended_reserve_minor": 36391,
+      "available_minor": null
+    },
+    "review_aging": {
+      "buckets": [
+        "0-7",
+        "8-30",
+        "31-90",
+        "90+"
+      ],
+      "counts": {
+        "received": [
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "ytd_comparison": {
+      "through_month": 8,
+      "current_year": {
+        "year": 2026,
+        "taxable_income_minor": 80000,
+        "deductible_expense_minor": 20000,
+        "net_minor": 60000
+      },
+      "previous_year": {
+        "year": 2025,
+        "taxable_income_minor": null,
+        "deductible_expense_minor": null,
+        "net_minor": null
+      }
+    },
+    "expense_structure": {
+      "buckets": [
+        {
+          "concept": "G45",
+          "gross_minor": 30000,
+          "deductible_minor": 20000,
+          "non_deductible_minor": 10000
+        },
+        {
+          "concept": "unclassified",
+          "gross_minor": 5000,
+          "deductible_minor": 0,
+          "non_deductible_minor": 5000
+        }
+      ]
+    },
+    "counterparty_concentration": {
+      "top": [
+        {
+          "counterparty_id": "cp-1",
+          "name": "Client One",
+          "income_minor": 90000
+        }
+      ],
+      "other_minor": 15000
+    },
+    "amortization": {
+      "includes": "include_in_books_only",
+      "points": [
+        {
+          "period_key": "2026-Q1",
+          "total_minor": 6500,
+          "assets": []
+        },
+        {
+          "period_key": "2026-Q2",
+          "total_minor": 6500,
+          "assets": []
+        }
+      ]
+    }
+  }
+}

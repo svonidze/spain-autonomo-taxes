@@ -13,8 +13,8 @@ test('real backend serves routes, scripts and guarded history under CSP', async 
   expect(response?.headers()['content-security-policy']).toContain("script-src 'self'");
   await expect(page.locator('#app')).toHaveAttribute('aria-busy', 'false');
   await expect(page.locator('#app')).toContainText('Example expense');
-  const globals = await page.evaluate(() => ['AccountingHelp', 'AutonomoCharts', 'ExpenseWorkflow', 'AutonomoSettings'].every(name => Boolean((window as any)[name])));
-  expect(globals).toBe(true);
+  const globals = await page.evaluate(() => ['AccountingHelp','AutonomoCharts','ExpenseWorkflow','AutonomoSettings','AutonomoCore','AutonomoViews','__AUTONOMO_WEB_UI_TEST_HOOKS__'].some(name => name in window));
+  expect(globals).toBe(false);
   const help = page.locator('#app [data-status-help]').first();
   await help.click();
   await expect(page.locator('#status-help-dialog')).toBeVisible();
@@ -38,7 +38,7 @@ test('intake keeps selected file and typed fields across a locale change', async
   await page.goto('/income?period=2026-Q3');
   await expect(page.locator('#app')).toHaveAttribute('aria-busy', 'false');
   await page.locator('#new-entry-button').click();
-  const dialog = page.locator('#intake-dialog');
+  const dialog = page.locator('#vue-intake-dialog');
   await expect(dialog).toBeVisible();
   await dialog.locator('[name="document_number"]').fill('SYNTHETIC-UI-1');
   await dialog.locator('input[type="file"]').setInputFiles({name: 'synthetic.txt', mimeType: 'text/plain', buffer: Buffer.from('Synthetic browser test document')});

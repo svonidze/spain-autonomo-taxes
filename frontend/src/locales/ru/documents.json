@@ -1,0 +1,11 @@
+{
+  "documents.counterparty": "Контрагент",
+  "documents.type": "Тип",
+  "documents.types.bank_statement": "банковская выписка",
+  "documents.types.expense_invoice": "счет поставщика",
+  "documents.types.income_invoice": "выставленный счет",
+  "documents.types.other": "другой документ",
+  "documents.types.other_document": "другой документ",
+  "documents.types.receipt": "чек",
+  "documents.types.tax_report": "налоговый отчет"
+}
