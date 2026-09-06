@@ -4,7 +4,51 @@ import hashlib
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from scripts import install_privacy_hook, privacy_guard
+
+
+REVIEWED_UI_VALUES = (
+    ("credential-literal", "synthetic-access-token"),
+    ("email-address", "secret" + "@drive.google.com"),
+    ("google-drive-link", "https://drive.google.com/file/d/synthetic-file-123/view"),
+    ("google-drive-link", "https://drive.google.com/open?id=synthetic-file-123"),
+    ("google-drive-link", "https://docs.google.com/document/d/synthetic-file-123/edit"),
+    ("google-drive-link", "http://drive.google.com/file/d/synthetic-file-123"),
+    ("google-drive-link", "https://drive.google.com/drive/folders/synthetic-folder-123"),
+    ("personal-field", "Synthetic profile"),
+    ("personal-field", "Synthetic other"),
+    ("personal-field", "Synthetic saved"),
+)
+
+
+def _ui_specimen(category: str, value: str) -> bytes:
+    field = {"credential-literal": "access_token", "personal-field": "full_name"}.get(category)
+    return (f"{field}={value!r}\n" if field else value + "\n").encode()
+
+
+@pytest.mark.parametrize(("category", "value"), REVIEWED_UI_VALUES)
+def test_reviewed_ui_values_are_allowed_only_as_exact_findings(category, value):
+    for location in ("tests/fixtures/example.py", "notes.txt"):
+        assert privacy_guard.scan_content(_ui_specimen(category, value), location) == []
+        findings = privacy_guard.scan_content(_ui_specimen(category, value + "-changed"), location)
+        assert any(finding.category == category for finding in findings)
+
+
+@pytest.mark.parametrize(("category", "value"), REVIEWED_UI_VALUES)
+def test_reviewed_ui_values_do_not_exempt_other_categories(category, value):
+    other_category = "personal-field" if category == "credential-literal" else "credential-literal"
+    field = "full_name" if other_category == "personal-field" else "password"
+    findings = privacy_guard.scan_content(f"{field}={value!r}\n".encode(), "sample.py")
+    assert any(finding.category == other_category for finding in findings)
+
+
+def test_reviewed_ui_exceptions_are_exactly_the_reviewed_category_digest_pairs():
+    assert privacy_guard.ALLOWED_SYNTHETIC_FINDINGS == frozenset(
+        (category, hashlib.sha256(value.encode()).hexdigest())
+        for category, value in REVIEWED_UI_VALUES
+    )
 
 
 def test_npm_package_manager_version_is_not_an_email():
@@ -119,6 +163,43 @@ def test_history_accepts_coauthor_attribution_without_rewriting_commits(tmp_path
 
     assert privacy_guard.scan_history(repo, "HEAD") == []
     assert _git_output(repo, "rev-parse", "HEAD") == head
+
+
+def test_all_history_keeps_other_branches_checked_after_ui_exceptions(tmp_path, capsys):
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "tracked.txt").write_text("safe", encoding="utf-8")
+    _git(repo, "add", "tracked.txt")
+    _git(repo, "commit", "-m", "safe base")
+    base = _git_output(repo, "rev-parse", "HEAD")
+    _git(repo, "checkout", "-b", "ui-fixture-history")
+    fixture = repo / "fixture.txt"
+    fixture.write_bytes(b"".join(_ui_specimen(*pair) for pair in REVIEWED_UI_VALUES))
+    _git(repo, "add", "fixture.txt")
+    _git(repo, "commit", "-m", "reviewed UI specimens")
+    fixture.unlink()
+    _git(repo, "commit", "-am", "remove fixture from tip")
+    _git(repo, "checkout", "--detach", base)
+
+    assert privacy_guard.main(["--repo", str(repo), "--history"]) == 0
+    assert "privacy guard: PASS" in capsys.readouterr().out
+
+    _git(repo, "checkout", "ui-fixture-history")
+    unapproved = REVIEWED_UI_VALUES[0][1] + "-unreviewed"
+    fixture.write_bytes(_ui_specimen("credential-literal", unapproved))
+    _git(repo, "add", "fixture.txt")
+    _git(repo, "commit", "-m", "unreviewed specimen on side branch")
+    _git(repo, "checkout", "--detach", base)
+
+    assert privacy_guard.scan_history(repo, "HEAD") == []
+    assert privacy_guard.main(["--repo", str(repo), "--history"]) == 1
+    output = capsys.readouterr().err
+    assert "category=credential-literal" in output
+    assert "location=history-blob:" in output
+    assert ":fixture.txt line=1" in output
+    assert f"sha256={hashlib.sha256(unapproved.encode()).hexdigest()}" in output
+    assert unapproved not in output
+    assert _git_output(repo, "rev-parse", "HEAD") == base
 
 
 def test_path_rules_do_not_allow_a_fixture_directory_bypass() -> None:

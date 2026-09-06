@@ -89,6 +89,29 @@ ALLOWED_SYNTHETIC_VALUE_SHA256 = frozenset(
 )
 ALLOWED_BINARY_SHA256: frozenset[str] = frozenset()
 
+# Reviewed UI fixtures from the full-history CI scan (run 34057504501).
+# Match the category as well as the value digest: a permitted name or URL must
+# not become a permitted password. These exceptions also cover historical blobs
+# on other branches; they do not exempt fixture paths or synthetic prefixes.
+ALLOWED_SYNTHETIC_FINDINGS: frozenset[tuple[str, str]] = frozenset(
+    {
+        # Explicitly synthetic Picker access-token response in mocked requests.
+        ("credential-literal", "177d2245b6ba1eb7a3510070af30fe4688d1525524168bddf0fa1055767dff16"),
+        # Email-shaped userinfo/host fragment of a rejected test URL, not a mailbox.
+        ("email-address", "ddadd30ea42a3b187c76ad8ee4872feeb2913ea2cc51b1c03f7cfc63b068638b"),
+        # Exact synthetic Drive file/open/document URLs and rejected HTTP/folder URLs.
+        ("google-drive-link", "5bb3fd66d21c2966bf74656a0aafa22b7f2c255662003017a27c3439ce0121e5"),
+        ("google-drive-link", "baf02ddaf0a44ecf3ab4b04476f13ebb148da2a17490febe1e279746cefd1bc1"),
+        ("google-drive-link", "c012cc26112d0230f575ed89b62c7ab8f25090eb30ea5a17f4c4a52d3acdb485"),
+        ("google-drive-link", "167b789905a7f0dfb52e42c0cf27d60361dcc8c3ae664de8e4e0cb7b63825639"),
+        ("google-drive-link", "17f6c6ecf60350361876f9ab2eed4ff2373cee7de27734ae1ac6f9a927979300"),
+        # Explicit synthetic profile names in mocked settings responses.
+        ("personal-field", "96d161b1b7c0054120ca9758eb45684f02dedff646cb1a9e256dcb22c0bb9f6f"),
+        ("personal-field", "2bee2dea5521d7ec91ea382bb3dcfec086f5259e3c63e18875cb90393cdf2efe"),
+        ("personal-field", "9ca7fc4f63e6b89b542dd9f410501498d6cfe7e775013bdc10c1c038c5dc0ffe"),
+    }
+)
+
 # Approved Anthropic no-reply address used in existing repository content.
 # Exact match only, and only for email findings (never credentials/other fields).
 ALLOWED_PUBLIC_BOT_EMAIL_SHA256 = frozenset(
@@ -268,6 +291,8 @@ def scan_content(data: bytes, location: str, *, max_bytes: int = DEFAULT_MAX_BYT
             for match in spec.pattern.finditer(line):
                 value = match.group(spec.value_group) if spec.value_group else match.group(0)
                 fingerprint = _sha256(value)
+                if (spec.category, fingerprint) in ALLOWED_SYNTHETIC_FINDINGS:
+                    continue
                 if fingerprint in ALLOWED_SYNTHETIC_VALUE_SHA256:
                     continue
                 if spec.category == "email-address" and fingerprint in ALLOWED_PUBLIC_BOT_EMAIL_SHA256:
