@@ -188,7 +188,10 @@ class ContactsService:
         payload: Mapping[str, Any],
         *,
         actor: str | None = None,
+        change_source: str = "web",
     ) -> dict[str, Any]:
+        if change_source not in {"web", "cli"}:
+            raise ServiceApiError(400, "invalid_request", "Unsupported change source")
         counterparty_id = _validated_counterparty_id(counterparty_id)
         _exact_object_fields(
             payload, {"display_name", "expected_row_version"}, "rename request"
@@ -208,7 +211,7 @@ class ContactsService:
                         counterparty_id,
                         display_name=payload["display_name"],
                         expected_row_version=version,
-                        change_source="web",
+                        change_source=change_source,
                         actor=actor,
                     )
                 except StaleRowVersionError as exc:

@@ -17,12 +17,13 @@ commands are not advertised as usable; existing commands retain their semantics.
 | Atomic decision and verified FX confirmation | `review confirm-packet --input` | Stage 2 |
 | Posting preview / post-ready | `review posting-preview`, `review post/post-batch` | Stage 2 / existing |
 | Native expense draft/save/preview/confirm/follow-up | `expense draft/save/preview/confirm/follow-up` | Stage 3 |
+| Asset accounting context | `assets inspect` | Stage 4 |
 | Native asset schedule / depreciation posting | `assets schedule/post-depreciation` | Stage 3 |
 | Counterparty list/detail/transactions | `counterparties list/show/transactions` | Stage 2 |
-| Counterparty name history/rename | `counterparties name-history/rename` | Pending stage 4 |
-| Profile edit with ID/version/identity lock | `profile edit` | Pending stage 4 |
-| Backup retention and observed runs | `backup settings show/set` | Pending stage 4 |
-| Financial dashboard/taxes/analytics reads | `period summary/taxes/analytics` | Pending stage 4 |
+| Counterparty name history/rename | `counterparties name-history/rename` | Stage 4 |
+| Profile edit with ID/version/identity lock | `profile inspect/edit` | Stage 4 |
+| Backup retention and observed runs | `backup settings show/set` | Stage 4 |
+| Financial dashboard/taxes/analytics reads | `period summary/taxes/analytics` | Stage 4 |
 | Calculation refresh | `period dashboard` | Existing, shared operation |
 
 Browser sessions, Origin/cookies, Picker credential delivery/chooser, HTML preview,
@@ -84,3 +85,29 @@ re-post because a follow-up failed. `assets schedule ID` supplies eligible rows
 and current versions; `assets post-depreciation ENTRY_ID --input` accepts
 `{expected_version, request_id}` for one explicitly authorized due row. The same
 request reuse and saved-state inspection rules apply.
+
+
+## Profiles, counterparties, backup policy and financial reads
+
+`profile show` and `assets list` retain their original output. `profile inspect`
+adds current edit constraints, including identity locks; `assets inspect` provides
+accounting context and blocking reasons. Neither is a write.
+
+`profile edit --input` uses `{taxpayer_profile_id, expected_row_version, full_name,
+tax_id, residency_country}`; it does not bypass identity locks or replace the
+older tax-ID-based `profile set`. `counterparties rename ID --input` uses
+`{display_name, expected_row_version}` and records an audit entry. Inspect
+`counterparties name-history ID` and reread the current version after a conflict.
+
+`backup settings show` reports policy revision and observed local/upload/recovery
+status. `backup settings set --input` uses `{expected_revision, daily_keep,
+monthly_keep, confirm_local_pruning}`. Limits may be null for operator policy;
+confirmation must be true only after the user authorized the described future
+pruning. Saving policy does not run a backup, alter timers, or change cloud
+retention. Do not substitute SQLite `backup create/restore` for these commands.
+
+`period summary/taxes/analytics --period PERIOD` read current accounting data.
+Taxes/analytics optionally accept `--as-of YYYY-MM-DD`; reads do not refresh caches,
+post transactions or submit returns. `period dashboard` remains the explicit
+calculation/cache-writing action. The service's existing field meanings, including
+unknown/missing amounts and unconfirmed payment evidence, remain authoritative.

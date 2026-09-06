@@ -1213,7 +1213,7 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     verify_history.set_defaults(_operational_handler=_cmd_verify_history)
 
     from .toolkit_cli import register_commands
-    register_commands({'intake':intake_sub,'transactions':transaction_sub,'documents':document_sub,'expense':expense_sub,'review':review_sub,'counterparties':counterparty_sub,'assets':assets_sub})
+    register_commands({'intake':intake_sub,'transactions':transaction_sub,'documents':document_sub,'expense':expense_sub,'review':review_sub,'counterparties':counterparty_sub,'assets':assets_sub,'profile':profile_sub,'backup':backup_sub,'period':period_sub})
 
 
 def run_operational_handler(args: argparse.Namespace) -> int | None:

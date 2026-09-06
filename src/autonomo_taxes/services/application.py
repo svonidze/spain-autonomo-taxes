@@ -8,6 +8,7 @@ from .contacts import ContactsService
 from .financials import FinancialsService
 from .invoices import InvoiceService
 from .intake_service import IntakeService
+from .settings import SettingsService
 
 
 @dataclass(frozen=True)
@@ -23,7 +24,12 @@ class RuntimeConfig:
 
 
 class AccountingService(
-    QueryService, ContactsService, FinancialsService, InvoiceService, IntakeService
+    QueryService,
+    ContactsService,
+    FinancialsService,
+    InvoiceService,
+    IntakeService,
+    SettingsService,
 ):
     def __init__(self, config: RuntimeConfig):
         if not config.database.is_file():
