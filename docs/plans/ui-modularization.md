@@ -189,6 +189,12 @@ authenticated unknown-resource responses and settings dirty navigation.
   browser scenarios, pseudolocale, formatting/types/catalogs, and 1,306 Python
   tests passed with four expected skips. All eleven preceding draft PRs have
   green GitHub test/privacy checks. The latest fetched master is still `27522dec`.
+- Post-review fixes (`claude/ui-13-review-fixes`, from `4b66931`): detail-route
+  UUIDs canonicalized like the server; intake acceptance delivered even when the
+  dialog was closed during the upload; `#vue-intake-status` footer styles restored;
+  transport and fallback errors keep re-translatable message codes; dashboard
+  banners use ICU plurals; expense paging restarts are bounded. `DESIGN.md`,
+  `ops/FRONTEND_BUILD.md`, `docs/UI_DEVELOPMENT.md` and fixture notes updated.
 
 ## Final runtime
 
