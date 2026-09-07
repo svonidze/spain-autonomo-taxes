@@ -50,6 +50,7 @@ def test_complete_target_can_be_reused_without_node(tmp_path, monkeypatch):
 
 def test_npm_failure_stops_before_build_and_receipt(tmp_path, monkeypatch):
     monkeypatch.setattr(gate, "contract", lambda *_: 1)
+    monkeypatch.setattr(gate, "layout", lambda *_: gate.ReleaseLayout(Path("."), Path("."), {}))
     monkeypatch.setattr(gate, "verify_tree", lambda *_: None)
     monkeypatch.setattr(gate, "tools", lambda *_: ("node", "npm", {"CI": "true"}))
     calls = []
