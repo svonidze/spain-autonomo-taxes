@@ -11,6 +11,10 @@ The repository has two application roots:
 | `examples/` | Safe configuration and import examples. |
 | `reference/tax-calendars/` | Versioned calendar inputs that callers pass explicitly. |
 
+These are ownership and tooling boundaries within one release. The frontend
+build writes verified assets into `backend/src/autonomo_taxes/web_ui/dist`; the
+Python wheel embeds those assets, so frontend build precedes Python packaging.
+
 From the repository root, install and verify the application with the current
 project roots:
 
