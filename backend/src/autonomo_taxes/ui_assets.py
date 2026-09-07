@@ -20,7 +20,7 @@ class UiAssets:
         if not isinstance(self.manifest, dict) or self.manifest.get("contract") != 1:
             raise RuntimeError("Unsupported frontend build contract")
         if self.manifest.get("test_only") and not allow_test:
-            raise RuntimeError("This is a test-only frontend. Run npm run build before starting the application.")
+            raise RuntimeError("This is a test-only frontend. Run npm --prefix frontend run build from the repository root before starting the application.")
         files = self.manifest.get("files")
         if not isinstance(files, dict) or "index.html" not in files or not any(name.endswith(".js") for name in files):
             raise RuntimeError("Frontend build has no shell or JavaScript entry")

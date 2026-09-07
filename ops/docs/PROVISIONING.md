@@ -237,7 +237,7 @@ read -r -p 'Absolute reviewed code checkout: ' code_root
 read -r -p 'Absolute Python interpreter with project dependencies: ' oauth_python
 read -r -p 'Absolute private desktop OAuth client JSON: ' oauth_client
 oauth_stage="$(mktemp -d "${TMPDIR:-/tmp}/autonomo-oauth.XXXXXX")"
-"$oauth_python" "$code_root/scripts/authorize_google_drive.py" \
+"$oauth_python" "$code_root/scripts/imports/authorize_google_drive.py" \
   --client-secret "$oauth_client" --token-out "$oauth_stage/token.json"
 "$oauth_python" - "$oauth_stage/token.json" "$oauth_client" <<'PY'
 import json
