@@ -7,9 +7,9 @@ secrets repository. Immutable releases live under `AUTONOMO_RELEASE_ROOT/release
 plane lives outside releases and supplies deployment and backup helpers.
 
 Use [provisioning](PROVISIONING.md) for initial setup,
-[disaster recovery](../docs/DISASTER_RECOVERY.md) for data recovery, and
-[optional SOPS](sops/README.md) only when that separate control plane is enabled.
-Roadmaps in `docs/plans/` are not operating instructions.
+[disaster recovery](DISASTER_RECOVERY.md) for data recovery, and
+[optional SOPS](../sops/README.md) only when that separate control plane is enabled.
+Roadmaps in `../../docs/plans/` are not operating instructions.
 
 ## Command safety
 
@@ -25,7 +25,7 @@ paths into public issues. Read each section before running its commands.
 
 ## Scoped accounting maintenance
 
-Use the [accounting workflow](../docs/ACCOUNTING_WORKFLOW.md) for routine
+Use the [accounting workflow](../../docs/user/ACCOUNTING_WORKFLOW.md) for routine
 review and posting. This section covers an authorized correction or recovery
 that the installed interface cannot complete. It does not authorize a
 deployment, a tax filing, changes to other records, or broader access.
@@ -71,7 +71,7 @@ Do not reimport the original to correct metadata or clear an old extraction
 error. Keep document/transaction identity and source bytes intact. Check
 existing source material and user confirmations before asking for another
 document or repeating a question. Explain the precise unresolved requirement.
-See [source and date rules](../docs/ACCOUNTING_WORKFLOW.md#dates-source-documents-and-missing-details)
+See [source and date rules](../../docs/user/ACCOUNTING_WORKFLOW.md#dates-source-documents-and-missing-details)
 and [OCR provisioning](PROVISIONING.md#local-ocr-dependency).
 
 ### When a bounded repair is necessary
@@ -106,7 +106,7 @@ editing script. Prepare and review the repair privately with these safeguards:
    silently rewriting earlier evidence.
 
 Store the backup, reviewed repair, before/after evidence and results under the
-appropriate private storage boundary. Follow [Privacy](../docs/PRIVACY.md);
+appropriate private storage boundary. Follow [Privacy](../../docs/development/PRIVACY.md);
 public examples must be independently synthetic, without case-specific
 identifiers, amounts, server addresses or private paths.
 
@@ -127,7 +127,7 @@ unfinished work; do not duplicate the entry or repeat an already saved stage.
 
 Do not automatically restore the whole database to undo a partial repair.
 That could remove later valid changes. Escalate any required live restore
-through the separately authorized [recovery procedure](../docs/DISASTER_RECOVERY.md).
+through the separately authorized [recovery procedure](DISASTER_RECOVERY.md).
 
 After execution, independently reread the entry through the running service.
 Verify its actual transaction status, document number, amounts/currency,
@@ -421,7 +421,7 @@ validate_sha "$target_sha"
 
 If the target schema is older, use this alternative with the previously recorded
 snapshot. Verify its integrity, foreign keys, and schema by the
-[recovery checks](../docs/DISASTER_RECOVERY.md#download-and-verify-a-backup) first;
+[recovery checks](DISASTER_RECOVERY.md#download-and-verify-a-backup) first;
 the rollback script requires a private snapshot but does not establish that it
 is the correct schema for you. **All writes since that snapshot are lost from
 the active database.** Preserve them separately before proceeding.
@@ -443,7 +443,7 @@ Yandex privately; a database status alone does not check the provider.
 Daily and monthly jobs archive the private root with a consistent SQLite
 snapshot. Local retention is **35 daily / 13 monthly archive pairs by count**
 unless overridden, not a guarantee of days covered. Bucket lifecycle is
-configured separately. See [exact coverage and exclusions](../docs/DISASTER_RECOVERY.md#what-is-backed-up).
+configured separately. See [exact coverage and exclusions](DISASTER_RECOVERY.md#what-is-backed-up).
 
 Running a backup is a production change: it creates/prunes local archives,
 uploads to configured remotes, may copy local evidence, and reconciles
@@ -471,11 +471,11 @@ Its failure is recorded and alerted independently and never blocks deployment.
 Run `verify-backup.sh monthly` for a deliberate manual retry. `AUTONOMO_ALERT_WEBHOOK`
 is optional; no external alert delivery exists unless configured and tested.
 
-For the monthly exercise, follow the [isolated recovery drill](../docs/DISASTER_RECOVERY.md#download-and-verify-a-backup).
+For the monthly exercise, follow the [isolated recovery drill](DISASTER_RECOVERY.md#download-and-verify-a-backup).
 It downloads through crypt, validates the pair, extracts to an empty directory,
 and checks SQLite. **Do not run `restore.sh --yes-restore` for a drill.** That
 mode replaces the live database. Production replacement is described only in
-[production cutover](../docs/DISASTER_RECOVERY.md#production-cutover-dangerous).
+[production cutover](DISASTER_RECOVERY.md#production-cutover-dangerous).
 
 ### Adding the manual-operation wrapper to an existing default installation
 
@@ -596,7 +596,7 @@ restore the intended state.
 
 ## Optional SOPS control plane
 
-[The SOPS runbook](sops/README.md) contains bootstrap, artifact mapping, exact
+[The SOPS runbook](../sops/README.md) contains bootstrap, artifact mapping, exact
 recipient validation, dual-SHA deployment, and recovery. Copying that directory
 or preparing the private Git repository does not enable it. Do not mix its
 units, environment files, or rollback scripts with the default control plane.

@@ -10,7 +10,7 @@ from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "backend" / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
@@ -45,7 +45,7 @@ def main() -> int:
     parser.add_argument(
         "--storage-state",
         type=Path,
-        help="Optional Playwright storageState from scripts/xolo_playwright_login.py. "
+        help="Optional Playwright storageState from scripts/imports/xolo_playwright_login.py. "
         "When set, CSRF is read from the live Xolo expense page and XOLO_COOKIE/XOLO_CSRF are not needed.",
     )
     args = parser.parse_args()
@@ -88,7 +88,7 @@ def _fetch_pages_with_env(start: int, length: int, max_pages: int) -> list[dict[
 
 def _fetch_pages_with_playwright(storage_state: Path, start: int, length: int, max_pages: int) -> list[dict[str, Any]]:
     if not storage_state.exists():
-        raise SystemExit(f"Storage state not found: {storage_state}. Run scripts/xolo_playwright_login.py first.")
+        raise SystemExit(f"Storage state not found: {storage_state}. Run scripts/imports/xolo_playwright_login.py first.")
     try:
         from playwright.sync_api import sync_playwright
     except ImportError as exc:  # pragma: no cover - environment guard.
@@ -101,7 +101,7 @@ def _fetch_pages_with_playwright(storage_state: Path, start: int, length: int, m
         page = context.new_page()
         page.goto("https://app.xolo.io/selfservice/expense", wait_until="networkidle", timeout=60_000)
         if "/hub/login" in page.url:
-            raise SystemExit("Xolo session is not authenticated; rerun scripts/xolo_playwright_login.py")
+            raise SystemExit("Xolo session is not authenticated; rerun scripts/imports/xolo_playwright_login.py")
         csrf = _extract_csrf(page.content())
         for draw in range(1, max_pages + 1):
             payload = _payload(draw=draw, start=start, length=length)

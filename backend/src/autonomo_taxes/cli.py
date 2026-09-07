@@ -374,7 +374,7 @@ def main(argv: list[str] | None = None) -> int:
 
     audit_history = subparsers.add_parser("audit-history", help="Audit every available Modelo 130 quarter in sequence")
     audit_history.add_argument("--xolo-root", type=Path, required=True)
-    audit_history.add_argument("--xolo-raw-expenses", type=Path, help="Optional raw Xolo expense CSV from scripts/fetch_xolo_expenses.py")
+    audit_history.add_argument("--xolo-raw-expenses", type=Path, help="Optional raw Xolo expense CSV from scripts/imports/fetch_xolo_expenses.py")
     audit_history.add_argument("--out-csv", type=Path, required=True)
     audit_history.add_argument("--out-md", type=Path, required=True)
 

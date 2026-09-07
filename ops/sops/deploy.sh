@@ -173,7 +173,7 @@ fi
 if [[ "${AUTONOMO_ENABLE_STORAGE_MIGRATION:-0}" == "1" || -n "$backend_pre" ]]; then
   migration_backup_dir="$(private_root)/backups/pre-deploy"
   migration_tool="$ops_dir/backup_sqlite.py"
-  [[ -f "$migration_tool" ]] || migration_tool="$ops_dir/../scripts/backup_sqlite.py"
+  [[ -f "$migration_tool" ]] || migration_tool="$ops_dir/backup/backup_sqlite.py"
   migration_output="$(python3 "$migration_tool" \
     --database "$(private_root)/autonomo.sqlite" \
     --backup-dir "$migration_backup_dir" \

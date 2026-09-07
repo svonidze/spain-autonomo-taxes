@@ -37,7 +37,7 @@ def installed(tmp_path):
     for filename in ("lib.sh", "backup.sh", "preflight.sh"):
         shutil.copy2(ROOT / "ops" / filename, ops / filename)
     shutil.copy2(ROOT / "ops" / "backup_state.py", ops / "backup_state.py")
-    shutil.copy2(ROOT / "scripts" / "backup_private_root.py", ops / "backup_private_root.py")
+    shutil.copy2(ROOT / "ops" / "backup" / "backup_private_root.py", ops / "backup_private_root.py")
     shutil.copy2(ROOT / "backend/src/autonomo_taxes/backup_settings.py", ops / "backup_settings.py")
     (ops / "sops").mkdir()
     for filename in ("lib.sh", "preflight.sh"):
@@ -70,7 +70,7 @@ def _run(script, env):
 
 def _seed_archives(private, database, backup_class):
     output = private / "backups" / ("private-root" if backup_class == "daily" else "monthly")
-    spec = importlib.util.spec_from_file_location("synthetic_backup", ROOT / "scripts" / "backup_private_root.py")
+    spec = importlib.util.spec_from_file_location("synthetic_backup", ROOT / "ops" / "backup" / "backup_private_root.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     for _ in range(8):

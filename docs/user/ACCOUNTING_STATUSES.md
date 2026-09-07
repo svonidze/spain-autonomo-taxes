@@ -6,7 +6,7 @@ the badge: the same short status can have different causes. The **?** help
 buttons define terms; required actions do not depend on hovering over them.
 
 This guide describes the source version, not proof of what is deployed on a
-particular server. The [design contract](../DESIGN.md#accounting-status-explanations)
+particular server. The [design contract](../../DESIGN.md#accounting-status-explanations)
 defines the interface rules. For the step-by-step review and posting process,
 see the [accounting workflow](ACCOUNTING_WORKFLOW.md).
 

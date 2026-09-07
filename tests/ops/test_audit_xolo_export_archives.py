@@ -9,7 +9,7 @@ import unittest
 import zipfile
 
 
-SCRIPT_PATH = REPO_ROOT / "scripts" / "audit_xolo_export_archives.py"
+SCRIPT_PATH = REPO_ROOT / "scripts" / "imports" / "audit_xolo_export_archives.py"
 SPEC = importlib.util.spec_from_file_location("audit_xolo_export_archives", SCRIPT_PATH)
 assert SPEC is not None and SPEC.loader is not None
 archive_audit = importlib.util.module_from_spec(SPEC)

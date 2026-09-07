@@ -3,7 +3,7 @@
 This guide describes intentional account/configuration changes. Confirm the
 target accounts and maintenance scope first. Do not put credentials, document
 URLs, or private inventory in the code repository. Normal operation uses
-server-owned `0600` files; [SOPS](sops/README.md) is optional.
+server-owned `0600` files; [SOPS](../sops/README.md) is optional.
 
 ## GitHub and code publication
 
@@ -101,9 +101,9 @@ For the private `spain-autonomo-taxes` bucket:
 6. Independently preserve and test recovery of the complete rclone config,
    including crypt material. A new access key cannot decrypt old backups.
 
-The backend shape is in [the Yandex example](../config/storage-yandex-s3.example.json).
+The backend shape is in [the Yandex example](../../examples/config/storage-yandex-s3.example.json).
 Keep `credential_ref` as `file:` plus the private absolute rclone config path.
-Credentials do not belong in SQLite. See [backup coverage](../docs/DISASTER_RECOVERY.md#what-is-backed-up)
+Credentials do not belong in SQLite. See [backup coverage](DISASTER_RECOVERY.md#what-is-backed-up)
 before relying on a private-root archive to recover this config.
 
 ## Google Drive storage choices
@@ -125,7 +125,7 @@ verify/hash/extract and registers the original without making another Google
 copy. Verify the Yandex mirror separately. For existing database records, use
 `storage adopt-google-archive` with a reviewed records file after matching their
 stored SHA-256, not intake again merely to change their storage identity. The
-[record builder](../scripts/build_drive_adoption_records.py) resolves archive
+[record builder](../../scripts/imports/build_drive_adoption_records.py) resolves archive
 paths through an existing rclone Drive remote. Its records contain private file
 IDs/URLs and must stay outside Git. Run adoption with `--dry-run` first; applying
 without that flag updates replica/primary records. Retiring managed replicas
@@ -142,7 +142,7 @@ implemented. Do not promise that fallback or create a duplicate as a workaround.
 Local intake first accepts a verified local copy. To archive new uploads to
 Google, configure a user OAuth `read_write` backend with
 `credential_mode: oauth` explicitly and an intentional destination folder.
-Use [the Google backend example](../config/storage-google-drive.example.json)
+Use [the Google backend example](../../examples/config/storage-google-drive.example.json)
 as a shape, not a command to recreate the old managed archive. Keep the token
 in a `file:` credential reference and use `drive.file`, not broad `drive`.
 Do not use a service-account writer for My Drive.
@@ -321,7 +321,7 @@ publish a new encrypted token revision and use paired deployment instead.
 
 ## Server runtime configuration
 
-Start with [runtime.env.example](runtime.env.example) and privately fill in
+Start with [runtime.env.example](../runtime.env.example) and privately fill in
 absolute paths. `AUTONOMO_PRIVATE_ROOT`, `AUTONOMO_RELEASE_ROOT`,
 `AUTONOMO_OPS_ROOT`, and `AUTONOMO_DEPLOY_REPOSITORY` identify different roots.
 The default systemd templates read `~/.config/autonomo-tax/runtime.env`; a
@@ -342,7 +342,7 @@ Check the independent credential-recovery inventory before enabling backups.
 
 ## Optional encrypted Git configuration
 
-Only if explicitly enabled, use the complete [SOPS bootstrap and lifecycle](sops/README.md).
+Only if explicitly enabled, use the complete [SOPS bootstrap and lifecycle](../sops/README.md).
 It has different units, paths, and deployment arguments. Preparing that private
 repository does not migrate current authoritative server files or prove that
 the recovery identity exists.

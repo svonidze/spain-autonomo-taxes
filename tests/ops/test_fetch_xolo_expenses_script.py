@@ -6,7 +6,7 @@ from pathlib import Path
 import unittest
 
 
-SCRIPT = REPO_ROOT / "scripts" / "fetch_xolo_expenses.py"
+SCRIPT = REPO_ROOT / "scripts" / "imports" / "fetch_xolo_expenses.py"
 SPEC = importlib.util.spec_from_file_location("fetch_xolo_expenses_script", SCRIPT)
 assert SPEC and SPEC.loader
 fetch_xolo_expenses = importlib.util.module_from_spec(SPEC)

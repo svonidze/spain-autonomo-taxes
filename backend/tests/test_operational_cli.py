@@ -186,7 +186,7 @@ def test_calendar_cli_imports_lists_and_exports_source_backed_deadlines(
 ) -> None:
     database = tmp_path / "ledger.sqlite"
     export_dir = tmp_path / "sheet"
-    calendar_path = REPO_ROOT / "config" / "tax-calendar-2026.json"
+    calendar_path = REPO_ROOT / "reference" / "tax-calendars" / "2026.json"
     with initialize(database):
         pass
 

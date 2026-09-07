@@ -8,7 +8,7 @@ if [[ $# -eq 4 && "$1" == "--yes-restore-archive" ]]; then
   archive="$2"; manifest="$3"; target_root="$4"
   [[ -f "$archive" && -f "$manifest" ]] || die "archive and manifest must exist"
   restore_tool="$ops_dir/restore_private_root.py"
-  [[ -f "$restore_tool" ]] || restore_tool="$ops_dir/../scripts/restore_private_root.py"
+  [[ -f "$restore_tool" ]] || restore_tool="$ops_dir/backup/restore_private_root.py"
   python3 "$restore_tool" \
     --archive "$archive" --manifest "$manifest" --target-root "$target_root"
   exit 0

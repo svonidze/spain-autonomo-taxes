@@ -8,7 +8,7 @@ import sys
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import sync_playwright
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "backend" / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))

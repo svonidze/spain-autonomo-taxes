@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import { existsSync, lstatSync, mkdirSync, realpathSync, rmSync } from 'node:fs';
-import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { localizeShell } from './scripts/shell_locales.mts';
 
@@ -11,21 +11,13 @@ const packageRoot = resolve(repositoryRoot, 'backend/src/autonomo_taxes');
 const webUiRoot = resolve(packageRoot, 'web_ui');
 const generatedUiRoot = resolve(webUiRoot, 'dist');
 
-function isChild(parent: string, child: string) {
-  const pathFromParent = relative(parent, child);
-  return (
-    pathFromParent !== '' &&
-    pathFromParent !== '..' &&
-    !pathFromParent.startsWith(`..${sep}`) &&
-    !isAbsolute(pathFromParent)
-  );
-}
-
 function clearGeneratedUiRoot() {
   const canonicalRepositoryRoot = realpathSync(repositoryRoot);
   const canonicalPackageRoot = realpathSync(packageRoot);
-  if (!isChild(canonicalRepositoryRoot, canonicalPackageRoot)) {
-    throw new Error(`Refusing UI output outside this repository: ${canonicalPackageRoot}`);
+  if (canonicalPackageRoot !== resolve(canonicalRepositoryRoot, 'backend/src/autonomo_taxes')) {
+    throw new Error(
+      `Refusing UI output outside the expected source package: ${canonicalPackageRoot}`,
+    );
   }
   mkdirSync(webUiRoot, { recursive: true });
   if (lstatSync(webUiRoot).isSymbolicLink()) {
@@ -43,9 +35,6 @@ function clearGeneratedUiRoot() {
     if (relative(canonicalWebUiRoot, realpathSync(generatedUiRoot)) !== 'dist') {
       throw new Error(`Refusing UI output outside its package: ${generatedUiRoot}`);
     }
-  }
-  if (!isChild(webUiRoot, generatedUiRoot)) {
-    throw new Error(`Refusing to clear unexpected UI output: ${generatedUiRoot}`);
   }
   rmSync(generatedUiRoot, { recursive: true, force: true });
   mkdirSync(generatedUiRoot, { recursive: true });

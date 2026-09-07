@@ -12,7 +12,7 @@ from autonomo_taxes.ledger_db import initialize
 from autonomo_taxes.tax_calendar import entry_as_record, load_tax_calendar
 
 
-CALENDAR_PATH = REPO_ROOT / "config" / "tax-calendar-2026.json"
+CALENDAR_PATH = REPO_ROOT / "reference" / "tax-calendars" / "2026.json"
 
 
 def _period(

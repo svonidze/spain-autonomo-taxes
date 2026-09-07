@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 
-SCRIPT_PATH = REPO_ROOT / "scripts" / "probe_xolo_storage_state.py"
+SCRIPT_PATH = REPO_ROOT / "scripts" / "imports" / "probe_xolo_storage_state.py"
 SPEC = importlib.util.spec_from_file_location("probe_xolo_storage_state", SCRIPT_PATH)
 assert SPEC is not None and SPEC.loader is not None
 probe = importlib.util.module_from_spec(SPEC)

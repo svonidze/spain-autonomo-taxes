@@ -70,7 +70,7 @@ historical blob and test location when investigating CI, without logging secrets
 
 Add regression coverage for the approved value, changed/unreviewed values,
 cross-category matches, and historical fixtures on another branch. Stage the
-intended changes, run the guard tests and `python scripts/privacy_guard.py
+intended changes, run the guard tests and `python scripts/dev/privacy_guard.py
 --history`, then repeat the full-history scan in a fresh clone of the published
 refs. An exact reviewed exception handles old fixture blobs as well as current
 files; editing a fixture at a branch tip does not remove its historical matches.
@@ -83,10 +83,10 @@ intended files before relying on a scan of a new document or fixture.
 
 | Command | Additional history checked |
 |---|---|
-| `python scripts/privacy_guard.py` | None; index and corresponding working-tree files only. |
-| `python scripts/privacy_guard.py --commit-range origin/master..HEAD` | The specified revision range. Fetch the remote base first when this is intended to represent a PR's new commits. |
-| `python scripts/privacy_guard.py --commit-range HEAD` | History reachable from the current commit, not merely the last commit's diff. |
-| `python scripts/privacy_guard.py --history` | All history reachable through local Git references (`--all`), including other branches, remote-tracking references and tags; annotated tag content is also checked. |
+| `python scripts/dev/privacy_guard.py` | None; index and corresponding working-tree files only. |
+| `python scripts/dev/privacy_guard.py --commit-range origin/master..HEAD` | The specified revision range. Fetch the remote base first when this is intended to represent a PR's new commits. |
+| `python scripts/dev/privacy_guard.py --commit-range HEAD` | History reachable from the current commit, not merely the last commit's diff. |
+| `python scripts/dev/privacy_guard.py --history` | All history reachable through local Git references (`--all`), including other branches, remote-tracking references and tags; annotated tag content is also checked. |
 
 History checks inspect reachable blobs, historical paths and commit messages,
 not just changed lines. Email-address matches are ignored only in commit messages;
@@ -108,7 +108,7 @@ report the affected scope separately from merge/rebase availability.
 
 ## Before sharing
 
-1. Run all tests and `python scripts/privacy_guard.py --history`.
+1. Run all tests and `python scripts/dev/privacy_guard.py --history`.
 2. Clone the proposed repository into a new directory and repeat the checks there.
 3. Confirm the remote exposes only the intended branch and tags.
 4. Grant the least repository permission required. Remember that private-repository access cannot prevent a recipient from retaining a local clone.

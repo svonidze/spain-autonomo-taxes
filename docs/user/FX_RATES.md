@@ -131,9 +131,9 @@ existing record and follow the reported blocker instead of bypassing it.
 
 Implementation source of truth:
 
-- `src/autonomo_taxes/fx_reference.py` defines ECB retrieval, validation,
+- `backend/src/autonomo_taxes/fx_reference.py` defines ECB retrieval, validation,
   inversion and the seven-day fallback window.
-- `src/autonomo_taxes/review_packet.py` defines suggestions, EUR rounding and
+- `backend/src/autonomo_taxes/review_packet.py` defines suggestions, EUR rounding and
   atomic confirmation.
-- `src/autonomo_taxes/fx_policy.py` defines sources allowed in production
+- `backend/src/autonomo_taxes/fx_policy.py` defines sources allowed in production
   calculations and the manual-rate reference guard.

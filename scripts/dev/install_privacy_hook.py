@@ -3,7 +3,7 @@
 
 Usage::
 
-    python scripts/install_privacy_hook.py
+    python scripts/dev/install_privacy_hook.py
 
 An existing non-matching hook is preserved. Pass ``--force`` only after
 reviewing that hook and deciding to replace it.
@@ -23,7 +23,7 @@ from typing import Sequence
 
 HOOK_CONTENT = """#!/bin/sh
 repo_root=$(git rev-parse --show-toplevel) || exit 2
-exec python "$repo_root/scripts/privacy_guard.py"
+exec python "$repo_root/scripts/dev/privacy_guard.py"
 """
 
 
