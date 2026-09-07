@@ -15,7 +15,7 @@ from urllib.parse import parse_qsl, urljoin, urlparse, urlunparse
 BASE_URL = "https://app.xolo.io"
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "src"
+SRC = ROOT / "backend" / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 

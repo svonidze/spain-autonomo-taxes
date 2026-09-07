@@ -15,8 +15,8 @@ another application service is unnecessary.
 | `frontend/src/help` | Read-only accounting explanations, scoped records and dialog lifecycle |
 | `frontend/src/charts` | Chart domain mapping, Vue lifecycle and geometry |
 | `frontend/src/locales` | Per-language/domain JSON catalogs and language registry |
-| `frontend/tests` | Direct module/component tests and synthetic baseline data |
-| `tests/browser` | Browser scenarios against a real temporary Python server |
+| `frontend/tests/unit` | Direct module/component tests and synthetic baseline data |
+| `frontend/tests/e2e` | Browser scenarios against a real temporary Python server |
 
 Components receive narrow typed contexts/services. Route changes dispose the
 active screen; intake stays mounted. Locale changes update text in place. Settings
@@ -51,28 +51,28 @@ These fixtures contain expected synthetic data, not executable legacy code.
 
 ## Run locally
 
-Use Node 24.20.0/npm 11.19.0 from `.nvmrc` and Python 3.11. Activate a Python virtual
+Use Node 24.20.0/npm 11.19.0 from `frontend/.nvmrc` and Python 3.11. Activate a Python virtual
 environment, then run the checks in this order:
 
 ```sh
 python -m pip install pytest build
-npm ci --include=dev --no-audit --no-fund
-npm run build
-python -m pip install -e .
-npm run check:runtime
-npm run format:check
-npm run test:coverage-map
-npm run typecheck
-npm run test:unit
-npm run test:chart-module
-npx playwright install chromium
-npm run test:pseudo
-npm run test:browser
-npm run test:installed
+npm --prefix frontend ci --include=dev --no-audit --no-fund
+npm --prefix frontend run build
+python -m pip install -e ./backend
+npm --prefix frontend run check:runtime
+npm --prefix frontend run format:check
+npm --prefix frontend run test:coverage-map
+npm --prefix frontend run typecheck
+npm --prefix frontend run test:unit
+npm --prefix frontend run test:chart-module
+npm --prefix frontend exec -- playwright install chromium
+npm --prefix frontend run test:pseudo
+npm --prefix frontend run test:browser
+npm --prefix frontend run test:installed
 python -m pytest -q
 ```
 
-`npm run format` formats TypeScript/Vue sources and their unit tests. Generated
+`npm --prefix frontend run format` formats TypeScript/Vue sources and their unit tests. Generated
 catalogs and the unchanged geometry kernel are excluded. TypeScript 6.0.3 is pinned
 with vue-tsc 3.3.11; upgrade them together after verifying the compiler API boundary.
 Dependencies and lockfile versions are exact; Node is a build/test dependency.
