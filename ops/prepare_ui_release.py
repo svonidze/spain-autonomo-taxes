@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tomllib
+from typing import NamedTuple
 
 
 def run(args: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> str:
@@ -27,23 +28,57 @@ def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def contract(source: Path, sha: str) -> int:
+class ReleaseLayout(NamedTuple):
+    python_root: Path
+    node_root: Path
+    config: dict
+
+
+def layout(source: Path, sha: str) -> ReleaseLayout:
+    """Resolve only the reviewed Git object, never the caller's checkout layout."""
     if not re.fullmatch(r"[0-9a-f]{40}", sha):
         raise RuntimeError("Expected a full Git SHA")
-    config = tomllib.loads(git(source, "show", f"{sha}:pyproject.toml"))
-    value = config.get("tool", {}).get("autonomo", {}).get("web-ui", {}).get("build-contract", 0)
+    projects = git(source, "ls-tree", "-r", "--name-only", sha, "--",
+                   "pyproject.toml", "backend/pyproject.toml").splitlines()
+    if len(projects) != 1:
+        raise RuntimeError("Release must contain exactly one Python project root")
+    project = Path(projects[0])
+    config = tomllib.loads(git(source, "show", f"{sha}:{project.as_posix()}"))
+    release = _settings(config, "release")
+    version = release.get("layout-version", 1)
+    expected = 2 if project.parent == Path("backend") else 1
+    if type(version) is not int or version not in (1, 2) or version != expected:
+        raise RuntimeError("Unsupported or inconsistent release layout-version")
+    ui_contract = _settings(config, "web-ui").get("build-contract")
+    if version == 2 and (type(ui_contract) is not int or ui_contract != 1):
+        raise RuntimeError("Release layout 2 requires frontend build contract 1")
+    return ReleaseLayout(project.parent, Path("frontend") if version == 2 else Path("."), config)
+
+
+def _settings(config: dict, section: str) -> dict:
+    value = config
+    for key in ("tool", "autonomo", section):
+        value = value.get(key, {})
+        if not isinstance(value, dict):
+            raise RuntimeError("Invalid release metadata table")
+    return value
+
+
+def contract(source: Path, sha: str) -> int:
+    value = _settings(layout(source, sha).config, "web-ui").get("build-contract", 0)
     if type(value) is not int or value not in (0, 1):
         raise RuntimeError("Unknown frontend build contract")
     return value
 
 
 def expected_tools(source: Path, sha: str) -> dict[str, str]:
-    package = json.loads(git(source, "show", f"{sha}:package.json"))
+    node_root = layout(source, sha).node_root
+    package = json.loads(git(source, "show", f"{sha}:{node_root / 'package.json'}"))
     engines = package["engines"]
     for key in ("node", "npm"):
         if not re.fullmatch(r"\d+\.\d+\.\d+", engines[key]):
             raise RuntimeError("Frontend tools must have exact versions")
-    if git(source, "show", f"{sha}:.nvmrc") != engines["node"]:
+    if git(source, "show", f"{sha}:{node_root / '.nvmrc'}") != engines["node"]:
         raise RuntimeError("Node pins disagree")
     return {key: engines[key] for key in ("node", "npm")}
 
@@ -76,8 +111,9 @@ def build_environment(node: str) -> dict[str, str]:
 def verify_tree(source: Path, sha: str, target: Path) -> None:
     if git(target, "rev-parse", "HEAD") != sha or git(target, "status", "--porcelain", "--untracked-files=no"):
         raise RuntimeError("Release source must be the clean reviewed Git object")
-    expected_lock = subprocess.check_output(["git", "-C", str(source), "show", f"{sha}:package-lock.json"])
-    if digest((target / "package-lock.json").read_bytes()) != digest(expected_lock):
+    lock = layout(source, sha).node_root / "package-lock.json"
+    expected_lock = subprocess.check_output(["git", "-C", str(source), "show", f"{sha}:{lock}"])
+    if digest((target / lock).read_bytes()) != digest(expected_lock):
         raise RuntimeError("Release lockfile differs from its reviewed Git object")
 
 
@@ -107,7 +143,7 @@ def installation(source: Path, sha: str, target: Path) -> dict:
         raise RuntimeError("Release marker mismatch")
     if (target / ".schema-version").read_text().strip() != result["schema"]:
         raise RuntimeError("Installed schema marker mismatch")
-    if build["lock_sha256"] != digest((target / "package-lock.json").read_bytes()):
+    if build["lock_sha256"] != digest((target / layout(source, sha).node_root / "package-lock.json").read_bytes()):
         raise RuntimeError("Installed frontend lockfile mismatch")
     expected = expected_tools(source, sha)
     if any(build[key] != expected[key] for key in ("node", "npm")):
@@ -147,10 +183,13 @@ def write_receipt(source: Path, sha: str, target: Path) -> None:
 
 
 def main(argv: list[str]) -> None:
-    if len(argv) != 4 or argv[0] not in ("preflight", "build", "receipt", "verify"):
-        raise RuntimeError("usage: prepare_ui_release.py <preflight|build|receipt|verify> <source-repo> <sha> <target>")
+    if len(argv) != 4 or argv[0] not in ("preflight", "build", "receipt", "verify", "python-project-path"):
+        raise RuntimeError("usage: prepare_ui_release.py <preflight|build|receipt|verify|python-project-path> <source-repo> <sha> <target>")
     phase, source_text, sha, target_text = argv
     source, target = Path(source_text).resolve(), Path(target_text).resolve()
+    if phase == "python-project-path":
+        print(target / layout(source, sha).python_root)
+        return
     if contract(source, sha) == 0:
         return  # Existing legacy installation and rollback contracts are unchanged.
     if phase == "preflight":
@@ -168,8 +207,9 @@ def main(argv: list[str]) -> None:
                 marker.write(sha + "\n")
         except FileExistsError as exc:
             raise RuntimeError("Frontend build already started: preserve the partial target for scoped recovery") from exc
-        subprocess.run([node, npm, "ci", "--include=dev", "--no-audit", "--no-fund"], cwd=target, env=env, check=True)
-        subprocess.run([node, npm, "run", "build"], cwd=target, env=env, check=True)
+        node_root = target / layout(source, sha).node_root
+        subprocess.run([node, npm, "ci", "--include=dev", "--no-audit", "--no-fund"], cwd=node_root, env=env, check=True)
+        subprocess.run([node, npm, "run", "build"], cwd=node_root, env=env, check=True)
         verify_tree(source, sha, target)
     elif phase == "receipt":
         write_receipt(source, sha, target)

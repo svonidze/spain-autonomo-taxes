@@ -58,7 +58,8 @@ if [[ ! -d "$target" ]]; then
   printf '%s\n' "$sha" > "$target/.release-sha"
   python3 "$ops_dir/prepare_ui_release.py" build "$source_repo" "$sha" "$target"
   python3 -m venv "$target/.venv"
-  "$target/.venv/bin/python" -m pip install --disable-pip-version-check --no-input "$target"
+  python_project="$(python3 "$ops_dir/prepare_ui_release.py" python-project-path "$source_repo" "$sha" "$target")"
+  "$target/.venv/bin/python" -m pip install --disable-pip-version-check --no-input "$python_project"
   "$target/.venv/bin/python" - <<'PY' > "$target/.schema-version"
 from autonomo_taxes.ledger_db import LATEST_SCHEMA_VERSION
 print(LATEST_SCHEMA_VERSION)

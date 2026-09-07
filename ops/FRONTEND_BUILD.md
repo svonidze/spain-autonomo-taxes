@@ -5,13 +5,18 @@ reviewed-SHA, backup, active-mode and rollback procedures in the operations runb
 
 ## Build contract 1
 
-The target commit declares `[tool.autonomo.web-ui] build-contract = 1` in
-`pyproject.toml`. The shared `prepare_ui_release.py` reads that declaration from
-the exact Git object. Missing declaration means legacy; unknown contracts fail.
+The shared `prepare_ui_release.py` resolves the Python project from the exact
+Git object: root `pyproject.toml` for layout 1, or `backend/pyproject.toml` with
+`[tool.autonomo.release] layout-version = 2` for layout 2. Exactly one project
+root must exist; unknown or inconsistent layouts fail before installation.
+Layout 2 uses `frontend/` for Node metadata and commands. The Python project
+declares `[tool.autonomo.web-ui] build-contract = 1`; an absent UI declaration
+is legacy only in layout 1. UI manifests and installed resource paths keep
+contract 1 across both repository layouts.
 
 For a new contract-1 target, use the exact Node/npm engines in `package.json`
 and matching `.nvmrc` from the pinned Git object. The commands below derive those
-versions rather than maintaining another version list. A working registry/cache
+versions through the installed compatible helper rather than maintaining another version list. A working registry/cache
 is required. Tool or network failure must leave the current service running;
 when installation is already authorized, resolve it within that scope and repeat
 preflight. Node is used only to build; the running service is still Python.
@@ -61,14 +66,11 @@ done
 read -r -p 'Absolute source repository containing the pinned SHA: ' source_repo
 [[ "$source_repo" == /* ]]
 validate_sha "$app_sha"
-read -r node_version npm_version < <(python3 - "$source_repo" "$app_sha" <<'PYTOOLS'
-import json, re, subprocess, sys
-repo, sha = sys.argv[1:]
-def show(path):
-    return subprocess.check_output(["git", "-C", repo, "show", f"{sha}:{path}"], text=True).strip()
-engines = json.loads(show("package.json"))["engines"]
-assert all(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", engines[key]) for key in ("node", "npm"))
-assert show(".nvmrc") == engines["node"]
+read -r node_version npm_version < <(python3 - "$source_repo" "$app_sha" "$ops_root/prepare_ui_release.py" <<'PYTOOLS'
+from pathlib import Path
+import runpy, sys
+repo, sha, helper = sys.argv[1:]
+engines = runpy.run_path(helper)["expected_tools"](Path(repo), sha)
 print(engines["node"], engines["npm"])
 PYTOOLS
 )
@@ -157,8 +159,14 @@ gate. Preserve failed staging/logs privately for diagnosis.
 
 ## Updating an existing ops installation
 
-Application deployment does not update installed ops helpers. Before the first
-contract-1 rollout, compare the reviewed files with the installed active mode.
+Application deployment does not update installed ops helpers. Before using
+layout 2 (including tool-version discovery above), install the reviewed
+`prepare_ui_release.py` and active caller: `ops/deploy.sh` for default mode or
+`ops/sops/deploy.sh` for SOPS. Update both callers if both modes are operated.
+The helper must support `python-project-path` and both layouts. An old helper
+refuses a layout-2 target during preflight; do not bypass that refusal.
+
+Before the first contract-1 rollout, compare the reviewed files with the installed active mode.
 In default mode include `run-with-service-env.sh`; update and validate it through
 the [wrapper procedure](README.md#adding-the-manual-operation-wrapper-to-an-existing-default-installation)
 before using one-shot deployment controls. Do not install the default wrapper
@@ -186,3 +194,8 @@ Health checking discovers JS/CSS references in the served shell, supporting both
 old flat resources and new hashed resources. An HTML 200 alone is insufficient.
 The developer/CI installed-wheel browser check runs outside the checkout; see
 `docs/UI_DEVELOPMENT.md`.
+
+Repository layout changes do not move a release's `.venv`, `.release-sha`,
+`.schema-version` or `.ui-install-complete.json`. Existing completion receipts
+remain authoritative. Rollback uses an installed release without Node or a
+rebuild; preserve partial targets for the existing recovery procedure.
