@@ -41,7 +41,7 @@ candidate in a separate private directory.
    ```
 
    In a script, stop on any failed check or command. If the live database is
-   damaged or incompatible, follow [the recovery procedure](DISASTER_RECOVERY.md#1-sqlite-is-damaged)
+   damaged or incompatible, follow [the recovery procedure](../../ops/docs/DISASTER_RECOVERY.md#1-sqlite-is-damaged)
    before attempting these commands; preserve its raw database and sidecars.
 
 3. **Rebuild only the candidate.** Put extraction outputs and calculations in the
@@ -69,7 +69,7 @@ candidate in a separate private directory.
    rehearsal, the snapshot is now stale: stop the service, scheduled jobs and
    other writers, take a fresh snapshot, reconcile all intervening changes and
    repeat validation before switching. Follow the existing
-   [production cutover prerequisites](DISASTER_RECOVERY.md#production-cutover-dangerous).
+   [production cutover prerequisites](../../ops/docs/DISASTER_RECOVERY.md#production-cutover-dangerous).
    This recipe does not authorize or automate replacing the live database.
 
 6. **Keep the snapshot and verification records.** Retain the source inputs,

@@ -12,7 +12,7 @@ from autonomo_taxes.ledger_db import initialize
 
 
 def _module() -> object:
-    path = REPO_ROOT / "scripts" / "backup_private_root.py"
+    path = REPO_ROOT / "ops" / "backup" / "backup_private_root.py"
     spec = importlib.util.spec_from_file_location("backup_private_root", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
@@ -21,7 +21,7 @@ def _module() -> object:
 
 
 def _restore_module() -> object:
-    path = REPO_ROOT / "scripts" / "restore_private_root.py"
+    path = REPO_ROOT / "ops" / "backup" / "restore_private_root.py"
     spec = importlib.util.spec_from_file_location("restore_private_root", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)

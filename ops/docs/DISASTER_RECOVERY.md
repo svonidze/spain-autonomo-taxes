@@ -2,7 +2,7 @@
 
 Use this runbook to recover data without guessing which files a backup contains.
 The default deployment uses private server files; SOPS is a separate
-[optional control plane](../ops/sops/README.md). A prepared secrets repository
+[optional control plane](../sops/README.md). A prepared secrets repository
 does not prove that it contains the credentials needed for recovery.
 
 These procedures describe supported tools, not a claim that a real-data disaster
@@ -24,13 +24,13 @@ application SHA, schema, missing material, and observed result.
 | Application release, installed ops, unit definitions | Code Git plus release/ops roots and user-systemd directory | Not normally in the archive; record SHA and rebuild from reviewed code |
 | Tesseract executable and English model | Ubuntu `tesseract-ocr` / `tesseract-ocr-eng` packages | Not in private-root backups; reinstall and verify in the service environment |
 
-The [backup helper](../scripts/backup_private_root.py) produces a pair:
+The [backup helper](../backup/backup_private_root.py) produces a pair:
 `private-root-<timestamp>.tar.gz` and `private-root-<timestamp>.manifest.json`.
 The manifest records format version, creation timestamp, archive basename and
 SHA-256, and every member's relative path, size, and SHA-256. It does **not**
 record application SHA or database schema. Record those separately.
 
-On a replacement server, restore the [OCR dependency](../ops/PROVISIONING.md#local-ocr-dependency)
+On a replacement server, restore the [OCR dependency](PROVISIONING.md#local-ocr-dependency)
 before the new-release OCR readiness check. Deliver the shared `ocr-readiness.py` with the
 installed ops files; restoring the database alone neither installs OCR nor
 clears earlier document-review issues. Readiness must pass under the intended
@@ -102,7 +102,7 @@ umask 077
 read -r -p 'Absolute reviewed code checkout: ' code_root
 read -r -p 'Absolute private recovery rclone.conf: ' recovery_rclone
 read -r -p 'Backup crypt remote, including colon: ' backup_remote
-test -f "$code_root/scripts/restore_private_root.py"
+test -f "$code_root/ops/backup/restore_private_root.py"
 test -f "$recovery_rclone"
 drill_root="$(mktemp -d "${TMPDIR:-/tmp}/autonomo-drill.XXXXXX")"
 chmod 700 "$drill_root"
@@ -118,7 +118,7 @@ rclone --config "$recovery_rclone" copyto \
   "${backup_remote%/}/$manifest_name" "$manifest"
 chmod 600 "$archive" "$manifest"
 restore_root="$drill_root/restored"
-python3 "$code_root/scripts/restore_private_root.py" \
+python3 "$code_root/ops/backup/restore_private_root.py" \
   --archive "$archive" --manifest "$manifest" --target-root "$restore_root"
 python3 - "$restore_root/autonomo.sqlite" <<'PY'
 import sqlite3
@@ -201,7 +201,7 @@ does not prove cloud replication or a production cutover.
 
 ### 1. SQLite is damaged
 
-If no usable snapshot exists but the source books do, see [Rebuilding history from source books safely](HISTORY_REPLAY.md) before attempting a replay.
+If no usable snapshot exists but the source books do, see [Rebuilding history from source books safely](../../docs/user/HISTORY_REPLAY.md) before attempting a replay.
 
 Stop user/CLI writes and scheduled writers. Preserve the failed database with
 its WAL/SHM/journal and any logs in private quarantine; do not discard sidecars
@@ -225,7 +225,7 @@ external credential file survived just because SQLite names it.
 On a trusted replacement host, recover the credential bundle and crypt material
 first, then download/verify data. Recreate the service user, private directories,
 reviewed code release, default runtime file, ops installation, and tailnet
-access using [provisioning](../ops/PROVISIONING.md). Review any absolute paths
+access using [provisioning](PROVISIONING.md). Review any absolute paths
 that changed, including those stored in SQLite. Do not start the installer or
 timers until the restored data and destinations are ready. If SOPS was actually
 enabled, follow its separate identity/bootstrap recovery, not the default units.
@@ -239,7 +239,7 @@ work; a recorded `available` status is not a fresh connectivity check. Test a
 known file read and compare its downloaded SHA-256 to `files.content_sha256` in
 the private maintenance environment. A fallback read can update replica status
 and cache, so it is not a purely read-only database check. Diagnose network,
-sharing, or [OAuth failure](../ops/PROVISIONING.md#google-troubleshooting).
+sharing, or [OAuth failure](PROVISIONING.md#google-troubleshooting).
 Do not re-upload the archive or bulk-reconcile to Google to fix authentication.
 Unmirrored files remain unavailable until Google or another copy is restored.
 
@@ -336,7 +336,7 @@ Rollback means stopping the new unit and restoring the retained root,
 external config/credentials, and prior compatible release as one set. On a new
 host, keep it unavailable until a verified replacement is ready. Cross-schema
 code rollback additionally needs the pre-migration snapshot described in the
-[deployment runbook](../ops/README.md#rollback). Only re-enable scheduled writes
+[deployment runbook](README.md#rollback). Only re-enable scheduled writes
 after application and recovery checks pass.
 
 ## Synthetic validation of the backup helpers
@@ -410,4 +410,4 @@ PY
 ```
 
 This checks existing helper behavior, not a remote backup or live recovery.
-Keep the [privacy boundary](PRIVACY.md) when recording any real drill results.
+Keep the [privacy boundary](../../docs/development/PRIVACY.md) when recording any real drill results.

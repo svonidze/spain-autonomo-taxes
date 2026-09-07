@@ -11,7 +11,7 @@ import pytest
 import yaml
 
 
-SCRIPT = REPO_ROOT / "scripts" / "migrate_private_root.py"
+SCRIPT = REPO_ROOT / "ops" / "maintenance" / "migrate_private_root.py"
 SPEC = importlib.util.spec_from_file_location("migrate_private_root", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 migration = importlib.util.module_from_spec(SPEC)

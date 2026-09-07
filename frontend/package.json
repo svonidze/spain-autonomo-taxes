@@ -10,7 +10,7 @@
   "packageManager": "npm@11.19.0",
   "scripts": {
     "check:runtime": "node scripts/check_frontend_runtime.cjs",
-    "test:coverage-map": "node ../scripts/check_ui_test_map.cjs",
+    "test:coverage-map": "node ../scripts/dev/check_ui_test_map.cjs",
     "test:unit": "npm run locales:check && vitest run",
     "test:browser": "playwright test",
     "typecheck": "npm run locales:check && vue-tsc --noEmit",

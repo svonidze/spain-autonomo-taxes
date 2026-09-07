@@ -6,7 +6,7 @@ from pathlib import Path
 import sqlite3
 
 
-SCRIPT = REPO_ROOT / "scripts" / "backup_sqlite.py"
+SCRIPT = REPO_ROOT / "ops" / "backup" / "backup_sqlite.py"
 SPEC = importlib.util.spec_from_file_location("backup_sqlite", SCRIPT)
 assert SPEC and SPEC.loader
 MODULE = importlib.util.module_from_spec(SPEC)

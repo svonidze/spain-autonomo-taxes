@@ -6,7 +6,7 @@ import sys
 
 from playwright.sync_api import sync_playwright
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "backend" / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
@@ -37,7 +37,7 @@ def main() -> int:
     args = parser.parse_args()
 
     if not args.storage_state.exists():
-        raise SystemExit(f"Storage state not found: {args.storage_state}. Run scripts/xolo_playwright_login.py first.")
+        raise SystemExit(f"Storage state not found: {args.storage_state}. Run scripts/imports/xolo_playwright_login.py first.")
 
     raw_rows = read_csv_rows(args.raw_csv)
     if args.limit:
@@ -54,7 +54,7 @@ def main() -> int:
                 continue
             page.goto(url, wait_until="networkidle", timeout=60_000)
             if "/hub/login" in page.url:
-                raise SystemExit("Xolo session is not authenticated; rerun scripts/xolo_playwright_login.py")
+                raise SystemExit("Xolo session is not authenticated; rerun scripts/imports/xolo_playwright_login.py")
             text = page.locator("body").inner_text(timeout=15_000)
             facts.append(parse_detail_facts(row, text))
             if index % 25 == 0:

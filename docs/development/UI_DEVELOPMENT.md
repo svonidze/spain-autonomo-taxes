@@ -96,12 +96,11 @@ runs the browser suite with isolated imports. Eager bundling intentionally keeps
 open sessions independent of later release asset changes.
 
 The original 13 JS suites and Python source-layout checks have explicit replacement
-records in `docs/plans/ui-test-map.json` and `ui-python-test-map.json`. Accounting,
+records in `tests/contracts/ui-test-map.json` and `tests/contracts/ui-python-test-map.json`. Accounting,
 API, storage and security tests remain in Python. A path-existence check alone is
 not evidence of behavioral coverage; review the named module/browser cases too.
 
-See [the twelve-stage execution record](plans/ui-modularization.md),
+See [the twelve-stage execution record](../plans/ui-modularization.md),
 [adding interface languages](UI_LOCALIZATION.md), and
-[release build/install compatibility](../ops/FRONTEND_BUILD.md). The twelve PRs
-are dependent drafts for bottom-up review. Merging and production rollout require
-separate authorization; neither is performed by this migration.
+[release build/install compatibility](../../ops/docs/FRONTEND_BUILD.md). The twelve-stage record is historical. Current changes follow the repository
+review and release process; production rollout still requires separate authorization.

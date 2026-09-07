@@ -25,7 +25,7 @@ def _module(name: str, path: Path):
     return module
 
 
-backup_tool = _module("backup_private_root_for_recovery_tests", ROOT / "scripts" / "backup_private_root.py")
+backup_tool = _module("backup_private_root_for_recovery_tests", ROOT / "ops" / "backup" / "backup_private_root.py")
 state_tool = _module("backup_state", OPS / "backup_state.py")
 
 
@@ -151,7 +151,7 @@ def test_monthly_verifier_downloads_and_restores_exact_pair(backup_pair, tmp_pat
     completed = subprocess.run([
         sys.executable, str(OPS / "verify_backup.py"), "--private-root", str(private),
         "--backup-dir", str(monthly_dir), "--remote", "crypt:monthly",
-        "--rclone-config", str(config), "--restore-script", str(ROOT / "scripts" / "restore_private_root.py"),
+        "--rclone-config", str(config), "--restore-script", str(ROOT / "ops" / "backup" / "restore_private_root.py"),
     ], text=True, capture_output=True, check=False, env=os.environ.copy())
 
     assert completed.returncode == 0, completed.stderr
@@ -187,7 +187,7 @@ def test_monthly_verifier_records_failure_without_erasing_success(backup_pair, t
     completed = subprocess.run([
         sys.executable, str(OPS / "verify_backup.py"), "--private-root", str(private),
         "--backup-dir", str(monthly_dir), "--remote", "crypt:monthly",
-        "--rclone-config", str(config), "--restore-script", str(ROOT / "scripts" / "restore_private_root.py"),
+        "--rclone-config", str(config), "--restore-script", str(ROOT / "ops" / "backup" / "restore_private_root.py"),
     ], text=True, capture_output=True, check=False, env=os.environ.copy())
 
     assert completed.returncode != 0

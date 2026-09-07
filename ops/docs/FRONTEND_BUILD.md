@@ -193,7 +193,7 @@ retain `no-store`; there are no lazy UI chunks or service worker.
 Health checking discovers JS/CSS references in the served shell, supporting both
 old flat resources and new hashed resources. An HTML 200 alone is insufficient.
 The developer/CI installed-wheel browser check runs outside the checkout; see
-`docs/UI_DEVELOPMENT.md`.
+`../../docs/development/UI_DEVELOPMENT.md`.
 
 Repository layout changes do not move a release's `.venv`, `.release-sha`,
 `.schema-version` or `.ui-install-complete.json`. Existing completion receipts

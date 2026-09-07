@@ -212,7 +212,7 @@ def test_period_prepare_cli_builds_real_manual_filing_bundle(
 ) -> None:
     database = tmp_path / "ledger.sqlite"
     output = tmp_path / "prepare"
-    calendar_path = REPO_ROOT / "config" / "tax-calendar-2026.json"
+    calendar_path = REPO_ROOT / "reference" / "tax-calendars" / "2026.json"
     with initialize(database) as db:
         calendar = load_tax_calendar(calendar_path)
         db.import_tax_calendar(

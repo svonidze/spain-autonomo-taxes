@@ -27,10 +27,10 @@ install -m 755 "$source_ops_dir/backup.sh" "$source_ops_dir/verify-backup.sh" "$
 install -m 644 "$source_ops_dir/healthcheck.py" "$ops_root/healthcheck.py"
 install -m 644 "$source_ops_dir/prepare_ui_release.py" "$ops_root/prepare_ui_release.py"
 install -m 644 "$source_ops_dir/backup_state.py" "$source_ops_dir/backup_readiness.py" "$source_ops_dir/verify_backup.py" "$ops_root/"
-install -m 644 "$source_ops_dir/../scripts/backup_sqlite.py" "$ops_root/backup_sqlite.py"
-install -m 644 "$source_ops_dir/../scripts/backup_private_root.py" "$ops_root/backup_private_root.py"
+install -m 644 "$source_ops_dir/backup/backup_sqlite.py" "$ops_root/backup_sqlite.py"
+install -m 644 "$source_ops_dir/backup/backup_private_root.py" "$ops_root/backup_private_root.py"
 install -m 644 "$source_ops_dir/../backend/src/autonomo_taxes/backup_settings.py" "$ops_root/backup_settings.py"
-install -m 644 "$source_ops_dir/../scripts/restore_private_root.py" "$ops_root/restore_private_root.py"
+install -m 644 "$source_ops_dir/backup/restore_private_root.py" "$ops_root/restore_private_root.py"
 install -m 644 "$script_dir/systemd"/*.template "$sops_root/systemd/"
 render_unit() {
   local template="$1" destination="$2"

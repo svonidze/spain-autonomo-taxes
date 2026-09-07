@@ -1,9 +1,9 @@
 const {existsSync, readFileSync, readdirSync} = require('node:fs');
 const {resolve} = require('node:path');
 
-const root = resolve(__dirname, '..');
+const root = resolve(__dirname, '../..');
 const fromRoot = path => resolve(root, path);
-const rows = JSON.parse(readFileSync(fromRoot('docs/plans/ui-test-map.json'), 'utf8'));
+const rows = JSON.parse(readFileSync(fromRoot('tests/contracts/ui-test-map.json'), 'utf8'));
 const names = new Set();
 for (const row of rows) {
   if (names.has(row.source)) throw new Error(`Duplicate test mapping: ${row.source}`);
@@ -18,6 +18,6 @@ for (const name of readdirSync(fromRoot('tests')).filter(name => /^test_.*\.js$/
 }
 console.log(`${rows.length} suite dispositions verified`);
 
-const retired = JSON.parse(readFileSync(fromRoot('docs/plans/ui-python-test-map.json'),'utf8'));
+const retired = JSON.parse(readFileSync(fromRoot('tests/contracts/ui-python-test-map.json'),'utf8'));
 for(const row of retired){if(!row.test||!row.reason||!row.replacements.length||row.replacements.some(path=>!existsSync(fromRoot(path))))throw new Error(`Incomplete Python disposition: ${row.source}:${row.test}`);}
 console.log(`${retired.length} Python source-test dispositions verified`);

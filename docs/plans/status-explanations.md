@@ -4,7 +4,7 @@
 
 This document preserves the accepted plan for the original implementation.
 It is not a current operating guide, a record of completed checks or proof of
-deployment. Read [Understanding accounting statuses](../ACCOUNTING_STATUSES.md)
+deployment. Read [Understanding accounting statuses](../user/ACCOUNTING_STATUSES.md)
 for user-facing guidance. Current behavior is defined by the implementation
 and its tests together with the [design contract](../../DESIGN.md); update those
 sources when behavior changes rather than extending this historical plan.

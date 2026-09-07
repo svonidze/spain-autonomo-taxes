@@ -126,10 +126,10 @@ Keep existing components, routes, source amounts and unrelated design rules.
 ## Accounting status explanations
 
 This contract also covers the read-only context
-from `src/autonomo_taxes/status_context.py` and its presentation in
+from `backend/src/autonomo_taxes/status_context.py` and its presentation in
 `frontend/src/help/presentation.ts` (labels, tones, panel content) and
 `frontend/src/help/registry.ts` (scoped records, dialog and history). For operator-facing meanings and
-actions, see [Understanding accounting statuses](docs/ACCOUNTING_STATUSES.md).
+actions, see [Understanding accounting statuses](docs/user/ACCOUNTING_STATUSES.md).
 
 - Present the short reason beside the status and make the next action readable
   in the explanation panel without hover. Tooltips define terms only; neither
@@ -158,8 +158,9 @@ When resolving overlapping UI changes, preserve both status explanations and
 analytics. A textual merge without conflicts is not evidence that shared
 helpers or mounted components survived. Check the effective loaded scripts,
 single helper declarations, combined asset status/chart rendering and stale
-render handling using `tests/test_status_help.js`, `tests/test_status_context.py`
-and `tests/test_web_ui_guided.py`. Keyboard, mobile reflow and browser-native
+render handling using `frontend/tests/unit/help-lifetime.test.ts`,
+`backend/tests/test_status_context.py`, and
+`frontend/tests/e2e/review-detail.spec.ts`. Keyboard, mobile reflow and browser-native
 zoom are separate checks; equivalent-width reflow does not certify 200% zoom.
 
 ## Interface states and review navigation
@@ -203,18 +204,17 @@ navigation added by the clarity redesign.
   non-blocking hint. Server failures report through the dialog status line
   only; toasts announce success. Error toasts persist until closed.
 
-The behavior is pinned by `tests/test_web_ui_states.js` (state helpers,
-category chip, drafts, euro previews), `tests/test_web_ui_i18n.py` (locale
-parity and inline-style hygiene), the tab cases in
-`tests/test_web_ui_guided.js`, and the navigation contract in
-`tests/test_web_ui_navigation.js`.
+The behavior is pinned by `frontend/tests/unit/core.test.ts` (state helpers),
+`frontend/tests/e2e/locale.spec.ts` (locale parity),
+`frontend/tests/e2e/review-detail.spec.ts` (review tabs), and
+`frontend/tests/e2e/baseline.spec.ts` (navigation).
 
 ## Analytics and charts
 
 This file is the source of truth for measure definitions, status policy, chart
 placement, color/pattern semantics, accessibility rules, and empty states used
 by the analytics endpoint (`/api/analytics`, built by
-`src/autonomo_taxes/analytics_series.py`) and the web charts
+`backend/src/autonomo_taxes/analytics_series.py`) and the web charts
 (`frontend/src/charts/renderer.js` for geometry, `frontend/src/charts/builders.ts`
 for domain mapping and `frontend/src/charts/ChartHost.vue` for lifecycle). When the SPA, generated artifacts, or
 a future server-side SVG renderer disagree with each other, this document
@@ -224,7 +224,7 @@ decides. Change the definitions here first, then the code.
 
 - **Income (IRPF basis)**: `tax_treatments.taxable_base_minor` when present and
   non-zero, otherwise the stored EUR amount. This mirrors
-  `calculate_modelo130_rows` (`src/autonomo_taxes/tax_engine.py`), which falls
+  `calculate_modelo130_rows` (`backend/src/autonomo_taxes/tax_engine.py`), which falls
   back to the gross amount when the taxable base is zero.
 - **Deductible expense**: `tax_treatments.deductible_irpf_minor`; missing
   treatment means 0 deductible, and the gross amount is reported separately in
@@ -393,7 +393,7 @@ not an empty state.
   The amortization chart shows the year's quarters using only
   `include_in_books = 1` schedule/adjustment rows, excluding annual evidence;
   its note explains why its scope differs from the table.
-- `src/autonomo_taxes/amortization_chain.py` is a CSV audit tool for Xolo
+- `backend/src/autonomo_taxes/amortization_chain.py` is a CSV audit tool for Xolo
   artifacts and does not back the web analytics; the chart reads
   `amortization_entries` directly.
 - The tax reserve bullet reports `not_checked` when no explicit available-cash
@@ -405,7 +405,7 @@ not an empty state.
   specs and `ChartHost.vue` owns fetching, locale redraws, resize and the expand
   dialog. Contextual explanations live in `frontend/src/help/`. The former
   one-declaration guard for `app.js` helpers retired with the monolith; its
-  disposition is recorded in `docs/plans/ui-python-test-map.json`.
+  disposition is recorded in `tests/contracts/ui-python-test-map.json`.
 
 ## Expense and equipment workflow
 

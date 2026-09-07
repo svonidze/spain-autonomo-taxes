@@ -30,7 +30,7 @@ To use a different location, set an absolute path before running any command:
 $env:AUTONOMO_PRIVATE_ROOT = "D:\private\spain-autonomo-taxes"
 ```
 
-Copy `config/example.yaml` to `config.yaml` inside the private root and replace every placeholder with a local value. Relative paths in the private config are resolved from that config file's directory.
+Copy `examples/config/example.yaml` to `config.yaml` inside the private root and replace every placeholder with a local value. Relative paths in the private config are resolved from that config file's directory.
 
 ```powershell
 autonomo-tax --help
@@ -52,7 +52,7 @@ Keep private configuration and runtime data in the private root. The default dep
 For a one-time migration from an older worktree-local layout:
 
 ```powershell
-python scripts/migrate_private_root.py `
+python ops/maintenance/migrate_private_root.py `
   --source-root C:\path\to\project `
   --target-root "$env:LOCALAPPDATA\spain-autonomo-taxes"
 ```
@@ -71,31 +71,31 @@ Neither action transfers money, proves payment, or submits a return to AEAT.
 Routine review and posting use the application and do not require administrator
 scripts or a terminal.
 
-Start with the [accounting workflow](docs/ACCOUNTING_WORKFLOW.md) for the normal
+Start with the [accounting workflow](docs/user/ACCOUNTING_WORKFLOW.md) for the normal
 steps, status meanings, source-document rules and common problems. When a needed
 correction is unavailable in the installed interface, an operator follows
-[scoped accounting maintenance](ops/README.md#scoped-accounting-maintenance).
+[scoped accounting maintenance](ops/docs/README.md#scoped-accounting-maintenance).
 Exceptional maintenance is separate from the routine workflow.
 
-Use [Understanding accounting statuses](docs/ACCOUNTING_STATUSES.md) for review
+Use [Understanding accounting statuses](docs/user/ACCOUNTING_STATUSES.md) for review
 versus posting readiness, blocking reasons, next actions, assets and filing
 evidence.
 
-Use [Foreign-currency exchange rates](docs/FX_RATES.md) for the ECB rate
+Use [Foreign-currency exchange rates](docs/user/FX_RATES.md) for the ECB rate
 convention, date selection, EUR rounding, provenance and settlement fallback.
 
-See [Account settings](docs/ACCOUNT_SETTINGS.md) for taxpayer details, local backup
+See [Account settings](docs/user/ACCOUNT_SETTINGS.md) for taxpayer details, local backup
 retention, observed backup status and release requirements.
 
 ## Operating and recovering the service
 
-- [Correcting counterparty names](docs/COUNTERPARTY_NAMES.md): manual corrections,
+- [Correcting counterparty names](docs/user/COUNTERPARTY_NAMES.md): manual corrections,
   history, import protection, conflicts and schema compatibility.
 
-- [Operations](ops/README.md): safe diagnostics, exact-SHA deployment, migration, rollback, and backup scheduling.
-- [Provisioning](ops/PROVISIONING.md): Google originals versus new uploads, optional Picker, OAuth renewal, and Yandex configuration.
-- [Rebuilding history from source books safely](docs/HISTORY_REPLAY.md): guard rails for a full ledger replay, what stops it, and how to prove the result against filed returns.
-- [Disaster recovery](docs/DISASTER_RECOVERY.md): backup coverage, isolated restore drill, five failure scenarios, and separately marked production cutover.
+- [Operations](ops/docs/README.md): safe diagnostics, exact-SHA deployment, migration, rollback, and backup scheduling.
+- [Provisioning](ops/docs/PROVISIONING.md): Google originals versus new uploads, optional Picker, OAuth renewal, and Yandex configuration.
+- [Rebuilding history from source books safely](docs/user/HISTORY_REPLAY.md): guard rails for a full ledger replay, what stops it, and how to prove the result against filed returns.
+- [Disaster recovery](ops/docs/DISASTER_RECOVERY.md): backup coverage, isolated restore drill, five failure scenarios, and separately marked production cutover.
 - [Optional SOPS](ops/sops/README.md): encrypted configuration bootstrap, paired application/config deployment, and identity recovery.
 
 Private-root backups do not automatically include credentials stored elsewhere,
@@ -109,9 +109,9 @@ or that a feature or recovery procedure is deployed.
 Run the guard before committing and against the complete reachable history before sharing:
 
 ```powershell
-python scripts/privacy_guard.py
-python scripts/privacy_guard.py --history
-python scripts/install_privacy_hook.py
+python scripts/dev/privacy_guard.py
+python scripts/dev/privacy_guard.py --history
+python scripts/dev/install_privacy_hook.py
 ```
 
 CI performs the history scan with a full clone. The scanner fails closed on prohibited paths, binary artifacts, oversized files, likely personal identifiers, Drive links, and common credential formats. Findings print categories and fingerprints, never the matched value.
@@ -124,4 +124,4 @@ python -m pytest -q
 
 Test fixtures are synthetic and use reserved domains or explicit placeholder identities.
 
-See [docs/PRIVACY.md](docs/PRIVACY.md) before granting repository access or adding a new import/export workflow.
+See [docs/development/PRIVACY.md](docs/development/PRIVACY.md) before granting repository access or adding a new import/export workflow.

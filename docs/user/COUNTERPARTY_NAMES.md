@@ -80,4 +80,4 @@ stop writers, make and verify a backup, migrate with the new code, start the
 compatible server and check health before switching the active release.
 Do not run old code against the new schema. A rollback must coordinate code
 and a verified database snapshot and must not silently discard later writes.
-See [Operations](../ops/README.md).
+See [Operations](../../ops/docs/README.md).

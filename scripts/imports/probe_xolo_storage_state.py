@@ -14,7 +14,7 @@ from urllib.parse import parse_qsl, urljoin, urlparse, urlunparse
 
 BASE_URL = "https://app.xolo.io"
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "backend" / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
@@ -126,9 +126,9 @@ def main() -> int:
 
     if args.profile_dir is not None:
         if not args.profile_dir.exists():
-            raise SystemExit(f"Profile directory not found: {args.profile_dir}. Run scripts/xolo_playwright_login.py first.")
+            raise SystemExit(f"Profile directory not found: {args.profile_dir}. Run scripts/imports/xolo_playwright_login.py first.")
     elif not args.storage_state.exists():
-        raise SystemExit(f"Storage state not found: {args.storage_state}. Run scripts/xolo_playwright_login.py first.")
+        raise SystemExit(f"Storage state not found: {args.storage_state}. Run scripts/imports/xolo_playwright_login.py first.")
 
     try:
         from playwright.sync_api import TimeoutError as PlaywrightTimeoutError

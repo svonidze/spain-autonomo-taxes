@@ -4,7 +4,7 @@ from hashlib import sha256
 from pathlib import Path
 
 from autonomo_taxes.ledger_db import LedgerDB
-from scripts import build_drive_adoption_records as record_builder
+from scripts.imports import build_drive_adoption_records as record_builder
 
 
 def test_build_records_uses_mount_path_then_source_book_fallback(tmp_path: Path, monkeypatch) -> None:

@@ -120,7 +120,7 @@ Eligibility is not a promise that an amount appears in every form or on every
 chart. Period/date filters, form-inclusion flags, deductions and other reviewed
 fields still apply. Historical reconciliation and explicit preview modes can
 include approved rows under separate rules; that does not post them. See the
-[analytics status policy](../DESIGN.md#lifecycle-status-policy) for chart details.
+[analytics status policy](../../DESIGN.md#lifecycle-status-policy) for chart details.
 
 Snapshot inclusion is not an AEAT submission receipt. Filing and its evidence
 are separate from recording an entry or saving a calculation snapshot.
@@ -165,7 +165,7 @@ Other metadata is not necessarily editable through that action.
 
 | Situation | What it means | What happens next |
 |---|---|---|
-| OCR is unavailable or unreadable. | Extraction failed; this is not a tax-authority check. | Use the documented manual-original check in the expense wizard when the original is readable. Missing/unreadable files remain blockers; an operator can investigate the [OCR dependency](../ops/PROVISIONING.md#local-ocr-dependency). |
+| OCR is unavailable or unreadable. | Extraction failed; this is not a tax-authority check. | Use the documented manual-original check in the expense wizard when the original is readable. Missing/unreadable files remain blockers; an operator can investigate the [OCR dependency](../../ops/docs/PROVISIONING.md#local-ocr-dependency). |
 | A fact or accounting decision is missing. | The entry still needs internal confirmation. | The operator first checks the original, applicable earlier sources and confirmations already supplied. Ask the user only for the unresolved fact, with an explanation of its effect. Do not invent a value. |
 | The transaction is approved but absent from posted totals. | Approval is saved, but posting has not happened. | The user or operator checks the posting preview, addresses any blocker and posts only the intended rows. |
 | An unposted expense has incorrect data. | Its server draft can be edited before posting. | Correct the facts beside the original and record the reason; an earlier approval is invalidated. Posted data requires the separate correction procedure. |

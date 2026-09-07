@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
-from scripts import install_privacy_hook, privacy_guard
+from scripts.dev import install_privacy_hook, privacy_guard
+from autonomo_test_support.paths import REPO_ROOT
 
 
 REVIEWED_UI_VALUES = (
@@ -96,6 +98,23 @@ def _init_repo(repo: Path) -> None:
     _git(repo, "init")
     _git(repo, "config", "user.name", "Synthetic Author")
     _git(repo, "config", "user.email", "synthetic@example.invalid")
+
+
+@pytest.mark.parametrize("private_path", [False, True])
+def test_existing_hook_entrypoint_keeps_the_same_guard_result(tmp_path, private_path):
+    repo = tmp_path / "repository"
+    _init_repo(repo)
+    target = repo / ("data/fixture.txt" if private_path else "README.md")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("Synthetic content")
+    _git(repo, "add", ".")
+    results = [subprocess.run(
+        [sys.executable, str(REPO_ROOT / script), "--repo", str(repo)],
+        cwd=tmp_path, capture_output=True, text=True,
+    ) for script in ("scripts/privacy_guard.py", "scripts/dev/privacy_guard.py")]
+    assert [result.returncode for result in results] == [int(private_path)] * 2
+    assert results[0].stdout == results[1].stdout
+    assert results[0].stderr == results[1].stderr
 
 
 def test_scan_content_reports_fingerprint_without_secret_value() -> None:

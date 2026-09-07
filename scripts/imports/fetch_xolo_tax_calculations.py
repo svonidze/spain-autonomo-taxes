@@ -7,7 +7,7 @@ import sys
 
 from playwright.sync_api import sync_playwright
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "backend" / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
@@ -34,7 +34,7 @@ def main() -> int:
     args = parser.parse_args()
 
     if not args.storage_state.exists():
-        raise SystemExit(f"Storage state not found: {args.storage_state}. Run scripts/xolo_playwright_login.py first.")
+        raise SystemExit(f"Storage state not found: {args.storage_state}. Run scripts/imports/xolo_playwright_login.py first.")
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
@@ -42,7 +42,7 @@ def main() -> int:
         page = context.new_page()
         page.goto("https://app.xolo.io/selfservice/tax-report", wait_until="networkidle", timeout=60_000)
         if "/hub/login" in page.url:
-            raise SystemExit("Xolo session is not authenticated; rerun scripts/xolo_playwright_login.py")
+            raise SystemExit("Xolo session is not authenticated; rerun scripts/imports/xolo_playwright_login.py")
         tax_report_html = page.content()
         reports = parse_tax_report_links(tax_report_html)
         calculation_html_by_report_id: dict[str, str] = {}
