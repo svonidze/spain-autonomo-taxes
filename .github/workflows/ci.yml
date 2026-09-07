@@ -17,22 +17,23 @@ jobs:
           python-version: '3.11'
       - uses: actions/setup-node@v4
         with:
-          node-version-file: '.nvmrc'
+          node-version-file: 'frontend/.nvmrc'
           cache: npm
+          cache-dependency-path: 'frontend/package-lock.json'
       - run: python -m pip install --disable-pip-version-check pytest build
-      - run: npm ci --include=dev --no-audit --no-fund
-      - run: npm run build
-      - run: python -m pip install --disable-pip-version-check -e .
-      - run: npm run check:runtime
-      - run: npm run test:coverage-map
-      - run: npm run test:chart-module
-      - run: npm run format:check
-      - run: npm run typecheck
-      - run: npm run test:unit
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:pseudo
-      - run: npm run test:browser
-      - run: npm run test:installed
+      - run: npm --prefix frontend ci --include=dev --no-audit --no-fund
+      - run: npm --prefix frontend run build
+      - run: python -m pip install --disable-pip-version-check -e ./backend
+      - run: npm --prefix frontend run check:runtime
+      - run: npm --prefix frontend run test:coverage-map
+      - run: npm --prefix frontend run test:chart-module
+      - run: npm --prefix frontend run format:check
+      - run: npm --prefix frontend run typecheck
+      - run: npm --prefix frontend run test:unit
+      - run: npm --prefix frontend exec -- playwright install --with-deps chromium
+      - run: npm --prefix frontend run test:pseudo
+      - run: npm --prefix frontend run test:browser
+      - run: npm --prefix frontend run test:installed
       - run: python -m pytest -q
       - name: Validate operational shell scripts
         run: |

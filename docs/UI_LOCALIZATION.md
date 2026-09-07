@@ -11,7 +11,7 @@ from the same catalogs at build time; it contains no separate Russian copy.
    values without renaming keys or arguments.
 2. Add its code, native display name, Intl locale and direction to `registry.json`.
    Quarter numerals can optionally be specified there; the default is numeric.
-3. Run `npm run locales:check`, `npm run typecheck`, `npm run test:unit`, and the
+3. Run `npm --prefix frontend run locales:check`, `npm --prefix frontend run typecheck`, `npm --prefix frontend run test:unit`, and the
    browser tests. No screen-specific language condition or new switcher code is
    required. The existing default/fallback remains Russian.
 
@@ -34,11 +34,11 @@ The help reference map contains stable message IDs, never translated prose.
 
 ## Verify layout and state
 
-`npm run test:pseudo` generates a complete test-only third locale with elongated,
+`npm --prefix frontend run test:pseudo` generates a complete test-only third locale with elongated,
 marked text, runs its browser scenario, then restores an ordinary RU/EN build.
 The normal web host and Python package builder reject test-only artifacts even
 if a test was interrupted. The browser fixture explicitly opts in and uses only
-ephemeral synthetic data. `npm run build` always produces the normal profile.
+ephemeral synthetic data. `npm --prefix frontend run build` always produces the normal profile.
 
 Changing language does not navigate a screen or invalidate a pending write.
 Review/workflow components preserve their draft fields; modal labels update

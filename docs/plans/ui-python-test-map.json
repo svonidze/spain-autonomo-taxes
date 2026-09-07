@@ -4,8 +4,8 @@
     "test": "test_expense_detail_ui_behaviors_run_under_node",
     "reason": "Legacy source layout or VM invocation retired; behavior tested at module/browser boundary.",
     "replacements": [
-      "tests/browser/expense-detail.spec.ts",
-      "tests/browser/transaction-lists.spec.ts"
+      "frontend/tests/e2e/expense-detail.spec.ts",
+      "frontend/tests/e2e/transaction-lists.spec.ts"
     ]
   },
   {
@@ -13,7 +13,7 @@
     "test": "test_counterparty_name_editor_behavior",
     "reason": "Legacy source layout or VM invocation retired; behavior tested at module/browser boundary.",
     "replacements": [
-      "tests/browser/contacts.spec.ts"
+      "frontend/tests/e2e/contacts.spec.ts"
     ]
   },
   {
@@ -21,8 +21,8 @@
     "test": "test_web_ui_guided_helpers_run_under_node",
     "reason": "Legacy source layout or VM invocation retired; behavior tested at module/browser boundary.",
     "replacements": [
-      "frontend/tests/review-helpers.test.ts",
-      "tests/browser/review-detail.spec.ts"
+      "frontend/tests/unit/review-helpers.test.ts",
+      "frontend/tests/e2e/review-detail.spec.ts"
     ]
   },
   {
@@ -30,8 +30,8 @@
     "test": "test_web_ui_navigation_regressions_run_under_node",
     "reason": "Legacy source layout or VM invocation retired; behavior tested at module/browser boundary.",
     "replacements": [
-      "frontend/tests/core.test.ts",
-      "tests/browser/baseline.spec.ts"
+      "frontend/tests/unit/core.test.ts",
+      "frontend/tests/e2e/baseline.spec.ts"
     ]
   },
   {
@@ -39,8 +39,8 @@
     "test": "test_web_ui_guided_markers_exist_in_app",
     "reason": "Legacy source layout or VM invocation retired; behavior tested at module/browser boundary.",
     "replacements": [
-      "frontend/tests/review-helpers.test.ts",
-      "tests/browser/review-detail.spec.ts"
+      "frontend/tests/unit/review-helpers.test.ts",
+      "frontend/tests/e2e/review-detail.spec.ts"
     ]
   },
   {
@@ -48,8 +48,8 @@
     "test": "test_web_ui_helpers_declared_exactly_once",
     "reason": "Legacy source layout or VM invocation retired; behavior tested at module/browser boundary.",
     "replacements": [
-      "frontend/tests/core.test.ts",
-      "tests/browser/baseline.spec.ts"
+      "frontend/tests/unit/core.test.ts",
+      "frontend/tests/e2e/baseline.spec.ts"
     ]
   },
   {
@@ -57,7 +57,7 @@
     "test": "test_contact_page_and_menu_behavior",
     "reason": "Legacy source layout or VM invocation retired; behavior tested at module/browser boundary.",
     "replacements": [
-      "tests/browser/contacts.spec.ts"
+      "frontend/tests/e2e/contacts.spec.ts"
     ]
   },
   {
@@ -65,9 +65,9 @@
     "test": "test_web_ui_taxes_summary_behaves_deterministically",
     "reason": "Legacy source layout or VM invocation retired; behavior tested at module/browser boundary.",
     "replacements": [
-      "frontend/tests/finance-parity.test.ts",
-      "tests/browser/overview.spec.ts",
-      "tests/browser/final-acceptance.spec.ts"
+      "frontend/tests/unit/finance-parity.test.ts",
+      "frontend/tests/e2e/overview.spec.ts",
+      "frontend/tests/e2e/final-acceptance.spec.ts"
     ]
   },
   {
@@ -75,8 +75,8 @@
     "test": "test_posting_ui_static_assets_cover_dashboard_banner_and_review_flow",
     "reason": "Legacy source layout or VM invocation retired; behavior tested at module/browser boundary.",
     "replacements": [
-      "frontend/tests/posting-state.test.ts",
-      "tests/browser/review-posting.spec.ts"
+      "frontend/tests/unit/posting-state.test.ts",
+      "frontend/tests/e2e/review-posting.spec.ts"
     ]
   },
   {
@@ -84,8 +84,8 @@
     "test": "test_posting_ui_behavioral_helpers_run_under_node",
     "reason": "Legacy source layout or VM invocation retired; behavior tested at module/browser boundary.",
     "replacements": [
-      "frontend/tests/posting-state.test.ts",
-      "tests/browser/review-posting.spec.ts"
+      "frontend/tests/unit/posting-state.test.ts",
+      "frontend/tests/e2e/review-posting.spec.ts"
     ]
   },
   {
@@ -93,9 +93,9 @@
     "test": "test_web_ui_state_helpers_behave_deterministically",
     "reason": "Legacy source layout or VM invocation retired; behavior tested at module/browser boundary.",
     "replacements": [
-      "frontend/tests/finance-parity.test.ts",
-      "tests/browser/overview.spec.ts",
-      "tests/browser/final-acceptance.spec.ts"
+      "frontend/tests/unit/finance-parity.test.ts",
+      "frontend/tests/e2e/overview.spec.ts",
+      "frontend/tests/e2e/final-acceptance.spec.ts"
     ]
   },
   {
@@ -103,8 +103,8 @@
     "test": "test_google_picker_builder_uses_cloud_project_app_id",
     "reason": "Legacy source layout or VM invocation retired; behavior tested at module/browser boundary.",
     "replacements": [
-      "frontend/tests/picker.test.ts",
-      "tests/browser/intake.spec.ts"
+      "frontend/tests/unit/picker.test.ts",
+      "frontend/tests/e2e/intake.spec.ts"
     ]
   },
   {
@@ -112,8 +112,8 @@
     "test": "test_web_ui_has_explicit_persisted_russian_and_english_locales",
     "reason": "Legacy source layout or VM invocation retired; behavior tested at module/browser boundary.",
     "replacements": [
-      "frontend/tests/catalogs.test.ts",
-      "tests/browser/locale.spec.ts"
+      "frontend/tests/unit/catalogs.test.ts",
+      "frontend/tests/e2e/locale.spec.ts"
     ]
   },
   {
@@ -121,9 +121,9 @@
     "test": "test_web_ui_form_state_helpers_scope_missing_headline_warning_to_dashboard",
     "reason": "Legacy source layout or VM invocation retired; behavior tested at module/browser boundary.",
     "replacements": [
-      "frontend/tests/finance-parity.test.ts",
-      "tests/browser/overview.spec.ts",
-      "tests/browser/final-acceptance.spec.ts"
+      "frontend/tests/unit/finance-parity.test.ts",
+      "frontend/tests/e2e/overview.spec.ts",
+      "frontend/tests/e2e/final-acceptance.spec.ts"
     ]
   },
   {
@@ -131,8 +131,8 @@
     "test": "test_web_ui_copy_prefill_static_smoke_guards",
     "reason": "Legacy source layout or VM invocation retired; behavior tested at module/browser boundary.",
     "replacements": [
-      "frontend/tests/transaction-state.test.ts",
-      "tests/browser/transaction-lists.spec.ts"
+      "frontend/tests/unit/transaction-state.test.ts",
+      "frontend/tests/e2e/transaction-lists.spec.ts"
     ]
   },
   {
@@ -140,8 +140,8 @@
     "test": "test_web_ui_copy_helper_behaviour_executes_in_node",
     "reason": "Legacy source layout or VM invocation retired; behavior tested at module/browser boundary.",
     "replacements": [
-      "frontend/tests/transaction-state.test.ts",
-      "tests/browser/transaction-lists.spec.ts"
+      "frontend/tests/unit/transaction-state.test.ts",
+      "frontend/tests/e2e/transaction-lists.spec.ts"
     ]
   },
   {
@@ -149,8 +149,8 @@
     "test": "test_web_ui_copy_action_behaviour_executes_in_node",
     "reason": "Legacy source layout or VM invocation retired; behavior tested at module/browser boundary.",
     "replacements": [
-      "frontend/tests/transaction-state.test.ts",
-      "tests/browser/transaction-lists.spec.ts"
+      "frontend/tests/unit/transaction-state.test.ts",
+      "frontend/tests/e2e/transaction-lists.spec.ts"
     ]
   },
   {
@@ -158,8 +158,8 @@
     "test": "test_web_ui_javascript_parses_with_node_when_available",
     "reason": "Legacy source layout or VM invocation retired; behavior tested at module/browser boundary.",
     "replacements": [
-      "frontend/tests/core.test.ts",
-      "tests/browser/baseline.spec.ts"
+      "frontend/tests/unit/core.test.ts",
+      "frontend/tests/e2e/baseline.spec.ts"
     ]
   },
   {
@@ -167,8 +167,8 @@
     "test": "test_web_ui_fetch_json_classifies_json_and_html_responses",
     "reason": "Legacy source layout or VM invocation retired; behavior tested at module/browser boundary.",
     "replacements": [
-      "frontend/tests/core.test.ts",
-      "tests/browser/baseline.spec.ts"
+      "frontend/tests/unit/core.test.ts",
+      "frontend/tests/e2e/baseline.spec.ts"
     ]
   },
   {
@@ -176,8 +176,8 @@
     "test": "test_expense_ui_keeps_retry_identity_and_legacy_asset_route",
     "reason": "Legacy source layout or VM invocation retired; behavior tested at module/browser boundary.",
     "replacements": [
-      "tests/browser/expense-detail.spec.ts",
-      "tests/browser/transaction-lists.spec.ts"
+      "frontend/tests/e2e/expense-detail.spec.ts",
+      "frontend/tests/e2e/transaction-lists.spec.ts"
     ]
   },
   {
@@ -185,7 +185,7 @@
     "test": "test_account_settings_ui_behavior",
     "reason": "Legacy source layout or VM invocation retired; behavior tested at module/browser boundary.",
     "replacements": [
-      "tests/browser/settings-shell.spec.ts"
+      "frontend/tests/e2e/settings-shell.spec.ts"
     ]
   },
   {
@@ -193,8 +193,8 @@
     "test": "test_expense_ui_node_behavior",
     "reason": "Legacy source layout or VM invocation retired; behavior tested at module/browser boundary.",
     "replacements": [
-      "tests/browser/expense-detail.spec.ts",
-      "tests/browser/transaction-lists.spec.ts"
+      "frontend/tests/e2e/expense-detail.spec.ts",
+      "frontend/tests/e2e/transaction-lists.spec.ts"
     ]
   },
   {
@@ -202,8 +202,8 @@
     "test": "test_literal_t_references_have_dictionary_entries",
     "reason": "Legacy source layout or VM invocation retired; behavior tested at module/browser boundary.",
     "replacements": [
-      "frontend/tests/catalogs.test.ts",
-      "tests/browser/locale.spec.ts"
+      "frontend/tests/unit/catalogs.test.ts",
+      "frontend/tests/e2e/locale.spec.ts"
     ]
   },
   {
@@ -211,8 +211,8 @@
     "test": "test_app_assets_avoid_inline_styles",
     "reason": "Legacy source layout or VM invocation retired; behavior tested at module/browser boundary.",
     "replacements": [
-      "frontend/tests/core.test.ts",
-      "tests/browser/baseline.spec.ts"
+      "frontend/tests/unit/core.test.ts",
+      "frontend/tests/e2e/baseline.spec.ts"
     ]
   },
   {
@@ -220,9 +220,9 @@
     "test": "test_chart_scene_model_behaves_deterministically",
     "reason": "Legacy chart VM/source assertions replaced by real ES module and browser checks.",
     "replacements": [
-      "frontend/tests/chart-renderer.cjs",
-      "frontend/tests/chart-parity.test.ts",
-      "tests/browser/overview.spec.ts"
+      "frontend/tests/unit/chart-renderer.cjs",
+      "frontend/tests/unit/chart-parity.test.ts",
+      "frontend/tests/e2e/overview.spec.ts"
     ]
   },
   {
@@ -230,8 +230,8 @@
     "test": "test_web_ui_scripts_parse",
     "reason": "Legacy chart VM/source assertions replaced by real ES module and browser checks.",
     "replacements": [
-      "frontend/tests/core.test.ts",
-      "tests/browser/baseline.spec.ts"
+      "frontend/tests/unit/core.test.ts",
+      "frontend/tests/e2e/baseline.spec.ts"
     ]
   },
   {
@@ -239,9 +239,9 @@
     "test": "test_dashboard_renders_chart_slots_from_analytics",
     "reason": "Legacy chart VM/source assertions replaced by real ES module and browser checks.",
     "replacements": [
-      "frontend/tests/chart-renderer.cjs",
-      "frontend/tests/chart-parity.test.ts",
-      "tests/browser/overview.spec.ts"
+      "frontend/tests/unit/chart-renderer.cjs",
+      "frontend/tests/unit/chart-parity.test.ts",
+      "frontend/tests/e2e/overview.spec.ts"
     ]
   },
   {
@@ -249,9 +249,9 @@
     "test": "test_specialist_views_render_chart_slots",
     "reason": "Legacy chart VM/source assertions replaced by real ES module and browser checks.",
     "replacements": [
-      "frontend/tests/chart-renderer.cjs",
-      "frontend/tests/chart-parity.test.ts",
-      "tests/browser/overview.spec.ts"
+      "frontend/tests/unit/chart-renderer.cjs",
+      "frontend/tests/unit/chart-parity.test.ts",
+      "frontend/tests/e2e/overview.spec.ts"
     ]
   },
   {
@@ -259,9 +259,9 @@
     "test": "test_expense_chart_is_mounted_in_the_active_two_section_view",
     "reason": "Legacy chart VM/source assertions replaced by real ES module and browser checks.",
     "replacements": [
-      "frontend/tests/chart-renderer.cjs",
-      "frontend/tests/chart-parity.test.ts",
-      "tests/browser/overview.spec.ts"
+      "frontend/tests/unit/chart-renderer.cjs",
+      "frontend/tests/unit/chart-parity.test.ts",
+      "frontend/tests/e2e/overview.spec.ts"
     ]
   },
   {
@@ -269,9 +269,9 @@
     "test": "test_charts_re_render_on_resize_from_the_single_dom_wiring_block",
     "reason": "Legacy chart VM/source assertions replaced by real ES module and browser checks.",
     "replacements": [
-      "frontend/tests/chart-renderer.cjs",
-      "frontend/tests/chart-parity.test.ts",
-      "tests/browser/overview.spec.ts"
+      "frontend/tests/unit/chart-renderer.cjs",
+      "frontend/tests/unit/chart-parity.test.ts",
+      "frontend/tests/e2e/overview.spec.ts"
     ]
   },
   {
@@ -279,9 +279,9 @@
     "test": "test_chart_expand_dialog_is_wired_and_closes_with_the_view",
     "reason": "Legacy chart VM/source assertions replaced by real ES module and browser checks.",
     "replacements": [
-      "frontend/tests/chart-renderer.cjs",
-      "frontend/tests/chart-parity.test.ts",
-      "tests/browser/overview.spec.ts"
+      "frontend/tests/unit/chart-renderer.cjs",
+      "frontend/tests/unit/chart-parity.test.ts",
+      "frontend/tests/e2e/overview.spec.ts"
     ]
   },
   {
@@ -289,9 +289,9 @@
     "test": "test_chart_i18n_keys_exist_in_both_locales",
     "reason": "Legacy chart VM/source assertions replaced by real ES module and browser checks.",
     "replacements": [
-      "frontend/tests/chart-renderer.cjs",
-      "frontend/tests/chart-parity.test.ts",
-      "tests/browser/overview.spec.ts"
+      "frontend/tests/unit/chart-renderer.cjs",
+      "frontend/tests/unit/chart-parity.test.ts",
+      "frontend/tests/e2e/overview.spec.ts"
     ]
   },
   {
@@ -299,9 +299,9 @@
     "test": "test_charts_js_respects_csp_and_determinism_rules",
     "reason": "Legacy chart VM/source assertions replaced by real ES module and browser checks.",
     "replacements": [
-      "frontend/tests/chart-renderer.cjs",
-      "frontend/tests/chart-parity.test.ts",
-      "tests/browser/overview.spec.ts"
+      "frontend/tests/unit/chart-renderer.cjs",
+      "frontend/tests/unit/chart-parity.test.ts",
+      "frontend/tests/e2e/overview.spec.ts"
     ]
   },
   {
@@ -309,9 +309,9 @@
     "test": "test_expense_chart_keeps_labels_when_tables_reflow",
     "reason": "Legacy chart VM/source assertions replaced by real ES module and browser checks.",
     "replacements": [
-      "frontend/tests/chart-renderer.cjs",
-      "frontend/tests/chart-parity.test.ts",
-      "tests/browser/overview.spec.ts"
+      "frontend/tests/unit/chart-renderer.cjs",
+      "frontend/tests/unit/chart-parity.test.ts",
+      "frontend/tests/e2e/overview.spec.ts"
     ]
   },
   {
@@ -319,9 +319,9 @@
     "test": "test_status_explanations_effective_scripts",
     "reason": "Legacy Node invocation retired after typed registry/presentation coverage.",
     "replacements": [
-      "frontend/tests/help-lifetime.test.ts",
-      "frontend/tests/help-router.test.ts",
-      "tests/browser/locale.spec.ts"
+      "frontend/tests/unit/help-lifetime.test.ts",
+      "frontend/tests/unit/help-router.test.ts",
+      "frontend/tests/e2e/locale.spec.ts"
     ]
   }
 ]

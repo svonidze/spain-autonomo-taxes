@@ -1,1 +1,44 @@
-{"private": true, "type": "module"}
+{
+  "name": "autonomo-accounting-ui",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "engines": {
+    "node": "24.20.0",
+    "npm": "11.19.0"
+  },
+  "packageManager": "npm@11.19.0",
+  "scripts": {
+    "check:runtime": "node scripts/check_frontend_runtime.cjs",
+    "test:coverage-map": "node ../scripts/check_ui_test_map.cjs",
+    "test:unit": "npm run locales:check && vitest run",
+    "test:browser": "playwright test",
+    "typecheck": "npm run locales:check && vue-tsc --noEmit",
+    "build": "npm run check:runtime && npm run locales:check && vite build && node scripts/write_ui_manifest.cjs",
+    "test:installed": "python ../tests/packaging/installed_ui_runner.py",
+    "locales:check": "node scripts/build_locales.mts",
+    "test:pseudo": "node scripts/test_pseudolocale.cjs",
+    "test:chart-module": "node scripts/test_chart_module.cjs",
+    "format:check": "prettier --check 'src/**/*.{ts,vue}' 'tests/**/*.ts'",
+    "format": "prettier --write 'src/**/*.{ts,vue}' 'tests/**/*.ts'"
+  },
+  "devDependencies": {
+    "@babel/parser": "8.0.4",
+    "@formatjs/icu-messageformat-parser": "3.5.17",
+    "@playwright/test": "1.63.0",
+    "@types/jsdom": "30.0.0",
+    "@types/node": "24.13.3",
+    "@vitejs/plugin-vue": "6.0.8",
+    "jsdom": "30.0.1",
+    "prettier": "3.9.6",
+    "typescript": "6.0.3",
+    "vite": "8.2.2",
+    "vitest": "5.0.0",
+    "vue-tsc": "3.3.11"
+  },
+  "dependencies": {
+    "@formatjs/intl": "4.1.20",
+    "vue": "3.5.42",
+    "vue-router": "5.3.1"
+  }
+}
