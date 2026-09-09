@@ -24,6 +24,7 @@ import socket
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import threading
 from typing import Any, Mapping
 from urllib.parse import parse_qs, unquote, urlencode, urlparse
@@ -39,6 +40,7 @@ except Exception:  # pragma: no cover - dependency guard
     yaml = None
 
 from .analytics_series import AnalyticsQuery, build_analytics
+from .aeat_documents import MAX_AEAT_PDF_BYTES, unified_aeat_documents
 from .account_settings import AccountSettingsError, read_settings, save_backups, save_profile
 from .fx_reference import ECBRateObservation, FXReferenceError, fetch_eur_rate
 from .expense_view import enrich_expense_context, expense_page, expense_summary
@@ -82,6 +84,7 @@ SPA_TOP_LEVEL_ROUTES = {
     "/assets",
     "/taxes",
     "/contacts",
+    "/aeat-documents",
     "/settings",
 }
 
@@ -891,6 +894,155 @@ class LocalAccountingApp:
             "forecast_as_of": cached.get("as_of") if cached else None,
             "warnings": list(cached.get("warnings", [])) if cached else [],
         }
+
+    def aeat_documents(
+        self,
+        *,
+        year: str | None = None,
+        form_code: str | None = None,
+        document_kind: str | None = None,
+        status: str | None = None,
+        query: str | None = None,
+    ) -> dict[str, Any]:
+        with closing(self._connect()) as connection:
+            rows = unified_aeat_documents(connection)
+        search = (query or "").strip().casefold()
+        filtered: list[dict[str, Any]] = []
+        for row in rows:
+            occurred = str(row.get("occurred_at") or "")
+            if year and occurred[:4] != year:
+                continue
+            if form_code and str(row.get("form_code") or "") != form_code:
+                continue
+            if document_kind and row.get("document_kind") != document_kind:
+                continue
+            if status and row.get("status") != status:
+                continue
+            if search:
+                haystack = " ".join(
+                    str(row.get(key) or "")
+                    for key in (
+                        "title",
+                        "form_code",
+                        "procedure_kind",
+                        "procedure_code",
+                        "submission_reference",
+                        "justificante_number",
+                        "verification_code",
+                        "period_key",
+                    )
+                ).casefold()
+                if search not in haystack:
+                    continue
+            source_available = bool(row.get("source_available"))
+            if row.get("record_source") == "filing_snapshot":
+                try:
+                    self.filing_file(str(row["record_id"]))
+                except (FileNotFoundError, LocalWebError):
+                    source_available = False
+            filtered.append({**row, "source_available": source_available})
+        return {"rows": filtered, "total": len(filtered)}
+
+    def ingest_aeat_upload(
+        self,
+        *,
+        fields: Mapping[str, str],
+        filename: str,
+        content: bytes,
+        actor: str,
+    ) -> dict[str, Any]:
+        if self.config.archive_root is None:
+            raise LocalWebError("AEAT intake requires a configured evidence archive")
+        if not content:
+            raise LocalWebError("Uploaded AEAT PDF is empty")
+        if len(content) > MAX_AEAT_PDF_BYTES:
+            raise LocalWebError("Uploaded AEAT PDF exceeds the 30 MB limit")
+        if not filename.lower().endswith(".pdf") or not content.startswith(b"%PDF-"):
+            raise LocalWebError("AEAT evidence must be a PDF file")
+        allowed_fields = {
+            "dry_run", "title", "procedure_kind", "procedure_code", "form_code",
+            "document_kind", "status", "occurred_at", "requested_effective_on",
+            "reference", "submission_reference", "justificante", "verification_code",
+            "notes",
+        }
+        unknown = sorted(set(fields) - allowed_fields)
+        if unknown:
+            raise LocalWebError("Unknown AEAT intake fields: " + ", ".join(unknown))
+        required = ("procedure_kind", "document_kind", "status")
+        missing = [name for name in required if not fields.get(name, "").strip()]
+        if missing:
+            raise LocalWebError("Missing AEAT intake fields: " + ", ".join(missing))
+        preview = fields.get("dry_run") == "1"
+        upload_root = self.config.cache_root / "aeat-upload"
+        upload_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        upload_root.chmod(0o700)
+        temporary_dir = Path(tempfile.mkdtemp(prefix="request-", dir=upload_root))
+        temporary_dir.chmod(0o700)
+        safe_name = re.sub(r"[^0-9A-Za-z._ -]+", "_", Path(filename).name).strip(" ._")
+        temporary = temporary_dir / (safe_name or "aeat.pdf")
+        temporary.write_bytes(content)
+        temporary.chmod(0o600)
+        command = [
+            sys.executable, "-m", "autonomo_taxes.cli", "aeat-documents", "record",
+            "--db", str(self.config.database), "--evidence", str(temporary),
+            "--archive-root", str(self.config.archive_root),
+            "--procedure-kind", fields["procedure_kind"],
+            "--document-kind", fields["document_kind"],
+            "--status", fields["status"], "--actor", actor,
+        ]
+        option_map = {
+            "title": "--title", "procedure_code": "--procedure-code", "form_code": "--form",
+            "occurred_at": "--occurred-at", "requested_effective_on": "--requested-effective-on",
+            "reference": "--reference", "submission_reference": "--submission-reference",
+            "justificante": "--justificante", "verification_code": "--verification-code",
+            "notes": "--notes",
+        }
+        for field_name, option in option_map.items():
+            value = fields.get(field_name, "").strip()
+            if value:
+                command.extend((option, value))
+        if preview:
+            command.append("--dry-run")
+        try:
+            return self._run_cli(command)
+        finally:
+            temporary.unlink(missing_ok=True)
+            temporary_dir.rmdir()
+
+    def update_aeat_case_status(
+        self, aeat_case_id: str, payload: Mapping[str, Any], *, actor: str,
+    ) -> dict[str, Any]:
+        required = {
+            "status", "occurred_at", "evidence_reference", "notes", "expected_row_version",
+        }
+        _exact_object_fields(payload, required, "AEAT status request")
+        with open_ledger_db(self.config.database) as db:
+            return db.record_aeat_case_status(
+                aeat_case_id,
+                status=str(payload["status"]),
+                occurred_at=str(payload["occurred_at"]),
+                evidence_reference=str(payload["evidence_reference"]),
+                notes=str(payload["notes"]) if payload["notes"] is not None else None,
+                actor=actor,
+                expected_row_version=int(payload["expected_row_version"]),
+            )
+
+    def filing_file(self, filing_snapshot_id: str) -> tuple[Path, str]:
+        if not UUID_RE.fullmatch(filing_snapshot_id):
+            raise LocalWebError("Invalid filing snapshot id")
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT source_reference FROM filing_snapshots WHERE filing_snapshot_id = ?",
+                (filing_snapshot_id,),
+            ).fetchone()
+        if row is None or not row["source_reference"]:
+            raise FileNotFoundError("Filing source is unavailable")
+        path = self.resolve_document_path(str(row["source_reference"]))
+        if not any(_is_relative_to(path, root.resolve()) for root in self.document_roots):
+            raise LocalWebError("Filing source is outside configured evidence roots")
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        return path, mimetypes.guess_type(path.name)[0] or "application/pdf"
 
     def analytics(self, period_key: str, *, as_of: str | None = None) -> dict[str, Any]:
         period = _validate_period(period_key)
@@ -2111,6 +2263,16 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                 self._send_json(
                     self.server.app.taxes(_single_query(query, "period"))
                 )
+            elif parsed.path == "/api/aeat-documents":
+                self._send_json(
+                    self.server.app.aeat_documents(
+                        year=_optional_query(query, "year"),
+                        form_code=_optional_query(query, "form"),
+                        document_kind=_optional_query(query, "kind"),
+                        status=_optional_query(query, "status"),
+                        query=_optional_query(query, "q"),
+                    )
+                )
             elif parsed.path == "/api/analytics":
                 self._send_json(
                     self.server.app.analytics(
@@ -2140,6 +2302,9 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                 )
             elif match := re.fullmatch(r"/api/document/([^/]+)/preview", parsed.path):
                 self._serve_document(match.group(1), preview=True)
+            elif match := re.fullmatch(r"/api/aeat-filings/([^/]+)/content", parsed.path):
+                path, mime_type = self.server.app.filing_file(match.group(1))
+                self._serve_path(path, mime_type)
             elif parsed.path.startswith("/api/document/") and parsed.path.endswith(
                 "/content"
             ):
@@ -2235,6 +2400,29 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                         google_folder_id=google_folder_id,
                     ),
                     status=HTTPStatus.CREATED,
+                )
+            elif parsed.path == "/api/aeat-documents":
+                self._require_same_origin()
+                fields, filename, content = self._read_multipart()
+                result = self.server.app.ingest_aeat_upload(
+                    fields=fields,
+                    filename=filename,
+                    content=content,
+                    actor=principal or "local-session",
+                )
+                self._send_json(
+                    result,
+                    status=HTTPStatus.OK if fields.get("dry_run") == "1" else HTTPStatus.CREATED,
+                )
+            elif match := re.fullmatch(r"/api/aeat-cases/([^/]+)/status", parsed.path):
+                self._require_same_origin()
+                self._require_json_content_type()
+                self._send_json(
+                    self.server.app.update_aeat_case_status(
+                        match.group(1),
+                        self._read_json(max_bytes=MAX_SETTINGS_BYTES),
+                        actor=principal or "local-session",
+                    )
                 )
             elif parsed.path == "/api/intake/google-drive":
                 self._require_same_origin()
@@ -2456,6 +2644,9 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             if mime_type not in signatures or not header.startswith(signatures[mime_type]):
                 raise LocalWebApiError(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "preview_unavailable",
                     "Inline preview supports verified PDF, JPEG and PNG; use Open original")
+        self._serve_path(path, mime_type, preview=preview)
+
+    def _serve_path(self, path: Path, mime_type: str, *, preview: bool = False) -> None:
         size = path.stat().st_size
         self.send_response(HTTPStatus.OK)
         self._security_headers(document_preview=preview)

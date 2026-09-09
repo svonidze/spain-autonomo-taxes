@@ -80,6 +80,21 @@ test('unknown routes and missing resources never masquerade as a working page', 
   expect((await request.get('/missing-script.js')).status()).toBe(404);
 });
 
+test('AEAT document registry is global, searchable and responsive', async ({ page }) => {
+  await page.goto('/aeat-documents');
+  await expect(page.locator('#app')).toHaveAttribute('aria-busy', 'false');
+  await expect(page.locator('#page-title')).toHaveText('Документы AEAT');
+  await expect(page.locator('.period-control')).toBeHidden();
+  await expect(page.locator('.aeat-documents-table')).toContainText('Synthetic ROI registration');
+  await page.locator('input[type="search"]').fill('036');
+  await expect(page.locator('.aeat-documents-table tbody tr')).toHaveCount(1);
+  await page.locator('.aeat-upload-panel summary').click();
+  await expect(page.locator('.aeat-upload-panel input[type="file"]')).toBeVisible();
+  await page.setViewportSize({ width: 375, height: 800 });
+  await expect(page.locator('.aeat-documents-table thead')).toBeHidden();
+  await expect(page.locator('.aeat-documents-table tbody tr').first()).toBeVisible();
+});
+
 test('settings preserves a private draft when leaving is declined', async ({ page }) => {
   await page.goto('/settings');
   const name = page.locator('#app [name="full_name"]');

@@ -36,6 +36,11 @@ test('copy target chooses an open current quarter before the existing fallback',
   expect(copyTarget(periods, false)).toBeNull();
   expect(copyTarget(periods, true, new Date(2027, 0, 1))).toBe('2026-Q3');
 });
+
+test('AEAT document registry is global and never carries a quarter', () => {
+  expect(parseRoute('/aeat-documents')).toEqual({ view: 'aeat-documents' });
+  expect(routeUrl('aeat-documents', '2026-Q3')).toBe('/aeat-documents');
+});
 test('blank backup limits remain operator managed with explicit pruning consent', () => {
   expect(retentionPayload('', '3', 'synthetic-revision')).toEqual({
     expected_revision: 'synthetic-revision',

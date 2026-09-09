@@ -143,7 +143,10 @@ def test_v23_upgrade_preserves_legacy_rate_and_records_verified_evidence(
             )
             original = db.fx_provenance_for_rate(rate["fx_rate_id"])
     with open_db(fixture["database"], apply_migrations=True) as db:
-        assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 24
+        assert (
+            db.connection.execute("PRAGMA user_version").fetchone()[0]
+            == ledger_db.LATEST_SCHEMA_VERSION
+        )
         assert (
             db.connection.execute("SELECT COUNT(*) FROM fx_verifications").fetchone()[0]
             == 0
@@ -339,7 +342,10 @@ def test_verification_migration_is_explicit_and_atomic(tmp_path, monkeypatch):
             is None
         )
     with open_db(path, apply_migrations=True) as db:
-        assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 24
+        assert (
+            db.connection.execute("PRAGMA user_version").fetchone()[0]
+            == ledger_db.LATEST_SCHEMA_VERSION
+        )
         assert db.connection.execute("PRAGMA foreign_key_check").fetchall() == []
 
 

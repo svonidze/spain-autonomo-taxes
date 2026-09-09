@@ -6,6 +6,7 @@ export const views = [
   'assets',
   'taxes',
   'contacts',
+  'aeat-documents',
   'settings',
 ] as const;
 export type ListView = (typeof views)[number];
@@ -51,7 +52,8 @@ export function routeUrl(
     view === 'contact-detail' ? 'contacts' : view === 'expense-detail' ? 'expenses' : view;
   const path = `/${root}${options.id ? `/${encodeURIComponent(canonicalId(options.id))}` : ''}`;
   const query = new URLSearchParams();
-  if (period && view !== 'settings' && view !== 'contacts') query.set('period', period);
+  if (period && !['settings', 'contacts', 'aeat-documents'].includes(view))
+    query.set('period', period);
   if (view === 'expenses' && options.q) query.set('q', options.q);
   if (view === 'review' && !options.id && options.tab && options.tab !== 'queue')
     query.set('tab', options.tab);

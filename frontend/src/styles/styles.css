@@ -2704,3 +2704,22 @@ textarea:focus {
   .settings-panel:nth-child(3) { grid-area: activities; }
   .settings-panel:nth-child(4) { grid-area: interface; }
 }
+
+/* AEAT documents are global records rather than quarter-scoped ledger rows. */
+.aeat-filter-grid { display: grid; grid-template-columns: minmax(14rem, 2fr) repeat(4, minmax(8rem, 1fr)); gap: .75rem; align-items: end; }
+.aeat-filter-grid label, .aeat-upload-panel label { display: grid; gap: .35rem; }
+.aeat-documents-table td small, .aeat-documents-table td strong { display: block; }
+.aeat-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.aeat-upload-panel > summary { cursor: pointer; font-weight: 700; }
+.aeat-upload-panel[open] > summary { margin-bottom: 1rem; }
+.aeat-documents-page .full-width { grid-column: 1 / -1; }
+.aeat-preview { max-height: 18rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-muted); border-radius: .5rem; padding: .75rem; }
+@media (max-width: 900px) { .aeat-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) {
+  .aeat-filter-grid { grid-template-columns: 1fr; }
+  .aeat-documents-table thead { display: none; }
+  .aeat-documents-table, .aeat-documents-table tbody, .aeat-documents-table tr, .aeat-documents-table td { display: block; width: 100%; }
+  .aeat-documents-table tr { border-bottom: 1px solid var(--line); padding: .75rem 0; }
+  .aeat-documents-table td { display: grid; grid-template-columns: minmax(7rem, 35%) 1fr; gap: .75rem; border: 0; }
+  .aeat-documents-table td::before { content: attr(data-label); color: var(--muted); font-weight: 600; }
+}
