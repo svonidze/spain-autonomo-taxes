@@ -1190,6 +1190,83 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     filings_refresh.add_argument("--document-inventory", type=Path, required=True)
     filings_refresh.set_defaults(_operational_handler=_cmd_filings_refresh_evidence)
 
+    aeat_documents = subparsers.add_parser(
+        "aeat-documents",
+        help="Archive official AEAT PDFs and maintain their sourced case history",
+    )
+    aeat_sub = aeat_documents.add_subparsers(dest="aeat_documents_command", required=True)
+    aeat_record = aeat_sub.add_parser("record", help="Record one immutable AEAT PDF")
+    _db_arg(aeat_record)
+    aeat_record.add_argument("--evidence", type=Path, required=True)
+    aeat_record.add_argument("--archive-root", type=Path)
+    aeat_record.add_argument("--title")
+    aeat_record.add_argument(
+        "--procedure-kind",
+        choices=["roi_registration", "periodic_filing", "rectification", "other"],
+        required=True,
+    )
+    aeat_record.add_argument("--procedure-code")
+    aeat_record.add_argument("--form")
+    aeat_record.add_argument(
+        "--document-kind",
+        choices=[
+            "submission_receipt",
+            "authority_request",
+            "response_receipt",
+            "resolution",
+            "certificate",
+            "other",
+        ],
+        required=True,
+    )
+    aeat_record.add_argument(
+        "--status",
+        choices=[
+            "submitted",
+            "information_requested",
+            "responded",
+            "approved",
+            "rejected",
+            "closed",
+        ],
+        required=True,
+    )
+    aeat_record.add_argument("--occurred-at")
+    aeat_record.add_argument("--requested-effective-on")
+    aeat_record.add_argument("--reference")
+    aeat_record.add_argument("--submission-reference")
+    aeat_record.add_argument("--justificante")
+    aeat_record.add_argument("--verification-code")
+    aeat_record.add_argument("--notes")
+    aeat_record.add_argument("--actor", required=True)
+    aeat_record.add_argument("--dry-run", action="store_true")
+    aeat_record.set_defaults(_operational_handler=_cmd_aeat_document_record)
+
+    aeat_status = aeat_sub.add_parser(
+        "record-status", help="Append a sourced status event to an AEAT case"
+    )
+    _db_arg(aeat_status)
+    aeat_status.add_argument("--case-id", required=True)
+    aeat_status.add_argument(
+        "--status",
+        choices=[
+            "submitted",
+            "information_requested",
+            "responded",
+            "approved",
+            "rejected",
+            "closed",
+        ],
+        required=True,
+    )
+    aeat_status.add_argument("--occurred-at", required=True)
+    aeat_status.add_argument("--evidence-reference", required=True)
+    aeat_status.add_argument("--notes")
+    aeat_status.add_argument("--actor", required=True)
+    aeat_status.add_argument("--expected-row-version", type=int, required=True)
+    aeat_status.add_argument("--dry-run", action="store_true")
+    aeat_status.set_defaults(_operational_handler=_cmd_aeat_status_record)
+
     calculate = subparsers.add_parser("calculate", help="Calculate a form from reviewed SQLite rows")
     _db_arg(calculate)
     calculate.add_argument(
@@ -5119,6 +5196,87 @@ def _cmd_tax_procedure_receipt(args: argparse.Namespace) -> int:
             ),
         }
     )
+    return 0
+
+
+def _cmd_aeat_document_record(args: argparse.Namespace) -> int:
+    from .aeat_documents import record_aeat_document
+
+    if not args.evidence.is_file():
+        raise FileNotFoundError(args.evidence)
+    if args.archive_root is None and not args.dry_run:
+        raise ValueError(
+            "--archive-root is required (or set archive_root in the private config)"
+        )
+    archive_root = args.archive_root or args.evidence.parent
+    with open_ledger_db(args.db, read_only=args.dry_run) as db:
+        result = record_aeat_document(
+            db,
+            args.evidence,
+            archive_root,
+            actor=args.actor,
+            dry_run=args.dry_run,
+            title=args.title,
+            procedure_kind=args.procedure_kind,
+            procedure_code=args.procedure_code,
+            form_code=args.form,
+            document_kind=args.document_kind,
+            status=args.status,
+            occurred_at=args.occurred_at,
+            requested_effective_on=args.requested_effective_on,
+            primary_reference=args.reference,
+            submission_reference=args.submission_reference,
+            justificante_number=args.justificante,
+            verification_code=args.verification_code,
+            notes=args.notes,
+        )
+    _emit(result)
+    return 0
+
+
+def _cmd_aeat_status_record(args: argparse.Namespace) -> int:
+    from .ledger_db import AEAT_CASE_TRANSITIONS
+
+    try:
+        datetime.fromisoformat(args.occurred_at.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("AEAT status occurred_at must use ISO 8601") from exc
+    with open_ledger_db(args.db, read_only=args.dry_run) as db:
+        case = db.connection.execute(
+            "SELECT * FROM aeat_cases WHERE aeat_case_id = ?", (args.case_id,)
+        ).fetchone()
+        if case is None:
+            raise ValueError("Unknown AEAT case")
+        if int(case["row_version"]) != args.expected_row_version:
+            raise StaleRowVersionError(
+                f"Expected row_version {args.expected_row_version}, got {case['row_version']}"
+            )
+        current = str(case["current_status"])
+        if args.status != current and args.status not in AEAT_CASE_TRANSITIONS[current]:
+            raise ValueError(f"Invalid AEAT case transition: {current} -> {args.status}")
+        if args.dry_run:
+            result = {
+                "ok": True,
+                "recorded": False,
+                "dry_run": True,
+                "case_id": args.case_id,
+                "current_status": current,
+                "next_status": args.status,
+                "occurred_at": args.occurred_at,
+                "evidence_reference": args.evidence_reference,
+            }
+        else:
+            result = db.record_aeat_case_status(
+                args.case_id,
+                status=args.status,
+                occurred_at=args.occurred_at,
+                evidence_reference=args.evidence_reference,
+                notes=args.notes,
+                actor=args.actor,
+                expected_row_version=args.expected_row_version,
+            )
+            result = {"ok": True, "recorded": True, **result}
+    _emit(result)
     return 0
 
 
