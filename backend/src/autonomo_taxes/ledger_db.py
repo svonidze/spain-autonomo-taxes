@@ -30,7 +30,7 @@ from .tax_rules import ALL_FORM_CODES, ANNUAL_FORM_CODES, FORM_RULES, QUARTERLY_
 from .vat_classification import is_vat_investment_good
 
 
-LATEST_SCHEMA_VERSION = 24
+LATEST_SCHEMA_VERSION = 25
 
 # Migrations that rebuild a table referenced by a foreign key. They must
 # run with foreign-key enforcement temporarily disabled, and that pragma
@@ -89,6 +89,36 @@ COUNTERPARTY_LEGAL_FORMS = {
     "public_body",
 }
 FINAL_SNAPSHOT_STATUSES = {"filed", "submitted", "final"}
+AEAT_CASE_STATUSES = {
+    "submitted",
+    "information_requested",
+    "responded",
+    "approved",
+    "rejected",
+    "closed",
+}
+AEAT_CASE_TRANSITIONS = {
+    "submitted": {"information_requested", "approved", "rejected", "closed"},
+    "information_requested": {"responded", "approved", "rejected", "closed"},
+    "responded": {"information_requested", "approved", "rejected", "closed"},
+    "approved": set(),
+    "rejected": set(),
+    "closed": set(),
+}
+AEAT_DOCUMENT_KINDS = {
+    "submission_receipt",
+    "authority_request",
+    "response_receipt",
+    "resolution",
+    "certificate",
+    "other",
+}
+AEAT_PROCEDURE_KINDS = {
+    "roi_registration",
+    "periodic_filing",
+    "rectification",
+    "other",
+}
 
 
 class LedgerDbError(Exception):
@@ -4707,6 +4737,241 @@ class LedgerDB:
             """
         )
 
+    def create_aeat_case_with_document(
+        self,
+        *,
+        document_id: str,
+        source_hash: str,
+        title: str,
+        procedure_kind: str,
+        procedure_code: str | None,
+        form_code: str | None,
+        document_kind: str,
+        status: str,
+        occurred_at: str,
+        requested_effective_on: str | None,
+        primary_reference: str | None,
+        submission_reference: str | None,
+        justificante_number: str | None,
+        verification_code: str | None,
+        notes: str | None,
+        actor: str,
+        aeat_case_id: str | None = None,
+        aeat_document_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Create one immutable AEAT document and its initial status event."""
+        digest = _normalize_sha256(source_hash)
+        title = title.strip()
+        actor = actor.strip()
+        if not title or len(title) > 200:
+            raise ValueError("AEAT case title must contain 1 to 200 characters")
+        if not actor:
+            raise ValueError("AEAT case event actor is required")
+        _validate_aeat_metadata(
+            procedure_kind=procedure_kind,
+            procedure_code=procedure_code,
+            form_code=form_code,
+            document_kind=document_kind,
+            status=status,
+            occurred_at=occurred_at,
+            requested_effective_on=requested_effective_on,
+        )
+        document = self._fetch_one(
+            "SELECT document_id FROM documents WHERE document_id = ?", (document_id,)
+        )
+        existing = self._fetch_optional(
+            """
+            SELECT ad.*, ac.title, ac.procedure_kind, ac.procedure_code, ac.form_code,
+                   ac.current_status, ac.requested_effective_on, ac.primary_reference,
+                   initial.status AS document_status
+            FROM aeat_documents ad
+            JOIN aeat_cases ac ON ac.aeat_case_id = ad.aeat_case_id
+            JOIN aeat_case_events initial ON initial.evidence_document_id = ad.aeat_document_id
+            WHERE ad.source_hash = ?
+            """,
+            (digest,),
+        )
+        desired = {
+            "document_id": document["document_id"],
+            "title": title,
+            "procedure_kind": procedure_kind,
+            "procedure_code": _optional_text(procedure_code),
+            "form_code": _optional_text(form_code),
+            "document_kind": document_kind,
+            "document_status": status,
+            "occurred_at": occurred_at,
+            "requested_effective_on": requested_effective_on,
+            "primary_reference": _optional_text(primary_reference),
+            "submission_reference": _optional_text(submission_reference),
+            "justificante_number": _optional_text(justificante_number),
+            "verification_code": _optional_upper(verification_code),
+            "notes": _optional_text(notes),
+        }
+        if existing is not None:
+            comparable = {key: existing.get(key) for key in desired}
+            if comparable != desired:
+                raise ValueError("AEAT document already exists with different metadata")
+            return {**existing, "idempotent": True}
+
+        timestamp = _utc_now()
+        case_id = aeat_case_id or _new_id()
+        aeat_doc_id = aeat_document_id or _new_id()
+        event_id = _new_id()
+        with _write_scope(self.connection):
+            self.connection.execute(
+                """
+                INSERT INTO aeat_cases (
+                    aeat_case_id, authority_code, title, procedure_kind, procedure_code,
+                    form_code, opened_at, requested_effective_on, primary_reference,
+                    current_status, row_version, created_at, updated_at
+                ) VALUES (?, 'AEAT', ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                """,
+                (
+                    case_id,
+                    title,
+                    procedure_kind,
+                    desired["procedure_code"],
+                    desired["form_code"],
+                    occurred_at,
+                    requested_effective_on,
+                    desired["primary_reference"],
+                    status,
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            self.connection.execute(
+                """
+                INSERT INTO aeat_documents (
+                    aeat_document_id, aeat_case_id, document_id, document_kind,
+                    occurred_at, submission_reference, justificante_number,
+                    verification_code, notes, source_hash, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    aeat_doc_id,
+                    case_id,
+                    document_id,
+                    document_kind,
+                    occurred_at,
+                    desired["submission_reference"],
+                    desired["justificante_number"],
+                    desired["verification_code"],
+                    desired["notes"],
+                    digest,
+                    timestamp,
+                ),
+            )
+            self.connection.execute(
+                """
+                INSERT INTO aeat_case_events (
+                    aeat_case_event_id, aeat_case_id, status, occurred_at,
+                    evidence_document_id, evidence_reference, notes, actor, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_id,
+                    case_id,
+                    status,
+                    occurred_at,
+                    aeat_doc_id,
+                    desired["submission_reference"] or desired["primary_reference"],
+                    desired["notes"],
+                    actor,
+                    timestamp,
+                ),
+            )
+        return {
+            **self._fetch_one(
+                """
+                SELECT ad.*, ac.title, ac.procedure_kind, ac.procedure_code, ac.form_code,
+                       ac.current_status, ac.requested_effective_on, ac.primary_reference,
+                       ac.row_version AS case_row_version
+                FROM aeat_documents ad
+                JOIN aeat_cases ac ON ac.aeat_case_id = ad.aeat_case_id
+                WHERE ad.aeat_document_id = ?
+                """,
+                (aeat_doc_id,),
+            ),
+            "idempotent": False,
+        }
+
+    def record_aeat_case_status(
+        self,
+        aeat_case_id: str,
+        *,
+        status: str,
+        occurred_at: str,
+        evidence_reference: str,
+        notes: str | None,
+        actor: str,
+        expected_row_version: int,
+    ) -> dict[str, Any]:
+        """Append a sourced status event and update the case atomically."""
+        if status not in AEAT_CASE_STATUSES:
+            raise ValueError(f"Unsupported AEAT case status: {status}")
+        _validate_iso_datetime(occurred_at, field_name="AEAT status occurred_at")
+        reference = evidence_reference.strip()
+        actor = actor.strip()
+        if not reference or not actor:
+            raise ValueError("AEAT status requires evidence_reference and actor")
+        case = self._fetch_one(
+            "SELECT * FROM aeat_cases WHERE aeat_case_id = ?", (aeat_case_id,)
+        )
+        existing = self._fetch_optional(
+            """
+            SELECT * FROM aeat_case_events
+            WHERE aeat_case_id = ? AND status = ? AND occurred_at = ?
+              AND evidence_reference = ?
+            """,
+            (aeat_case_id, status, occurred_at, reference),
+        )
+        if existing is not None:
+            return {**case, "event": existing, "idempotent": True}
+        self._check_row_version(case, expected_row_version)
+        current = str(case["current_status"])
+        if status != current and status not in AEAT_CASE_TRANSITIONS[current]:
+            raise LifecycleError(f"Invalid AEAT case transition: {current} -> {status}")
+        timestamp = _utc_now()
+        event_id = _new_id()
+        with _write_scope(self.connection):
+            if status != current:
+                cursor = self.connection.execute(
+                    """
+                    UPDATE aeat_cases
+                    SET current_status = ?, row_version = row_version + 1, updated_at = ?
+                    WHERE aeat_case_id = ? AND row_version = ?
+                    """,
+                    (status, timestamp, aeat_case_id, expected_row_version),
+                )
+                if cursor.rowcount != 1:
+                    raise StaleRowVersionError("AEAT case changed during status update")
+            self.connection.execute(
+                """
+                INSERT INTO aeat_case_events (
+                    aeat_case_event_id, aeat_case_id, status, occurred_at,
+                    evidence_document_id, evidence_reference, notes, actor, created_at
+                ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)
+                """,
+                (
+                    event_id,
+                    aeat_case_id,
+                    status,
+                    occurred_at,
+                    reference,
+                    _optional_text(notes),
+                    actor,
+                    timestamp,
+                ),
+            )
+        updated = self._fetch_one(
+            "SELECT * FROM aeat_cases WHERE aeat_case_id = ?", (aeat_case_id,)
+        )
+        event = self._fetch_one(
+            "SELECT * FROM aeat_case_events WHERE aeat_case_event_id = ?", (event_id,)
+        )
+        return {**updated, "event": event, "idempotent": False}
+
     def validate_period(
         self,
         period_key: str,
@@ -5743,6 +6008,9 @@ class LedgerDB:
             "tax_calendar_entries",
             "validation_issues",
             "filing_snapshots",
+            "aeat_cases",
+            "aeat_documents",
+            "aeat_case_events",
             "invoice_templates",
             "outgoing_invoice_drafts",
             "outgoing_invoice_lines",
@@ -6150,6 +6418,54 @@ def _write_scope(connection: sqlite3.Connection):
 def _optional_upper(value: str | None) -> str | None:
     normalized = (value or "").strip().upper()
     return normalized or None
+
+
+def _optional_text(value: str | None) -> str | None:
+    normalized = (value or "").strip()
+    return normalized or None
+
+
+def _validate_iso_datetime(value: str, *, field_name: str) -> None:
+    normalized = value.strip().replace("Z", "+00:00")
+    try:
+        datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must use ISO 8601") from exc
+
+
+def _validate_aeat_metadata(
+    *,
+    procedure_kind: str,
+    procedure_code: str | None,
+    form_code: str | None,
+    document_kind: str,
+    status: str,
+    occurred_at: str,
+    requested_effective_on: str | None,
+) -> None:
+    if procedure_kind not in AEAT_PROCEDURE_KINDS:
+        raise ValueError(f"Unsupported AEAT procedure kind: {procedure_kind}")
+    if document_kind not in AEAT_DOCUMENT_KINDS:
+        raise ValueError(f"Unsupported AEAT document kind: {document_kind}")
+    if status not in AEAT_CASE_STATUSES:
+        raise ValueError(f"Unsupported AEAT case status: {status}")
+    normalized_form = _optional_text(form_code)
+    if normalized_form is not None and (
+        len(normalized_form) != 3 or not normalized_form.isdigit()
+    ):
+        raise ValueError("AEAT form_code must contain exactly three digits")
+    normalized_procedure = _optional_text(procedure_code)
+    if normalized_procedure is not None and (
+        len(normalized_procedure) > 32
+        or any(not (character.isalnum() or character in "_-") for character in normalized_procedure)
+    ):
+        raise ValueError("AEAT procedure_code contains unsupported characters")
+    _validate_iso_datetime(occurred_at, field_name="AEAT document occurred_at")
+    if requested_effective_on is not None:
+        try:
+            date.fromisoformat(requested_effective_on)
+        except ValueError as exc:
+            raise ValueError("AEAT requested_effective_on must use YYYY-MM-DD") from exc
 
 
 def _determination_from_filing_status(filing_status: str) -> str:
@@ -7435,6 +7751,114 @@ def _migration_24(connection: sqlite3.Connection) -> None:
         )
 
 
+def _migration_25(connection: sqlite3.Connection) -> None:
+    statements = (
+        """
+        CREATE TABLE aeat_cases (
+            aeat_case_id TEXT PRIMARY KEY,
+            authority_code TEXT NOT NULL DEFAULT 'AEAT' CHECK (authority_code = 'AEAT'),
+            title TEXT NOT NULL CHECK (length(trim(title)) BETWEEN 1 AND 200),
+            procedure_kind TEXT NOT NULL CHECK (procedure_kind IN (
+                'roi_registration', 'periodic_filing', 'rectification', 'other'
+            )),
+            procedure_code TEXT,
+            form_code TEXT CHECK (
+                form_code IS NULL OR (
+                    length(form_code) = 3 AND form_code NOT GLOB '*[^0-9]*'
+                )
+            ),
+            opened_at TEXT NOT NULL,
+            requested_effective_on TEXT,
+            primary_reference TEXT,
+            current_status TEXT NOT NULL CHECK (current_status IN (
+                'submitted', 'information_requested', 'responded',
+                'approved', 'rejected', 'closed'
+            )),
+            row_version INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE aeat_documents (
+            aeat_document_id TEXT PRIMARY KEY,
+            aeat_case_id TEXT NOT NULL REFERENCES aeat_cases(aeat_case_id),
+            document_id TEXT NOT NULL UNIQUE REFERENCES documents(document_id),
+            document_kind TEXT NOT NULL CHECK (document_kind IN (
+                'submission_receipt', 'authority_request', 'response_receipt',
+                'resolution', 'certificate', 'other'
+            )),
+            occurred_at TEXT NOT NULL,
+            submission_reference TEXT,
+            justificante_number TEXT,
+            verification_code TEXT,
+            notes TEXT,
+            source_hash TEXT NOT NULL UNIQUE CHECK (
+                length(source_hash) = 64 AND source_hash NOT GLOB '*[^0-9a-f]*'
+            ),
+            created_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE aeat_case_events (
+            aeat_case_event_id TEXT PRIMARY KEY,
+            aeat_case_id TEXT NOT NULL REFERENCES aeat_cases(aeat_case_id),
+            status TEXT NOT NULL CHECK (status IN (
+                'submitted', 'information_requested', 'responded',
+                'approved', 'rejected', 'closed'
+            )),
+            occurred_at TEXT NOT NULL,
+            evidence_document_id TEXT REFERENCES aeat_documents(aeat_document_id),
+            evidence_reference TEXT,
+            notes TEXT,
+            actor TEXT NOT NULL CHECK (length(trim(actor)) > 0),
+            created_at TEXT NOT NULL,
+            CHECK (
+                evidence_document_id IS NOT NULL
+                OR length(trim(COALESCE(evidence_reference, ''))) > 0
+            ),
+            UNIQUE (aeat_case_id, status, occurred_at, evidence_reference)
+        )
+        """,
+        "CREATE INDEX aeat_cases_date_idx ON aeat_cases(opened_at DESC, aeat_case_id)",
+        "CREATE INDEX aeat_cases_filter_idx ON aeat_cases(form_code, procedure_kind, current_status)",
+        "CREATE INDEX aeat_documents_case_idx ON aeat_documents(aeat_case_id, occurred_at, aeat_document_id)",
+        "CREATE INDEX aeat_case_events_case_idx ON aeat_case_events(aeat_case_id, occurred_at, created_at)",
+        """
+        CREATE TRIGGER aeat_documents_no_update BEFORE UPDATE ON aeat_documents
+        BEGIN SELECT RAISE(ABORT, 'AEAT documents are immutable'); END
+        """,
+        """
+        CREATE TRIGGER aeat_documents_no_delete BEFORE DELETE ON aeat_documents
+        BEGIN SELECT RAISE(ABORT, 'AEAT documents are immutable'); END
+        """,
+        """
+        CREATE TRIGGER aeat_case_events_no_update BEFORE UPDATE ON aeat_case_events
+        BEGIN SELECT RAISE(ABORT, 'AEAT case events are immutable'); END
+        """,
+        """
+        CREATE TRIGGER aeat_case_events_no_delete BEFORE DELETE ON aeat_case_events
+        BEGIN SELECT RAISE(ABORT, 'AEAT case events are immutable'); END
+        """,
+        """
+        CREATE TRIGGER aeat_source_documents_no_update BEFORE UPDATE ON documents
+        WHEN EXISTS (
+            SELECT 1 FROM aeat_documents ad WHERE ad.document_id = OLD.document_id
+        )
+        BEGIN SELECT RAISE(ABORT, 'AEAT source documents are immutable'); END
+        """,
+        """
+        CREATE TRIGGER aeat_source_documents_no_delete BEFORE DELETE ON documents
+        WHEN EXISTS (
+            SELECT 1 FROM aeat_documents ad WHERE ad.document_id = OLD.document_id
+        )
+        BEGIN SELECT RAISE(ABORT, 'AEAT source documents are immutable'); END
+        """,
+    )
+    for statement in statements:
+        connection.execute(statement)
+
+
 _MIGRATIONS = {
     1: _migration_1,
     2: _migration_2,
@@ -7460,4 +7884,5 @@ _MIGRATIONS = {
     22: _migration_22,
     23: _migration_23,
     24: _migration_24,
+    25: _migration_25,
 }

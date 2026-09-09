@@ -31,7 +31,9 @@ const {
   intakeServices,
 } = useShell();
 const { t } = useLocale();
-const icons = ['▦', '↗', '↙', '✓', '◇', '%', '◎', '⚙'];
+const icons = ['▦', '↗', '↙', '✓', '◇', '%', '◎', '▤', '⚙'];
+const shellMessageKey = (prefix: 'nav' | 'titles', value: string) =>
+  `${prefix}.${value === 'aeat-documents' ? 'aeatDocuments' : value}`;
 const detail = computed(() => Boolean(route.value?.id));
 const navView = computed(() =>
   route.value?.view === 'contact-detail'
@@ -45,7 +47,7 @@ const title = computed(() =>
     ? t('contacts.cardTitle')
     : route.value?.view === 'expense-detail'
       ? t('expense.title')
-      : formatMessage(`titles.${route.value?.view || 'dashboard'}`),
+      : formatMessage(shellMessageKey('titles', route.value?.view || 'dashboard')),
 );
 const refreshLabel = computed(() =>
   t(
@@ -76,7 +78,9 @@ const refreshLabel = computed(() =>
         data-spa
         @click="followSpaLink($event, navigate)"
         ><span aria-hidden="true">{{ icons[index] }}</span
-        ><span :data-i18n="`nav.${item}`">{{ t(`nav.${item}`) }}</span></a
+        ><span :data-i18n="shellMessageKey('nav', item)">{{
+          formatMessage(shellMessageKey('nav', item))
+        }}</span></a
       >
     </nav>
     <a
@@ -109,7 +113,7 @@ const refreshLabel = computed(() =>
         </div>
         <label
           class="period-control"
-          :hidden="route?.view === 'contact-detail' || route?.view === 'settings'"
+          :hidden="['contact-detail', 'settings', 'aeat-documents'].includes(route?.view || '')"
           ><span>{{ t('toolbar.period') }}</span
           ><select
             id="period-select"
@@ -134,7 +138,7 @@ const refreshLabel = computed(() =>
           :class="{ busy }"
           :title="refreshLabel"
           :aria-label="refreshLabel"
-          :hidden="route?.view === 'settings'"
+          :hidden="['settings', 'aeat-documents'].includes(route?.view || '')"
           :disabled="busy || (detail && route?.view !== 'contact-detail' && !resolved)"
           @click="refresh"
         >
@@ -143,7 +147,7 @@ const refreshLabel = computed(() =>
         <button
           id="new-entry-button"
           class="primary-button"
-          :hidden="detail || route?.view === 'settings'"
+          :hidden="detail || ['settings', 'aeat-documents'].includes(route?.view || '')"
           :disabled="!bootstrap?.intake_enabled"
           :title="bootstrap?.intake_enabled ? '' : t('intake.disabledReason')"
           @click="add"

@@ -84,6 +84,10 @@ evidence.
 Use [Foreign-currency exchange rates](docs/user/FX_RATES.md) for the ECB rate
 convention, date selection, EUR rounding, provenance and settlement fallback.
 
+Use [AEAT documents and ROI registration](docs/user/AEAT_DOCUMENTS.md) for
+Modelo 036 ROI requests, receipt archival and the distinction between a submitted
+request and a VAT number that is valid in VIES.
+
 See [Account settings](docs/user/ACCOUNT_SETTINGS.md) for taxpayer details, local backup
 retention, observed backup status and release requirements.
 
@@ -93,6 +97,7 @@ retention, observed backup status and release requirements.
   history, import protection, conflicts and schema compatibility.
 
 - [Operations](ops/docs/README.md): safe diagnostics, exact-SHA deployment, migration, rollback, and backup scheduling.
+- [Recording AEAT documents](ops/docs/AEAT_DOCUMENTS.md): operator dry-run, immutable receipt archival and sourced status updates.
 - [Provisioning](ops/docs/PROVISIONING.md): Google originals versus new uploads, optional Picker, OAuth renewal, and Yandex configuration.
 - [Rebuilding history from source books safely](docs/user/HISTORY_REPLAY.md): guard rails for a full ledger replay, what stops it, and how to prove the result against filed returns.
 - [Disaster recovery](ops/docs/DISASTER_RECOVERY.md): backup coverage, isolated restore drill, five failure scenarios, and separately marked production cutover.

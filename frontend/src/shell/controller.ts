@@ -49,6 +49,7 @@ import type { ReviewDetailContext } from '../features/review/guided-model.ts';
 import type { ReviewOverviewContext } from '../features/posting/model.ts';
 import type { OverviewContext } from '../features/overview/model.ts';
 import type { SettingsContext } from '../features/settings/model.ts';
+import type { AeatDocumentsContext } from '../features/aeat-documents/model.ts';
 import DashboardView from '../features/overview/DashboardView.vue';
 import AssetsView from '../features/overview/AssetsView.vue';
 import TaxesView from '../features/overview/TaxesView.vue';
@@ -58,6 +59,7 @@ import ReviewDetail from '../features/review/ReviewDetailView.vue';
 import ReviewOverview from '../features/posting/ReviewOverviewView.vue';
 import TransactionLists from '../features/transactions/TransactionListsView.vue';
 import SettingsView from '../features/settings/SettingsView.vue';
+import AeatDocumentsView from '../features/aeat-documents/AeatDocumentsView.vue';
 interface Bootstrap {
   periods: Period[];
   default_period: string;
@@ -235,10 +237,15 @@ export function useShell() {
       const saved = window.history.state?.contactGlobalPeriod;
       if (data.periods.some((row) => row.period_key === saved)) period.value = saved;
       contactGlobal = period.value;
-    } else if (next && !next.id && next.view !== 'contacts' && next.view !== 'settings')
+    } else if (next && !next.id && !['contacts', 'settings', 'aeat-documents'].includes(next.view))
       period.value =
         knownPeriod(query.toString(), data.periods) || period.value || data.default_period;
-    if (next && !next.id && !['contacts', 'settings'].includes(next.view) && period.value)
+    if (
+      next &&
+      !next.id &&
+      !['contacts', 'settings', 'aeat-documents'].includes(next.view) &&
+      period.value
+    )
       query.set('period', period.value);
     const requestedTab = query.get('tab');
     const tab = requestedTab === 'posting' || requestedTab === 'documents' ? requestedTab : 'queue';
@@ -305,7 +312,13 @@ export function useShell() {
       revision.value++;
       screen.value = { component: markRaw(component), context };
     };
-    if (next.view === 'settings')
+    if (next.view === 'aeat-documents')
+      mount(AeatDocumentsView, {
+        services,
+        settled,
+        notify,
+      } satisfies AeatDocumentsContext);
+    else if (next.view === 'settings')
       mount(SettingsView, {
         services,
         settled,
@@ -417,7 +430,9 @@ export function useShell() {
       captured = period.value;
     busy.value = true;
     try {
-      if (route.value?.view !== 'contact-detail' && route.value?.view !== 'expense-detail') {
+      if (
+        !['contact-detail', 'expense-detail', 'aeat-documents'].includes(route.value?.view || '')
+      ) {
         const token = refreshToken(captured);
         await refreshCalculation(captured);
         clearRefresh(captured, token);
