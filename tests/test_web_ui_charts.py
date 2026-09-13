@@ -65,8 +65,15 @@ def test_dashboard_renders_chart_slots_from_analytics() -> None:
         "chart-iva-position",
         "chart-tax-reserve",
         "chart-cumulative-net",
+        "chart-cumulative-expenses",
     ):
         assert f'id="{slot}"' in source, slot
+
+
+def test_cumulative_expenses_chart_explains_source_amounts() -> None:
+    source = APP_JS.read_text(encoding="utf-8")
+    builder = source[source.index("function buildCumulativeExpensesSpec("):source.index("function buildYearComparisonSpec(")]
+    assert 'spec.note = t("expense.chartSourceNote")' in builder
 
 
 def test_specialist_views_render_chart_slots() -> None:

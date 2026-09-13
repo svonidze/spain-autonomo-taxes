@@ -645,6 +645,12 @@ const messages = {
     "charts.cumulative.aria": "Накопленный чистый результат до трудно обосновываемых расходов",
     "charts.cumulative.actual": "Факт",
     "charts.cumulative.projected": "С учётом одобренного",
+    "charts.cumulativeExpenses.title": "Расходы нарастающим итогом",
+    "charts.cumulativeExpenses.aria": "Накопленные расходы за год: всего и вычитаемая часть по IRPF",
+    "charts.cumulativeExpenses.grossActual": "Расходы всего — факт",
+    "charts.cumulativeExpenses.grossProjected": "Расходы всего — с учётом одобренного",
+    "charts.cumulativeExpenses.deductibleActual": "Вычет IRPF — факт",
+    "charts.cumulativeExpenses.deductibleProjected": "Вычет IRPF — с учётом одобренного",
     "charts.yoy.title": "Год к году (по текущий месяц)",
     "charts.yoy.aria": "Сравнение дохода, вычетов и результата с прошлым годом",
     "charts.yoy.currentYear": "Текущий год",
@@ -1203,6 +1209,12 @@ const messages = {
     "charts.cumulative.aria": "Cumulative net result before difficult-to-justify expenses",
     "charts.cumulative.actual": "Actual",
     "charts.cumulative.projected": "Including approved",
+    "charts.cumulativeExpenses.title": "Cumulative expenses",
+    "charts.cumulativeExpenses.aria": "Year-to-date expenses: total and the IRPF-deductible share",
+    "charts.cumulativeExpenses.grossActual": "Total expenses — actual",
+    "charts.cumulativeExpenses.grossProjected": "Total expenses — including approved",
+    "charts.cumulativeExpenses.deductibleActual": "IRPF deductible — actual",
+    "charts.cumulativeExpenses.deductibleProjected": "IRPF deductible — including approved",
     "charts.yoy.title": "Year over year (through this month)",
     "charts.yoy.aria": "Income, deductibles and result compared with the previous year",
     "charts.yoy.currentYear": "Current year",
@@ -2866,6 +2878,26 @@ function buildCumulativeNetSpec(analytics) {
   return spec;
 }
 
+function buildCumulativeExpensesSpec(analytics) {
+  const cumulative = analytics.datasets.cumulative_expenses;
+  const spec = chartSpecBase(
+    "cumulative-expenses",
+    "charts.cumulativeExpenses.title",
+    "charts.cumulativeExpenses.aria",
+    transactionsEmptyMessage(analytics)
+  );
+  spec.bucketLabel = t("charts.bucket.month");
+  spec.buckets = cumulative.buckets.map(chartMonthLabel);
+  spec.note = t("expense.chartSourceNote");
+  spec.series = [
+    {key: "gross-projected", label: t("charts.cumulativeExpenses.grossProjected"), kind: "line", tone: "warning", pattern: "dashed", values: cumulative.gross_projected_minor},
+    {key: "gross-actual", label: t("charts.cumulativeExpenses.grossActual"), kind: "line", tone: "warning", pattern: "solid", values: cumulative.gross_actual_minor},
+    {key: "deductible-projected", label: t("charts.cumulativeExpenses.deductibleProjected"), kind: "line", tone: "accent", pattern: "dashed", values: cumulative.deductible_projected_minor},
+    {key: "deductible-actual", label: t("charts.cumulativeExpenses.deductibleActual"), kind: "line", tone: "accent", pattern: "solid", values: cumulative.deductible_actual_minor},
+  ];
+  return spec;
+}
+
 function buildYearComparisonSpec(analytics) {
   const comparison = analytics.datasets.ytd_comparison;
   const spec = chartSpecBase(
@@ -3096,6 +3128,7 @@ function renderDashboardCharts(analyticsResult) {
   mount("chart-iva-position", AutonomoCharts.renderCartesian, buildIvaPositionSpec(analytics));
   mount("chart-tax-reserve", AutonomoCharts.renderBullet, buildReserveSpec(analytics));
   mount("chart-cumulative-net", AutonomoCharts.renderCartesian, buildCumulativeNetSpec(analytics));
+  mount("chart-cumulative-expenses", AutonomoCharts.renderCartesian, buildCumulativeExpensesSpec(analytics));
 }
 
 async function init() {
@@ -3284,6 +3317,7 @@ async function renderDashboard(renderGeneration = currentRenderGeneration) {
       <div class="chart-slot" id="chart-iva-position"></div>
       <div class="chart-slot" id="chart-tax-reserve"></div>
       <div class="chart-slot" id="chart-cumulative-net"></div>
+      <div class="chart-slot" id="chart-cumulative-expenses"></div>
     </section>
     <div class="dashboard-grid">
       <section class="panel">

@@ -237,6 +237,71 @@ def test_business_result_status_policy_and_bucketing(tmp_path: Path) -> None:
     assert cumulative["actual_minor"][8] is None
     assert cumulative["projected_minor"][8] == 150000 - 10000 - 4000
 
+    expenses = analytics["datasets"]["cumulative_expenses"]
+    assert expenses["buckets"] == monthly["buckets"]
+    # Nothing is posted yet: actual lines stay at zero for elapsed months and
+    # are None for the month that has not ended.
+    assert expenses["gross_actual_minor"] == [0] * 8 + [None]
+    assert expenses["deductible_actual_minor"] == [0] * 8 + [None]
+    # Approved rows project forward: the July backlog row (12,100 gross /
+    # 10,000 deductible) and the September future row (4,400 / 4,000).
+    assert expenses["gross_projected_minor"][5] == 0
+    assert expenses["gross_projected_minor"][6] == 12100
+    assert expenses["gross_projected_minor"][8] == 12100 + 4400
+    assert expenses["deductible_projected_minor"][6] == 10000
+    assert expenses["deductible_projected_minor"][8] == 10000 + 4000
+
+
+def test_cumulative_expenses_drop_missing_fx_rows_from_both_measures(tmp_path: Path) -> None:
+    db_path = tmp_path / "autonomo.sqlite"
+    with LedgerDB.initialize(db_path) as db:
+        no_fx = _add_transaction(
+            db,
+            external_key="expense-usd-no-fx",
+            transaction_date="2026-07-03",
+            booking_date="2026-07-03",
+            entry_type="expense",
+            direction="debit",
+            amount_minor=25000,
+            amount_eur_minor=None,
+            currency="USD",
+        )
+        db.add_detailed_tax_treatment(
+            transaction_id=no_fx["transaction_id"],
+            treatment_type="expense",
+            tax_code="G03",
+            deductible_irpf_minor=20000,
+        )
+        with_fx = _add_transaction(
+            db,
+            external_key="expense-eur",
+            transaction_date="2026-07-10",
+            booking_date="2026-07-10",
+            entry_type="expense",
+            direction="debit",
+            amount_minor=12100,
+            amount_eur_minor=12100,
+        )
+        db.add_detailed_tax_treatment(
+            transaction_id=with_fx["transaction_id"],
+            treatment_type="expense",
+            tax_code="G03",
+            deductible_irpf_minor=10000,
+        )
+
+    analytics = _build(db_path)
+    expenses = analytics["datasets"]["cumulative_expenses"]
+    structure = analytics["datasets"]["expense_structure"]
+
+    # The missing-FX row leaves both lines, not just the gross one, so the
+    # cumulative totals agree with the expense-structure buckets.
+    assert expenses["gross_actual_minor"][6] == 12100
+    assert expenses["deductible_actual_minor"][6] == 10000
+    assert expenses["gross_projected_minor"][-1] == 12100
+    assert expenses["deductible_projected_minor"][-1] == 10000
+    assert sum(bucket["gross_minor"] for bucket in structure["buckets"]) == 12100
+    assert analytics["quality"]["missing_fx_transaction_count"] == 1
+
 
 def test_as_of_boundary_counts_as_actual(tmp_path: Path) -> None:
     db_path = tmp_path / "autonomo.sqlite"

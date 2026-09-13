@@ -63,6 +63,7 @@ def build_analytics(
     datasets = {
         "business_result": _business_result(transactions, query=query, through=through),
         "cumulative_net": _cumulative_net(transactions, query=query, through=through),
+        "cumulative_expenses": _cumulative_expenses(transactions, query=query, through=through),
         "quarterly_tax_due": _quarterly_tax_due(year_forms),
         "iva_position": _iva_position(year_forms),
         "reserve_bullet": _reserve_bullet(query.period_key, year_forms),
@@ -399,6 +400,61 @@ def _cumulative_net(
         "actual_minor": actual_values,
         "projected_minor": projected_values,
     }
+
+
+def _cumulative_expenses(
+    transactions: list[dict[str, Any]],
+    *,
+    query: AnalyticsQuery,
+    through: date,
+) -> dict[str, Any]:
+    """Running year-to-date expenses: what was spent and what IRPF actually deducts.
+
+    Gross uses the stored EUR amount of each source entry; deductible uses the
+    reviewed IRPF share, so the gap between the two lines is the non-deductible
+    part (personal share of utilities, capped insurance premiums, and similar).
+    Like the expense-structure chart this keeps source amounts: a depreciation
+    row contributes its original purchase cost, which the chart note explains.
+    """
+    months = _month_keys(query.year, through.month)
+    actual = {"gross": dict.fromkeys(months, 0), "deductible": dict.fromkeys(months, 0)}
+    reviewed = {"gross": dict.fromkeys(months, 0), "deductible": dict.fromkeys(months, 0)}
+    for transaction in transactions:
+        if transaction["kind"] != "expense":
+            continue
+        month = transaction["transaction_date"][:7]
+        if month not in months:
+            continue
+        scope = _scope_key(transaction, query.as_of)
+        if scope not in {"actual", "approved_unposted", "approved_future"}:
+            continue
+        gross = transaction["eur_minor"]
+        if gross is None:
+            # FX policy: a foreign-currency row without a stored EUR amount leaves
+            # every money dataset, deduction included (see _expense_structure).
+            continue
+        deductible = int(transaction["deductible_irpf_minor"] or 0)
+        for measure, value in (("gross", int(gross)), ("deductible", deductible)):
+            reviewed[measure][month] += value
+            if scope == "actual":
+                actual[measure][month] += value
+    result: dict[str, Any] = {"measure": "gross_expenses_and_irpf_deductible", "buckets": months}
+    for measure in ("gross", "deductible"):
+        actual_values: list[int | None] = []
+        projected_values: list[int] = []
+        actual_running = 0
+        projected_running = 0
+        for month in months:
+            projected_running += reviewed[measure][month]
+            projected_values.append(projected_running)
+            if _month_elapsed(month, query.as_of):
+                actual_running += actual[measure][month]
+                actual_values.append(actual_running)
+            else:
+                actual_values.append(None)
+        result[f"{measure}_actual_minor"] = actual_values
+        result[f"{measure}_projected_minor"] = projected_values
+    return result
 
 
 def _form_values(entry: Mapping[str, Any], form_key: str) -> tuple[dict[str, str], str]:
