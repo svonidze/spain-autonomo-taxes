@@ -11,7 +11,12 @@ from autonomo_taxes.aeat_documents import (
     unified_aeat_documents,
 )
 from autonomo_taxes.cli import main
-from autonomo_taxes.ledger_db import LATEST_SCHEMA_VERSION, LedgerDB, LifecycleError
+from autonomo_taxes.ledger_db import (
+    LATEST_SCHEMA_VERSION,
+    LedgerDB,
+    LifecycleError,
+    StaleRowVersionError,
+)
 
 
 METADATA = {
@@ -134,6 +139,64 @@ def test_identical_pdf_with_different_metadata_is_rejected(
                 verification_code="SYNTHETICCSV0001",
                 notes="Synthetic fixture",
             )
+
+
+def test_attaches_resolution_to_existing_case_and_updates_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with LedgerDB.initialize(tmp_path / "ledger.sqlite") as db:
+        saved = _record(db, tmp_path, monkeypatch)
+        resolution = tmp_path / "synthetic-resolution.pdf"
+        resolution.write_bytes(b"%PDF-synthetic AEAT resolution")
+        monkeypatch.setattr(
+            "autonomo_taxes.aeat_documents.inspect_aeat_pdf",
+            lambda _path: {
+                "form_code": "036",
+                "filed_on": "2032-04-10T09:00:00",
+                "submission_reference": "2032ROI00000002B",
+                "verification_code": "SYNTHETICCSV0002",
+            },
+        )
+        metadata = dict(
+            actor="synthetic-operator",
+            case_id=saved["aeat_case_id"],
+            expected_row_version=1,
+            title="Synthetic ROI registration",
+            procedure_kind="roi_registration",
+            procedure_code="G322",
+            form_code="036",
+            document_kind="resolution",
+            status="approved",
+            occurred_at="2032-04-10T09:00:00+02:00",
+            requested_effective_on="2032-04-10",
+            primary_reference="2032C3600000001A",
+            submission_reference="2032ROI00000002B",
+            justificante_number=None,
+            verification_code="SYNTHETICCSV0002",
+            notes="Synthetic positive decision",
+        )
+        attached = record_aeat_document(
+            db, resolution, tmp_path / "archive", **metadata
+        )
+        repeated = record_aeat_document(
+            db, resolution, tmp_path / "archive", **metadata
+        )
+        assert attached["aeat_case_id"] == saved["aeat_case_id"]
+        assert attached["current_status"] == "approved"
+        assert repeated["idempotent"] is True
+        assert db.connection.execute("SELECT COUNT(*) FROM aeat_cases").fetchone()[0] == 1
+        assert db.connection.execute("SELECT COUNT(*) FROM aeat_documents").fetchone()[0] == 2
+        assert db.connection.execute("SELECT COUNT(*) FROM aeat_case_events").fetchone()[0] == 2
+        events = db.connection.execute(
+            "SELECT status, evidence_document_id FROM aeat_case_events ORDER BY occurred_at"
+        ).fetchall()
+        assert [event["status"] for event in events] == ["submitted", "approved"]
+        assert all(event["evidence_document_id"] for event in events)
+
+        other = tmp_path / "other-resolution.pdf"
+        other.write_bytes(b"%PDF-other synthetic resolution")
+        with pytest.raises(StaleRowVersionError):
+            record_aeat_document(db, other, tmp_path / "archive", **metadata)
 
 
 def test_status_history_enforces_transitions(

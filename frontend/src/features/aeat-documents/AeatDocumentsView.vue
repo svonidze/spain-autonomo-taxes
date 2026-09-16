@@ -16,6 +16,7 @@ const preview = shallowRef<Record<string, unknown>>();
 const file = shallowRef<File>();
 const filters = reactive({ year: '', form: '', kind: '', status: '', q: '' });
 const upload = reactive({
+  case_id: '',
   title: '',
   procedure_kind: 'roi_registration',
   procedure_code: 'G322',
@@ -91,6 +92,14 @@ const rows = computed(() =>
       .includes(q);
   }),
 );
+const existingCases = computed(() => {
+  const seen = new Set<string>();
+  return (data.value?.rows || []).filter((row) => {
+    if (!row.aeat_case_id || seen.has(row.aeat_case_id)) return false;
+    seen.add(row.aeat_case_id);
+    return true;
+  });
+});
 const unique = (values: Array<string | null | undefined>) =>
   [...new Set(values.filter((value): value is string => Boolean(value)))].sort().reverse();
 const years = computed(() =>
@@ -106,6 +115,10 @@ function uploadData(dryRun: boolean) {
   Object.entries(upload).forEach(([key, value]) => {
     if (value) body.append(key, value);
   });
+  const existing = existingCases.value.find((row) => row.aeat_case_id === upload.case_id);
+  if (existing?.case_row_version != null) {
+    body.append('expected_row_version', String(existing.case_row_version));
+  }
   if (dryRun) body.append('dry_run', '1');
   return body;
 }
@@ -134,6 +147,21 @@ async function submit(dryRun: boolean) {
 }
 function chooseFile(event: Event) {
   file.value = (event.target as HTMLInputElement).files?.[0];
+  invalidatePreview();
+}
+function chooseCase() {
+  const row = existingCases.value.find((value) => value.aeat_case_id === upload.case_id);
+  if (!row) return invalidatePreview();
+  Object.assign(upload, {
+    title: row.title,
+    procedure_kind: row.procedure_kind,
+    procedure_code: row.procedure_code || '',
+    form_code: row.form_code || '',
+    document_kind: 'resolution',
+    status: statusTransitions[row.status]?.includes('approved') ? 'approved' : row.status,
+    requested_effective_on: row.requested_effective_on || '',
+    reference: row.primary_reference || '',
+  });
   invalidatePreview();
 }
 function openStatus(row: AeatDocumentRow) {
@@ -337,6 +365,19 @@ async function saveStatus() {
         @input="invalidatePreview"
         @change="invalidatePreview"
       >
+        <label
+          ><span>{{ t('aeatDocuments.existingCase') }}</span
+          ><select v-model="upload.case_id" @change="chooseCase">
+            <option value="">{{ t('aeatDocuments.newCase') }}</option>
+            <option
+              v-for="row in existingCases"
+              :key="row.aeat_case_id!"
+              :value="row.aeat_case_id!"
+            >
+              {{ row.title }} · {{ label(`aeatDocuments.status.${row.status}`) }}
+            </option>
+          </select></label
+        >
         <label
           ><span>{{ t('aeatDocuments.pdf') }}</span
           ><input type="file" accept="application/pdf,.pdf" required @change="chooseFile"

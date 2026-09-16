@@ -58,6 +58,9 @@ test('AEAT registry filters rows and submits a sourced status transition', async
   ];
   const request = vi.fn(async (url: string, options?: RequestInit) => {
     requests.push({ url, options });
+    if (url === '/api/aeat-documents' && options?.method === 'POST') {
+      return { candidate: { document_kind: 'resolution' } };
+    }
     if (url === '/api/aeat-documents') return { rows, total: rows.length };
     if (url.endsWith('/status')) return { current_status: 'approved' };
     throw new Error(`Unexpected request ${url}`);
@@ -80,6 +83,28 @@ test('AEAT registry filters rows and submits a sourced status transition', async
   await nextTick();
   expect(root.textContent).toContain('Synthetic ROI');
   expect(root.textContent).not.toContain('Modelo 303 · 2032-Q1');
+
+  const uploadPanel = root.querySelector('.aeat-upload-panel') as HTMLElement;
+  const caseSelect = uploadPanel.querySelector('select') as HTMLSelectElement;
+  caseSelect.value = rows[0].aeat_case_id!;
+  caseSelect.dispatchEvent(new Event('change', { bubbles: true }));
+  const fileInput = uploadPanel.querySelector('input[type="file"]') as HTMLInputElement;
+  Object.defineProperty(fileInput, 'files', {
+    configurable: true,
+    value: [new File(['%PDF-synthetic decision'], 'decision.pdf', { type: 'application/pdf' })],
+  });
+  fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+  await nextTick();
+  (uploadPanel.querySelector('.secondary-button') as HTMLButtonElement).click();
+  await flush();
+  const uploadRequest = requests.find(
+    ({ url, options }) => url === '/api/aeat-documents' && options?.method === 'POST',
+  )!;
+  const uploadBody = uploadRequest.options?.body as FormData;
+  expect(uploadBody.get('case_id')).toBe(rows[0].aeat_case_id);
+  expect(uploadBody.get('expected_row_version')).toBe('1');
+  expect(uploadBody.get('document_kind')).toBe('resolution');
+  expect(uploadBody.get('status')).toBe('approved');
 
   (root.querySelector('.aeat-actions button') as HTMLButtonElement).click();
   await nextTick();

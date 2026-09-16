@@ -39,7 +39,39 @@ Repeat the same command after an uncertain response. An identical PDF and
 metadata returns `idempotent: true`; different metadata for the same bytes is an
 error and must be investigated.
 
-## Status changes
+## Attaching a decision
+
+Read the current case id and row version, then preview the decision against the
+existing case. Keep the case-level title, procedure, requested date and primary
+reference unchanged; use the decision reference as `--submission-reference`:
+
+```bash
+autonomo-tax aeat-documents record \
+  --db /private/autonomo.sqlite \
+  --evidence /private/staging/synthetic-roi-decision.pdf \
+  --case-id 11111111-1111-4111-8111-111111111111 \
+  --expected-row-version 1 \
+  --title "Synthetic ROI registration" \
+  --procedure-kind roi_registration \
+  --procedure-code G322 \
+  --form 036 \
+  --document-kind resolution \
+  --status approved \
+  --occurred-at 2032-04-08T09:00:00Z \
+  --requested-effective-on 2032-04-10 \
+  --reference 2032C3600000001A \
+  --submission-reference 2032ROI00000002B \
+  --verification-code SYNTHETICCSV0002 \
+  --actor synthetic-operator \
+  --dry-run
+```
+
+Remove `--dry-run` and add the configured `--archive-root` after review. The
+command adds the decision and the `submitted` to `approved` event atomically.
+An identical retry remains idempotent even though the case version has advanced.
+`approved` is terminal, so do not append a redundant `closed` event.
+
+## Status changes without a PDF
 
 Read the current case id and row version from the authenticated UI or a scoped
 read-only query, then preview the transition:

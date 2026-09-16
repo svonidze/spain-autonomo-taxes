@@ -94,6 +94,8 @@ def test_aeat_upload_validates_pdf_and_delegates_to_cli(
         "procedure_kind": "roi_registration",
         "document_kind": "submission_receipt",
         "status": "submitted",
+        "case_id": "11111111-1111-4111-8111-111111111111",
+        "expected_row_version": "1",
     }
     result = app.ingest_aeat_upload(
         fields=fields,
@@ -104,6 +106,8 @@ def test_aeat_upload_validates_pdf_and_delegates_to_cli(
     assert result["dry_run"] is True
     assert "--dry-run" in calls[0]
     assert "synthetic-user" in calls[0]
+    assert calls[0][calls[0].index("--case-id") + 1] == fields["case_id"]
+    assert calls[0][calls[0].index("--expected-row-version") + 1] == "1"
     assert not list((config.cache_root / "aeat-upload").glob("request-*"))
     with pytest.raises(LocalWebError, match="must be a PDF"):
         app.ingest_aeat_upload(

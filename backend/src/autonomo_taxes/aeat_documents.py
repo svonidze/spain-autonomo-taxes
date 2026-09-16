@@ -11,10 +11,13 @@ from pypdf import PdfReader
 
 from .filing_evidence import parse_filing_metadata
 from .ledger_db import (
+    AEAT_CASE_TRANSITIONS,
     AEAT_CASE_STATUSES,
     AEAT_DOCUMENT_KINDS,
     AEAT_PROCEDURE_KINDS,
+    LifecycleError,
     LedgerDB,
+    StaleRowVersionError,
 )
 from .storage_service import register_local_source_replica
 
@@ -155,11 +158,15 @@ def record_aeat_document(
     archive_root: Path,
     *,
     actor: str,
+    case_id: str | None = None,
+    expected_row_version: int | None = None,
     dry_run: bool = False,
     **metadata: Any,
 ) -> dict[str, Any]:
     candidate = build_aeat_candidate(path, **metadata)
     payload = candidate.__dict__.copy()
+    if case_id is None and expected_row_version is not None:
+        raise ValueError("case_id is required when expected_row_version is supplied")
     existing = db.connection.execute(
         """
         SELECT ad.*, ac.title, ac.procedure_kind, ac.procedure_code, ac.form_code,
@@ -173,6 +180,8 @@ def record_aeat_document(
         (candidate.source_sha256,),
     ).fetchone()
     if existing is not None:
+        if case_id is not None and existing["aeat_case_id"] != case_id:
+            raise ValueError("AEAT document already belongs to a different case")
         expected = {
             "title": candidate.title,
             "procedure_kind": candidate.procedure_kind,
@@ -191,8 +200,41 @@ def record_aeat_document(
         if any(existing[key] != value for key, value in expected.items()):
             raise ValueError("AEAT document already exists with different metadata")
         return {"ok": True, "recorded": True, "idempotent": True, **dict(existing)}
+    if case_id is not None:
+        if expected_row_version is None:
+            raise ValueError("expected_row_version is required when case_id is supplied")
+        case = db.connection.execute(
+            "SELECT * FROM aeat_cases WHERE aeat_case_id = ?", (case_id,)
+        ).fetchone()
+        if case is None:
+            raise ValueError("Unknown AEAT case")
+        if int(case["row_version"]) != expected_row_version:
+            raise StaleRowVersionError(
+                f"Expected row_version {expected_row_version}, got {case['row_version']}"
+            )
+        expected_case = {
+            "title": candidate.title,
+            "procedure_kind": candidate.procedure_kind,
+            "procedure_code": candidate.procedure_code,
+            "form_code": candidate.form_code,
+            "requested_effective_on": candidate.requested_effective_on,
+            "primary_reference": candidate.primary_reference,
+        }
+        if any(case[key] != value for key, value in expected_case.items()):
+            raise ValueError("AEAT document metadata conflicts with the existing case")
+        current = str(case["current_status"])
+        if candidate.status != current and candidate.status not in AEAT_CASE_TRANSITIONS[current]:
+            raise LifecycleError(
+                f"Invalid AEAT case transition: {current} -> {candidate.status}"
+            )
     if dry_run:
-        return {"ok": True, "recorded": False, "dry_run": True, "candidate": payload}
+        return {
+            "ok": True,
+            "recorded": False,
+            "dry_run": True,
+            "case_id": case_id,
+            "candidate": payload,
+        }
 
     archived_path = archive_aeat_pdf(
         path,
@@ -232,7 +274,8 @@ def record_aeat_document(
             media_type=candidate.media_type,
             storage_root=archive_root,
         )
-        result = db.create_aeat_case_with_document(
+        save = db.attach_aeat_document_to_case if case_id else db.create_aeat_case_with_document
+        result = save(
             document_id=str(stored["document_id"]),
             source_hash=candidate.source_sha256,
             title=candidate.title,
@@ -249,6 +292,11 @@ def record_aeat_document(
             verification_code=candidate.verification_code,
             notes=candidate.notes,
             actor=actor,
+            **(
+                {"aeat_case_id": case_id, "expected_row_version": expected_row_version}
+                if case_id
+                else {}
+            ),
         )
     return {
         "ok": True,
