@@ -4906,6 +4906,7 @@ class LedgerDB:
         notes: str | None,
         actor: str,
         expected_row_version: int,
+        evidence_document_id: str | None = None,
     ) -> dict[str, Any]:
         """Append a sourced status event and update the case atomically."""
         if status not in AEAT_CASE_STATUSES:
@@ -4918,7 +4919,7 @@ class LedgerDB:
         case = self._fetch_one(
             "SELECT * FROM aeat_cases WHERE aeat_case_id = ?", (aeat_case_id,)
         )
-        existing = self._fetch_optional(
+        existing = None if evidence_document_id else self._fetch_optional(
             """
             SELECT * FROM aeat_case_events
             WHERE aeat_case_id = ? AND status = ? AND occurred_at = ?
@@ -4951,13 +4952,14 @@ class LedgerDB:
                 INSERT INTO aeat_case_events (
                     aeat_case_event_id, aeat_case_id, status, occurred_at,
                     evidence_document_id, evidence_reference, notes, actor, created_at
-                ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     event_id,
                     aeat_case_id,
                     status,
                     occurred_at,
+                    evidence_document_id,
                     reference,
                     _optional_text(notes),
                     actor,
@@ -4971,6 +4973,115 @@ class LedgerDB:
             "SELECT * FROM aeat_case_events WHERE aeat_case_event_id = ?", (event_id,)
         )
         return {**updated, "event": event, "idempotent": False}
+
+    def attach_aeat_document_to_case(
+        self,
+        *,
+        aeat_case_id: str,
+        expected_row_version: int,
+        document_id: str,
+        source_hash: str,
+        title: str,
+        procedure_kind: str,
+        procedure_code: str | None,
+        form_code: str | None,
+        document_kind: str,
+        status: str,
+        occurred_at: str,
+        requested_effective_on: str | None,
+        primary_reference: str | None,
+        submission_reference: str | None,
+        justificante_number: str | None,
+        verification_code: str | None,
+        notes: str | None,
+        actor: str,
+    ) -> dict[str, Any]:
+        """Attach an immutable document and sourced status to an existing case."""
+        digest = _normalize_sha256(source_hash)
+        actor = actor.strip()
+        if not actor:
+            raise ValueError("AEAT case event actor is required")
+        _validate_aeat_metadata(
+            procedure_kind=procedure_kind,
+            procedure_code=procedure_code,
+            form_code=form_code,
+            document_kind=document_kind,
+            status=status,
+            occurred_at=occurred_at,
+            requested_effective_on=requested_effective_on,
+        )
+        case = self._fetch_one(
+            "SELECT * FROM aeat_cases WHERE aeat_case_id = ?", (aeat_case_id,)
+        )
+        self._check_row_version(case, expected_row_version)
+        expected_case = {
+            "title": title.strip(),
+            "procedure_kind": procedure_kind,
+            "procedure_code": _optional_text(procedure_code),
+            "form_code": _optional_text(form_code),
+            "requested_effective_on": requested_effective_on,
+            "primary_reference": _optional_text(primary_reference),
+        }
+        if any(case[key] != value for key, value in expected_case.items()):
+            raise ValueError("AEAT document metadata conflicts with the existing case")
+        current = str(case["current_status"])
+        if status != current and status not in AEAT_CASE_TRANSITIONS[current]:
+            raise LifecycleError(f"Invalid AEAT case transition: {current} -> {status}")
+
+        aeat_document_id = _new_id()
+        timestamp = _utc_now()
+        reference = (
+            _optional_text(submission_reference)
+            or _optional_text(primary_reference)
+            or _optional_upper(verification_code)
+        )
+        with self.transaction():
+            self.connection.execute(
+                """
+                INSERT INTO aeat_documents (
+                    aeat_document_id, aeat_case_id, document_id, document_kind,
+                    occurred_at, submission_reference, justificante_number,
+                    verification_code, notes, source_hash, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    aeat_document_id,
+                    aeat_case_id,
+                    document_id,
+                    document_kind,
+                    occurred_at,
+                    _optional_text(submission_reference),
+                    _optional_text(justificante_number),
+                    _optional_upper(verification_code),
+                    _optional_text(notes),
+                    digest,
+                    timestamp,
+                ),
+            )
+            self.record_aeat_case_status(
+                aeat_case_id,
+                status=status,
+                occurred_at=occurred_at,
+                evidence_reference=reference or "AEAT document",
+                notes=notes,
+                actor=actor,
+                expected_row_version=expected_row_version,
+                evidence_document_id=aeat_document_id,
+            )
+        return {
+            **self._fetch_one(
+                """
+                SELECT ad.*, ac.title, ac.procedure_kind, ac.procedure_code, ac.form_code,
+                       ac.current_status, ac.requested_effective_on, ac.primary_reference,
+                       ac.row_version AS case_row_version
+                FROM aeat_documents ad
+                JOIN aeat_cases ac ON ac.aeat_case_id = ad.aeat_case_id
+                WHERE ad.aeat_document_id = ?
+                """,
+                (aeat_document_id,),
+            ),
+            "idempotent": False,
+        }
 
     def validate_period(
         self,

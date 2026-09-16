@@ -50,9 +50,12 @@ idempotent and does not create a second case.
 
 ## Recording the outcome
 
-Use **Add status** on the saved case. Every status change needs a dated evidence
-reference, for example an AEAT decision or a documented manual VIES check.
-Status history is append-only.
+Upload an AEAT decision through **Add AEAT document** and select the existing
+case. A positive decision is document type **Decision** and status **Approved**.
+The PDF and the sourced status transition are then saved together; status
+history is append-only. Use **Add status** only for evidence without a PDF, such
+as a documented manual VIES check. **Approved** is final; do not add a separate
+**Closed** status after a positive decision.
 
 `submitted` means only that AEAT accepted the declaration for processing. Use
 the Spanish VAT number for intra-Community treatment only after the authoritative

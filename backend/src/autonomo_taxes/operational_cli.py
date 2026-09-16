@@ -1238,6 +1238,8 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     aeat_record.add_argument("--justificante")
     aeat_record.add_argument("--verification-code")
     aeat_record.add_argument("--notes")
+    aeat_record.add_argument("--case-id")
+    aeat_record.add_argument("--expected-row-version", type=int)
     aeat_record.add_argument("--actor", required=True)
     aeat_record.add_argument("--dry-run", action="store_true")
     aeat_record.set_defaults(_operational_handler=_cmd_aeat_document_record)
@@ -5229,6 +5231,8 @@ def _cmd_aeat_document_record(args: argparse.Namespace) -> int:
             justificante_number=args.justificante,
             verification_code=args.verification_code,
             notes=args.notes,
+            case_id=args.case_id,
+            expected_row_version=args.expected_row_version,
         )
     _emit(result)
     return 0

@@ -14,6 +14,7 @@ export interface AeatDocumentRow {
   status: string;
   occurred_at: string;
   requested_effective_on?: string | null;
+  primary_reference?: string | null;
   submission_reference?: string | null;
   justificante_number?: string | null;
   verification_code?: string | null;

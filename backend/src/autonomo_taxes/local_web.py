@@ -963,7 +963,7 @@ class LocalAccountingApp:
             "dry_run", "title", "procedure_kind", "procedure_code", "form_code",
             "document_kind", "status", "occurred_at", "requested_effective_on",
             "reference", "submission_reference", "justificante", "verification_code",
-            "notes",
+            "notes", "case_id", "expected_row_version",
         }
         unknown = sorted(set(fields) - allowed_fields)
         if unknown:
@@ -995,7 +995,8 @@ class LocalAccountingApp:
             "occurred_at": "--occurred-at", "requested_effective_on": "--requested-effective-on",
             "reference": "--reference", "submission_reference": "--submission-reference",
             "justificante": "--justificante", "verification_code": "--verification-code",
-            "notes": "--notes",
+            "notes": "--notes", "case_id": "--case-id",
+            "expected_row_version": "--expected-row-version",
         }
         for field_name, option in option_map.items():
             value = fields.get(field_name, "").strip()
