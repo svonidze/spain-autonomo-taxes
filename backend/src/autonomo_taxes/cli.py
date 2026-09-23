@@ -258,6 +258,7 @@ from .tax_report_sequence import (
     write_tax_report_sequence_csv,
     write_tax_report_sequence_markdown,
 )
+from .tax_rules import difficult_expense_rate_for_year
 from .target_values_coverage import (
     build_target_values_coverage,
     write_target_values_coverage_csv,
@@ -1716,7 +1717,7 @@ def _cmd_modelo130(args: argparse.Namespace) -> int:
         previous,
         minoracion=target.get("13", Decimal("0.00")) if target else Decimal("0.00"),
         include_difficult_expenses=args.difficult_expenses_policy == "include",
-        difficult_expenses_rate=_difficult_expenses_rate_for_year(year),
+        difficult_expenses_rate=difficult_expense_rate_for_year(year),
     )
     manifest = _build_manifest(args, xolo_root, out_dir, target is not None)
 
@@ -2034,10 +2035,6 @@ def _manual_relevant_to_run(entry: LedgerEntry, year: int, quarter: int) -> bool
         return True
     name = Path(entry.document).name
     return str(year) in name
-
-
-def _difficult_expenses_rate_for_year(year: int) -> Decimal:
-    return Decimal("0.07") if year == 2023 else Decimal("0.05")
 
 
 if __name__ == "__main__":
