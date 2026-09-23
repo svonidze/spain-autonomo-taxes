@@ -8,6 +8,7 @@ import re
 
 from .money import RATE_PLACES, cents, parse_amount
 from .pdf_text import readable_text
+from .tax_rules import IMMEDIATE_WRITE_OFF_UNIT_LIMIT_EUR
 
 EN_MONTHS = {
     "january": 1,
@@ -169,7 +170,7 @@ def parse_expense(
     path: Path,
     text: str,
     extraction_error: str | None = None,
-    asset_review_threshold_eur: Decimal = Decimal("600.00"),
+    asset_review_threshold_eur: Decimal = IMMEDIATE_WRITE_OFF_UNIT_LIMIT_EUR,
 ) -> LedgerEntry:
     suffix = path.suffix.lower()
     if suffix != ".pdf":
@@ -286,7 +287,7 @@ def parse_expense(
         return entry
 
     if "Amazon EU" in text and "IVA" in text:
-        return _expense_from_pattern(
+        entry = _expense_from_pattern(
             path,
             text,
             counterparty="Amazon EU",
@@ -296,6 +297,11 @@ def parse_expense(
             currency="EUR",
             confidence="medium",
             notes="Uses base without recoverable IVA",
+        )
+        return _flag_asset_review(
+            entry,
+            asset_review_threshold_eur,
+            "Large Amazon equipment purchase; amortization/capitalization review required",
         )
 
     if "Apple Retail Spain" in text or "Apple Distribution International" in text:
@@ -310,12 +316,11 @@ def parse_expense(
             confidence="medium",
             notes="Uses base without recoverable IVA",
         )
-        if entry.amount_original and entry.amount_original >= asset_review_threshold_eur:
-            entry.category = "asset_review"
-            entry.review_required = True
-            entry.deductible_eur = None
-            entry.notes = "Large Apple equipment purchase; amortization/capitalization review required"
-        return entry
+        return _flag_asset_review(
+            entry,
+            asset_review_threshold_eur,
+            "Large Apple equipment purchase; amortization/capitalization review required",
+        )
 
     if "ROSSELLI" in text or "MBP 16" in text or "MacBook" in text:
         entry = _expense_from_pattern(
@@ -329,7 +334,7 @@ def parse_expense(
             confidence="medium",
             notes="Large equipment purchase; amortization/capitalization review required",
         )
-        if entry.amount_original is None or entry.amount_original >= asset_review_threshold_eur:
+        if entry.amount_original is None or entry.amount_original > asset_review_threshold_eur:
             entry.review_required = True
             entry.deductible_eur = None
         return entry
@@ -392,7 +397,7 @@ def scan_income_dir(path: Path) -> tuple[list[LedgerEntry], list[LedgerEntry]]:
 
 def scan_expense_dir(
     path: Path,
-    asset_review_threshold_eur: Decimal = Decimal("600.00"),
+    asset_review_threshold_eur: Decimal = IMMEDIATE_WRITE_OFF_UNIT_LIMIT_EUR,
 ) -> tuple[list[LedgerEntry], list[LedgerEntry]]:
     parsed: list[LedgerEntry] = []
     manual: list[LedgerEntry] = []
@@ -495,6 +500,21 @@ def _expense_from_pattern(
         review_required=amount is None or issued is None,
         notes=notes,
     )
+
+
+def _flag_asset_review(entry: LedgerEntry, threshold: Decimal, note: str) -> LedgerEntry:
+    """Queue an equipment entry for asset review when its base exceeds threshold.
+
+    Immediate write-off (libertad de amortizacion) only covers new items with
+    unit value <= threshold; above that, deductibility requires amortization
+    review instead of full immediate expense.
+    """
+    if entry.amount_original and entry.amount_original > threshold:
+        entry.category = "asset_review"
+        entry.review_required = True
+        entry.deductible_eur = None
+        entry.notes = note
+    return entry
 
 
 def _search(pattern: str, text: str) -> str | None:
