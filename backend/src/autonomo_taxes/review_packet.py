@@ -12,6 +12,7 @@ from .counterparty_names import is_oss_non_union_identifier
 from .fx_policy import ALLOWED_PRODUCTION_SOURCES, XOLO_RECORDED_PRODUCTION_THROUGH
 from .fx_reference import ECBRateObservation, FALLBACK_WINDOW_DAYS
 from .ledger_db import FxRateConflictError, LedgerDB, VALID_LIFECYCLE_TRANSITIONS
+from .tax_rules import INCOME_BEFORE_ACTIVITY_START_CODE, INVOICE_ISSUE_DEADLINE_CODE
 from .vat_classification import is_vat_investment_good
 from .tax_engine import (
     INTRACOMMUNITY_ACQUISITION_CODES,
@@ -108,6 +109,8 @@ SUPPORTED_WORK_ITEM_STEP_CODES = {
 ISSUE_REQUIREMENT_STEP_CODES = {
     "counterparty_tax_profile_review": {"confirm_counterparty_tax_profile"},
     "transaction_tax_review": set(),
+    INCOME_BEFORE_ACTIVITY_START_CODE: {"confirm_income_recognition"},
+    INVOICE_ISSUE_DEADLINE_CODE: set(),
 }
 # FX sources that may be chosen through the guided confirmation flow. ECB
 # rates are re-verified server-side; settlement rates must carry a documented

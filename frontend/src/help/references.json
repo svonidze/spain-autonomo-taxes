@@ -126,6 +126,16 @@
       "help.reasons.transaction_tax_review.description",
       "help.reasons.transaction_tax_review.action"
     ],
+    "income_before_activity_start": [
+      "help.reasons.income_before_activity_start.title",
+      "help.reasons.income_before_activity_start.description",
+      "help.reasons.income_before_activity_start.action"
+    ],
+    "invoice_issue_deadline_missed": [
+      "help.reasons.invoice_issue_deadline_missed.title",
+      "help.reasons.invoice_issue_deadline_missed.description",
+      "help.reasons.invoice_issue_deadline_missed.action"
+    ],
     "modelo100_deferral_submission_unconfirmed": [
       "help.reasons.modelo100_deferral_submission_unconfirmed.title",
       "help.reasons.modelo100_deferral_submission_unconfirmed.description",

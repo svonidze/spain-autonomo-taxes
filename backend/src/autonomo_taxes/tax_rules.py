@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 import re
@@ -15,6 +16,17 @@ QUARTERLY_FORM_CODES = ("130", "303", "349", "111", "115", "216")
 ANNUAL_FORM_CODES = ("390", "347", "190", "180", "296", "100", "714", "720", "721")
 ALL_FORM_CODES = QUARTERLY_FORM_CODES + ANNUAL_FORM_CODES
 DIFFICULT_EXPENSE_CAP_EUR = Decimal("2000.00")
+
+INVOICE_ISSUE_DEADLINE_CODE = "invoice_issue_deadline_missed"
+INVOICE_ISSUE_DEADLINE_SOURCE = (
+    "RD 1619/2012 (Reglamento de facturacion), art. 11.1: when the recipient is a business "
+    "or professional acting as such, the invoice must be issued before the 16th day of the "
+    "month following the accrual (devengo). The service date or service period end is used "
+    "as the accrual date; advance payments (art. 75.Dos LIVA) and continuous supplies "
+    "(art. 75.Uno.7º LIVA) can accrue on another date. Corrective invoices follow art. 15.3 "
+    "(up to four years) instead. https://www.boe.es/buscar/act.php?id=BOE-A-2012-14696"
+)
+INCOME_BEFORE_ACTIVITY_START_CODE = "income_before_activity_start"
 
 _YEAR_PATTERN = re.compile(r"(?<!\d)(20\d{2})(?!\d)")
 _QUARTER_PATTERNS = (
@@ -182,6 +194,25 @@ def calculate_difficult_expenses(
         return Decimal("0.00")
     rule = difficult_expense_rule_for_year(year)
     return min(cents(base * rule.rate), rule.annual_cap_eur)
+
+
+def invoice_issue_deadline(accrued_on: date) -> date:
+    """Last issue date allowed for a business recipient: the 15th of the next month."""
+    if accrued_on.month == 12:
+        return date(accrued_on.year + 1, 1, 15)
+    return date(accrued_on.year, accrued_on.month + 1, 15)
+
+
+def invoice_issue_deadline_warning(*, accrued_on: date, issued_on: date) -> str | None:
+    deadline = invoice_issue_deadline(accrued_on)
+    if issued_on <= deadline:
+        return None
+    return (
+        f"Issue date {issued_on.isoformat()} is after {deadline.isoformat()}, the last day "
+        f"allowed for a business recipient when the service accrues on {accrued_on.isoformat()}. "
+        "The ledger cannot tell a private individual from a business, so the recipient is "
+        "treated as a business or professional."
+    )
 
 
 def recognize_tax_form_filename(name: str) -> RecognizedTaxForm | None:

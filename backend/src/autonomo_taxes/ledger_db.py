@@ -22,6 +22,7 @@ from .outgoing_invoices import (
     canonical_lines_json,
     invoice_line_hash,
     normalize_invoice_lines,
+    outgoing_invoice_warnings,
     parse_template_lines,
     validate_currency,
     validate_withholding_rate,
@@ -666,6 +667,11 @@ class LedgerDB:
             params = (taxpayer_profile_id,)
         sql += " ORDER BY starts_on, activity_key"
         return self._fetch_all(sql, params)
+
+    def earliest_business_activity_start(self) -> str | None:
+        return self.connection.execute(
+            "SELECT MIN(starts_on) FROM business_activities"
+        ).fetchone()[0]
 
     def add_import_batch(
         self,
@@ -6055,6 +6061,7 @@ class LedgerDB:
             if row["lifecycle_status"] == "issued"
             else "not_issued_do_not_book_as_income"
         )
+        row["warnings"] = outgoing_invoice_warnings(row)
         return row
 
     def list_outgoing_invoice_drafts(

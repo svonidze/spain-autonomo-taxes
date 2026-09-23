@@ -140,6 +140,17 @@ fields universally mean the payment date or change them to force a desired
 period. Their recorded accounting meaning must be checked for the operation.
 A sent-email date alone does not prove a document's issue date.
 
+Intake compares these dates for a new income entry. An invoice issued after the
+15th of the month following its service period end gets the non-blocking
+`invoice_issue_deadline_missed` issue (RD 1619/2012 art. 11.1 for business
+customers; the ledger cannot recognise a private individual, so every customer is
+treated as a business). A corrective invoice (`correction_of`) is exempt from this
+check, because art. 15.3 allows up to four years. Income dated, or with a service
+period starting, before the earliest recorded business activity start gets the
+blocking `income_before_activity_start` issue, which needs an explicit resolution
+reason.
+Outgoing invoice drafts report the same deadline check in `warnings`.
+
 Names, addresses and identifiers may be supplemented from verified earlier
 documents for the same party, after checking that they remain applicable.
 Record which source supports each addition and any explicit confirmation.

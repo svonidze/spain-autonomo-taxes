@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import hashlib
 import json
 from typing import Any, Iterable, Mapping
+
+from .tax_rules import (
+    INVOICE_ISSUE_DEADLINE_CODE,
+    INVOICE_ISSUE_DEADLINE_SOURCE,
+    invoice_issue_deadline_warning,
+)
 
 
 @dataclass(frozen=True)
@@ -159,6 +166,24 @@ def validate_currency(value: str) -> str:
 
 def validate_withholding_rate(value: Any) -> int:
     return _basis_points(value, "withholding_rate_basis_points")
+
+
+def outgoing_invoice_warnings(draft: Mapping[str, Any]) -> list[dict[str, str]]:
+    """Non-blocking checks derived from a stored draft; historical rows stay readable."""
+    warnings: list[dict[str, str]] = []
+    deadline_message = invoice_issue_deadline_warning(
+        accrued_on=date.fromisoformat(str(draft["service_on"])),
+        issued_on=date.fromisoformat(str(draft["planned_issue_on"])),
+    )
+    if deadline_message is not None:
+        warnings.append(
+            {
+                "code": INVOICE_ISSUE_DEADLINE_CODE,
+                "message": deadline_message,
+                "source": INVOICE_ISSUE_DEADLINE_SOURCE,
+            }
+        )
+    return warnings
 
 
 def _positive_decimal(value: Any, label: str) -> Decimal:
