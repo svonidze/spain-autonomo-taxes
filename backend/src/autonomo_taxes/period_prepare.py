@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .cash_check import build_cash_check
+from .periodic_actions import build_periodic_actions, periodic_action_schedule_events
 from .tax_calendar import build_period_ics
 
 
@@ -109,6 +110,12 @@ def build_period_preparation(
         due_forms=due_forms,
         cash_check=cash,
     )
+    periodic_actions = build_periodic_actions(
+        period=period,
+        as_of=as_of,
+        obligations=obligations,
+        calculations=calculations,
+    )
     return {
         "schema_version": 2,
         "report_type": "quarter_tax_preparation",
@@ -131,6 +138,7 @@ def build_period_preparation(
         "calculation_blockers": calculation_blockers,
         "filing_blockers": filing_blockers,
         "manual_filing": manual_filing,
+        "periodic_actions": periodic_actions,
         "manual_submission_steps": [
             "Enter the value-bound casillas below in the corresponding AEAT form.",
             "Choose payment or compensation using the cash-check result.",
@@ -234,6 +242,9 @@ def write_period_preparation(
             period_ends_on=period_end,
             obligations=list(report["obligations"]),
             cash_check=report["cash_check"],
+            extra_events=periodic_action_schedule_events(
+                report.get("periodic_actions", [])
+            ),
         ),
         encoding="utf-8",
         newline="",
@@ -379,5 +390,24 @@ def _markdown(report: Mapping[str, Any]) -> str:
         f"{index}. {step}"
         for index, step in enumerate(report["manual_submission_steps"], start=1)
     )
+    lines.append("")
+    periodic_actions = report.get("periodic_actions") or []
+    lines.extend(["## Periodic actions (no filing form)", ""])
+    if periodic_actions:
+        for action in periodic_actions:
+            extra = ""
+            if action.get("effective_on"):
+                extra += f" Effective {action['effective_on']}."
+            if action.get("debit_on"):
+                extra += f" Debit date {action['debit_on']}."
+            if action.get("compensation_carryforward_eur"):
+                extra += f" Pending balance {action['compensation_carryforward_eur']} EUR."
+            lines.append(
+                f"- {action['due_on']} ({action['status']}): {action['title']} "
+                f"(`{action['code']}`, {action['cadence']}).{extra} "
+                f"Source: {action['source_citation']} ({action['source_url']})."
+            )
+    else:
+        lines.append("None.")
     lines.append("")
     return "\n".join(lines)
