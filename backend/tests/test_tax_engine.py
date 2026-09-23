@@ -655,3 +655,211 @@ def test_modelo100_support_uses_2023_seven_percent_when_supplied() -> None:
         difficult_expenses_rate=Decimal("0.07"),
     )
     assert report.values["difficult_expenses"] == Decimal("70.00")
+
+
+def _new_activity_support(net_before_difficult: str, *, year: int = 2026, **facts):
+    rows = [
+        row(
+            "income",
+            tax_date=date(year, 6, 1),
+            kind="income",
+            amount_eur=Decimal(net_before_difficult),
+            taxable_base_eur=Decimal(net_before_difficult),
+            include_modelo130=True,
+        )
+    ]
+    facts.setdefault(
+        "business_activities",
+        [{"starts_on": "2025-03-01", "ends_on": None, "irpf_method": "estimacion_directa_simplificada"}],
+    )
+    return calculate_modelo100_business_support(
+        rows,
+        year=year,
+        difficult_expenses_rate=Decimal("0.05"),
+        **facts,
+    ).values
+
+
+ATTESTED = {
+    "new_activity_prior_activity": "none",
+    "new_activity_former_employer_over_half": False,
+}
+
+
+@pytest.mark.parametrize("first_positive_year", [2025, 2026])
+def test_new_activity_reduction_eligible_in_first_positive_year_and_next(first_positive_year) -> None:
+    values = _new_activity_support(
+        "30000.00", new_activity_first_positive_year=first_positive_year, **ATTESTED
+    )
+
+    assert values["business_net_income"] == Decimal("28500.00")
+    assert values["new_activity_reduction_status"] == "eligible"
+    assert values["new_activity_reduction_window_years"] == [first_positive_year, first_positive_year + 1]
+    assert values["new_activity_reduction_base"] == Decimal("28500.00")
+    assert values["new_activity_reduction_amount"] == Decimal("5700.00")
+    assert values["new_activity_reduction_missing_facts"] == []
+
+
+def test_new_activity_reduction_caps_base_at_100000() -> None:
+    values = _new_activity_support("152000.00", new_activity_first_positive_year=2026, **ATTESTED)
+
+    assert values["business_net_income"] == Decimal("150000.00")
+    assert values["new_activity_reduction_base"] == Decimal("100000.00")
+    assert values["new_activity_reduction_amount"] == Decimal("20000.00")
+
+
+def test_new_activity_reduction_derives_first_positive_year_only_in_start_year() -> None:
+    activity = [{"starts_on": "2026-02-01", "ends_on": None, "irpf_method": "estimacion_directa_simplificada"}]
+    values = _new_activity_support("10000.00", business_activities=activity, **ATTESTED)
+
+    assert values["new_activity_reduction_status"] == "eligible"
+    assert values["new_activity_reduction_window_years"] == [2026, 2027]
+
+
+@pytest.mark.parametrize(
+    ("facts", "reason"),
+    [
+        (
+            {
+                **ATTESTED,
+                "new_activity_first_positive_year": 2024,
+                "business_activities": [
+                    {"starts_on": "2023-09-01", "ends_on": None, "irpf_method": "estimacion_directa_simplificada"}
+                ],
+            },
+            "outside_reduction_window",
+        ),
+        (
+            {**ATTESTED, "new_activity_former_employer_over_half": True, "new_activity_first_positive_year": 2026},
+            "former_employer_income_over_half",
+        ),
+        ({"new_activity_prior_activity": "yes"}, "prior_activity_before_start"),
+        (
+            {
+                **ATTESTED,
+                "business_activities": [
+                    {"starts_on": "2025-03-01", "ends_on": None, "irpf_method": "estimacion_objetiva"}
+                ],
+            },
+            "irpf_method_not_direct_estimation",
+        ),
+    ],
+)
+def test_new_activity_reduction_not_eligible(facts, reason) -> None:
+    values = _new_activity_support("30000.00", **facts)
+
+    assert values["new_activity_reduction_status"] == "not_eligible"
+    assert values["new_activity_reduction_reason"] == reason
+    assert values["new_activity_reduction_base"] is None
+    assert values["new_activity_reduction_amount"] is None
+    assert values["business_net_income"] == Decimal("28500.00")
+
+
+def test_new_activity_reduction_is_unknown_without_attested_facts() -> None:
+    values = _new_activity_support("30000.00")
+
+    assert values["new_activity_reduction_status"] == "unknown"
+    assert values["new_activity_reduction_reason"] == "missing_facts"
+    assert values["new_activity_reduction_missing_facts"] == [
+        "prior_activity_before_start",
+        "former_employer_income_over_half",
+        "first_positive_net_year",
+    ]
+    assert values["new_activity_reduction_amount"] is None
+
+    no_activity = _new_activity_support(
+        "30000.00", business_activities=[], new_activity_first_positive_year=2026, **ATTESTED
+    )
+    assert no_activity["new_activity_reduction_status"] == "unknown"
+    assert no_activity["new_activity_reduction_missing_facts"] == ["business_activity"]
+
+    two_activities = _new_activity_support(
+        "30000.00",
+        business_activities=[
+            {"starts_on": "2025-03-01", "ends_on": None, "irpf_method": "estimacion_directa_simplificada"},
+            {"starts_on": "2026-01-01", "ends_on": None, "irpf_method": "estimacion_directa_simplificada"},
+        ],
+        new_activity_first_positive_year=2026,
+        **ATTESTED,
+    )
+    assert two_activities["new_activity_reduction_status"] == "unknown"
+    assert two_activities["new_activity_reduction_reason"] == "multiple_business_activities"
+
+
+def test_new_activity_reduction_rejects_first_positive_year_after_positive_year() -> None:
+    with pytest.raises(ValueError, match="is after 2026"):
+        _new_activity_support("30000.00", new_activity_first_positive_year=2027, **ATTESTED)
+
+
+@pytest.mark.parametrize("prior_activity", ["none", "yes"])
+def test_new_activity_reduction_rejects_first_positive_year_before_start(prior_activity) -> None:
+    with pytest.raises(ValueError, match="precedes the activity start"):
+        _new_activity_support(
+            "30000.00",
+            new_activity_first_positive_year=2024,
+            new_activity_prior_activity=prior_activity,
+            new_activity_former_employer_over_half=True,
+        )
+
+
+@pytest.mark.parametrize("net_before_difficult", ["0.00", "-500.00"])
+def test_new_activity_reduction_needs_positive_net_income(net_before_difficult) -> None:
+    values = _new_activity_support(net_before_difficult, new_activity_first_positive_year=2025, **ATTESTED)
+
+    assert values["new_activity_reduction_status"] == "not_eligible"
+    assert values["new_activity_reduction_reason"] == "net_income_not_positive"
+    assert values["new_activity_reduction_amount"] is None
+
+
+def test_new_activity_reduction_ignores_activities_outside_the_year() -> None:
+    values = _new_activity_support(
+        "30000.00",
+        business_activities=[
+            {"starts_on": "2020-01-01", "ends_on": "2023-06-30", "irpf_method": "estimacion_objetiva"},
+            {"starts_on": "2025-03-01", "ends_on": None, "irpf_method": "estimacion_directa_simplificada"},
+            {"starts_on": "2027-01-01", "ends_on": None, "irpf_method": "estimacion_objetiva"},
+        ],
+        new_activity_first_positive_year=2025,
+        **ATTESTED,
+    )
+
+    assert values["new_activity_reduction_status"] == "eligible"
+
+
+@pytest.mark.parametrize(
+    ("previous_ends_on", "starts_on", "status"),
+    [
+        ("2025-10-31", "2026-02-01", "unknown"),
+        ("2025-01-31", "2026-02-01", "eligible"),
+        ("2027-02-28", "2028-02-29", "unknown"),
+        ("2027-02-27", "2028-02-29", "eligible"),
+    ],
+)
+def test_new_activity_reduction_flags_ledger_activity_in_the_year_before_start(
+    previous_ends_on, starts_on, status
+) -> None:
+    year = int(starts_on[:4])
+    activities = [
+        {"starts_on": "2020-01-01", "ends_on": previous_ends_on, "irpf_method": "estimacion_directa_simplificada"},
+        {"starts_on": starts_on, "ends_on": None, "irpf_method": "estimacion_directa_simplificada"},
+    ]
+    values = _new_activity_support("30000.00", year=year, business_activities=activities, **ATTESTED)
+
+    assert values["new_activity_reduction_status"] == status
+    if status == "unknown":
+        assert values["new_activity_reduction_reason"] == "prior_activity_conflicts_with_ledger"
+        never_positive = _new_activity_support(
+            "30000.00",
+            year=year,
+            business_activities=activities,
+            **{**ATTESTED, "new_activity_prior_activity": "never_positive"},
+        )
+        assert never_positive["new_activity_reduction_status"] == "eligible"
+
+
+def test_new_activity_reduction_rounds_amount_to_cents() -> None:
+    values = _new_activity_support("10526.35", new_activity_first_positive_year=2026, **ATTESTED)
+
+    assert values["business_net_income"] == Decimal("10000.03")
+    assert values["new_activity_reduction_base"] == Decimal("10000.03")
+    assert values["new_activity_reduction_amount"] == Decimal("2000.01")

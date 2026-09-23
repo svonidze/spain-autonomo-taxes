@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
-from typing import Iterable
+from typing import Any, Iterable, Mapping
 
 from .counterparty_names import is_oss_non_union_identifier
 from .modelo130 import Modelo130Result, calculate_modelo130
 from .money import cents
+from .tax_rules import (
+    DIRECT_ESTIMATION_IRPF_METHODS,
+    NEW_ACTIVITY_REDUCTION_BASE_CAP_EUR,
+    NEW_ACTIVITY_REDUCTION_RATE,
+    NEW_ACTIVITY_REDUCTION_SOURCE,
+)
 from .vat_classification import LEGACY_VAT_CLASSIFICATION_WARNING, is_vat_investment_good
 
 
@@ -98,7 +104,7 @@ class TaxRow:
 class CalculationResult:
     form: str
     period: str
-    values: dict[str, Decimal | str]
+    values: dict[str, Decimal | str | int | list[Any] | None]
     lineage: dict[str, tuple[str, ...]] = field(default_factory=dict)
     warnings: tuple[str, ...] = ()
 
@@ -214,7 +220,7 @@ def calculate_modelo303_rows(
     for row in output:
         output_by_rate[_modelo303_rate(row)].append(row)
 
-    values: dict[str, Decimal | str] = {}
+    values: dict[str, Any] = {}
     lineage: dict[str, tuple[str, ...]] = {}
     for rate, (base_box, rate_box, vat_box) in MODELO303_RATE_BOXES.items():
         rate_rows = output_by_rate[rate]
@@ -507,7 +513,7 @@ def calculate_modelo390(
     eu_supplies = _sum_report_values(reports, "59")
     exports = _sum_report_values(reports, "60")
     outside_scope = _sum_report_values(reports, "120")
-    values: dict[str, Decimal | str] = {
+    values: dict[str, Any] = {
         "47": total_output_vat,
         "48": _sum_report_values(reports, "domestic_current_input_base"),
         "49": _sum_report_values(reports, "domestic_current_input_vat"),
@@ -579,7 +585,7 @@ def calculate_modelo347_rows(
         lineage_rows.setdefault(aggregate_key, []).append(row.transaction_id)
         quarterly_lineage.setdefault(quarter_key, []).append(row.transaction_id)
 
-    values: dict[str, Decimal | str] = {"rule_source": MODELO347_RULE_SOURCE}
+    values: dict[str, Any] = {"rule_source": MODELO347_RULE_SOURCE}
     lineage: dict[str, tuple[str, ...]] = {}
     for (counterparty_id, operation_key), annual_amount in sorted(aggregates.items()):
         if annual_amount <= threshold:
@@ -655,6 +661,10 @@ def calculate_modelo100_business_support(
     difficult_expenses_rate: Decimal,
     difficult_expenses_cap: Decimal = Decimal("2000.00"),
     unsupported_categories: Iterable[str] = (),
+    business_activities: Iterable[Mapping[str, Any]] = (),
+    new_activity_prior_activity: str | None = None,
+    new_activity_former_employer_over_half: bool | None = None,
+    new_activity_first_positive_year: int | None = None,
 ) -> CalculationResult:
     unsupported = tuple(sorted({value for value in unsupported_categories if value}))
     if unsupported:
@@ -674,13 +684,24 @@ def calculate_modelo100_business_support(
     expenses_total = _sum(expenses, "deductible_irpf_eur")
     net_before = cents(income - expenses_total)
     difficult = cents(min(max(net_before, ZERO) * difficult_expenses_rate, difficult_expenses_cap))
-    values = {
+    net_income = cents(net_before - difficult)
+    values: dict[str, Any] = {
         "business_income": income,
         "business_expenses_before_difficult": expenses_total,
         "difficult_expenses": difficult,
-        "business_net_income": cents(net_before - difficult),
+        "business_net_income": net_income,
         "status": "decision_support_requires_renta_web",
     }
+    values.update(
+        _new_activity_reduction(
+            year=year,
+            net_income=net_income,
+            activities=business_activities,
+            prior_activity=new_activity_prior_activity,
+            former_employer_over_half=new_activity_former_employer_over_half,
+            first_positive_year=new_activity_first_positive_year,
+        )
+    )
     return CalculationResult(
         "100-business-support",
         str(year),
@@ -689,7 +710,120 @@ def calculate_modelo100_business_support(
             "business_income": tuple(row.transaction_id for row in incomes),
             "business_expenses_before_difficult": tuple(row.transaction_id for row in expenses),
         },
-        ("This output is decision support and must be compared with Renta WEB.",),
+        (
+            "This output is decision support and must be compared with Renta WEB.",
+            (
+                "The new-activity reduction (LIRPF art. 32.3) is claimed only in Modelo 100 / Renta WEB "
+                "and never in Modelo 130. It is not subtracted from business_net_income. Its base is "
+                "the net income before any art. 32.1 or 32.2 reduction, so it is an upper bound when "
+                "one applies (art. 32.2.3 often applies at low incomes)."
+            ),
+        ),
+    )
+
+
+def activity_overlaps(activity: Mapping[str, Any], starts_on: date, ends_on: date) -> bool:
+    activity_start = date.fromisoformat(str(activity["starts_on"]))
+    activity_end = (
+        date.fromisoformat(str(activity["ends_on"]))
+        if activity.get("ends_on")
+        else date.max
+    )
+    return activity_start <= ends_on and activity_end >= starts_on
+
+
+def _new_activity_reduction(
+    *,
+    year: int,
+    net_income: Decimal,
+    activities: Iterable[Mapping[str, Any]],
+    prior_activity: str | None,
+    former_employer_over_half: bool | None,
+    first_positive_year: int | None,
+) -> dict[str, Any]:
+    if prior_activity not in {None, "none", "never_positive", "yes"}:
+        raise ValueError(f"Unsupported new-activity prior activity answer: {prior_activity}")
+
+    def outcome(
+        status: str,
+        reason: str,
+        *,
+        missing: list[str] | None = None,
+        window: list[int] | None = None,
+        base: Decimal | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "new_activity_reduction_status": status,
+            "new_activity_reduction_reason": reason,
+            "new_activity_reduction_missing_facts": missing or [],
+            "new_activity_reduction_window_years": window,
+            "new_activity_reduction_base": base,
+            "new_activity_reduction_amount": (
+                cents(base * NEW_ACTIVITY_REDUCTION_RATE) if base is not None else None
+            ),
+            "new_activity_reduction_source": NEW_ACTIVITY_REDUCTION_SOURCE,
+        }
+
+    activities = list(activities)
+    active = [
+        activity
+        for activity in activities
+        if activity_overlaps(activity, date(year, 1, 1), date(year, 12, 31))
+    ]
+    # ponytail: one active activity only; several need per-activity income attribution first.
+    if len(active) > 1:
+        return outcome("unknown", "multiple_business_activities")
+    missing: list[str] = []
+    starts_on: date | None = None
+    if active:
+        starts_on = date.fromisoformat(str(active[0]["starts_on"]))
+        if first_positive_year is not None and first_positive_year < starts_on.year:
+            raise ValueError(
+                f"First positive net year {first_positive_year} precedes the activity start {starts_on}"
+            )
+        if active[0]["irpf_method"] not in DIRECT_ESTIMATION_IRPF_METHODS:
+            return outcome("not_eligible", "irpf_method_not_direct_estimation")
+    else:
+        missing.append("business_activity")
+    if net_income <= ZERO:
+        return outcome("not_eligible", "net_income_not_positive")
+    if prior_activity == "yes":
+        return outcome("not_eligible", "prior_activity_before_start")
+    if former_employer_over_half:
+        return outcome("not_eligible", "former_employer_income_over_half")
+    if first_positive_year is None and starts_on is not None and starts_on.year == year:
+        first_positive_year = year
+    if first_positive_year is not None and first_positive_year > year:
+        raise ValueError(
+            f"First positive net year {first_positive_year} is after {year}, whose net income is positive"
+        )
+    window = [first_positive_year, first_positive_year + 1] if first_positive_year is not None else None
+    if window is not None and year not in window:
+        return outcome("not_eligible", "outside_reduction_window", window=window)
+    if prior_activity == "none" and starts_on is not None:
+        try:
+            year_before = starts_on.replace(year=starts_on.year - 1)
+        except ValueError:  # 29 February
+            year_before = starts_on.replace(year=starts_on.year - 1, day=28)
+        if any(
+            activity_overlaps(activity, year_before, starts_on - timedelta(days=1))
+            for activity in activities
+            if activity is not active[0]
+        ):
+            return outcome("unknown", "prior_activity_conflicts_with_ledger", window=window)
+    if prior_activity is None:
+        missing.append("prior_activity_before_start")
+    if former_employer_over_half is None:
+        missing.append("former_employer_income_over_half")
+    if window is None:
+        missing.append("first_positive_net_year")
+    if missing:
+        return outcome("unknown", "missing_facts", missing=missing, window=window)
+    return outcome(
+        "eligible",
+        "conditions_attested",
+        window=window,
+        base=min(net_income, NEW_ACTIVITY_REDUCTION_BASE_CAP_EUR),
     )
 
 

@@ -15,6 +15,22 @@ QUARTERLY_FORM_CODES = ("130", "303", "349", "111", "115", "216")
 ANNUAL_FORM_CODES = ("390", "347", "190", "180", "296", "100", "714", "720", "721")
 ALL_FORM_CODES = QUARTERLY_FORM_CODES + ANNUAL_FORM_CODES
 DIFFICULT_EXPENSE_CAP_EUR = Decimal("2000.00")
+DIRECT_ESTIMATION_IRPF_METHODS = frozenset(
+    {"estimacion_directa", "estimacion_directa_normal", "estimacion_directa_simplificada"}
+)
+NEW_ACTIVITY_REDUCTION_RATE = Decimal("0.20")
+NEW_ACTIVITY_REDUCTION_BASE_CAP_EUR = Decimal("100000.00")
+NEW_ACTIVITY_REDUCTION_SOURCE = (
+    "LIRPF art. 32.3 (Ley 35/2006): taxpayers in estimacion directa who start an economic activity "
+    "may reduce by 20% the positive net activity income of the first tax period with positive net "
+    "income and of the following period, on at most 100,000 EUR per year. No activity may have been "
+    "exercised in the year before the start date (ceased activities without positive net income do "
+    "not count); excluded when more than 50% of the period's income comes from a payer of employment "
+    "income in the year before the start. AEAT Manual practico IRPF 2024: "
+    "https://sede.agenciatributaria.gob.es/Sede/ayuda/manuales-videos-folletos/manuales-practicos/"
+    "irpf-2024/c07-rendimientos-actividades-economicas-estimacion-directa/"
+    "fase-3-determinacion-rendimiento-neto-total/reduccion-rendimiento-neto-inicio-actividad-economica.html"
+)
 
 _YEAR_PATTERN = re.compile(r"(?<!\d)(20\d{2})(?!\d)")
 _QUARTER_PATTERNS = (

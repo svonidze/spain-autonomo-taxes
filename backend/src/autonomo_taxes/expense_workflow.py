@@ -18,6 +18,7 @@ from .review_packet import (
     _apply_confirmed_fx, _resolve_confirmed_fx, _validate_fx_spec_shape,
 )
 from .posting import prevalidate_expense_inbox_cleanup
+from .tax_rules import DIRECT_ESTIMATION_IRPF_METHODS
 
 FACT_FIELDS = {"document_number", "issued_on", "transaction_date", "booking_date", "currency", "gross_minor", "counterparty_id", "business_activity_id"}
 PAYLOAD_FIELDS = {"facts", "supplier", "decision", "asset", "fx", "manual_review_reason", "change_reason"}
@@ -285,7 +286,7 @@ def _asset(db: LedgerDB, packet: Mapping[str, Any], payload: Mapping[str, Any]) 
         require(values["annual_rate_basis_points"] == 10000, "Immediate depreciation uses a full-rate decision")
         require(values["new_equipment"] is True and cost <= 30000, "Immediate deduction requires a new object costing at most EUR 300 before business share")
         activity = _one(db, "SELECT irpf_method FROM business_activities WHERE business_activity_id=?", (tx["business_activity_id"],))
-        require(activity["irpf_method"] in {"estimacion_directa", "estimacion_directa_normal", "estimacion_directa_simplificada"}, "Immediate depreciation requires the reviewed direct-estimation activity")
+        require(activity["irpf_method"] in DIRECT_ESTIMATION_IRPF_METHODS, "Immediate depreciation requires the reviewed direct-estimation activity")
         # Conservatively include every recorded low-value acquisition in this year.
         inventory = db.connection.execute("SELECT cost_minor,currency FROM assets WHERE substr(placed_in_service_on,1,4)=?", (values["placed_in_service_on"][:4],)).fetchall()
         require(all(row["currency"] == "EUR" for row in inventory), "Review foreign-currency asset bases before applying the annual limit")
