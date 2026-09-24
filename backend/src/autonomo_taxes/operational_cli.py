@@ -756,7 +756,8 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     )
     reta_base_add.add_argument("--worker-kind", choices=RETA_WORKER_KINDS, required=True)
     reta_base_add.add_argument(
-        "--source-reference", required=True, help="TGSS resolution reference, e.g. its CSV code"
+        "--source-reference", required=True,
+        help="Non-secret TGSS resolution reference, e.g. its date and number; not the CSV code",
     )
     reta_base_add.add_argument(
         "--source-file", type=Path, help="TGSS resolution file; only its SHA-256 is stored"

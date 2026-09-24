@@ -60,6 +60,28 @@ export interface TaxesData {
   tax_forms?: Record<string, FormView>;
   obligations: Obligation[];
 }
+/** GET /api/reta-check: decision support, never part of tax cash due. */
+export interface RetaCheck {
+  year: number;
+  through: string | null;
+  status: string;
+  reasons: string[];
+  income: { monthly_average_minor: number | null } | null;
+  bracket: { table: string; tramo: number; min_base_minor: number; max_base_minor: number } | null;
+  boundary_sensitive: boolean | null;
+  average_provisional_base_minor: number | null;
+  estimated_additional_minor: number | null;
+  estimated_refund_minor: number | null;
+  additional_locked_in_minor: number | null;
+  next_base_change: { effective_on: string; request_by: string } | null;
+  elections: {
+    effective_from: string;
+    regime: string;
+    monthly_base_minor: number | null;
+    worker_kind: string;
+    source_reference: string;
+  }[];
+}
 export interface ExpenseScope {
   amount_eur?: Amount;
   count?: number;

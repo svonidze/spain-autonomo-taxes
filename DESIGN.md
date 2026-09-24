@@ -274,6 +274,13 @@ decides. Change the definitions here first, then the code.
     not hold. Ledger-side reasons also null the income, tramo and
     sensitivity, and so does the societario kind, whose income is incomplete
     without the entity part.
+  - `GET /api/reta-check?year=YYYY[&through=YYYY-MM-DD]` is read-only: the
+    check as of today plus the live bases (`elections`, without source hash
+    or profile id). Every status is HTTP 200; a check that cannot run at all
+    is `unknown` with `window_empty`, `profile_unavailable` and/or
+    `table_unavailable`. The Taxes page shows it as its own section after the
+    AEAT forms, outside the headline, with the estimates as separate values
+    and the bases read-only (they are entered with `reta base add`).
 - **Taxes-page headline**: the large amount is the cash expected to leave for
   AEAT in the selected quarter, with IRPF and IVA kept as separate components
   immediately below it. A negative IVA result never offsets positive IRPF in

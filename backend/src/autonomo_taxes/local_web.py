@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from contextlib import closing
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 import errno
 from email.parser import BytesParser
@@ -44,9 +44,10 @@ from .aeat_documents import MAX_AEAT_PDF_BYTES, unified_aeat_documents
 from .account_settings import AccountSettingsError, read_settings, save_backups, save_profile
 from .fx_reference import ECBRateObservation, FXReferenceError, fetch_eur_rate
 from .expense_view import enrich_expense_context, expense_page, expense_summary
-from .ledger_db import LedgerDB, LedgerDbError, StaleRowVersionError, open as open_ledger_db
+from .ledger_db import LedgerDB, LedgerDbError, SchemaVersionError, StaleRowVersionError, open as open_ledger_db
 from .legacy_paths import LegacyPathResolver
 from .posting import build_posting_preview
+from .reta_ledger import RetaInputUnavailable, ledger_bracket_check
 from .status_context import StatusContext, reason as status_reason, simple_context
 from .private_paths import (
     PrivatePathError,
@@ -100,6 +101,14 @@ def _is_spa_route(path: str) -> bool:
     return False
 
 
+# The UI shows bases read-only; the source hash and profile id stay server-side.
+RETA_ELECTION_FIELDS = ("effective_from", "regime", "monthly_base_minor", "worker_kind", "source_reference")
+# The remaining ``bracket_check`` keys, all null when the check cannot run.
+RETA_UNAVAILABLE_NULL_FIELDS = (
+    "worker_kind", "table", "income", "bracket", "boundary_sensitive",
+    "average_provisional_base_minor", "estimated_additional_minor", "estimated_refund_minor",
+    "additional_locked_in_minor", "next_base_change", "ledger",
+)
 UPLOAD_KINDS = {"expense_invoice", "income_invoice"}
 INTAKE_FIELD_NAMES = {
     "defer_counterparty",
@@ -1076,6 +1085,56 @@ class LocalAccountingApp:
                 load_obligations=load_obligations,
             )
             return build_analytics(connection, analytics_query, year_forms=year_forms)
+
+    def reta_check(
+        self, year: str, *, through: str | None = None, as_of: date | None = None,
+    ) -> dict[str, Any]:
+        """Read-only RETA bracket check plus all live base rows.
+
+        Decision support only: nothing here feeds tax cash due. A check that
+        cannot run is an ``unknown`` result with a reason, not an error.
+        """
+        if not re.fullmatch(r"[0-9]{4}", year):
+            raise LocalWebError("Year must use YYYY")
+        today = as_of or date.today()
+        through_date = None
+        if through is not None:
+            if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", through):
+                raise LocalWebError("through must use YYYY-MM-DD")
+            try:
+                through_date = date.fromisoformat(through)
+            except ValueError as exc:
+                raise LocalWebError("through must use YYYY-MM-DD") from exc
+            # Checked before the ledger so the answer never depends on its contents.
+            if (
+                through_date.year != int(year)
+                or (through_date + timedelta(days=1)).day != 1
+                or through_date > today
+            ):
+                raise LocalWebError("through must be a month end of the year, not after today")
+        try:
+            with open_ledger_db(self.config.database, read_only=True) as db:
+                elections = [
+                    {key: row[key] for key in RETA_ELECTION_FIELDS}
+                    for row in db.list_reta_base_elections()
+                ]
+                try:
+                    result = ledger_bracket_check(db, year=int(year), as_of=today, through=through_date)
+                except RetaInputUnavailable as exc:
+                    reasons = [exc.reason]
+                    if db.reta_rate_table(int(year)) is None:
+                        reasons.append("table_unavailable")
+                    result = {
+                        "year": int(year), "as_of": today.isoformat(), "through": None,
+                        "status": "unknown", "reasons": reasons, "months": [],
+                        **dict.fromkeys(RETA_UNAVAILABLE_NULL_FIELDS),
+                    }
+        except SchemaVersionError:
+            raise LocalWebApiError(
+                HTTPStatus.CONFLICT, "schema_upgrade_required",
+                "An operator must upgrade the database before viewing the RETA check.",
+            ) from None
+        return {**result, "elections": elections}
 
     def counterparties(self) -> list[dict[str, Any]]:
         with closing(self._connect()) as connection:
@@ -2279,6 +2338,13 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
                     self.server.app.analytics(
                         _single_query(query, "period"),
                         as_of=_optional_query(query, "as_of"),
+                    )
+                )
+            elif parsed.path == "/api/reta-check":
+                self._send_json(
+                    self.server.app.reta_check(
+                        _single_query(query, "year"),
+                        through=_optional_query(query, "through"),
                     )
                 )
             elif parsed.path == "/api/review/posting-preview":

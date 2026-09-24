@@ -43,7 +43,7 @@ Then record every base from your TGSS resolutions, oldest first:
 ```sh
 autonomo-tax reta base add --effective-from 2026-01-01 --regime base \
   --monthly-base 950,98 --worker-kind individual \
-  --source-reference "TGSS resolution, CSV code" \
+  --source-reference "TGSS resolution of 2025-12-18" \
   --source-file resolution.pdf
 ```
 
@@ -64,8 +64,10 @@ autonomo-tax reta base add --effective-from 2026-01-01 --regime base \
 - `--worker-kind`: `individual`, `societario` (LGSS art. 305.2.b or e) or
   `colaborador` (familiar colaborador).
 - `--source-reference`: where the value comes from, such as the resolution's
-  CSV code. `--source-file` stores only the file's SHA-256; the file is not
-  copied.
+  date and number or its file name. Do not use the CSV verification code: it
+  lets anyone fetch the resolution from the TGSS site, and the Taxes page
+  shows this text. `--source-file` stores only the file's SHA-256; the file
+  is not copied.
 
 Rows are append-only: they cannot be edited or deleted, and each one must start
 after the previous one. Repeating the same command is harmless.
@@ -104,6 +106,12 @@ filed Xolo source book count as posted, as in the period dashboard. Other rows
 dated in that window that are still in review, or approved but not posted, are
 never counted; they make the result `unknown`.
 
+The Taxes page shows the same check for the selected year, as of today, in
+its own section below the AEAT returns. It is read-only: record and void
+bases with the commands above. When the check cannot run at all, it is
+`unknown` with `window_empty` (no month has ended), `profile_unavailable` (not
+exactly one taxpayer profile) or `table_unavailable`.
+
 ## Reading the result
 
 | Status | Meaning |
@@ -131,11 +139,12 @@ Amounts are in cents. Other fields:
 | Reason | What to do |
 | --- | --- |
 | `table_unavailable` | Import `reference/reta/<year>.json`. |
+| `profile_unavailable` | The check reads alta periods from exactly one taxpayer profile. Create it in Settings if there is none; with several profiles the check cannot choose one. |
 | `base_missing` | Record the base for the days without one. |
 | `unposted_rows_in_window` | Review and post the rows listed in `ledger.unposted_transaction_ids`, or reject them. |
 | `period_missing` | A quarter in alta has no ledger period yet; record its rows. |
 | `ledger_blocked` | Fix the error in `ledger.blocked_detail`; it also blocks the tax calculations. |
-| `window_empty` | No regularisable day yet (no alta, or only tarifa plana). |
+| `window_empty` | No month of the year has ended yet, or no day is regularisable (no alta, or only tarifa plana). Check again after the first month end in alta. |
 | `worker_kind_changed` | The worker kind changed during the year; the check does not split the year. |
 | `worker_kind_floor_unverified` | Societarios and familiares colaboradores have a minimum base the check does not model. |
 | `tarifa_plana_extension_unverified` | A tarifa plana row runs past month 12. Record the extension resolution as a `tarifa_plana` row from month 13, or the base that followed. |

@@ -218,3 +218,65 @@ test('Vue expanded chart is CSP-safe, uses cached locale data and closes on rout
   await expect(page.locator('#vue-chart-businessResult')).toHaveCount(0);
   expect(await page.evaluate(() => (window as unknown as { csp: string[] }).csp)).toEqual([]);
 });
+test('RETA check is its own read-only section after the tax forms, separate from the headline', async ({
+  page,
+}) => {
+  await page.addInitScript(() => localStorage.setItem('autonomo.locale', 'en'));
+  await page.goto('/taxes?period=2026-Q3');
+  const card = page.locator('section.reta-check');
+  // The synthetic server has no taxpayer profile or table: unknown, never an error page.
+  await expect(card.locator('.badge')).toHaveText('Not determined');
+  await expect(card.locator('.badge')).toHaveClass(/status-neutral/);
+  await expect(card.locator('.reta-check-reasons li')).toHaveText([
+    'The check needs exactly one taxpayer profile.',
+    'The RETA table of this year is not imported yet.',
+  ]);
+  const order = await page
+    .locator('.tax-page > *')
+    .evaluateAll((nodes) => nodes.map((node) => node.className));
+  const at = (name: string) => order.findIndex((value) => value.includes(name));
+  expect(at('tax-form-grid')).toBeLessThan(at('reta-check'));
+  expect(at('reta-check')).toBeLessThan(at('tax-analytics-panel'));
+  await expect(page.locator('.tax-hero .reta-check')).toHaveCount(0);
+
+  let reads = 0;
+  await page.route('**/api/reta-check?**', (route) => {
+    reads++;
+    return route.fulfill({
+      json: {
+        year: 2026,
+        through: '2026-08-31',
+        status: 'below_bracket',
+        reasons: [],
+        income: { monthly_average_minor: 250000 },
+        bracket: { table: 'general', tramo: 8, min_base_minor: 143791, max_base_minor: 400000 },
+        boundary_sensitive: false,
+        average_provisional_base_minor: 95098,
+        estimated_additional_minor: 92030,
+        estimated_refund_minor: 0,
+        additional_locked_in_minor: 46015,
+        next_base_change: { effective_on: '2026-11-01', request_by: '2026-10-31' },
+        elections: [
+          {
+            effective_from: '2026-01-01',
+            regime: 'base',
+            monthly_base_minor: 95098,
+            worker_kind: 'individual',
+            source_reference: 'Synthetic TGSS resolution',
+          },
+        ],
+      },
+    });
+  });
+  await page.reload();
+  await expect(card.locator('.badge')).toHaveText('Below the tramo');
+  await expect(card.locator('[data-reta="additional"]')).toHaveText('€920.30');
+  await expect(card.locator('[data-reta="refund"]')).toHaveText('€0.00');
+  await expect(card.locator('[data-reta="locked"]')).toHaveText('€460.15');
+  await expect(card.locator('tbody td').nth(4)).toHaveText('Synthetic TGSS resolution');
+  await expect(page.locator('.tax-hero')).not.toContainText('920');
+  await page.locator('[data-locale="ru"]').click();
+  await expect(card.locator('.badge')).toHaveText('Ниже tramo');
+  await expect(card.locator('[data-reta="additional"]')).toContainText('920,30');
+  expect(reads).toBe(1);
+});

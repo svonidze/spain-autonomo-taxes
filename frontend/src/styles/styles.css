@@ -923,20 +923,47 @@ tbody tr:hover td {
   gap: 18px;
 }
 
-.tax-form-card {
+.tax-form-card,
+.reta-check {
   padding: 18px;
 }
 
-.tax-form-card > header {
+.tax-form-card > header,
+.reta-check > header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
 }
 
-.tax-form-card h2 {
+.tax-form-card h2,
+.reta-check h2 {
   margin: 2px 0 0;
   font-size: 1.15rem;
+}
+
+.reta-check h3 {
+  margin: 20px 0 8px;
+  font-size: 0.96rem;
+}
+
+.reta-check-note {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.reta-check .period-note {
+  margin-top: 14px;
+}
+
+.reta-check-reasons {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.reta-check td {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .tax-form-amount {
@@ -2056,7 +2083,8 @@ textarea:focus {
   }
 
   .tax-hero,
-  .tax-form-card {
+  .tax-form-card,
+  .reta-check {
     padding: 16px;
   }
 

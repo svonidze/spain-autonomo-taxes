@@ -3,15 +3,21 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import threading
+from contextlib import contextmanager
+from dataclasses import replace
 from datetime import date
+from http.client import HTTPConnection
 from pathlib import Path
 
 import pytest
 from autonomo_taxes.cli import main
 from autonomo_taxes.ledger_db import LATEST_SCHEMA_VERSION, LedgerDB
+from autonomo_taxes.local_web import LocalAccountingApp, LocalAccountingServer, LocalWebError
 from autonomo_taxes.reta_ledger import _plus_year, ledger_bracket_check
 from autonomo_taxes.tax_engine import CalculationBlocked
 from autonomo_taxes.tax_row_loader import load_tax_rows
+from autonomo_test_support.local_web import _config
 from autonomo_test_support.paths import REPO_ROOT
 
 TABLE_PATH = REPO_ROOT / "reference" / "reta" / "2026.json"
@@ -490,3 +496,99 @@ def test_cli_imports_records_lists_and_checks(tmp_path: Path, capsys) -> None:
     assert main([*check, "--through", "2026-06-30", "--out", str(out)]) == 0
     capsys.readouterr()
     assert json.loads(out.read_text(encoding="utf-8"))["status"] == "ok"
+
+
+@contextmanager
+def _web(database: Path):
+    config = replace(_config(database.parent), database=database)
+    app = LocalAccountingApp(config, session_token="synthetic-session")
+    server = LocalAccountingServer(("127.0.0.1", 0), app)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+
+    def get(path: str, cookie: str | None = "autonomo_session=synthetic-session") -> tuple[int, dict]:
+        client = HTTPConnection("127.0.0.1", port, timeout=10)
+        try:
+            headers = {"Host": f"127.0.0.1:{port}", **({"Cookie": cookie} if cookie else {})}
+            client.request("GET", path, headers=headers)
+            response = client.getresponse()
+            return response.status, json.loads(response.read())
+        finally:
+            client.close()
+
+    try:
+        yield app, get
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_reta_check_route_returns_the_check_and_read_only_bases(tmp_path: Path) -> None:
+    database = _ledger(tmp_path)
+    with LedgerDB.open(database) as db:
+        _posted_half_year(db, 2000000)
+        typo = _base(db, "2026-01-01", base=59098)
+        db.void_reta_base_election(election_id=typo["election_id"], source_reference="Synthetic typo")
+        _base(db, "2026-01-01")
+    bases = [{
+        "effective_from": "2026-01-01", "regime": "base", "monthly_base_minor": 95098,
+        "worker_kind": "individual", "source_reference": "Synthetic TGSS resolution 2026-01-01",
+    }]
+
+    with _web(database) as (app, get):
+        # The adapter result is passed through unchanged; only live bases are added.
+        assert app.reta_check("2026", through="2026-06-30", as_of=AS_OF) == {**_check(database), "elections": bases}
+        status, body = get("/api/reta-check?year=2026&through=2026-06-30")
+        assert status == 200
+        assert (body["status"], body["estimated_additional_minor"], body["estimated_refund_minor"]) == (
+            "below_bracket", 92030, 0,
+        )
+        assert body["elections"] == bases
+        # Local mode answers a missing session with 400 session_forbidden.
+        status, body = get("/api/reta-check?year=2026", cookie=None)
+        assert (status, body["code"]) == (400, "session_forbidden")
+        for query in ("year=26", "year=2026&year=2027", "year=2026&through=june", "year=2026&through=2026-6-30"):
+            assert get(f"/api/reta-check?{query}")[0] == 400, query
+        with pytest.raises(LocalWebError, match="YYYY"):
+            app.reta_check("\uff12\uff10\uff12\uff16")  # fullwidth digits
+    with LedgerDB.open(database, read_only=True) as db:
+        assert db.table_counts()["reta_base_elections"] == 2
+
+
+def test_reta_check_route_reports_inputs_it_cannot_run_without_as_unknown(tmp_path: Path) -> None:
+    database = _ledger(tmp_path)
+    with _web(database) as (app, get):
+        # 2099: no month has ended and no table is imported; still HTTP 200.
+        status, body = get("/api/reta-check?year=2099")
+        assert status == 200
+        assert (body["status"], body["reasons"], body["through"]) == (
+            "unknown", ["window_empty", "table_unavailable"], None,
+        )
+        assert body["estimated_additional_minor"] is body["bracket"] is body["income"] is None
+        assert body["elections"] == []
+        assert set(body) == set(_check(database)) | {"elections"}
+        # A missing table alone is the adapter's own unknown result.
+        assert "table_unavailable" in app.reta_check("2027", through="2027-01-31", as_of=date(2027, 2, 1))["reasons"]
+
+    empty = tmp_path / "empty" / "ledger.sqlite"
+    empty.parent.mkdir()
+    with LedgerDB.initialize(empty) as db:
+        db.import_reta_table(TABLE_PATH.read_bytes())
+    with _web(empty) as (app, get):
+        result = app.reta_check("2026", through="2026-06-30", as_of=AS_OF)
+        assert (result["status"], result["reasons"]) == ("unknown", ["profile_unavailable"])
+        # A bad through is a 400 before the ledger is read, whatever the profile count.
+        future = date.today().year + 1
+        for query in (
+            "year=2026&through=2026-06-15",
+            "year=2026&through=2027-01-31",
+            f"year={future}&through={future}-01-31",
+        ):
+            assert get(f"/api/reta-check?{query}")[0] == 400, query
+        with LedgerDB.open(empty) as db:
+            db.connection.execute("PRAGMA user_version = 21")
+        status, body = get("/api/reta-check?year=2026")
+        assert (status, body["code"]) == (409, "schema_upgrade_required")
+        assert str(tmp_path) not in json.dumps(body)
