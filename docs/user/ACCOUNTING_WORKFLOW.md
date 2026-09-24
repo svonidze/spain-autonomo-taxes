@@ -34,6 +34,7 @@ administrative operation; it never appears in the expense form.
    base, IVA quota and deduction, and the separate IVA current/investment choice.
    Ordinary expenses also show the current IRPF deduction. Foreign-currency
    amounts need a confirmed exchange rate and reconciled EUR tax amounts.
+   A **Deduction rule** can cap these amounts; see below.
 5. **Save draft** saves on the server so you can close the browser and resume.
    Unsaved fields are not durable. A saved change to an approved but unposted
    entry invalidates approval and requires a reason, retained in audit history.
@@ -96,6 +97,18 @@ You may enter less, never more: **Preview result** blocks amounts above the
 proposal. Without a rule, you enter the amounts yourself, as before. Intake
 may preselect a rule from the parser category; check it or change it.
 
+In the expense form, **Deduction rule** lists the catalog rules and **No rule —
+enter manually**. A rule preselected by intake is marked "from document
+parser". Fill in the facts the rule asks for and **Save draft**: the proposal
+card then shows the IRPF and IVA ceilings, how they were calculated, any
+missing facts, the risk and the sources with their check dates. After an
+unsaved change the card asks you to save the draft to recalculate. **Copy into
+fields** writes the pair shown above the button into the IRPF and IVA fields;
+run **Preview result** again afterwards. A newly opened draft may need one
+save before copying, because the form fills some defaults the server has not
+seen yet. The preview shows how far each amount is
+below the rule's ceiling.
+
 | Rule | IRPF ceiling | IVA ceiling | Legal basis |
 |---|---|---|---|
 | Ordinary business expense | whole cost | invoice IVA | [LIRPF art. 28.1](https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764#a28), [LIVA art. 97](https://www.boe.es/buscar/act.php?id=BOE-A-1992-28740#a97) |
@@ -112,9 +125,11 @@ may preselect a rule from the parser category; check it or change it.
   reports the missing invoice.
 - Amounts are proposed only in EUR. A foreign-currency document needs a
   confirmed exchange rate first.
-- The floor-area share is the **Deductible IVA share** field. An intake
-  business-use percentage fills it only when it is below 100, because a blank
-  intake value is stored as 100.
+- The floor-area share is saved as the deductible IVA share. While a home
+  rule is selected, its **Floor-area share** field replaces **Deductible IVA
+  share** under additional tax fields. It starts empty rather than at 100%.
+  An intake business-use percentage fills it only when it is below 100,
+  because a blank intake value is stored as 100.
 - The supplies rule applies only to your habitual home (vivienda habitual).
   Its 30% coefficient applies unless you can prove another percentage; to
   claim a proven different percentage, choose no rule. The IVA share uses the

@@ -2,6 +2,8 @@ import { test, expect, type Page } from '@playwright/test';
 import {
   guidedFixture,
   nativeFixture,
+  ruleFixture,
+  utilityProposal,
   REVIEW_ID as ID,
   DOCUMENT_ID as DOC,
 } from '../fixtures/review.ts';
@@ -145,6 +147,83 @@ test('native conflict reset is explicit and edits invalidate a posting preview',
   await expect(page.locator('#wf-preview')).toBeVisible();
   await page.locator('[data-p="facts.document_number"]').fill('SYN-EDITED');
   await expect(page.locator('#wf-preview')).toHaveCount(0);
+});
+test('home supplies rule: parser pre-selection, area fact, saved proposal, copy and preview row', async ({
+  page,
+}) => {
+  await native(page);
+  const draft = ruleFixture();
+  draft.payload.decision.tax_treatment.deductible_ratio = null;
+  draft.deduction_proposal = {
+    ...utilityProposal(),
+    status: 'needs_facts',
+    irpf_minor: null,
+    vat_minor: null,
+    suggested: null,
+    missing: ['area_share'],
+    explanation: [],
+  };
+  const saves: ExpensePayload[] = [];
+  await page.route(`**/api/expense-workflows/${ID}`, (route) => route.fulfill({ json: draft }));
+  await page.route(`**/api/expense-workflows/${ID}/save`, (route) => {
+    const body = route.request().postDataJSON();
+    expect(body.expected_version).toBe(draft.draft_version + saves.length);
+    saves.push(body.payload);
+    return route.fulfill({
+      json: {
+        ...draft,
+        payload: body.payload,
+        draft_version: draft.draft_version + saves.length,
+        deduction_proposal: utilityProposal(),
+      },
+    });
+  });
+  await page.route(`**/api/expense-workflows/${ID}/preview`, (route) => {
+    const tax = saves.at(-1)!.decision.tax_treatment;
+    return route.fulfill({
+      json: {
+        preview_token: 'synthetic-rule-token',
+        supplier: 'Synthetic supplier',
+        period: '2026-Q3',
+        currency: 'EUR',
+        gross_minor: 12100,
+        deductible_vat_minor: tax.deductible_vat_minor,
+        deductible_irpf_minor: tax.deductible_irpf_minor,
+        future_depreciation_minor: 0,
+        schedule: [],
+        deduction: utilityProposal(),
+      },
+    });
+  });
+  await page.goto(path);
+  await page.locator('[data-locale="en"]').evaluate((button: HTMLElement) => button.click());
+  const select = page.locator('#wf-rule-select');
+  await expect(select).toHaveValue('home_utility_partial_dwelling');
+  await expect(select.locator('option:checked')).toContainText('(from document parser)');
+  const card = page.locator('#wf-rule-card');
+  await expect(card.locator('.wf-rule-live')).toHaveAttribute('aria-live', 'polite');
+  await expect(card).toContainText('Floor-area share used for the activity');
+  await page.locator('#wf-rule [data-p="decision.tax_treatment.deductible_ratio"]').fill('25');
+  await expect(card).toContainText('save the draft to recalculate');
+  await page.locator('#wf-save').click();
+  await expect(card).toContainText('€7.50');
+  await expect(card).toContainText('Copy writes IRPF €7.50 and IVA €5.25');
+  await expect(card).toContainText('Medium risk');
+  await page.locator('#wf-rule-copy').click();
+  await expect(page.locator('[data-p="decision.tax_treatment.deductible_irpf_minor"]')).toHaveValue(
+    '7.5',
+  );
+  await expect(page.locator('#wf-rule-copy')).toBeDisabled();
+  await page.locator('#wf-form button[type="submit"]').click();
+  await expect(page.locator('#wf-preview-rule')).toContainText(
+    'IRPF €0.00 below the ceiling; IVA €0.00 below the ceiling',
+  );
+  expect(saves.at(-1)?.deduction?.rule_id).toBe('home_utility_partial_dwelling');
+  expect(saves.at(-1)?.decision.tax_treatment).toMatchObject({
+    deductible_ratio: 0.25,
+    deductible_irpf_minor: 750,
+    deductible_vat_minor: 525,
+  });
 });
 test('late guided confirmation preserves a newer draft and uses additive localized validation', async ({
   page,
