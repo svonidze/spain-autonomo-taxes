@@ -18,6 +18,14 @@ from .tax_rules import (
     INVOICE_MENTION_REVERSE_CHARGE_TEXT,
     INVOICE_MENTION_SOURCES,
     OUTSIDE_SPAIN_SERVICE_TAX_CODES,
+    PROFESSIONAL_WITHHOLDING_RATES,
+    PROFESSIONAL_WITHHOLDING_SOURCE,
+    REDUCED_PROFESSIONAL_WITHHOLDING_EXTRA_YEARS,
+    REDUCED_PROFESSIONAL_WITHHOLDING_RATE,
+    WITHHOLDING_FOREIGN_COUNTERPARTY_CODE,
+    WITHHOLDING_RATE_NOT_ALLOWED_CODE,
+    WITHHOLDING_REDUCED_RATE_NOTICE_UNCONFIRMED_CODE,
+    WITHHOLDING_REDUCED_RATE_OUTSIDE_WINDOW_CODE,
     invoice_issue_deadline_warning,
 )
 
@@ -176,6 +184,42 @@ def validate_withholding_rate(value: Any) -> int:
     return _basis_points(value, "withholding_rate_basis_points")
 
 
+def validate_professional_withholding(
+    rate: int,
+    *,
+    country_code: str | None,
+    issue_on: date | None = None,
+    activity_starts_on: str | None = None,
+) -> None:
+    """Create/update check only; stored historical rows are never re-validated on read."""
+    if rate not in PROFESSIONAL_WITHHOLDING_RATES:
+        raise ValueError(
+            f"{WITHHOLDING_RATE_NOT_ALLOWED_CODE}: the supported professional withholding "
+            "presets are 0, 700 or 1500 basis points; other legal rates (the permanent 7% "
+            "of RIRPF art. 95.1 a-d, the 60% Ceuta/Melilla reduction) are not modelled"
+        )
+    country = str(country_code or "").strip().upper()
+    if rate and len(country) == 2 and country.isalpha() and country not in {"ES", "ZZ"}:
+        raise ValueError(
+            f"{WITHHOLDING_FOREIGN_COUNTERPARTY_CODE}: a counterparty in {country} does not "
+            "withhold Spanish IRPF; use 0 basis points, or record a client operating "
+            "through a Spanish permanent establishment with country ES"
+        )
+    if rate != REDUCED_PROFESSIONAL_WITHHOLDING_RATE or issue_on is None:
+        return
+    start_year = date.fromisoformat(activity_starts_on).year if activity_starts_on else None
+    if start_year is None or not (
+        start_year <= issue_on.year <= start_year + REDUCED_PROFESSIONAL_WITHHOLDING_EXTRA_YEARS
+    ):
+        raise ValueError(
+            f"{WITHHOLDING_REDUCED_RATE_OUTSIDE_WINDOW_CODE}: 700 basis points apply only in "
+            "the professional activity start year and the two following years "
+            "(professional activity start, IAE section 2 or 3: "
+            f"{activity_starts_on or 'not recorded'}; issue year {issue_on.year}, used "
+            "in place of the payment year of RIRPF art. 78)"
+        )
+
+
 def outgoing_invoice_warnings(draft: Mapping[str, Any]) -> list[dict[str, str]]:
     """Non-blocking checks derived from a stored draft; historical rows stay readable."""
     warnings: list[dict[str, str]] = []
@@ -189,6 +233,19 @@ def outgoing_invoice_warnings(draft: Mapping[str, Any]) -> list[dict[str, str]]:
                 "code": INVOICE_ISSUE_DEADLINE_CODE,
                 "message": deadline_message,
                 "source": INVOICE_ISSUE_DEADLINE_SOURCE,
+            }
+        )
+    if draft["withholding_rate_basis_points"] == REDUCED_PROFESSIONAL_WITHHOLDING_RATE:
+        warnings.append(
+            {
+                "code": WITHHOLDING_REDUCED_RATE_NOTICE_UNCONFIRMED_CODE,
+                "message": (
+                    "The 7% withholding requires that the client holds your signed written "
+                    "notice that you had no professional activity in the previous year "
+                    "(RIRPF art. 95.1: one communication per payer, kept by the payer). "
+                    "The ledger does not record that notice."
+                ),
+                "source": PROFESSIONAL_WITHHOLDING_SOURCE,
             }
         )
     return warnings

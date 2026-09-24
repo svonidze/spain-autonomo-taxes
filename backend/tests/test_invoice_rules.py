@@ -18,12 +18,18 @@ from autonomo_taxes.sheet_intake import INCOME_INTAKE_FIELDS
 from autonomo_taxes.tax_rules import (
     INCOME_BEFORE_ACTIVITY_START_CODE,
     INVOICE_ISSUE_DEADLINE_CODE,
+    WITHHOLDING_FOREIGN_COUNTERPARTY_CODE,
+    WITHHOLDING_RATE_NOT_ALLOWED_CODE,
+    WITHHOLDING_REDUCED_RATE_NOTICE_UNCONFIRMED_CODE,
+    WITHHOLDING_REDUCED_RATE_OUTSIDE_WINDOW_CODE,
     invoice_issue_deadline,
     invoice_issue_deadline_warning,
 )
 
 
-def _activity(db, starts_on: str):
+def _activity(
+    db, starts_on: str, *, activity_key: str = "software-development", iae_section: str = "2"
+):
     profile = db.upsert_taxpayer_profile(
         tax_id="X0000000A",
         full_name="Example Taxpayer",
@@ -31,15 +37,15 @@ def _activity(db, starts_on: str):
     )
     return db.upsert_business_activity(
         taxpayer_profile_id=profile["taxpayer_profile_id"],
-        activity_key="software-development",
+        activity_key=activity_key,
         aeat_activity_code="A",
         aeat_activity_type="05",
-        iae_section="2",
+        iae_section=iae_section,
         iae_group_epigraph="763",
         description="Software development",
         starts_on=starts_on,
         source_reference="Modelo 036",
-        source_hash="activity-source",
+        source_hash=f"activity-source-{activity_key}",
     )
 
 
@@ -53,6 +59,7 @@ def _template(
     channel_tax_code: str = "N2",
     tax_rate_basis_points: int = 0,
     currency: str = "USD",
+    withholding_rate_basis_points: int = 0,
 ):
     counterparty = db.upsert_counterparty(
         external_key=f"customer-{country_code.lower()}",
@@ -80,6 +87,7 @@ def _template(
                 "tax_rate_basis_points": tax_rate_basis_points,
             }
         ],
+        withholding_rate_basis_points=withholding_rate_basis_points,
         channel_hint="external_compliant_channel",
         delivery_email="billing@example.com",
         recipient_address_line1="100 Example Street",
@@ -460,3 +468,159 @@ def test_invoice_show_includes_mentions(tmp_path: Path, capsys):
     ) == 0
     shown = json.loads(capsys.readouterr().out)
     assert shown["invoice_mentions"] == draft["invoice_mentions"]
+
+
+# Commit C: professional withholding presets (LIRPF art. 101.5, RIRPF art. 95.1).
+
+SPANISH_CLIENT = {
+    "country_code": "ES",
+    "tax_code": "domestic_output",
+    "channel_tax_code": "S1",
+    "tax_rate_basis_points": 2100,
+    "currency": "EUR",
+}
+
+
+def _spanish_draft(db, planned_issue_on: str, *, withholding: int = 700, **changes):
+    issue_on = date.fromisoformat(planned_issue_on)
+    return db.create_outgoing_invoice_draft(
+        draft_key=f"services:{planned_issue_on}",
+        template_key="services",
+        period_key=f"{issue_on.year}-Q{(issue_on.month - 1) // 3 + 1}",
+        service_on=planned_issue_on,
+        planned_issue_on=planned_issue_on,
+        withholding_rate_basis_points=withholding,
+        **changes,
+    )
+
+
+def _warning_codes(draft) -> list[str]:
+    return [warning["code"] for warning in draft["warnings"]]
+
+
+@pytest.mark.parametrize("rate", [0, 700, 1500])
+def test_template_accepts_professional_withholding_presets(tmp_path: Path, rate):
+    with initialize(tmp_path / "ledger.sqlite") as db:
+        _, template = _template(db, **SPANISH_CLIENT, withholding_rate_basis_points=rate)
+    assert template["withholding_rate_basis_points"] == rate
+
+
+@pytest.mark.parametrize("rate", [1000, 1900])
+def test_template_rejects_other_withholding_rates(tmp_path: Path, rate):
+    with initialize(tmp_path / "ledger.sqlite") as db:
+        with pytest.raises(ValueError, match=WITHHOLDING_RATE_NOT_ALLOWED_CODE):
+            _template(db, **SPANISH_CLIENT, withholding_rate_basis_points=rate)
+
+
+def test_foreign_client_cannot_carry_withholding(tmp_path: Path):
+    with initialize(tmp_path / "ledger.sqlite") as db:
+        with pytest.raises(ValueError, match=WITHHOLDING_FOREIGN_COUNTERPARTY_CODE):
+            _template(db, country_code="US", withholding_rate_basis_points=1500)
+        _template(db, country_code="US")
+        with pytest.raises(ValueError, match=WITHHOLDING_FOREIGN_COUNTERPARTY_CODE):
+            db.create_outgoing_invoice_draft(
+                draft_key="services:2026-06",
+                template_key="services",
+                period_key="2026-Q3",
+                service_on="2026-06-30",
+                planned_issue_on="2026-07-01",
+                withholding_rate_basis_points=1500,
+            )
+
+
+def test_general_rate_withholds_fifteen_percent_without_warnings(tmp_path: Path):
+    with initialize(tmp_path / "ledger.sqlite") as db:
+        _template(db, **SPANISH_CLIENT, withholding_rate_basis_points=1500)
+        draft = _spanish_draft(db, "2026-07-01", withholding=1500)
+    assert draft["withholding_minor"] == 15000
+    assert draft["total_minor"] == 100000 + 21000 - 15000
+    assert draft["warnings"] == []
+
+
+@pytest.mark.parametrize("planned_issue_on", ["2024-05-10", "2026-12-31"])
+def test_reduced_rate_is_allowed_from_the_start_year_through_two_more_years(
+    tmp_path: Path, planned_issue_on
+):
+    with initialize(tmp_path / "ledger.sqlite") as db:
+        _activity(db, "2024-05-10")
+        _template(db, **SPANISH_CLIENT, withholding_rate_basis_points=700)
+        draft = _spanish_draft(db, planned_issue_on)
+    assert draft["withholding_minor"] == 7000
+    assert _warning_codes(draft) == [WITHHOLDING_REDUCED_RATE_NOTICE_UNCONFIRMED_CODE]
+    assert "signed written notice" in draft["warnings"][0]["message"]
+    assert "art. 95.1" in draft["warnings"][0]["source"]
+
+
+@pytest.mark.parametrize("planned_issue_on", ["2023-12-31", "2027-01-01"])
+def test_reduced_rate_outside_the_window_is_rejected(tmp_path: Path, planned_issue_on):
+    with initialize(tmp_path / "ledger.sqlite") as db:
+        _activity(db, "2024-05-10")
+        _template(db, **SPANISH_CLIENT, withholding_rate_basis_points=700)
+        with pytest.raises(ValueError, match=WITHHOLDING_REDUCED_RATE_OUTSIDE_WINDOW_CODE):
+            _spanish_draft(db, planned_issue_on)
+
+
+def test_reduced_rate_window_ignores_an_earlier_business_activity(tmp_path: Path):
+    with initialize(tmp_path / "ledger.sqlite") as db:
+        _activity(db, "2018-03-01", activity_key="retail-shop", iae_section="1")
+        _activity(db, "2025-02-01")
+        _template(db, **SPANISH_CLIENT, withholding_rate_basis_points=700)
+        draft = _spanish_draft(db, "2026-07-01")
+    assert draft["withholding_rate_basis_points"] == 700
+
+
+@pytest.mark.parametrize("iae_section", [None, "1"])
+def test_reduced_rate_without_a_professional_activity_start_is_rejected(
+    tmp_path: Path, iae_section
+):
+    with initialize(tmp_path / "ledger.sqlite") as db:
+        if iae_section is not None:
+            _activity(db, "2026-01-15", iae_section=iae_section)
+        _template(db, **SPANISH_CLIENT, withholding_rate_basis_points=700)
+        with pytest.raises(ValueError, match="not recorded"):
+            _spanish_draft(db, "2026-07-01")
+
+
+def test_historical_drafts_with_legacy_rates_stay_readable(tmp_path: Path):
+    with initialize(tmp_path / "ledger.sqlite") as db:
+        _template(db, **SPANISH_CLIENT)
+        draft = _spanish_draft(db, "2026-07-01", withholding=0)
+        draft_id = draft["outgoing_invoice_draft_id"]
+        db.connection.execute(
+            "UPDATE outgoing_invoice_drafts SET withholding_rate_basis_points = 700"
+        )
+        legacy_reduced = db.get_outgoing_invoice_draft(draft_id)
+        db.connection.execute(
+            "UPDATE outgoing_invoice_drafts SET withholding_rate_basis_points = 1900"
+        )
+        legacy_rent = db.get_outgoing_invoice_draft(draft_id)
+        assert db.list_outgoing_invoice_drafts()[0]["draft_key"] == draft["draft_key"]
+        with pytest.raises(ValueError, match=WITHHOLDING_RATE_NOT_ALLOWED_CODE):
+            _spanish_draft(db, "2026-07-02", withholding=1900)
+    assert _warning_codes(legacy_reduced) == [WITHHOLDING_REDUCED_RATE_NOTICE_UNCONFIRMED_CODE]
+    assert legacy_rent["withholding_rate_basis_points"] == 1900
+    assert legacy_rent["warnings"] == []
+
+
+def test_legacy_template_rate_can_be_deactivated_but_not_saved_active(tmp_path: Path):
+    with initialize(tmp_path / "ledger.sqlite") as db:
+        counterparty, template = _template(db, **SPANISH_CLIENT)
+        db.connection.execute("UPDATE invoice_templates SET withholding_rate_basis_points = 1900")
+        fields = {
+            "template_key": "services",
+            "template_name": "Software services",
+            "counterparty_id": counterparty["counterparty_id"],
+            "currency": "EUR",
+            "default_lines": json.loads(template["default_lines_json"]),
+            "withholding_rate_basis_points": 1900,
+            "channel_hint": "external_compliant_channel",
+            "delivery_email": "billing@example.com",
+            "recipient_address_line1": "100 Example Street",
+            "recipient_city": "Example City",
+            "expected_row_version": template["row_version"],
+        }
+        with pytest.raises(ValueError, match=WITHHOLDING_RATE_NOT_ALLOWED_CODE):
+            db.upsert_invoice_template(**fields)
+        inactive = db.upsert_invoice_template(**fields, active=False)
+    assert inactive["active"] == 0
+    assert inactive["withholding_rate_basis_points"] == 1900

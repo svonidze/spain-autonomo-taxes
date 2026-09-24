@@ -33,6 +33,29 @@ INVOICE_ISSUE_DEADLINE_SOURCE = (
 )
 INCOME_BEFORE_ACTIVITY_START_CODE = "income_before_activity_start"
 
+# Professional IRPF withholding on outgoing invoices (basis points).
+PROFESSIONAL_WITHHOLDING_RATES = frozenset({0, 700, 1500})
+REDUCED_PROFESSIONAL_WITHHOLDING_RATE = 700
+REDUCED_PROFESSIONAL_WITHHOLDING_EXTRA_YEARS = 2
+PROFESSIONAL_WITHHOLDING_SOURCE = (
+    "LIRPF (Ley 35/2006) art. 101.5.a and RIRPF (RD 439/2007) art. 95.1: professional "
+    "income is withheld at 15%, or 7% in the year the professional activity starts and "
+    "the two following years when there was no professional activity in the previous "
+    "year and the professional gave the payer a written notice, which the payer keeps. "
+    "Professional activities are IAE sections 2 and 3 (RIRPF art. 95.2). The obligation "
+    "arises on payment (RIRPF art. 78); the invoice issue year is used as a proxy. Only "
+    "payers obliged to withhold (RIRPF art. 76) apply it: private individuals and "
+    "foreign clients do not, while a non-resident operating through a Spanish permanent "
+    "establishment does (RIRPF art. 76.1.c) and must be recorded with country ES. The "
+    "0/7/15% presets are not exhaustive: the permanent 7% for the activities in RIRPF "
+    "art. 95.1 a-d and the 60% Ceuta/Melilla reduction are not modelled. "
+    "https://www.boe.es/buscar/act.php?id=BOE-A-2007-6820"
+)
+WITHHOLDING_RATE_NOT_ALLOWED_CODE = "withholding_rate_not_allowed"
+WITHHOLDING_FOREIGN_COUNTERPARTY_CODE = "withholding_foreign_counterparty"
+WITHHOLDING_REDUCED_RATE_OUTSIDE_WINDOW_CODE = "withholding_reduced_rate_outside_window"
+WITHHOLDING_REDUCED_RATE_NOTICE_UNCONFIRMED_CODE = "withholding_reduced_rate_notice_unconfirmed"
+
 # Invoice mentions the operator must add in the external invoicing channel.
 # Box 59 of Modelo 303 (eu_service_income) is the EU B2B case; box 120
 # (outside_scope) holds services located outside Spain for non-EU customers.

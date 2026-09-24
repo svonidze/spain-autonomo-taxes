@@ -250,6 +250,18 @@ settle the case, the result is status `unknown_review` instead of a guess:
 `reverse_charge` for an unconfirmed EU customer, `place_of_supply_review` when the
 customer country is Spain, unknown or conflicts with the tax code.
 
+Templates and drafts accept the professional withholding presets 0, 700 and 1500
+basis points (LIRPF art. 101.5, RIRPF art. 95.1), and only 0 for a client outside
+Spain; record a client operating through a Spanish permanent establishment with
+country ES. A draft may use 700 only when its issue year falls in the year of the
+earliest recorded professional activity start (IAE section 2 or 3) or the two
+following years. Such a draft always warns that the client must hold your signed
+written notice, which the ledger does not record. The permanent 7% rates of RIRPF
+art. 95.1 a-d and the Ceuta/Melilla reduction are not modelled. These checks run
+when a template or draft is saved, so historical rows stay readable and a legacy
+template can still be deactivated. The ledger cannot recognise a private
+individual, who does not withhold; choose 0 for such a client yourself.
+
 Current timeline for the Verifactu obligation (Real Decreto 1007/2023 as amended by
 Real Decreto-ley 15/2025 of 2 December, BOE 3 December 2025):
 

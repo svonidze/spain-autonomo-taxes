@@ -26,6 +26,7 @@ from .outgoing_invoices import (
     outgoing_invoice_warnings,
     parse_template_lines,
     validate_currency,
+    validate_professional_withholding,
     validate_withholding_rate,
 )
 from .tax_rules import ALL_FORM_CODES, ANNUAL_FORM_CODES, FORM_RULES, QUARTERLY_FORM_CODES
@@ -669,10 +670,12 @@ class LedgerDB:
         sql += " ORDER BY starts_on, activity_key"
         return self._fetch_all(sql, params)
 
-    def earliest_business_activity_start(self) -> str | None:
-        return self.connection.execute(
-            "SELECT MIN(starts_on) FROM business_activities"
-        ).fetchone()[0]
+    def earliest_business_activity_start(self, *, professional_only: bool = False) -> str | None:
+        sql = "SELECT MIN(starts_on) FROM business_activities"
+        if professional_only:
+            # RIRPF art. 95.2: professional activities are IAE sections 2 and 3.
+            sql += " WHERE iae_section IN ('2', '3')"
+        return self.connection.execute(sql).fetchone()[0]
 
     def add_import_batch(
         self,
@@ -5378,8 +5381,8 @@ class LedgerDB:
         effective_region = (recipient_region or "").strip() or None
         if not effective_address_line1 or not effective_city:
             raise ValueError("Invoice recipient address_line1 and city are required")
-        self._fetch_one(
-            "SELECT counterparty_id FROM counterparties WHERE counterparty_id = ?",
+        counterparty = self._fetch_one(
+            "SELECT counterparty_id, country_code FROM counterparties WHERE counterparty_id = ?",
             (counterparty_id,),
         )
 
@@ -5402,6 +5405,15 @@ class LedgerDB:
         if existing is not None and existing["template_key"] != template_key:
             raise LedgerDbError(
                 "An invoice template_key is stable; create a separate template to rename it"
+            )
+        # A template has no issue date, so the 7% window is checked per draft. Deactivating
+        # a legacy template without changing its rate stays possible.
+        if active or existing is None or (
+            existing["withholding_rate_basis_points"] != effective_withholding_rate
+        ):
+            validate_professional_withholding(
+                effective_withholding_rate,
+                country_code=counterparty["country_code"],
             )
         payload = {
             "template_key": template_key,
@@ -5562,6 +5574,15 @@ class LedgerDB:
             template["withholding_rate_basis_points"]
             if withholding_rate_basis_points is None
             else withholding_rate_basis_points
+        )
+        validate_professional_withholding(
+            effective_withholding_rate,
+            country_code=self._fetch_one(
+                "SELECT country_code FROM counterparties WHERE counterparty_id = ?",
+                (template["counterparty_id"],),
+            )["country_code"],
+            issue_on=planned_issue_date,
+            activity_starts_on=self.earliest_business_activity_start(professional_only=True),
         )
         totals = calculate_invoice_totals(
             materialized_lines,
