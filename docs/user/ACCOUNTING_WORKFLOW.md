@@ -88,6 +88,66 @@ are not recalculated. Only unambiguous legacy service links are migrated.
 Existing acquisitions already linked to an asset continue through their legacy
 review rather than creating a second asset in this wizard.
 
+### Deduction rules are ceilings
+
+A draft can name a deduction rule from the built-in catalog. The rule proposes
+the highest IRPF and IVA deduction the law allows for that kind of expense.
+You may enter less, never more: **Preview result** blocks amounts above the
+proposal. Without a rule, you enter the amounts yourself, as before. Intake
+may preselect a rule from the parser category; check it or change it.
+
+| Rule | IRPF ceiling | IVA ceiling | Legal basis |
+|---|---|---|---|
+| Ordinary business expense | whole cost | invoice IVA | [LIRPF art. 28.1](https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764#a28), [LIVA art. 97](https://www.boe.es/buscar/act.php?id=BOE-A-1992-28740#a97) |
+| RETA contribution | whole amount | none | [AEAT practical manual](https://sede.agenciatributaria.gob.es/Sede/ayuda/manuales-videos-folletos/manuales-practicos/irpf-2025/c07-rendimientos-actividades-economicas-estimacion-directa/fase-1-determinacion-rendimiento-neto/gastos-fiscalmente-deducibles/gastos-titular-actividad.html) |
+| Supplies of the habitual home, partly used for work | 30% of the floor-area share | floor-area share | [LIRPF art. 30.2.5.ª b)](https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764#a30), [LIVA art. 95](https://www.boe.es/buscar/act.php?id=BOE-A-1992-28740#a95), [TEAC 00/06654/2022](https://serviciostelematicosext.hacienda.gob.es/TEAC/DYCTEA/criterio.aspx?id=00%2F06654%2F2022%2F00%2F0%2F1), DGT V2554-23 (secondary copy) |
+| Rent of a home partly used for work | floor-area share | floor-area share, only when IVA is charged | DGT V1293-25 (secondary summary), [LIVA art. 20.Uno.23.º b)](https://www.boe.es/buscar/act.php?id=BOE-A-1992-28740#a20) |
+| Health insurance | EUR 500 per person a year, EUR 1,500 with disability | none (exempt) | [LIRPF art. 30.2.5.ª a)](https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764#a30) |
+| Own meals, one day per draft | EUR 26.67 a day in Spain, 48.08 abroad; 53.34 / 91.35 with an overnight stay | your decision, zero once the day's cap is used | [LIRPF art. 30.2.5.ª c)](https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764#a30), [RIRPF art. 9.A.3.a)](https://www.boe.es/buscar/act.php?id=BOE-A-2007-6820#a9), [AEAT manual](https://sede.agenciatributaria.gob.es/Sede/ayuda/manuales-videos-folletos/manuales-ayuda-presentacion/irpf-2024/7-cumplimentacion-irpf/7_4-rendimientos-actividades-economicas/7_4_2-regimen-estimacion-directa/7_4_2_3-gastos-fiscalmente-deducibles/gastos-manutencion-contribuyente.html), [LIVA art. 96.Uno.6.º](https://www.boe.es/buscar/act.php?id=BOE-A-1992-28740#a96) |
+| Fine, sanction or surcharge | zero | zero | [LIS art. 15.c)](https://www.boe.es/buscar/act.php?id=BOE-A-2014-12328#a15) |
+
+- Every IVA ceiling needs a complete invoice (AEAT document type F1, F3 or a
+  rectifying R1–R4; LIVA art. 97.Uno). With another document type, including
+  a rectified simplified invoice (R5), the IVA ceiling is zero and the rule
+  reports the missing invoice.
+- Amounts are proposed only in EUR. A foreign-currency document needs a
+  confirmed exchange rate first.
+- The floor-area share is the **Deductible IVA share** field. An intake
+  business-use percentage fills it only when it is below 100, because a blank
+  intake value is stored as 100.
+- The supplies rule applies only to your habitual home (vivienda habitual).
+  Its 30% coefficient applies unless you can prove another percentage; to
+  claim a proven different percentage, choose no rule. The IVA share uses the
+  floor area, while the TEAC and the DGT ask for the share of actual use,
+  which you must be able to prove.
+- Leases of a dwelling are usually exempt from IVA, so the rent rule's IVA
+  share matters only when the invoice charges IVA.
+- Health insurance covers you, your spouse and children under 25 who live
+  with you.
+- Meals must be your own, in a restaurant or hotel, during the activity and
+  paid electronically; a meal paid in cash has a zero ceiling. One draft
+  covers one day; for several days, choose no rule or split the expense. The
+  overnight limits apply only to a stay in a municipality other than both your
+  usual workplace and your home. AEAT's guidance for the self-employed sets no
+  municipality condition for the lower limits. When a meal costs more than
+  the daily cap, only the IVA in proportion to the deductible part may be
+  deducted.
+- IVA that cannot be recovered adds to the IRPF cost, within the same ceiling.
+  IVA the rule allows you to recover never raises the IRPF ceiling, even if
+  you do not claim it.
+- RETA and rent payments are proved by a bank statement or receipt, which the
+  application cannot check; you confirm that you keep it.
+- Yearly and daily caps subtract only earlier postings made under the same
+  rule. Premiums or meals posted without the rule are not counted, so check
+  them yourself.
+- The rules do not cover equipment; choose no rule for the equipment branch.
+- Confirmation records the rule and catalog date with the tax treatment and
+  adds a line to its notes. If the recorded rule for the same catalog date
+  differs from the installed one, posting stops until the catalog is fixed.
+
+The two DGT rulings were read from secondary copies because the official DGT
+database failed certificate verification. Treat those rules as medium risk.
+
 ### Income and legacy review
 
 The existing **Confirm review** API and legacy review form still save approval

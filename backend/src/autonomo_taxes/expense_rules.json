@@ -1,0 +1,114 @@
+{
+  "catalog_version": 1,
+  "source_checked_on": "2026-09-24",
+  "rules": [
+    {
+      "id": "general_business",
+      "irpf": {"type": "full"},
+      "iva": {"type": "full"},
+      "evidence": "factura_completa_nif",
+      "risk": "low",
+      "risk_reason": "The whole expense must relate to the activity; the reviewer confirms the business purpose and the complete invoice.",
+      "valid_from": "2007-01-01",
+      "valid_to": null,
+      "parser_categories": ["accounting_service_domestic", "ai_tools_eu_vat", "ai_tools_foreign", "dev_tools_foreign", "domains_foreign"],
+      "sources": [
+        {"title": "Ley 35/2006 (IRPF), art. 28.1", "url": "https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764#a28", "checked_on": "2026-09-24", "source_kind": "primary"},
+        {"title": "Ley 37/1992 (IVA), art. 97.Uno", "url": "https://www.boe.es/buscar/act.php?id=BOE-A-1992-28740#a97", "checked_on": "2026-09-24", "source_kind": "primary"}
+      ]
+    },
+    {
+      "id": "social_security_reta",
+      "irpf": {"type": "full"},
+      "iva": {"type": "none"},
+      "evidence": "bank_statement",
+      "risk": "low",
+      "risk_reason": "Only the holder's own RETA contributions for this activity; contributions are not subject to IVA.",
+      "valid_from": "2007-01-01",
+      "valid_to": null,
+      "parser_categories": ["reta"],
+      "sources": [
+        {"title": "AEAT, Manual práctico de Renta 2025: gastos del titular de la actividad", "url": "https://sede.agenciatributaria.gob.es/Sede/ayuda/manuales-videos-folletos/manuales-practicos/irpf-2025/c07-rendimientos-actividades-economicas-estimacion-directa/fase-1-determinacion-rendimiento-neto/gastos-fiscalmente-deducibles/gastos-titular-actividad.html", "checked_on": "2026-09-24", "source_kind": "primary"}
+      ]
+    },
+    {
+      "id": "home_utility_partial_dwelling",
+      "irpf": {"type": "coefficient_times_area", "coefficient_basis_points": 3000},
+      "iva": {"type": "proportional_area"},
+      "evidence": "factura_completa_nif",
+      "risk": "medium",
+      "risk_reason": "Only for the habitual residence (vivienda habitual) partly used for the activity. The IVA share reuses the floor-area share, while LIVA art. 95 as read by TEAC 00/06654/2022 and DGT V2554-23 asks for the share of actual use, proven by the taxpayer; IVA also needs a complete invoice. The 30% IRPF coefficient applies unless another percentage is proven; claiming a proven different percentage needs the manual path.",
+      "valid_from": "2018-01-01",
+      "valid_to": null,
+      "parser_categories": ["home_utility_review"],
+      "sources": [
+        {"title": "Ley 35/2006 (IRPF), art. 30.2.5.ª b)", "url": "https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764#a30", "checked_on": "2026-09-24", "source_kind": "primary"},
+        {"title": "Ley 37/1992 (IVA), art. 95", "url": "https://www.boe.es/buscar/act.php?id=BOE-A-1992-28740#a95", "checked_on": "2026-09-24", "source_kind": "primary"},
+        {"title": "TEAC, resolución 00/06654/2022 de 19-07-2023", "url": "https://serviciostelematicosext.hacienda.gob.es/TEAC/DYCTEA/criterio.aspx?id=00%2F06654%2F2022%2F00%2F0%2F1", "checked_on": "2026-09-24", "source_kind": "primary"},
+        {"title": "DGT, consulta vinculante V2554-23", "url": "https://www.iberley.es/resoluciones/resolucion-vinculante-direccion-general-tributos-v2554-23-25-09-2023-11643733", "checked_on": "2026-09-24", "source_kind": "secondary", "note": "The official DGT database (petete.tributos.hacienda.gob.es) failed certificate verification; the text was read from a publisher's reproduction."}
+      ]
+    },
+    {
+      "id": "home_rent_partial_dwelling",
+      "irpf": {"type": "proportional_area"},
+      "iva": {"type": "proportional_area"},
+      "evidence": "bank_statement",
+      "risk": "medium",
+      "risk_reason": "DGT V1293-25 was read only through a secondary source. The business space must be usable independently and personal use of it only incidental. Leases of a dwelling are usually IVA-exempt (LIVA art. 20.Uno.23.º b); the IVA share applies only when the invoice charges IVA, and then only with a complete invoice.",
+      "valid_from": "2007-01-01",
+      "valid_to": null,
+      "parser_categories": [],
+      "sources": [
+        {"title": "DGT, consulta vinculante V1293-25", "url": "https://www.idealista.com/news/fiscalidad/2025/10/15/867234-hacienda-aclara-cuando-los-autonomos-pueden-deducir-el-alquiler-de-su-vivienda", "checked_on": "2026-09-24", "source_kind": "secondary", "note": "The official DGT database (petete.tributos.hacienda.gob.es) failed certificate verification; the ruling was read through a news summary."},
+        {"title": "Ley 37/1992 (IVA), art. 20.Uno.23.º b)", "url": "https://www.boe.es/buscar/act.php?id=BOE-A-1992-28740#a20", "checked_on": "2026-09-24", "source_kind": "primary"}
+      ]
+    },
+    {
+      "id": "health_insurance",
+      "irpf": {"type": "per_person_cap", "cap_minor_per_person": 50000, "cap_minor_per_disabled_person": 150000},
+      "iva": {"type": "none"},
+      "evidence": "any",
+      "risk": "medium",
+      "risk_reason": "Only the taxpayer, the spouse and children under 25 living with the taxpayer count. The yearly cap subtracts only postings linked to this rule; premiums posted without it are not counted.",
+      "valid_from": "2018-01-01",
+      "valid_to": null,
+      "parser_categories": [],
+      "sources": [
+        {"title": "Ley 35/2006 (IRPF), art. 30.2.5.ª a)", "url": "https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764#a30", "checked_on": "2026-09-24", "source_kind": "primary"},
+        {"title": "Ley 37/1992 (IVA), art. 20.Uno.16.º", "url": "https://www.boe.es/buscar/act.php?id=BOE-A-1992-28740#a20", "checked_on": "2026-09-24", "source_kind": "primary"}
+      ]
+    },
+    {
+      "id": "own_meals",
+      "irpf": {"type": "per_day_cap", "cap_minor_per_day": {"spain": 2667, "spain_overnight": 5334, "abroad": 4808, "abroad_overnight": 9135}},
+      "iva": {"type": "manual"},
+      "evidence": "factura_completa_nif",
+      "risk": "high",
+      "risk_reason": "Only the taxpayer's own meals in restaurants or hotels while carrying out the activity, paid electronically; the business link, date and place must be provable. One draft covers one day. The higher overnight limits apply only to a stay in a municipality other than both the usual workplace and the residence; the AEAT guidance for the self-employed sets no municipality condition for the lower limits. The daily cap subtracts only postings linked to this rule on the same date. IVA needs a complete invoice and follows the IRPF deduction: above the daily cap only the IVA in proportion to the deductible part may be deducted.",
+      "valid_from": "2018-01-01",
+      "valid_to": null,
+      "parser_categories": [],
+      "sources": [
+        {"title": "Ley 35/2006 (IRPF), art. 30.2.5.ª c)", "url": "https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764#a30", "checked_on": "2026-09-24", "source_kind": "primary"},
+        {"title": "Real Decreto 439/2007 (RIRPF), art. 9.A.3.a)", "url": "https://www.boe.es/buscar/act.php?id=BOE-A-2007-6820#a9", "checked_on": "2026-09-24", "source_kind": "primary"},
+        {"title": "AEAT, Manual Renta 2024: gastos de manutención del contribuyente", "url": "https://sede.agenciatributaria.gob.es/Sede/ayuda/manuales-videos-folletos/manuales-ayuda-presentacion/irpf-2024/7-cumplimentacion-irpf/7_4-rendimientos-actividades-economicas/7_4_2-regimen-estimacion-directa/7_4_2_3-gastos-fiscalmente-deducibles/gastos-manutencion-contribuyente.html", "checked_on": "2026-09-24", "source_kind": "primary"},
+        {"title": "Ley 37/1992 (IVA), art. 96.Uno.6.º", "url": "https://www.boe.es/buscar/act.php?id=BOE-A-1992-28740#a96", "checked_on": "2026-09-24", "source_kind": "primary"}
+      ]
+    },
+    {
+      "id": "fine_or_surcharge",
+      "irpf": {"type": "never"},
+      "iva": {"type": "none"},
+      "evidence": "any",
+      "risk": "low",
+      "risk_reason": "Fines, sanctions, enforcement-period surcharges and late-filing surcharges are never deductible. Late-payment interest is outside this rule.",
+      "valid_from": "2015-01-01",
+      "valid_to": null,
+      "parser_categories": [],
+      "sources": [
+        {"title": "Ley 27/2014 (IS), art. 15.c)", "url": "https://www.boe.es/buscar/act.php?id=BOE-A-2014-12328#a15", "checked_on": "2026-09-24", "source_kind": "primary"},
+        {"title": "Ley 35/2006 (IRPF), art. 28.1", "url": "https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764#a28", "checked_on": "2026-09-24", "source_kind": "primary"}
+      ]
+    }
+  ]
+}

@@ -6517,6 +6517,11 @@ def _intake_transaction_draft(
             f"{amounts.gross_source or 'unknown'}; base_source="
             f"{amounts.taxable_base_source or 'unknown'}; vat_source="
             f"{amounts.vat_source or 'unknown'}"
+            + (
+                f"; parser_category={suggestion.category}"
+                if suggestion is not None and suggestion.category.isidentifier()
+                else ""
+            )
         ),
         source_hash=hashlib.sha256(
             f"intake-treatment:{source_hash}".encode("utf-8")
