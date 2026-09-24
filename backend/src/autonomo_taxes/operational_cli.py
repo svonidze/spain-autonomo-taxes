@@ -234,6 +234,36 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     _db_arg(identity_list)
     identity_list.add_argument("--counterparty-id")
     identity_list.set_defaults(_operational_handler=_cmd_counterparty_identity_list)
+    vies_disclosure = (
+        "Check the counterparty's EU VAT number in VIES and keep the result as evidence. "
+        "The VAT number (and your own VAT, if --requester-vat is given) is sent to the "
+        "European Commission VIES service"
+    )
+    vies_check = counterparty_sub.add_parser(
+        "vies-check", help=vies_disclosure, description=vies_disclosure,
+    )
+    _db_arg(vies_check)
+    vies_check.add_argument("--counterparty-id", required=True)
+    vies_check.add_argument(
+        "--confirm-network-to-vies",
+        action="store_true",
+        help="Required acknowledgement that the VAT number is sent to the European Commission",
+    )
+    vies_check.add_argument(
+        "--requester-vat",
+        help="Your own prefixed VAT number (e.g. ES...), also sent to VIES; "
+        "VIES then returns a requestIdentifier as proof of the check",
+    )
+    vies_check.add_argument(
+        "--apply",
+        action="store_true",
+        help="Set roi_status from a valid/invalid answer; unavailable or invalid input never changes it",
+    )
+    vies_check.set_defaults(_operational_handler=_cmd_counterparty_vies_check)
+    vies_list = counterparty_sub.add_parser("vies-list", help="List recorded VIES checks")
+    _db_arg(vies_list)
+    vies_list.add_argument("--counterparty-id")
+    vies_list.set_defaults(_operational_handler=_cmd_counterparty_vies_list)
 
     ingest = subparsers.add_parser("ingest", help="Extract a document into review without posting it")
     _db_arg(ingest)
@@ -1421,6 +1451,63 @@ def _cmd_counterparty_identity_list(args: argparse.Namespace) -> int:
         rows = db.list_counterparty_identities(
             counterparty_id=args.counterparty_id,
         )
+    _emit(rows)
+    return 0
+
+
+def _cmd_counterparty_vies_check(args: argparse.Namespace) -> int:
+    from . import vies
+
+    with open_ledger_db(args.db) as db:
+        counterparty = db.connection.execute(
+            "SELECT * FROM counterparties WHERE counterparty_id = ?", (args.counterparty_id,),
+        ).fetchone()
+        if counterparty is None:
+            _emit({"ok": False, "sent": False, "error": "Unknown counterparty"})
+            return 2
+        if not counterparty["vat_id"]:
+            _emit({"ok": False, "sent": False, "error": "Counterparty has no VAT ID to check"})
+            return 2
+        try:
+            result = vies.check_vat(
+                counterparty["country_code"],
+                counterparty["vat_id"],
+                requester=args.requester_vat,
+                confirm_network=args.confirm_network_to_vies,
+            )
+        except ValueError as exc:  # includes ViesConsentError
+            _emit({"ok": False, "sent": False, "error": str(exc)})
+            return 2
+        check = db.record_vies_check(
+            args.counterparty_id,
+            result,
+            apply=args.apply,
+            expected_row_version=counterparty["row_version"],
+        )
+        current = db.connection.execute(
+            "SELECT roi_status, row_version FROM counterparties WHERE counterparty_id = ?",
+            (args.counterparty_id,),
+        ).fetchone()
+    applied = check["applied_roi_status"] is not None
+    answered = check["outcome"] in {"valid", "invalid"}
+    # A counterparty changed during the request keeps the evidence but is not applied.
+    changed = args.apply and answered and not applied
+    ok = answered and not changed
+    _emit({
+        "ok": ok,
+        "sent": result["request_sent"],
+        "check": check,
+        "applied": applied,
+        **({"reason": "counterparty_changed"} if changed else {}),
+        "roi_status": current["roi_status"],
+        "row_version": current["row_version"],
+    })
+    return 0 if ok else 2
+
+
+def _cmd_counterparty_vies_list(args: argparse.Namespace) -> int:
+    with open_ledger_db(args.db, read_only=True) as db:
+        rows = db.list_vies_checks(counterparty_id=args.counterparty_id)
     _emit(rows)
     return 0
 

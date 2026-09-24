@@ -1787,6 +1787,7 @@ def _migration_counterparty_is_referenced(db: LedgerDB, counterparty_id: str) ->
             EXISTS(SELECT 1 FROM invoice_templates WHERE counterparty_id = ?) OR
             EXISTS(SELECT 1 FROM outgoing_invoice_drafts WHERE counterparty_id = ?) OR
             EXISTS(SELECT 1 FROM counterparty_name_changes WHERE counterparty_id = ?) OR
+            EXISTS(SELECT 1 FROM vies_checks WHERE counterparty_id = ?) OR
             EXISTS(SELECT 1 FROM counterparties WHERE counterparty_id = ? AND name_is_manual = 1) OR
             EXISTS(
                 SELECT 1 FROM validation_issues
@@ -1794,7 +1795,7 @@ def _migration_counterparty_is_referenced(db: LedgerDB, counterparty_id: str) ->
                   AND issue_status = 'open'
             ) AS is_referenced
         """,
-        (counterparty_id,) * 8,
+        (counterparty_id,) * 9,
     ).fetchone()["is_referenced"]
     return bool(referenced)
 
