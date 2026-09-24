@@ -16,6 +16,11 @@ QUARTERLY_FORM_CODES = ("130", "303", "349", "111", "115", "216")
 ANNUAL_FORM_CODES = ("390", "347", "190", "180", "296", "100", "714", "720", "721")
 ALL_FORM_CODES = QUARTERLY_FORM_CODES + ANNUAL_FORM_CODES
 DIFFICULT_EXPENSE_CAP_EUR = Decimal("2000.00")
+# EU Member States by ISO 3166-1 alpha-2 code (Greece is GR here, EL in VAT numbers).
+EU_COUNTRY_CODES = frozenset({
+    "AT", "BE", "BG", "CY", "CZ", "DE", "DK", "EE", "ES", "FI", "FR", "GR", "HR", "HU",
+    "IE", "IT", "LT", "LU", "LV", "MT", "NL", "PL", "PT", "RO", "SE", "SI", "SK",
+})
 
 INVOICE_ISSUE_DEADLINE_CODE = "invoice_issue_deadline_missed"
 INVOICE_ISSUE_DEADLINE_SOURCE = (
@@ -27,6 +32,41 @@ INVOICE_ISSUE_DEADLINE_SOURCE = (
     "(up to four years) instead. https://www.boe.es/buscar/act.php?id=BOE-A-2012-14696"
 )
 INCOME_BEFORE_ACTIVITY_START_CODE = "income_before_activity_start"
+
+# Invoice mentions the operator must add in the external invoicing channel.
+# Box 59 of Modelo 303 (eu_service_income) is the EU B2B case; box 120
+# (outside_scope) holds services located outside Spain for non-EU customers.
+EU_REVERSE_CHARGE_TAX_CODES = frozenset({"eu_service_income"})
+OUTSIDE_SPAIN_SERVICE_TAX_CODES = frozenset({"outside_scope", "not_subject_place_of_supply"})
+EXEMPT_INCOME_PROVISIONS = {"export": "art. 21 LIVA", "eu_goods_income": "art. 25 LIVA"}
+INVOICE_MENTION_REVERSE_CHARGE_TEXT = "Inversión del sujeto pasivo"
+INVOICE_MENTION_NOT_SUBJECT_TEXT = "Operación no sujeta a IVA en España (art. 69 LIVA)"
+_LIVA_PLACE_OF_SUPPLY_SOURCE = (
+    "Ley 37/1992 (LIVA) art. 69 locates services outside Spain: to a business where the "
+    "recipient is established (art. 69.Uno.1º) and certain services to private customers "
+    "outside the EU (art. 69.Dos). Citing the non-subject provision is common practice; "
+    "RD 1619/2012 does not fix this wording. "
+    "https://www.boe.es/buscar/act.php?id=BOE-A-1992-28740"
+)
+INVOICE_MENTION_SOURCES = {
+    "reverse_charge": (
+        "RD 1619/2012 art. 6.1.m: when the recipient is liable for the tax, the invoice "
+        "must state «inversión del sujeto pasivo». "
+        "https://www.boe.es/buscar/act.php?id=BOE-A-2012-14696"
+    ),
+    "not_subject_place_of_supply": _LIVA_PLACE_OF_SUPPLY_SOURCE,
+    "place_of_supply_review": _LIVA_PLACE_OF_SUPPLY_SOURCE,
+    "exempt_provision": (
+        "RD 1619/2012 art. 6.1.j: an exempt operation needs a reference to the exempting "
+        "provision of Directive 2006/112/CE or LIVA, or an indication that it is exempt. "
+        "https://www.boe.es/buscar/act.php?id=BOE-A-2012-14696"
+    ),
+    "vat_amount_in_eur": (
+        "RD 1619/2012 art. 12.1: amounts may use any currency, but the Spanish VAT charged "
+        "must be stated in EUR at the exchange rate of art. 79.Once LIVA. "
+        "https://www.boe.es/buscar/act.php?id=BOE-A-2012-14696"
+    ),
+}
 
 _YEAR_PATTERN = re.compile(r"(?<!\d)(20\d{2})(?!\d)")
 _QUARTER_PATTERNS = (

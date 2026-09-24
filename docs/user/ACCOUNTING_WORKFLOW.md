@@ -239,6 +239,17 @@ Outgoing invoice drafts in this toolkit are a numbering and review aid. They are
 not a certified invoicing system (SIF) under the Verifactu regulation, and the
 toolkit does not send invoice records to the AEAT.
 
+A draft and `invoice show` list `invoice_mentions` to add in the external channel;
+they never change totals. `eu_service_income` for an EU customer with a VAT id
+requires "Inversión del sujeto pasivo" (RD 1619/2012 art. 6.1.m); services
+located outside Spain get the recommended, practice-based reference to art. 69
+LIVA. `export` and `eu_goods_income` require the exempting provision (art.
+6.1.j), and Spanish VAT charged in another currency must also be stated in EUR
+(art. 12.1). When the tax code and customer country, VAT id or ROI status do not
+settle the case, the result is status `unknown_review` instead of a guess:
+`reverse_charge` for an unconfirmed EU customer, `place_of_supply_review` when the
+customer country is Spain, unknown or conflicts with the tax code.
+
 Current timeline for the Verifactu obligation (Real Decreto 1007/2023 as amended by
 Real Decreto-ley 15/2025 of 2 December, BOE 3 December 2025):
 

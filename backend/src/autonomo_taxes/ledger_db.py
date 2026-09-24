@@ -22,6 +22,7 @@ from .outgoing_invoices import (
     canonical_lines_json,
     invoice_line_hash,
     normalize_invoice_lines,
+    outgoing_invoice_mentions,
     outgoing_invoice_warnings,
     parse_template_lines,
     validate_currency,
@@ -6037,7 +6038,8 @@ class LedgerDB:
             """
             SELECT d.*, p.period_key, t.template_key, t.template_version, t.template_name,
                    c.display_name AS counterparty_name, c.country_code,
-                   c.tax_id AS counterparty_tax_id, c.vat_id AS counterparty_vat_id
+                   c.tax_id AS counterparty_tax_id, c.vat_id AS counterparty_vat_id,
+                   c.roi_status AS counterparty_roi_status
             FROM outgoing_invoice_drafts d
             JOIN periods p ON p.period_id = d.period_id
             JOIN invoice_templates t ON t.invoice_template_id = d.invoice_template_id
@@ -6062,6 +6064,7 @@ class LedgerDB:
             else "not_issued_do_not_book_as_income"
         )
         row["warnings"] = outgoing_invoice_warnings(row)
+        row["invoice_mentions"] = outgoing_invoice_mentions(row)
         return row
 
     def list_outgoing_invoice_drafts(

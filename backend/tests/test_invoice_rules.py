@@ -43,7 +43,17 @@ def _activity(db, starts_on: str):
     )
 
 
-def _template(db, *, country_code: str = "US"):
+def _template(
+    db,
+    *,
+    country_code: str = "US",
+    vat_id: str | None = None,
+    roi_status: str = "unknown",
+    tax_code: str = "outside_scope",
+    channel_tax_code: str = "N2",
+    tax_rate_basis_points: int = 0,
+    currency: str = "USD",
+):
     counterparty = db.upsert_counterparty(
         external_key=f"customer-{country_code.lower()}",
         tax_id="12-3456789",
@@ -51,19 +61,23 @@ def _template(db, *, country_code: str = "US"):
         country_code=country_code,
         email="billing@example.com",
     )
+    if vat_id is not None or roi_status != "unknown":
+        counterparty = db.set_counterparty_tax_profile(
+            counterparty["counterparty_id"], vat_id=vat_id, roi_status=roi_status
+        )
     template = db.upsert_invoice_template(
         template_key="services",
         template_name="Software services",
         counterparty_id=counterparty["counterparty_id"],
-        currency="USD",
+        currency=currency,
         default_lines=[
             {
                 "description": "Software development",
                 "quantity": "1",
                 "unit_amount_minor": 100000,
-                "tax_code": "outside_scope",
-                "channel_tax_code": "N2",
-                "tax_rate_basis_points": 0,
+                "tax_code": tax_code,
+                "channel_tax_code": channel_tax_code,
+                "tax_rate_basis_points": tax_rate_basis_points,
             }
         ],
         channel_hint="external_compliant_channel",
@@ -325,3 +339,124 @@ def test_guided_review_cannot_approve_with_an_unresolved_activity_issue(
                 resolution.update(action="resolve", reason="Synthetic resolution")
         with pytest.raises(ReviewPacketError, match="Every blocking issue.*" + activity_issue_id):
             confirm_review_packet(db, packet)
+
+# Commit B: invoice mentions for place-of-supply cases (RD 1619/2012 arts. 6 and 12).
+
+
+def _draft(tmp_path: Path, **template_changes):
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    with initialize(tmp_path / "ledger.sqlite") as db:
+        _, template = _template(db, **template_changes)
+        return db.create_outgoing_invoice_draft(
+            draft_key="services:2026-06",
+            invoice_template_id=template["invoice_template_id"],
+            period_key="2026-Q3",
+            service_on="2026-06-30",
+            planned_issue_on="2026-07-01",
+        )
+
+
+def _mention_statuses(draft) -> list[tuple[str, str]]:
+    return [(mention["code"], mention["status"]) for mention in draft["invoice_mentions"]]
+
+
+def test_eu_business_customer_requires_reverse_charge_and_recommends_not_subject(
+    tmp_path: Path,
+):
+    draft = _draft(
+        tmp_path, country_code="DE", vat_id="DE123456789", tax_code="eu_service_income"
+    )
+    assert _mention_statuses(draft) == [
+        ("reverse_charge", "required"),
+        ("not_subject_place_of_supply", "recommended"),
+    ]
+    reverse_charge, not_subject = draft["invoice_mentions"]
+    assert reverse_charge["text"] == "Inversión del sujeto pasivo"
+    assert reverse_charge["basis"] == "legal_requirement"
+    assert "art. 6.1.m" in reverse_charge["source"]
+    assert not_subject["basis"] == "practice"
+    assert "(art. 69 LIVA)" in not_subject["text"]
+    assert "69.Dos" in not_subject["source"]
+    assert draft["total_minor"] == draft["subtotal_minor"] == 100000
+
+
+@pytest.mark.parametrize(
+    ("customer", "code"),
+    [
+        ({"country_code": "DE", "vat_id": None}, "reverse_charge"),
+        (
+            {"country_code": "DE", "vat_id": "DE123456789", "roi_status": "not_registered"},
+            "reverse_charge",
+        ),
+        ({"country_code": "US", "vat_id": "DE123456789"}, "place_of_supply_review"),
+    ],
+)
+def test_unconfirmed_eu_business_customer_is_reported_for_review(
+    tmp_path: Path, customer, code
+):
+    draft = _draft(tmp_path, tax_code="eu_service_income", **customer)
+    assert _mention_statuses(draft) == [(code, "unknown_review")]
+    assert draft["invoice_mentions"][0]["text"] is None
+
+
+@pytest.mark.parametrize("tax_code", ["outside_scope", "not_subject_place_of_supply"])
+def test_non_eu_customer_gets_only_the_recommended_not_subject_mention(
+    tmp_path: Path, tax_code
+):
+    draft = _draft(tmp_path, country_code="US", tax_code=tax_code)
+    assert _mention_statuses(draft) == [("not_subject_place_of_supply", "recommended")]
+
+
+@pytest.mark.parametrize(
+    ("country_code", "code"),
+    [("DE", "reverse_charge"), ("ZZ", "place_of_supply_review"), ("ES", "place_of_supply_review")],
+)
+def test_outside_scope_code_without_a_non_eu_country_is_reported_for_review(
+    tmp_path: Path, country_code, code
+):
+    draft = _draft(tmp_path, country_code=country_code)
+    assert _mention_statuses(draft) == [(code, "unknown_review")]
+    if code == "place_of_supply_review":
+        assert "place of supply cannot be determined" in draft["invoice_mentions"][0]["message"]
+
+
+@pytest.mark.parametrize(
+    ("tax_code", "channel_tax_code", "article"),
+    [("export", "E2", "art. 21 LIVA"), ("eu_goods_income", "E5", "art. 25 LIVA")],
+)
+def test_exempt_income_references_the_exempting_provision(
+    tmp_path: Path, tax_code, channel_tax_code, article
+):
+    draft = _draft(
+        tmp_path, country_code="DE", tax_code=tax_code, channel_tax_code=channel_tax_code
+    )
+    assert _mention_statuses(draft) == [("exempt_provision", "required")]
+    assert article in draft["invoice_mentions"][0]["text"]
+    assert "art. 6.1.j" in draft["invoice_mentions"][0]["source"]
+
+
+def test_spanish_vat_in_foreign_currency_must_also_be_stated_in_eur(tmp_path: Path):
+    domestic = {
+        "country_code": "ES",
+        "tax_code": "domestic_output",
+        "channel_tax_code": "S1",
+        "tax_rate_basis_points": 2100,
+    }
+    usd = _draft(tmp_path / "usd", **domestic)
+    eur = _draft(tmp_path / "eur", currency="EUR", **domestic)
+    assert _mention_statuses(usd) == [("vat_amount_in_eur", "required")]
+    assert "art. 12.1" in usd["invoice_mentions"][0]["source"]
+    assert usd["vat_minor"] == 21000 and usd["total_minor"] == 121000
+    assert eur["invoice_mentions"] == []
+
+
+def test_invoice_show_includes_mentions(tmp_path: Path, capsys):
+    draft = _draft(tmp_path, country_code="US")
+    assert main(
+        [
+            "invoice", "show", "--db", str(tmp_path / "ledger.sqlite"),
+            draft["outgoing_invoice_draft_id"],
+        ]
+    ) == 0
+    shown = json.loads(capsys.readouterr().out)
+    assert shown["invoice_mentions"] == draft["invoice_mentions"]
