@@ -7,6 +7,7 @@ import { ApiError } from '../../core/http.ts';
 import { formatMessage, message, messageIds } from '../../core/i18n.ts';
 import ChartHost from '../../charts/ChartHost.vue';
 import TaxFormCard from './TaxFormCard.vue';
+import RetaCheckCard from './RetaCheckCard.vue';
 import { createFinancePresentation } from './presentation.ts';
 import type { OverviewContext, TaxesData } from './model.ts';
 const props = defineProps<{ context: OverviewContext }>();
@@ -183,6 +184,7 @@ const retry = () => (forbidden() ? window.location.reload() : void load());
         </ul>
       </details></template
     >
+    <RetaCheckCard :year="data.period.slice(0, 4)" :request="context.services.request" />
     <section class="panel tax-analytics-panel">
       <header class="panel-header">
         <h2>{{ t('taxes.additionalAnalytics') }}</h2>

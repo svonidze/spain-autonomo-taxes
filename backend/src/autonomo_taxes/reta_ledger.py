@@ -21,6 +21,14 @@ SOCIAL_SECURITY_CONCEPT = "G45"
 UNPOSTED_STATUSES = ("received", "extracted", "needs_review", "approved")
 
 
+class RetaInputUnavailable(ValueError):
+    """The check cannot run at all; ``reason`` is the code a caller reports."""
+
+    def __init__(self, reason: str, message: str) -> None:
+        super().__init__(message)
+        self.reason = reason
+
+
 def ledger_bracket_check(
     db: LedgerDB,
     *,
@@ -36,11 +44,11 @@ def ledger_bracket_check(
     if through is None:
         through = min(date(year, 12, 31), as_of.replace(day=1) - timedelta(days=1))
         if through < date(year, 1, 31):
-            raise ValueError(f"No month of {year} has ended by {as_of.isoformat()}")
+            raise RetaInputUnavailable("window_empty", f"No month of {year} has ended by {as_of.isoformat()}")
     start = date(year, 1, 1)
     profiles = db.connection.execute("SELECT taxpayer_profile_id FROM taxpayer_profile").fetchall()
     if len(profiles) != 1:
-        raise ValueError("The RETA check requires exactly one taxpayer profile")
+        raise RetaInputUnavailable("profile_unavailable", "The RETA check requires exactly one taxpayer profile")
     stored = db.reta_rate_table(year)
     table = None if stored is None else parse_reta_table(stored["payload_json"].encode("utf-8"))
     alta_periods = [
