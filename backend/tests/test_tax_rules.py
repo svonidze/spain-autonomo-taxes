@@ -16,6 +16,8 @@ class TaxRulesTests(unittest.TestCase):
     def test_difficult_expense_rule_is_year_versioned(self):
         self.assertEqual(difficult_expense_rate_for_year(2023), Decimal("0.07"))
         self.assertEqual(difficult_expense_rate_for_year(2024), Decimal("0.05"))
+        self.assertEqual(difficult_expense_rate_for_year(2025), Decimal("0.05"))
+        self.assertEqual(difficult_expense_rate_for_year(2026), Decimal("0.05"))
         self.assertEqual(difficult_expense_rule_for_year(2026).annual_cap_eur, DIFFICULT_EXPENSE_CAP_EUR)
         self.assertEqual(calculate_difficult_expenses(2023, Decimal("1000.00"), Decimal("0.00")), Decimal("70.00"))
         self.assertEqual(calculate_difficult_expenses(2024, Decimal("1000.00"), Decimal("0.00")), Decimal("50.00"))

@@ -15,6 +15,19 @@ QUARTERLY_FORM_CODES = ("130", "303", "349", "111", "115", "216")
 ANNUAL_FORM_CODES = ("390", "347", "190", "180", "296", "100", "714", "720", "721")
 ALL_FORM_CODES = QUARTERLY_FORM_CODES + ANNUAL_FORM_CODES
 DIFFICULT_EXPENSE_CAP_EUR = Decimal("2000.00")
+# Libertad de amortizacion for immaterial-value tangible fixed assets: Ley 27/2014
+# (LIS) art. 12.3, applicable to IRPF estimacion directa. Immediate write-off is
+# only allowed for new items with unit value <= 300 EUR, up to a cumulative
+# IMMEDIATE_WRITE_OFF_ANNUAL_CAP_EUR per tax period. Above the unit limit,
+# amortize per the simplified table (IT equipment: max 26%/year, max 10 years).
+# See AEAT manual:
+# https://sede.agenciatributaria.gob.es/Sede/ayuda/manuales-videos-folletos/manuales-practicos/irpf-2024/c07-rendimientos-actividades-economicas-estimacion-directa/fase-1-determinacion-rendimiento-neto/amortizaciones-dotaciones-ejercicio-fiscalmente-deducibles/supuestos-libertad-amortizacion.html
+# The expense parsers compare this limit against the whole invoice base
+# (conservative for multi-item invoices, which can include several sub-300 EUR
+# units) and against the base without recoverable IVA (prorrata/exempt-activity
+# IVA treatment is not modelled).
+IMMEDIATE_WRITE_OFF_UNIT_LIMIT_EUR = Decimal("300.00")
+IMMEDIATE_WRITE_OFF_ANNUAL_CAP_EUR = Decimal("25000.00")
 # Date every FORM_RULES.source_url below was last confirmed to resolve (HTTP 200).
 SOURCE_CHECKED_ON = "2026-09-24"
 
