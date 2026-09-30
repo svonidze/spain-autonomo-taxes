@@ -1,0 +1,38 @@
+{
+  "year": 2026,
+  "source_checked_on": "2026-10-01",
+  "source_url": "https://www.boe.es/diario_boe/txt.php?id=BOE-A-2026-7296",
+  "source_reference": "Orden PJC/297/2026, de 30 de marzo, art. 18.1 (BOE-A-2026-7296)",
+  "maximum_base_minor": 510120,
+  "tramos": [
+    {"table": "reduced", "tramo": 1, "boe_range": "≤ 670", "lower_minor": null, "lower_inclusive": null, "upper_minor": 67000, "upper_inclusive": true, "min_base_minor": 65359, "max_base_minor": 71894},
+    {"table": "reduced", "tramo": 2, "boe_range": "> 670 y ≤ 900", "lower_minor": 67000, "lower_inclusive": false, "upper_minor": 90000, "upper_inclusive": true, "min_base_minor": 71895, "max_base_minor": 90000},
+    {"table": "reduced", "tramo": 3, "boe_range": "> 900 y < 1.166,70", "lower_minor": 90000, "lower_inclusive": false, "upper_minor": 116670, "upper_inclusive": false, "min_base_minor": 84967, "max_base_minor": 116670},
+    {"table": "general", "tramo": 1, "boe_range": "≥ 1.166,70 y ≤ 1.300", "lower_minor": 116670, "lower_inclusive": true, "upper_minor": 130000, "upper_inclusive": true, "min_base_minor": 95098, "max_base_minor": 130000},
+    {"table": "general", "tramo": 2, "boe_range": "> 1.300 y ≤ 1.500", "lower_minor": 130000, "lower_inclusive": false, "upper_minor": 150000, "upper_inclusive": true, "min_base_minor": 96078, "max_base_minor": 150000},
+    {"table": "general", "tramo": 3, "boe_range": "> 1.500 y ≤ 1.700", "lower_minor": 150000, "lower_inclusive": false, "upper_minor": 170000, "upper_inclusive": true, "min_base_minor": 96078, "max_base_minor": 170000},
+    {"table": "general", "tramo": 4, "boe_range": "> 1.700 y ≤ 1.850", "lower_minor": 170000, "lower_inclusive": false, "upper_minor": 185000, "upper_inclusive": true, "min_base_minor": 114379, "max_base_minor": 185000},
+    {"table": "general", "tramo": 5, "boe_range": "> 1.850 y ≤ 2.030", "lower_minor": 185000, "lower_inclusive": false, "upper_minor": 203000, "upper_inclusive": true, "min_base_minor": 120915, "max_base_minor": 203000},
+    {"table": "general", "tramo": 6, "boe_range": "> 2.030 y ≤ 2.330", "lower_minor": 203000, "lower_inclusive": false, "upper_minor": 233000, "upper_inclusive": true, "min_base_minor": 127451, "max_base_minor": 233000},
+    {"table": "general", "tramo": 7, "boe_range": "> 2.330 y ≤ 2.760", "lower_minor": 233000, "lower_inclusive": false, "upper_minor": 276000, "upper_inclusive": true, "min_base_minor": 135621, "max_base_minor": 276000},
+    {"table": "general", "tramo": 8, "boe_range": "> 2.760 y ≤ 3.190", "lower_minor": 276000, "lower_inclusive": false, "upper_minor": 319000, "upper_inclusive": true, "min_base_minor": 143791, "max_base_minor": 319000},
+    {"table": "general", "tramo": 9, "boe_range": "> 3.190 y ≤ 3.620", "lower_minor": 319000, "lower_inclusive": false, "upper_minor": 362000, "upper_inclusive": true, "min_base_minor": 151961, "max_base_minor": 362000},
+    {"table": "general", "tramo": 10, "boe_range": "> 3.620 y ≤ 4.050", "lower_minor": 362000, "lower_inclusive": false, "upper_minor": 405000, "upper_inclusive": true, "min_base_minor": 160131, "max_base_minor": 405000},
+    {"table": "general", "tramo": 11, "boe_range": "> 4.050 y ≤ 6.000", "lower_minor": 405000, "lower_inclusive": false, "upper_minor": 600000, "upper_inclusive": true, "min_base_minor": 173203, "max_base_minor": 510120},
+    {"table": "general", "tramo": 12, "boe_range": "> 6.000", "lower_minor": 600000, "lower_inclusive": false, "upper_minor": null, "upper_inclusive": null, "min_base_minor": 192810, "max_base_minor": 510120}
+  ],
+  "rate_components": [
+    {"component": "contingencias_comunes", "rate_bp": 2830, "source_kind": "primary", "source_url": "https://www.boe.es/diario_boe/txt.php?id=BOE-A-2026-7296", "source_reference": "Orden PJC/297/2026 art. 18.2.a)"},
+    {"component": "contingencias_profesionales", "rate_bp": 130, "source_kind": "primary", "source_url": "https://www.boe.es/diario_boe/txt.php?id=BOE-A-2026-7296", "source_reference": "Orden PJC/297/2026 art. 18.2.b)"},
+    {"component": "mecanismo_equidad_intergeneracional", "rate_bp": 90, "source_kind": "primary", "source_url": "https://www.boe.es/diario_boe/txt.php?id=BOE-A-2026-7296", "source_reference": "Orden PJC/297/2026 art. 18.2.c)"},
+    {"component": "cese_actividad", "rate_bp": 90, "source_kind": "primary", "source_url": "https://www.boe.es/diario_boe/txt.php?id=BOE-A-2026-7296", "source_reference": "Orden PJC/297/2026 art. 37.5.a)"},
+    {"component": "formacion_profesional", "rate_bp": 10, "source_kind": "primary", "source_url": "https://www.boe.es/diario_boe/txt.php?id=BOE-A-2026-7296", "source_reference": "Orden PJC/297/2026 art. 37.6"}
+  ],
+  "total_rate_bp": 3150,
+  "generic_deduction_bp": {"individual": 700, "societario": 300, "colaborador": 700},
+  "generic_deduction_source": {
+    "source_kind": "primary",
+    "source_url": "https://www.boe.es/buscar/act.php?id=BOE-A-2015-11724#a308",
+    "source_reference": "LGSS (RDLeg 8/2015) art. 308.1.c) regla 2.ª: 7 %, or 3 % only for art. 305.2.b) and e); familiares colaboradores (art. 305.2.k) keep 7 %"
+  }
+}

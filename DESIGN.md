@@ -234,6 +234,45 @@ decides. Change the definitions here first, then the code.
 - **Tax cash due**: positive payables per form — Modelo 130 casilla `19`,
   Modelo 303 casilla `71` — never merged into a single "tax burden" number,
   and no effective-rate line (a VAT settlement is not an income-tax rate).
+- **RETA bracket check**: separate decision support. Its amounts are never
+  added to or netted against tax cash due, the Taxes-page headline, or any
+  combined burden. It runs the TGSS annual regularisation (RD 2064/1995
+  art. 44.2 and 46.2) on 1 January to a month-end `through`, without
+  projection, against `reference/reta/<year>.json`;
+  `backend/src/autonomo_taxes/reta.py` implements it with exact arithmetic
+  and rounds for display only.
+  - Regularisable days: alta days less tarifa plana days (Ley 20/2007
+    art. 38 ter; regla 1.ª).
+  - Monthly income: IRPF business net from posted rows only, plus the
+    owner's contributions added back, less the generic deduction (7 %; 3 %
+    only for LGSS art. 305.2.b/e workers), × 30 ÷ regularisable natural
+    days (RD 2064/1995 art. 44.2.a, regla 2.ª). The full income stays in the numerator. The tramo is looked
+    up on the exact value.
+  - Bases compare as totals (LGSS art. 308.1.c reglas 3.ª–4.ª): the
+    provisional bases of the window against the tramo minimum and maximum
+    times the month weights. A full month weighs 1 at its monthly base; a partial
+    month weighs d/30 and pays d/30 of its base (RD 2064/1995 art. 47.1, the
+    monthly amount "se dividirá por treinta en todo caso"), with the limits
+    prorated alike (regla 5.ª.d). Inside the limits it is `ok`; below the
+    minimum `below_bracket`; above the maximum `above_bracket`. The estimate
+    is the rate applied to the sum of the monthly differences to that
+    minimum or maximum, positive and negative netted (regla 5.ª b/c), shown
+    as `estimated_additional_minor` or `estimated_refund_minor`. Per-month
+    differences are detail only.
+  - `additional_locked_in_minor`: the netted shortfall against the tramo
+    minimum from January to the month before `next_base_change.effective_on`
+    (months a request made on `as_of` cannot reach, RD 2064/1995 art. 45.1),
+    assuming the minimum afterwards; never negative.
+  - `boundary_sensitive`: the monthly income is within 10 % of the tramo
+    width from one of its bounds (open tramos use the neighbouring width).
+  - `unknown` with reason codes and `null` estimates, never `ok`: missing
+    bases, unposted rows or missing periods in the window, a missing table,
+    no regularisable days, bases below the table minimum (Orden art. 18.6 and
+    18.11 special bases), and societarios or familiares colaboradores, whose
+    grupo 7 floor (art. 44.3.b) and, for 305.2.b/e, entity income (LGSS
+    art. 308.1.c regla 1.ª) the ledger does not hold. Ledger-side reasons
+    also null the income, tramo and sensitivity, and so does the societario
+    kind, whose income is incomplete without the entity part.
 - **Taxes-page headline**: the large amount is the cash expected to leave for
   AEAT in the selected quarter, with IRPF and IVA kept as separate components
   immediately below it. A negative IVA result never offsets positive IRPF in
