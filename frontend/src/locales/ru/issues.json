@@ -6,6 +6,8 @@
   "issues.messages.default": "Требуется ручная проверка.",
   "issues.messages.document_classification_review": "Документ не удалось надежно классифицировать.",
   "issues.messages.foreign_counterparty_identity_missing": "Не хватает подтвержденных налоговых реквизитов иностранного контрагента.",
+  "issues.messages.income_before_activity_start": "Доход датирован раньше зарегистрированного начала деятельности. Объясните договор или счёт до проведения.",
+  "issues.messages.invoice_issue_deadline_missed": "Счёт выставлен позже 15-го числа месяца, следующего за оказанием услуги. Проверьте даты; это предупреждение не блокирует проведение.",
   "issues.messages.missing_locally": "Документ есть в реестре, но локальный оригинал не найден.",
   "issues.messages.modelo100_deferral_submission_unconfirmed": "Не подтверждена подача заявления на отсрочку по Modelo 100.",
   "issues.messages.modelo130_difficult_expense_filed_method_conflict": "Метод Xolo для 5% труднообосновываемых расходов расходится с инструкцией AEAT.",
