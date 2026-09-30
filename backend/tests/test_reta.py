@@ -62,7 +62,7 @@ def test_2026_table_matches_orden_pjc_297_2026_article_18() -> None:
 
     assert len(table.tramos) == 15
     assert len(table.source_file_hash) == 64
-    assert table.source_checked_on == date(2026, 9, 23)
+    assert table.source_checked_on == date(2026, 10, 1)
     assert table.maximum_base_minor == 510120
     for boe, raw, row in zip(BOE_2026_TRAMOS, payload["tramos"], table.tramos, strict=True):
         name, number, boe_range, min_base, max_base = boe

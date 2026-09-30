@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .money import cents, parse_amount
 from .pdf_text import extract_pdf_text
+from .tax_rules import DIFFICULT_EXPENSE_CAP_EUR
 
 
 _POSITIONED_CASILLA_Y = {
@@ -68,8 +69,9 @@ class Modelo130Result:
 def difficult_expenses(
     income: Decimal,
     deductible_before_difficult: Decimal,
-    rate: Decimal = Decimal("0.05"),
-    cap: Decimal = Decimal("2000.00"),
+    *,
+    rate: Decimal,
+    cap: Decimal = DIFFICULT_EXPENSE_CAP_EUR,
 ) -> Decimal:
     base = income - deductible_before_difficult
     if base <= 0:
@@ -87,12 +89,13 @@ def calculate_modelo130(
     vivienda_deduction: Decimal = Decimal("0.00"),
     complementary_previous_result: Decimal = Decimal("0.00"),
     include_difficult_expenses: bool = True,
-    difficult_expenses_rate: Decimal = Decimal("0.05"),
+    *,
+    difficult_expenses_rate: Decimal,
 ) -> Modelo130Result:
     income_ytd = cents(income_ytd)
     deductible_before_difficult_ytd = cents(deductible_before_difficult_ytd)
     hard_to_justify = (
-        difficult_expenses(income_ytd, deductible_before_difficult_ytd, difficult_expenses_rate)
+        difficult_expenses(income_ytd, deductible_before_difficult_ytd, rate=difficult_expenses_rate)
         if include_difficult_expenses
         else Decimal("0.00")
     )

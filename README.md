@@ -88,6 +88,9 @@ Use [AEAT documents and ROI registration](docs/user/AEAT_DOCUMENTS.md) for
 Modelo 036 ROI requests, receipt archival and the distinction between a submitted
 request and a VAT number that is valid in VIES.
 
+Use [Checking a customer's EU VAT number in VIES](docs/user/VIES_CHECK.md) before
+invoicing an EU business customer without Spanish VAT.
+
 See [Account settings](docs/user/ACCOUNT_SETTINGS.md) for taxpayer details, local backup
 retention, observed backup status and release requirements.
 

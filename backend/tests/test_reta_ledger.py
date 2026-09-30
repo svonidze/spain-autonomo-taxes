@@ -102,7 +102,7 @@ def _check(database: Path, **kwargs) -> dict:
         return ledger_bracket_check(db, year=2026, as_of=AS_OF, **{"through": THROUGH, **kwargs})
 
 
-def test_migrates_schema_25_to_26_and_keeps_elections_append_only(tmp_path: Path) -> None:
+def test_migrates_schema_26_to_27_and_keeps_elections_append_only(tmp_path: Path) -> None:
     database = _ledger(tmp_path)
     with LedgerDB.open(database) as db:
         election = _base(db, "2026-01-01")
@@ -126,14 +126,29 @@ def test_migrates_schema_25_to_26_and_keeps_elections_append_only(tmp_path: Path
                 )
             db.connection.rollback()
         assert set(db.table_counts()) >= {"reta_rate_tables", "reta_base_elections", "reta_base_election_voids"}
+        party = db.upsert_counterparty(
+            external_key="synthetic-reta-migration-vies",
+            display_name="Synthetic VIES Supplier", country_code="DE",
+        )
+        db.connection.execute(
+            "INSERT INTO vies_checks (vies_check_id,counterparty_id,checked_at,country_code,"
+            "vat_number,outcome,requester_used) VALUES ('synthetic-reta-vies',?,'2026-01-01',"
+            "'DE','SYNTHETIC','unavailable',0)", (party["counterparty_id"],),
+        )
+        vies_before = dict(db.connection.execute("SELECT * FROM vies_checks").fetchone())
         for name in ("reta_base_election_voids", "reta_base_elections", "reta_rate_tables"):
             db.connection.execute(f"DROP TABLE {name}")
-        db.connection.execute("PRAGMA user_version = 25")
+        db.connection.execute("PRAGMA user_version = 26")
         db.connection.commit()
 
     with LedgerDB.open(database, apply_migrations=True) as db:
-        assert db.connection.execute("PRAGMA user_version").fetchone()[0] == LATEST_SCHEMA_VERSION == 26
+        assert db.connection.execute("PRAGMA user_version").fetchone()[0] == LATEST_SCHEMA_VERSION == 27
         assert db.list_reta_base_elections() == [] and db.reta_rate_table(2026) is None
+        assert dict(db.connection.execute("SELECT * FROM vies_checks").fetchone()) == vies_before
+        for statement in ("UPDATE vies_checks SET outcome='invalid'", "DELETE FROM vies_checks"):
+            with pytest.raises(sqlite3.IntegrityError, match="immutable"):
+                db.connection.execute(statement)
+            db.connection.rollback()
         triggers = {
             row[0]
             for row in db.connection.execute("SELECT name FROM sqlite_master WHERE type = 'trigger'")

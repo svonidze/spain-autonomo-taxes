@@ -22,6 +22,7 @@ from .parsers import (
     scan_income_dir,
 )
 from .reports import _deductible_before_from_total
+from .tax_rules import difficult_expense_rate_for_year
 
 
 @dataclass(frozen=True)
@@ -127,6 +128,7 @@ def run_history_audit(
             previous,
             minoracion=target["13"],
             include_difficult_expenses=False,
+            difficult_expenses_rate=difficult_expense_rate_for_year(report.year),
         )
         raw = _raw_ytd_totals(raw_expenses, report.year, report.quarter, derived_fx)
         quarter_raw = _raw_quarter_totals(raw_expenses, report.year, report.quarter, derived_fx)
@@ -139,7 +141,7 @@ def run_history_audit(
         provision_before_5 = _deductible_before_from_total(
             target["01"],
             target["02"],
-            rate=_difficult_expenses_rate_for_year(report.year),
+            rate=difficult_expense_rate_for_year(report.year),
         )
         provision_difficult = cents(target["02"] - provision_before_5)
         no_provision_gross_model = raw["non_asset_gross_eur"]
@@ -506,10 +508,6 @@ def _money(value: Decimal) -> str:
 
 def _fmt(value: str) -> str:
     return format_es(Decimal(value))
-
-
-def _difficult_expenses_rate_for_year(year: int) -> Decimal:
-    return Decimal("0.07") if year == 2023 else Decimal("0.05")
 
 
 def _best_fit(*residuals: Decimal) -> str:

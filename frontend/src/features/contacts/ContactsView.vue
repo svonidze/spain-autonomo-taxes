@@ -261,10 +261,15 @@ async function saved(result: Partial<Counterparty> & { changed: boolean }, id: s
         ? { ...row, ...result, ui_context: { ...row.ui_context, title: result.display_name } }
         : row,
     );
+    const renamed = rows.value.find((row) => row.counterparty_id === id);
     try {
       const fresh = (await context.services.request('/api/counterparties')) as Counterparty[];
       if (!current(version)) return;
-      rows.value = fresh;
+      rows.value = fresh.map((row) =>
+        row.counterparty_id === id && renamed && row.row_version < renamed.row_version
+          ? renamed
+          : row,
+      );
       chartRevision.value++;
       await nextTick();
       if (current(version)) {

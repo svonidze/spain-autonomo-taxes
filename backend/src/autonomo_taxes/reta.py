@@ -197,7 +197,7 @@ def bracket_check(
     elections: Sequence[BaseElection],
     reasons: Sequence[str] = (),
 ) -> dict[str, Any]:
-    """Regularise 1 January..``through`` as TGSS would, without projecting.
+    """Estimate supported RETA exposure for 1 January..``through`` without projecting.
 
     Regularisable days are alta days (``alta_periods``, inclusive, ``None`` =
     ongoing) less tarifa plana days (RD art. 46.2 regla 1.ª). Monthly income is

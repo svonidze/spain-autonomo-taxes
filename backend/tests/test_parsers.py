@@ -99,6 +99,71 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(entry.category, "home_utility_review")
         self.assertTrue(entry.review_required)
 
+    def test_parse_apple_equipment_above_immediate_write_off_limit_requires_review(self):
+        # Libertad de amortizacion (Ley 27/2014 LIS art. 12.3) only covers new
+        # tangible items <= 300 EUR/unit; above that, deductibility requires
+        # amortization review rather than full immediate expense.
+        text = """
+        Apple Retail Spain
+        Fecha de factura: 01.03.2026
+        Base imponible IVA Tasa de IVA 450,00
+        """
+
+        entry = parse_expense(Path("apple-450.pdf"), text)
+
+        self.assertEqual(entry.amount_original, Decimal("450.00"))
+        self.assertEqual(entry.category, "asset_review")
+        self.assertTrue(entry.review_required)
+        self.assertIsNone(entry.deductible_eur)
+
+    def test_parse_apple_equipment_at_immediate_write_off_limit_stays_deductible(self):
+        # The 300 EUR unit limit is inclusive: exactly 300.00 EUR still
+        # qualifies for immediate write-off.
+        text = """
+        Apple Retail Spain
+        Fecha de factura: 01.03.2026
+        Base imponible IVA Tasa de IVA 300,00
+        """
+
+        entry = parse_expense(Path("apple-300-00.pdf"), text)
+
+        self.assertEqual(entry.amount_original, Decimal("300.00"))
+        self.assertEqual(entry.category, "apple_domestic")
+        self.assertFalse(entry.review_required)
+        self.assertEqual(entry.deductible_eur, Decimal("300.00"))
+
+    def test_parse_apple_equipment_one_cent_above_limit_requires_review(self):
+        text = """
+        Apple Retail Spain
+        Fecha de factura: 01.03.2026
+        Base imponible IVA Tasa de IVA 300,01
+        """
+
+        entry = parse_expense(Path("apple-300-01.pdf"), text)
+
+        self.assertEqual(entry.amount_original, Decimal("300.01"))
+        self.assertEqual(entry.category, "asset_review")
+        self.assertTrue(entry.review_required)
+        self.assertIsNone(entry.deductible_eur)
+
+    def test_parse_amazon_equipment_above_immediate_write_off_limit_requires_review(self):
+        # Amazon EU equipment purchases previously never checked the
+        # threshold at all and stayed fully deductible regardless of amount.
+        text = """
+        Amazon EU
+        Factura con IVA
+        Fecha del pedido 5 marzo 2026
+        Articulo Base IVA Total
+        21% 500,00 € 105,00 € 605,00 €
+        """
+
+        entry = parse_expense(Path("amazon-500.pdf"), text)
+
+        self.assertEqual(entry.amount_original, Decimal("500.00"))
+        self.assertEqual(entry.category, "asset_review")
+        self.assertTrue(entry.review_required)
+        self.assertIsNone(entry.deductible_eur)
+
     def test_apply_fx_preserves_manual_eur_amount(self):
         entry = LedgerEntry(
             kind="income",
