@@ -110,10 +110,11 @@ def test_whole_leap_year_equals_annual_rate():
 def test_native_annual_totals_are_actual_and_not_external_evidence(tmp_path,method):
     from autonomo_taxes.depreciation import native_year_summary
     fixture,draft=setup_draft(tmp_path,method=method)
+    asset_year = date.fromisoformat(draft['payload']['asset']['placed_in_service_on']).year
     with open_db(fixture['database']) as db:
         result=commit(db,fixture,draft,tmp_path)
-        native=native_year_summary(db.connection,result['asset_id'],date.today().year)
-        annual=db.validate_asset_year(date.today().year)
+        native=native_year_summary(db.connection,result['asset_id'],asset_year)
+        annual=db.validate_asset_year(asset_year)
         if method=='immediate':
             assert native['current_minor']==10000 and not native['pending']
             assert annual['ready']
@@ -272,7 +273,7 @@ def test_later_quarter_recognition_is_versioned_and_idempotent(tmp_path,monkeypa
         assert recognize_period(db,entry['amortization_entry_id'],**args)==recognized
         assert recognize_period(db,entry['amortization_entry_id'],**{**args,'request_id':str(uuid4())})['transaction_id']==recognized['transaction_id']
         assert db.connection.execute('SELECT COUNT(*) FROM transactions').fetchone()[0]==2
-        assert sum(row.deductible_irpf_eur for row in load_tax_rows(db,date.today().year))==Decimal(entry['amount_minor'])/100
+        assert sum(row.deductible_irpf_eur for row in load_tax_rows(db,future.year))==Decimal(entry['amount_minor'])/100
 
 
 def test_changed_native_schedule_cannot_create_recognition(tmp_path,monkeypatch):
