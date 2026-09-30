@@ -12,7 +12,7 @@ from autonomo_taxes.expense_rules import (
 )
 from autonomo_taxes.ledger_db import initialize
 
-STEP_ONE = {"general_business", "social_security_reta", "home_utility_partial_dwelling", "home_rent_partial_dwelling",
+STEP_ONE = {"general_business", "social_security_reta", "home_utility_partial_dwelling",
             "health_insurance", "own_meals", "fine_or_surcharge"}
 
 
@@ -38,7 +38,7 @@ def codes(result):
 def test_catalog_has_step_one_rules_with_pinned_legal_values():
     catalog = load_catalog()
     rules = catalog["rules"]
-    assert set(rules) == STEP_ONE and catalog["version"] == "2026-09-24"
+    assert set(rules) == STEP_ONE and catalog["version"] == "2026-10-01"
     assert rules["home_utility_partial_dwelling"]["irpf"] == {"type": "coefficient_times_area", "coefficient_basis_points": 3000}
     assert rules["health_insurance"]["irpf"]["cap_minor_per_person"] == 50000
     assert rules["health_insurance"]["irpf"]["cap_minor_per_disabled_person"] == 150000
@@ -47,7 +47,8 @@ def test_catalog_has_step_one_rules_with_pinned_legal_values():
     assert catalog["categories"]["home_utility_review"] == "home_utility_partial_dwelling"
     assert catalog["categories"]["reta"] == "social_security_reta"
     secondary = {rule_id for rule_id, rule in rules.items() for source in rule["sources"] if source["source_kind"] == "secondary"}
-    assert secondary == {"home_utility_partial_dwelling", "home_rent_partial_dwelling"}
+    assert secondary == set()
+    assert rules["home_utility_partial_dwelling"]["iva"] == {"type": "manual"}
     assert all(source["url"].startswith("https://") and source["checked_on"] for rule in rules.values() for source in rule["sources"])
 
 
@@ -81,16 +82,13 @@ def test_manual_path_has_no_proposal():
     (draft("general_business", deductible_vat=2100), "ready", 10000, 2100),
     # LIVA art. 97.Uno: no IVA without a complete invoice; unrecovered IVA is an IRPF cost.
     (draft("general_business", invoice="F2"), "ready", 12100, 0),
-    (draft("home_rent_partial_dwelling", invoice=None, share=0.5, evidence_confirmed=True), "ready", 6050, 0),
     (draft("social_security_reta", vat=0, evidence_confirmed=True), "ready", 10000, 0),
-    # 30% x 25% = 7.5% of the base; IVA follows the area share and is fully recovered.
-    (draft("home_utility_partial_dwelling", share=0.25, deductible_vat=525), "ready", 750, 525),
-    # Recoverable IVA is not an IRPF cost even when it is not claimed.
-    (draft("home_utility_partial_dwelling", share=0.25, deductible_vat=0), "ready", 750, 525),
+    # IRPF uses 30% x 25%; the manually entered IVA stays outside the proposal.
+    (draft("home_utility_partial_dwelling", share=0.25, deductible_vat=525), "ready", 750, None),
+    # With no manually recovered IVA, the corresponding IVA share is part of IRPF cost.
+    (draft("home_utility_partial_dwelling", share=0.25, deductible_vat=0), "ready", 908, None),
     (draft("general_business", invoice="R1", deductible_vat=2100), "ready", 10000, 2100),
     (draft("general_business", invoice="R5"), "ready", 12100, 0),
-    (draft("home_rent_partial_dwelling", base=80000, vat=0, share=0.3, evidence_confirmed=True), "ready", 24000, 0),
-    (draft("home_rent_partial_dwelling", base=10001, vat=0, share=0.5, evidence_confirmed=True), "ready", 5001, 0),
     (draft("own_meals", base=3000, vat=300, deductible_vat=0, days=1, abroad=False, overnight=False, electronic_payment=True), "ready", 2667, None),
     (draft("own_meals", base=12000, vat=0, days=1, abroad=True, overnight=True, electronic_payment=True), "ready", 9135, None),
     (draft("own_meals", base=3000, vat=300, invoice="F2", days=1, abroad=False, overnight=False, electronic_payment=True), "ready", 2667, 0),
@@ -102,7 +100,7 @@ def test_proposal_amounts(tmp_path, payload, status, irpf, vat):
     with initialize(tmp_path / "ledger.sqlite") as db:
         result = propose(db, STATE, payload)
     assert (result["status"], result["irpf_minor"], result["vat_minor"]) == (status, irpf, vat)
-    assert result["sources"] and result["risk"] and result["version"] == "2026-09-24"
+    assert result["sources"] and result["risk"] and result["version"] == "2026-10-01"
 
 
 def test_health_insurance_cap_counts_people(tmp_path):
@@ -115,7 +113,7 @@ def test_health_insurance_cap_counts_people(tmp_path):
 
 @pytest.mark.parametrize("payload,missing", [
     (draft("home_utility_partial_dwelling"), ["area_share"]),
-    (draft("home_rent_partial_dwelling", base=None, share=True), ["taxable_base_minor", "area_share", "evidence_confirmed"]),
+    (draft("home_utility_partial_dwelling", base=None, share=True), ["taxable_base_minor", "area_share"]),
     (draft("health_insurance", persons=1, persons_disabled=2), ["persons_disabled"]),
     (draft("own_meals", days=0), ["days", "abroad", "overnight", "electronic_payment"]),
     (draft("general_business", on=None), ["transaction_date"]),
@@ -131,6 +129,7 @@ def test_missing_facts_block_the_proposal(payload, missing):
     (draft("own_meals", on="2017-12-31", days=1, abroad=False, overnight=False, electronic_payment=True), "out_of_scope", "rule_not_valid_on_date"),
     (draft("general_business", asset={"method": "linear"}), "out_of_scope", "equipment_not_covered"),
     (draft("no_such_rule"), "unavailable", "rule_unknown"),
+    (draft("home_rent_partial_dwelling"), "unavailable", "rule_unknown"),
     (draft("own_meals", days=3, abroad=False, overnight=False, electronic_payment=True), "out_of_scope", "one_day_per_draft"),
 ])
 def test_rule_that_does_not_apply_has_no_amounts(payload, status, code):
@@ -153,7 +152,6 @@ def test_rule_list_names_the_facts_each_rule_needs():
     facts = {rule["id"]: rule["facts"] for rule in rule_list()}
     assert set(facts) == STEP_ONE
     assert facts["home_utility_partial_dwelling"] == ["area_share"]
-    assert facts["home_rent_partial_dwelling"] == ["area_share", "evidence_confirmed"]
     assert facts["health_insurance"] == ["persons", "persons_disabled"]
     assert facts["own_meals"] == ["days", "abroad", "overnight", "electronic_payment"]
     assert facts["social_security_reta"] == ["evidence_confirmed"]
@@ -161,10 +159,10 @@ def test_rule_list_names_the_facts_each_rule_needs():
 
 
 def test_unclaimed_recoverable_iva_does_not_raise_the_irpf_ceiling(tmp_path):
-    for payload in (draft("home_utility_partial_dwelling", share=0.25, deductible_vat=0), draft("home_utility_partial_dwelling", share=0.25, deductible_vat=525)):
+    for payload in (draft("general_business", deductible_vat=0), draft("general_business", deductible_vat=2100)):
         payload["decision"]["tax_treatment"]["include_modelo303"] = False
         result = propose(None, STATE, payload)
-        assert (result["irpf_minor"], result["suggested"]) == (750, {"irpf_minor": 750, "vat_minor": 525})
+        assert (result["irpf_minor"], result["suggested"]) == (10000, {"irpf_minor": 10000, "vat_minor": 2100})
         assert "unrecovered_vat_added" not in codes(result)
     with initialize(tmp_path / "ledger.sqlite") as db:
         meals = propose(db, STATE, draft("own_meals", base=3000, vat=300, deductible_vat=100, days=1, abroad=False, overnight=False, electronic_payment=True))

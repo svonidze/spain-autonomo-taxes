@@ -103,8 +103,8 @@ parser". Fill in the facts the rule asks for and **Save draft**: the proposal
 card then shows the IRPF and IVA ceilings, how they were calculated, any
 missing facts, the risk and the sources with their check dates. After an
 unsaved change the card asks you to save the draft to recalculate. **Copy into
-fields** writes the pair shown above the button into the IRPF and IVA fields;
-run **Preview result** again afterwards. A newly opened draft may need one
+fields** writes the amounts shown above the button. When IVA is manual, it
+keeps the entered IVA. Run **Preview result** again afterwards. A newly opened draft may need one
 save before copying, because the form fills some defaults the server has not
 seen yet. The preview shows how far each amount is
 below the rule's ceiling.
@@ -113,8 +113,7 @@ below the rule's ceiling.
 |---|---|---|---|
 | Ordinary business expense | whole cost | invoice IVA | [LIRPF art. 28.1](https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764#a28), [LIVA art. 97](https://www.boe.es/buscar/act.php?id=BOE-A-1992-28740#a97) |
 | RETA contribution | whole amount | none | [AEAT practical manual](https://sede.agenciatributaria.gob.es/Sede/ayuda/manuales-videos-folletos/manuales-practicos/irpf-2025/c07-rendimientos-actividades-economicas-estimacion-directa/fase-1-determinacion-rendimiento-neto/gastos-fiscalmente-deducibles/gastos-titular-actividad.html) |
-| Supplies of the habitual home, partly used for work | 30% of the floor-area share | floor-area share | [LIRPF art. 30.2.5.ª b)](https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764#a30), [LIVA art. 95](https://www.boe.es/buscar/act.php?id=BOE-A-1992-28740#a95), [TEAC 00/06654/2022](https://serviciostelematicosext.hacienda.gob.es/TEAC/DYCTEA/criterio.aspx?id=00%2F06654%2F2022%2F00%2F0%2F1), DGT V2554-23 (secondary copy) |
-| Rent of a home partly used for work | floor-area share | floor-area share, only when IVA is charged | DGT V1293-25 (secondary summary), [LIVA art. 20.Uno.23.º b)](https://www.boe.es/buscar/act.php?id=BOE-A-1992-28740#a20) |
+| Supplies of the habitual home, partly used for work | 30% of the floor-area share | manual entry | [LIRPF art. 30.2.5.ª b)](https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764#a30), [LIVA art. 95](https://www.boe.es/buscar/act.php?id=BOE-A-1992-28740#a95), [TEAC 00/06654/2022](https://serviciostelematicosext.hacienda.gob.es/TEAC/DYCTEA/criterio.aspx?id=00%2F06654%2F2022%2F00%2F0%2F1) |
 | Health insurance | EUR 500 per person a year, EUR 1,500 with disability | none (exempt) | [LIRPF art. 30.2.5.ª a)](https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764#a30) |
 | Own meals, one day per draft | EUR 26.67 a day in Spain, 48.08 abroad; 53.34 / 91.35 with an overnight stay | your decision, zero once the day's cap is used | [LIRPF art. 30.2.5.ª c)](https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764#a30), [RIRPF art. 9.A.3.a)](https://www.boe.es/buscar/act.php?id=BOE-A-2007-6820#a9), [AEAT manual](https://sede.agenciatributaria.gob.es/Sede/ayuda/manuales-videos-folletos/manuales-ayuda-presentacion/irpf-2024/7-cumplimentacion-irpf/7_4-rendimientos-actividades-economicas/7_4_2-regimen-estimacion-directa/7_4_2_3-gastos-fiscalmente-deducibles/gastos-manutencion-contribuyente.html), [LIVA art. 96.Uno.6.º](https://www.boe.es/buscar/act.php?id=BOE-A-1992-28740#a96) |
 | Fine, sanction or surcharge | zero | zero | [LIS art. 15.c)](https://www.boe.es/buscar/act.php?id=BOE-A-2014-12328#a15) |
@@ -125,18 +124,18 @@ below the rule's ceiling.
   reports the missing invoice.
 - Amounts are proposed only in EUR. A foreign-currency document needs a
   confirmed exchange rate first.
-- The floor-area share is saved as the deductible IVA share. While a home
-  rule is selected, its **Floor-area share** field replaces **Deductible IVA
-  share** under additional tax fields. It starts empty rather than at 100%.
+- The floor-area share is saved for the IRPF supplies calculation. Its
+  **Floor-area share** field starts empty rather than at 100%. IVA amounts
+  remain an independent manual decision.
   An intake business-use percentage fills it only when it is below 100,
   because a blank intake value is stored as 100.
 - The supplies rule applies only to your habitual home (vivienda habitual).
   Its 30% coefficient applies unless you can prove another percentage; to
-  claim a proven different percentage, choose no rule. The IVA share uses the
-  floor area, while the TEAC and the DGT ask for the share of actual use,
-  which you must be able to prove.
-- Leases of a dwelling are usually exempt from IVA, so the rent rule's IVA
-  share matters only when the invoice charges IVA.
+  claim a proven different percentage, choose no rule. Decide IVA from actual
+  business use and supporting evidence; the proposal does not infer it from
+  floor area.
+- Rent of a home stays on **No rule — enter manually** until its eligibility
+  and evidence are verified independently.
 - Health insurance covers you, your spouse and children under 25 who live
   with you.
 - Meals must be your own, in a restaurant or hotel, during the activity and
@@ -160,8 +159,9 @@ below the rule's ceiling.
   adds a line to its notes. If the recorded rule for the same catalog date
   differs from the installed one, posting stops until the catalog is fixed.
 
-The two DGT rulings were read from secondary copies because the official DGT
-database failed certificate verification. Treat those rules as medium risk.
+The installed catalog uses primary sources checked on 2026-10-01. The rental
+rule is deferred and home-supplies IVA stays manual; neither depends on a
+secondary DGT reproduction.
 
 ### Income and legacy review
 

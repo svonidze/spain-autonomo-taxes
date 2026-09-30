@@ -108,11 +108,11 @@ export function utilityProposal(): DeductionProposal {
     rule_id: 'home_utility_partial_dwelling',
     status: 'ready',
     irpf_minor: 750,
-    vat_minor: 525,
-    suggested: { irpf_minor: 750, vat_minor: 525 },
+    vat_minor: null,
+    suggested: { irpf_minor: 750, vat_minor: null },
     missing: [],
     explanation: [
-      { code: 'vat_proportional_area', params: { share_basis_points: 2500 } },
+      { code: 'vat_manual', params: {} },
       {
         code: 'irpf_coefficient_times_area',
         params: { coefficient_basis_points: 3000, share_basis_points: 2500 },
@@ -123,14 +123,8 @@ export function utilityProposal(): DeductionProposal {
       {
         title: 'Ley 35/2006 (IRPF), art. 30.2.5.ª b)',
         url: 'https://www.boe.es/buscar/act.php?id=BOE-A-2006-20764#a30',
-        checked_on: '2026-09-24',
+        checked_on: '2026-10-01',
         source_kind: 'primary',
-      },
-      {
-        title: 'DGT, consulta vinculante V2554-23',
-        url: 'https://example.invalid/synthetic-secondary-copy',
-        checked_on: '2026-09-24',
-        source_kind: 'secondary',
       },
     ],
     evidence: { required: 'factura_completa_nif', satisfied: true },
@@ -143,14 +137,11 @@ export function ruleFixture(): WorkflowDraft {
   draft.payload.deduction = choice;
   draft.source_values.deduction = { ...choice, facts: { ...NO_FACTS } };
   draft.payload.decision.tax_treatment.deductible_ratio = 0.25;
+  draft.payload.decision.tax_treatment.deductible_vat_minor = 525;
   draft.deduction_rules = [
     rule('general_business', 'low', 'factura_completa_nif'),
     rule('social_security_reta', 'low', 'bank_statement', ['evidence_confirmed']),
     rule('home_utility_partial_dwelling', 'medium', 'factura_completa_nif', ['area_share']),
-    rule('home_rent_partial_dwelling', 'medium', 'bank_statement', [
-      'area_share',
-      'evidence_confirmed',
-    ]),
     rule('health_insurance', 'medium', 'any', ['persons', 'persons_disabled']),
     rule('own_meals', 'high', 'factura_completa_nif', [
       'days',

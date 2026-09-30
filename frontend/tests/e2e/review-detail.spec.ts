@@ -207,16 +207,21 @@ test('home supplies rule: parser pre-selection, area fact, saved proposal, copy 
   await expect(card).toContainText('save the draft to recalculate');
   await page.locator('#wf-save').click();
   await expect(card).toContainText('€7.50');
-  await expect(card).toContainText('Copy writes IRPF €7.50 and IVA €5.25');
+  await expect(card).toContainText(
+    'Copy writes IRPF €7.50 into its field; IVA stays as you entered it.',
+  );
   await expect(card).toContainText('Medium risk');
-  await page.locator('#wf-rule-copy').click();
+  await expect(select).toHaveAccessibleName('Rule for this expense');
+  await expect(page.locator('#wf-rule-copy')).toHaveAccessibleName('Copy into fields');
+  await page.locator('#wf-rule-copy').focus();
+  await page.keyboard.press('Enter');
   await expect(page.locator('[data-p="decision.tax_treatment.deductible_irpf_minor"]')).toHaveValue(
     '7.5',
   );
   await expect(page.locator('#wf-rule-copy')).toBeDisabled();
   await page.locator('#wf-form button[type="submit"]').click();
   await expect(page.locator('#wf-preview-rule')).toContainText(
-    'IRPF €0.00 below the ceiling; IVA €0.00 below the ceiling',
+    'IRPF €0.00 below the ceiling; IVA is your decision',
   );
   expect(saves.at(-1)?.deduction?.rule_id).toBe('home_utility_partial_dwelling');
   expect(saves.at(-1)?.decision.tax_treatment).toMatchObject({
@@ -225,6 +230,33 @@ test('home supplies rule: parser pre-selection, area fact, saved proposal, copy 
     deductible_vat_minor: 525,
   });
 });
+test('expense rule pseudolocale fits a narrow screen and keeps manual IVA on keyboard copy', async ({
+  page,
+}) => {
+  test.skip(process.env.AUTONOMO_PSEUDO !== '1', 'Run npm run test:pseudo for a test-only locale');
+  await native(page);
+  const draft = ruleFixture();
+  await page.route(`**/api/expense-workflows/${ID}`, (route) => route.fulfill({ json: draft }));
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto(path);
+  await page.locator('[data-locale="qps"]').evaluate((button: HTMLElement) => button.click());
+  await expect(page.locator('#wf-rule-card')).toContainText('⟦');
+  await expect(page.locator('#wf-rule-card .wf-rule-live')).toHaveAttribute('aria-live', 'polite');
+  const copy = page.locator('#wf-rule-copy');
+  await expect(copy).toHaveAccessibleName(/⟦/);
+  await copy.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('[data-p="decision.tax_treatment.deductible_irpf_minor"]')).toHaveValue(
+    '7.5',
+  );
+  await expect(page.locator('[data-p="decision.tax_treatment.deductible_vat_minor"]')).toHaveValue(
+    '5.25',
+  );
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+  ).toBe(true);
+});
+
 test('late guided confirmation preserves a newer draft and uses additive localized validation', async ({
   page,
 }) => {

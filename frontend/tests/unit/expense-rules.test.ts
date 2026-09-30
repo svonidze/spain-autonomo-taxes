@@ -91,10 +91,10 @@ test('the proposal card is translated for RU and EN, with sources, risk and pars
   expect(root.querySelector('.wf-rule-live')!.textContent).not.toContain('Только для основного');
   expect(card(root)).toContain('Предел IRPF');
   expect(card(root)).toMatch(/7,50\s€/);
-  expect(card(root)).toContain('IVA: 25 % от IVA по счёту');
+  expect(card(root)).toContain('IVA: решите сами');
   expect(card(root)).toContain('Только для основного жилья');
   expect(card(root)).toContain('Средний риск');
-  expect(card(root)).toContain('вторичный источник');
+  expect(card(root)).not.toContain('вторичный источник');
   expect(card(root)).not.toContain('Only for your habitual home');
   setLocale('en');
   await flush();
@@ -103,33 +103,37 @@ test('the proposal card is translated for RU and EN, with sources, risk and pars
   expect(card(root)).toContain('€7.50');
   expect(card(root)).toContain('IRPF: 30% of the floor-area share of 25%.');
   expect(card(root)).toContain('Only for your habitual home');
-  expect(card(root)).toContain('checked 24 Sept 2026');
-  expect(card(root)).toContain('Copy writes IRPF €7.50 and IVA €5.25 into the fields.');
-  expect(card(root)).toContain('secondary source');
+  expect(card(root)).toContain('checked 01 Oct 2026');
+  expect(card(root)).toContain(
+    'Copy writes IRPF €7.50 into its field; IVA stays as you entered it.',
+  );
+  expect(card(root)).not.toContain('secondary source');
   host.dispose();
 });
 
-test('copy into fields fills the consistent pair and drops an existing preview', async () => {
+test('copy into fields preserves manual IVA and drops an existing preview', async () => {
   setLocale('en');
   const saves: unknown[] = [];
-  const { root, host } = await mount(ruleFixture(), saves);
+  const draft = ruleFixture();
+  draft.payload.decision.tax_treatment.deductible_vat_minor = 600;
+  const { root, host } = await mount(draft, saves);
   root
     .querySelector('#wf-form')!
     .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
   await flush();
   expect(root.querySelector('#wf-preview-rule')!.textContent).toContain(
-    'Supplies of the habitual home partly used for work: IRPF €0.50 below the ceiling; IVA €0.00 below the ceiling',
+    'Supplies of the habitual home partly used for work: IRPF €0.50 below the ceiling; IVA is your decision',
   );
   root.querySelector<HTMLButtonElement>('#wf-rule-copy')!.click();
   await flush();
   expect(root.querySelector('#wf-preview')).toBeNull();
   expect(input(root, 'decision.tax_treatment.deductible_irpf_minor').value).toBe('7.5');
-  expect(input(root, 'decision.tax_treatment.deductible_vat_minor').value).toBe('5.25');
+  expect(input(root, 'decision.tax_treatment.deductible_vat_minor').value).toBe('6');
   expect(root.querySelector('.wf-message')!.textContent).toContain('Run the preview again');
   root.querySelector<HTMLButtonElement>('#wf-save')!.click();
   await flush();
   expect(saves.at(-1)).toMatchObject({
-    decision: { tax_treatment: { deductible_irpf_minor: 750, deductible_vat_minor: 525 } },
+    decision: { tax_treatment: { deductible_irpf_minor: 750, deductible_vat_minor: 600 } },
   });
   host.dispose();
 });
@@ -200,7 +204,7 @@ test('an area rule never inherits the default 100% share', () => {
   const draft = ruleFixture();
   const payload = nativeFixture().payload;
   payload.decision.tax_treatment.deductible_ratio = 1;
-  chooseRule(payload, draft.deduction_rules!, 'home_rent_partial_dwelling');
+  chooseRule(payload, draft.deduction_rules!, 'home_utility_partial_dwelling');
   expect(payload.decision.tax_treatment.deductible_ratio).toBeNull();
   expect(payload.deduction?.facts.evidence_confirmed).toBeNull();
   defaults(payload, draft.deduction_rules);

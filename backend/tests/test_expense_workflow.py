@@ -418,17 +418,30 @@ def test_rule_ceiling_is_recorded_and_preview_leaves_no_trace(tmp_path):
         assert 'Deduction rule general_business' in row['notes'] and 'ceiling IRPF 10000, IVA 2100' in row['notes']
 
 
-@pytest.mark.parametrize('irpf,vat,allowed',[(4000,1000,True),(5000,1050,True),(5001,1050,False),(4000,1051,False)])
+@pytest.mark.parametrize('irpf,vat,allowed',[(4000,1000,True),(10000,2100,True),(10001,2100,False)])
 def test_rule_proposal_is_a_ceiling_not_a_target(tmp_path,irpf,vat,allowed):
     fixture,draft=setup_draft(tmp_path)
     with open_db(fixture['database']) as db:
-        saved=with_rule(db,fixture,draft,'home_rent_partial_dwelling',{'deductible_ratio':0.5,'deductible_irpf_minor':irpf,'deductible_vat_minor':vat},evidence_confirmed=True)
+        saved=with_rule(db,fixture,draft,'general_business',{'deductible_irpf_minor':irpf,'deductible_vat_minor':vat})
         if allowed:
             assert commit(db,fixture,saved,tmp_path)['posted']
         else:
             with pytest.raises(ExpenseWorkflowError) as error:
                 preview(db,fixture['transaction_id'],expected_version=saved['draft_version'])
             assert error.value.code=='deduction_exceeds_rule'
+
+
+def test_home_supplies_leave_the_reviewed_iva_amount_manual(tmp_path):
+    fixture,draft=setup_draft(tmp_path)
+    with open_db(fixture['database']) as db:
+        saved=with_rule(db,fixture,draft,'home_utility_partial_dwelling',{
+            'deductible_ratio':0.25,'deductible_irpf_minor':750,'deductible_vat_minor':600})
+        assert saved['deduction_proposal']['vat_minor'] is None
+        assert commit(db,fixture,saved,tmp_path)['posted']
+        row=db.connection.execute('SELECT * FROM tax_treatments WHERE transaction_id=?',
+                                  (fixture['transaction_id'],)).fetchone()
+        assert row['deductible_vat_minor']==600
+        assert 'IVA manual' in row['notes']
 
 
 @pytest.mark.parametrize('rule_id,method,code',[('own_meals',None,'deduction_facts_missing'),('no_such_rule',None,'deduction_rule_unknown'),
