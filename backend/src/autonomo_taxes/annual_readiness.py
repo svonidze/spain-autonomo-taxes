@@ -11,6 +11,7 @@ from .tax_engine import (
     CalculationBlocked,
     INTRACOMMUNITY_ACQUISITION_CODES,
     OTHER_REVERSE_CHARGE_CODES,
+    activity_overlaps,
     calculate_modelo303_rows,
 )
 from .tax_row_loader import load_tax_rows
@@ -807,23 +808,13 @@ def _expected_quarters(
     periods = []
     for quarter in range(1, 5):
         quarter_start, quarter_end = _quarter_bounds(year, quarter)
-        if any(_overlaps(row, quarter_start, quarter_end) for row in activities):
+        if any(activity_overlaps(row, quarter_start, quarter_end) for row in activities):
             periods.append(f"{year}-Q{quarter}")
     return tuple(periods)
 
 
 def _overlaps_year(activity: dict[str, Any], year: int) -> bool:
-    return _overlaps(activity, date(year, 1, 1), date(year, 12, 31))
-
-
-def _overlaps(activity: dict[str, Any], starts_on: date, ends_on: date) -> bool:
-    activity_start = date.fromisoformat(str(activity["starts_on"]))
-    activity_end = (
-        date.fromisoformat(str(activity["ends_on"]))
-        if activity.get("ends_on")
-        else date.max
-    )
-    return activity_start <= ends_on and activity_end >= starts_on
+    return activity_overlaps(activity, date(year, 1, 1), date(year, 12, 31))
 
 
 def _quarter_bounds(year: int, quarter: int) -> tuple[date, date]:
