@@ -1,7 +1,7 @@
 """Reusable synthetic fixtures shared by backend test suites."""
 
 from copy import deepcopy
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 import json
 from pathlib import Path
@@ -23,8 +23,9 @@ def setup_draft(tmp_path, *, method=None, transaction_date=None):
         _approve_decision({'decision': draft['payload']['decision']})
         draft['payload']['change_reason'] = 'Reviewed facts against immutable original'
         if method:
+            service_date = transaction_date or (date.today() + timedelta(days=1 if method == 'linear' else 0)).isoformat()
             draft['payload']['asset'] = dict(description='Synthetic test equipment',basis_minor=10000,business_use_ratio=1.0,
-                annual_rate_basis_points=10000 if method=='immediate' else 2500,placed_in_service_on=transaction_date or date.today().isoformat(),
+                annual_rate_basis_points=10000 if method=='immediate' else 2500,placed_in_service_on=service_date,
                 method=method,new_equipment=True,aeat_asset_type='23')
         saved = save_draft(db, fixture['transaction_id'], payload=draft['payload'], expected_version=0,
                            source_snapshot_hash=draft['source_snapshot_hash'],actor='synthetic-user')
