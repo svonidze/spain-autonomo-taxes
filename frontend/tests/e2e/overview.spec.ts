@@ -219,7 +219,9 @@ test('cumulative purchases follow business net and show missing FX beside zero t
   ).toBe(true);
   const before = reads;
   await page.locator('[data-locale="en"]').evaluate((button: HTMLElement) => button.click());
-  await expect(chart.locator('figcaption > span')).toHaveText('Cumulative purchases and IRPF deductions');
+  await expect(chart.locator('figcaption > span')).toHaveText(
+    'Cumulative purchases and IRPF deductions',
+  );
   await expect(chart.locator('.chart-note')).toContainText(
     'Expense rows without confirmed EUR conversion are excluded: 1.',
   );
