@@ -2382,7 +2382,8 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
         except (ExpenseWorkflowError, AccountSettingsError) as exc:
-            self._send_error_json(HTTPStatus(exc.status), str(exc), code=exc.code)
+            self._send_error_json(HTTPStatus(exc.status), str(exc), code=exc.code,
+                message_code=getattr(exc, "message_code", None))
         except LocalWebApiError as exc:
             self._send_error_json(exc.status, str(exc), code=exc.code, current=exc.current,
                 message_code=exc.message_code, params=exc.params, field=exc.field)
@@ -2554,7 +2555,8 @@ class LocalAccountingHandler(BaseHTTPRequestHandler):
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
         except (ExpenseWorkflowError, AccountSettingsError) as exc:
-            self._send_error_json(HTTPStatus(exc.status), str(exc), code=exc.code)
+            self._send_error_json(HTTPStatus(exc.status), str(exc), code=exc.code,
+                message_code=getattr(exc, "message_code", None))
         except LocalWebApiError as exc:
             self._send_error_json(exc.status, str(exc), code=exc.code, current=exc.current,
                 message_code=exc.message_code, params=exc.params, field=exc.field)

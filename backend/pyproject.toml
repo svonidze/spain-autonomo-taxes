@@ -23,7 +23,7 @@ autonomo-web = "autonomo_taxes.local_web:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-autonomo_taxes = ["web_ui/dist/index.html", "web_ui/dist/build-manifest.json", "web_ui/dist/ui-assets/*.js", "web_ui/dist/ui-assets/*.css"]
+autonomo_taxes = ["expense_rules.json", "web_ui/dist/index.html", "web_ui/dist/build-manifest.json", "web_ui/dist/ui-assets/*.js", "web_ui/dist/ui-assets/*.css"]
 
 [tool.autonomo.web-ui]
 build-contract = 1
