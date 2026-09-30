@@ -3,6 +3,7 @@ import unittest
 
 from autonomo_taxes.tax_rules import (
     DIFFICULT_EXPENSE_CAP_EUR,
+    FORM_RULES,
     calculate_difficult_expenses,
     difficult_expense_rate_for_year,
     difficult_expense_rule_for_year,
@@ -62,6 +63,13 @@ class TaxRulesTests(unittest.TestCase):
         recognized = recognize_tax_form_filename("MOD 130 4T presentado 2024-01-20.pdf")
         self.assertIsNotNone(recognized)
         self.assertEqual(recognized.period, "2023-Q4")
+
+    def test_every_form_rule_has_a_verifiable_https_source_url(self):
+        # Same host prefix tax_calendar.py requires for a confirmed deadline source_url.
+        aeat_prefix = "https://sede.agenciatributaria.gob.es/"
+        for code, rule in FORM_RULES.items():
+            with self.subTest(code=code):
+                self.assertTrue(rule.source_url.startswith(aeat_prefix), rule.source_url)
 
 
 if __name__ == "__main__":
