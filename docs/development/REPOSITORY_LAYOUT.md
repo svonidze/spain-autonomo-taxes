@@ -10,6 +10,7 @@ The repository has two application roots:
 | `ops/` | Installed operational helpers, systemd templates, and operator runbooks in `ops/docs/`. |
 | `examples/` | Safe configuration and import examples. |
 | `reference/tax-calendars/` | Versioned calendar inputs that callers pass explicitly. |
+| `reference/reta/` | Versioned RETA contribution tables (tramos, bases, rates, generic deduction) with their BOE sources. |
 
 These are ownership and tooling boundaries within one release. The frontend
 build writes verified assets into `backend/src/autonomo_taxes/web_ui/dist`; the

@@ -11,10 +11,15 @@ import {
   type UiMessage,
 } from '../../core/i18n.ts';
 import { operationRequest } from '../../core/operation-request.ts';
+import { eur, formatDateText } from '../../core/format.ts';
 import type { Counterparty } from '../contacts/model.ts';
 import WorkflowField from './WorkflowField.vue';
 import {
+  chooseRule,
+  copyProposal,
   defaults,
+  explanationValues,
+  proposalInputs,
   factsFields,
   taxFields,
   technicalFields,
@@ -42,7 +47,8 @@ const error = shallowRef<unknown>(),
 const supplierSearch = ref(''),
   settlementRate = ref(''),
   settlementReference = ref(''),
-  technicalOpen = ref(false);
+  technicalOpen = ref(false),
+  savedInputs = ref('');
 let active = true,
   generation = 0,
   request: ReturnType<typeof operationRequest> | null = null;
@@ -78,7 +84,9 @@ async function load() {
     draft.value = value;
     payload.value = clone(value.payload);
     suppliers.value = parties;
-    defaults(payload.value);
+    // Before browser defaults: the server proposal was calculated without them.
+    savedInputs.value = proposalInputs(payload.value);
+    defaults(payload.value, value.deduction_rules);
   } catch (failure) {
     if (current(revision)) error.value = failure;
   } finally {
@@ -228,6 +236,7 @@ async function save(revision: number) {
   if (!current(revision)) return false;
   draft.value = result;
   payload.value = clone(result.payload);
+  savedInputs.value = proposalInputs(payload.value);
   notice.value = message('workflow.draftSavedOnTheServer');
   return true;
 }
@@ -290,9 +299,80 @@ function reset() {
     source_snapshot_hash: draft.value.current_snapshot_hash,
     conflict: false,
   };
-  defaults(payload.value);
+  defaults(payload.value, draft.value.deduction_rules);
   invalidate();
 }
+const rules = computed(() => draft.value?.deduction_rules ?? []);
+const rule = computed(() =>
+  rules.value.find((item) => item.id === payload.value?.deduction?.rule_id),
+);
+const parserRule = computed(() => draft.value?.source_values.deduction?.rule_id ?? null);
+// The saved proposal describes the saved draft; any unsaved input makes it stale.
+const stale = computed(
+  () => !!payload.value && proposalInputs(payload.value) !== savedInputs.value,
+);
+const proposal = computed(() => {
+  const value = draft.value?.deduction_proposal;
+  return value && value.rule_id === payload.value?.deduction?.rule_id ? value : undefined;
+});
+const ruleText = (key: string, values: Record<string, unknown> = {}) =>
+  messageIds.includes(key) ? formatMessage(key, values, locale.value) : key;
+const ruleName = (id: string) => ruleText(`expenseRules.rule.${id}`);
+function onRule(event: Event) {
+  if (!payload.value || busy.value) return;
+  chooseRule(payload.value, rules.value, (event.target as HTMLSelectElement).value);
+  invalidate();
+}
+function setCount(name: string, event: Event) {
+  const raw = (event.target as HTMLInputElement).value;
+  const value = Math.trunc(Number(raw));
+  update(
+    `deduction.facts.${name}`,
+    raw === '' || !Number.isFinite(value) ? null : Math.min(366, Math.max(0, value)),
+  );
+}
+const riskBadge: Record<string, string> = {
+  low: 'status-positive',
+  medium: 'status-pending',
+  high: 'status-attention',
+};
+const copyPair = computed(() => {
+  const pair = proposal.value?.suggested;
+  if (!pair || stale.value) return '';
+  const irpf = eur(pair.irpf_minor / 100, locale.value);
+  return pair.vat_minor == null
+    ? t('expenseRules.copyPairIrpfOnly', { irpf })
+    : t('expenseRules.copyPair', { irpf, vat: eur(pair.vat_minor / 100, locale.value) });
+});
+// An area rule owns the share; the tax grid does not repeat it under another label.
+const visibleTechnical = computed(() =>
+  technicalFields.filter(
+    (field) =>
+      !rule.value?.facts.includes('area_share') || !field.path.endsWith('deductible_ratio'),
+  ),
+);
+function copyIntoFields() {
+  if (!payload.value || !proposal.value || stale.value || busy.value) return;
+  if (!copyProposal(payload.value, proposal.value)) return;
+  invalidate();
+  notice.value = message('expenseRules.copied');
+}
+const previewRule = computed(() => {
+  const value = proposed.value?.deduction;
+  if (!value || value.irpf_minor == null || !proposed.value) return '';
+  const gap = (ceiling: number, entered: number) => eur((ceiling - entered) / 100, locale.value);
+  const irpf = t('expenseRules.previewIrpf', {
+    rule: ruleName(value.rule_id),
+    gap: gap(value.irpf_minor, proposed.value.deductible_irpf_minor),
+  });
+  const vat =
+    value.vat_minor == null
+      ? t('expenseRules.previewVatManual')
+      : t('expenseRules.previewVat', {
+          gap: gap(value.vat_minor, proposed.value.deductible_vat_minor),
+        });
+  return `${irpf}; ${vat}`;
+});
 function useFx(settlement = false) {
   if (!payload.value || busy.value) return;
   const suggestion = draft.value?.fx_suggestion;
@@ -523,6 +603,170 @@ const supplierHidden = (party: Counterparty) =>
                 @update:model-value="update(field.path, $event)"
               />
             </div>
+            <section v-if="rules.length" id="wf-rule" class="wf-rule">
+              <h3>{{ t('expenseRules.title') }}</h3>
+              <p>{{ t('expenseRules.intro') }}</p>
+              <label
+                ><span>{{ t('expenseRules.select') }}</span
+                ><select
+                  id="wf-rule-select"
+                  :value="payload.deduction?.rule_id ?? ''"
+                  @change="onRule"
+                >
+                  <option value="">{{ t('expenseRules.noRule') }}</option>
+                  <option v-for="item in rules" :key="item.id" :value="item.id">
+                    {{
+                      item.id === parserRule
+                        ? t('expenseRules.fromParser', { rule: ruleName(item.id) })
+                        : ruleName(item.id)
+                    }}
+                  </option>
+                </select></label
+              >
+              <div v-if="rule && payload.deduction" class="wf-grid">
+                <template v-for="name in rule.facts" :key="name">
+                  <WorkflowField
+                    v-if="name === 'area_share'"
+                    :field="{
+                      path: 'decision.tax_treatment.deductible_ratio',
+                      label: 'expenseRules.fact.area_share',
+                      kind: 'ratio',
+                      type: 'number',
+                    }"
+                    :model-value="tax.deductible_ratio"
+                    @update:model-value="update('decision.tax_treatment.deductible_ratio', $event)"
+                  />
+                  <label v-else-if="['persons', 'persons_disabled', 'days'].includes(name)"
+                    ><span>{{ ruleText(`expenseRules.fact.${name}`) }}</span
+                    ><input
+                      type="number"
+                      min="0"
+                      max="366"
+                      step="1"
+                      :data-p="`deduction.facts.${name}`"
+                      :value="payload.deduction.facts[name] ?? ''"
+                      @input="setCount(name, $event)"
+                  /></label>
+                  <label v-else-if="name === 'evidence_confirmed'" class="wf-check"
+                    ><input
+                      type="checkbox"
+                      data-p="deduction.facts.evidence_confirmed"
+                      :checked="payload.deduction.facts.evidence_confirmed === true"
+                      @input="check('deduction.facts.evidence_confirmed', $event)"
+                    /><span>{{ t('expenseRules.fact.evidence_confirmed') }}</span></label
+                  >
+                  <label v-else
+                    ><span>{{ ruleText(`expenseRules.fact.${name}`) }}</span
+                    ><select
+                      :data-p="`deduction.facts.${name}`"
+                      :value="
+                        payload.deduction.facts[name] == null
+                          ? ''
+                          : String(payload.deduction.facts[name])
+                      "
+                      @input="select(`deduction.facts.${name}`, $event, true)"
+                    >
+                      <option value=""></option>
+                      <option value="true">{{ t('expenseRules.yes') }}</option>
+                      <option value="false">{{ t('expenseRules.no') }}</option>
+                    </select></label
+                  >
+                </template>
+              </div>
+              <small v-if="rule?.facts.includes('area_share')">{{
+                t('expenseRules.areaHint')
+              }}</small>
+              <small v-if="rule?.facts.includes('evidence_confirmed')">{{
+                t('expenseRules.evidencePrompt')
+              }}</small>
+              <div v-if="rule" id="wf-rule-card" class="wf-rule-card">
+                <div class="wf-rule-live" aria-live="polite">
+                  <template v-if="proposal">
+                    <p>
+                      <strong>{{ ruleText(`expenseRules.status.${proposal.status}`) }}</strong>
+                      <span
+                        v-if="proposal.risk"
+                        class="badge wf-risk"
+                        :class="riskBadge[proposal.risk]"
+                        >{{ ruleText(`expenseRules.risk.${proposal.risk}`) }}</span
+                      >
+                    </p>
+                    <dl v-if="proposal.irpf_minor != null" class="review-facts-list">
+                      <div>
+                        <dt>{{ t('expenseRules.irpfCeiling') }}</dt>
+                        <dd>{{ eur(proposal.irpf_minor / 100, locale) }}</dd>
+                      </div>
+                      <div>
+                        <dt>{{ t('expenseRules.vatCeiling') }}</dt>
+                        <dd>
+                          {{
+                            proposal.vat_minor == null
+                              ? t('expenseRules.vatManual')
+                              : eur(proposal.vat_minor / 100, locale)
+                          }}
+                        </dd>
+                      </div>
+                    </dl>
+                  </template>
+                  <p v-else>{{ t('expenseRules.saveToCalculate') }}</p>
+                  <p v-if="proposal && stale" class="wf-rule-stale">
+                    {{ t('expenseRules.saveToRecalculate') }}
+                  </p>
+                </div>
+                <template v-if="proposal">
+                  <template v-if="proposal.missing.length"
+                    ><p>{{ t('expenseRules.missingTitle') }}</p>
+                    <ul class="wf-rule-missing">
+                      <li v-for="name in proposal.missing" :key="name">
+                        {{ ruleText(`expenseRules.fact.${name}`) }}
+                      </li>
+                    </ul></template
+                  >
+                  <ul class="wf-rule-explanation">
+                    <li v-for="(note, index) in proposal.explanation" :key="index">
+                      {{
+                        ruleText(
+                          `expenseRules.code.${note.code}`,
+                          explanationValues(note.params, locale),
+                        )
+                      }}
+                    </li>
+                  </ul>
+                  <p class="wf-rule-risk">
+                    {{ ruleText(`expenseRules.riskReason.${proposal.rule_id}`) }}
+                  </p>
+                  <details v-if="proposal.sources?.length">
+                    <summary>{{ t('expenseRules.sources') }}</summary>
+                    <ul>
+                      <li v-for="source in proposal.sources" :key="source.url + source.title">
+                        <a :href="source.url" target="_blank" rel="noreferrer">{{
+                          source.title
+                        }}</a>
+                        ·
+                        {{
+                          t('expenseRules.sourceChecked', {
+                            date: formatDateText(source.checked_on, locale),
+                          })
+                        }}
+                        <template v-if="source.source_kind === 'secondary'">
+                          · {{ t('expenseRules.secondary') }}</template
+                        >
+                      </li>
+                    </ul>
+                  </details>
+                  <p v-if="copyPair" class="wf-rule-pair">{{ copyPair }}</p>
+                  <button
+                    id="wf-rule-copy"
+                    type="button"
+                    class="secondary-button"
+                    :disabled="stale || !proposal.suggested"
+                    @click="copyIntoFields"
+                  >
+                    {{ t('expenseRules.copy') }}
+                  </button>
+                </template>
+              </div>
+            </section>
             <label
               ><span>{{ t('workflow.ivaPurchaseClassification') }}</span
               ><select
@@ -661,7 +905,7 @@ const supplierHidden = (party: Counterparty) =>
                     </option>
                   </select></label
                 ><WorkflowField
-                  v-for="field in technicalFields"
+                  v-for="field in visibleTechnical"
                   :key="field.path"
                   :field="field"
                   :model-value="fieldValue(payload, field.path)"
@@ -725,6 +969,10 @@ const supplierHidden = (party: Counterparty) =>
           <div>
             <dt>{{ t('workflow.laterDepreciation') }}</dt>
             <dd>{{ money(proposed.future_depreciation_minor) }} EUR</dd>
+          </div>
+          <div v-if="previewRule" id="wf-preview-rule">
+            <dt>{{ t('expenseRules.title') }}</dt>
+            <dd>{{ previewRule }}</dd>
           </div>
         </dl>
         <div v-if="proposed.schedule.length" class="table-wrap">

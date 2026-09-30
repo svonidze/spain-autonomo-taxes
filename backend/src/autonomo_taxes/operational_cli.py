@@ -10,6 +10,7 @@ from decimal import Decimal, InvalidOperation
 import hashlib
 import json
 from pathlib import Path
+import re
 import sqlite3
 import sys
 from typing import Any, Callable, Iterable, Mapping
@@ -95,6 +96,8 @@ from .tax_engine import (
     calculate_modelo390,
     calculate_retention_rows,
 )
+from .reta import REGIMES as RETA_REGIMES, WORKER_KINDS as RETA_WORKER_KINDS
+from .reta_ledger import ledger_bracket_check
 from .tax_calendar import entry_as_record, load_tax_calendar
 from .tax_row_loader import load_tax_rows
 from .tax_rules import (
@@ -752,6 +755,73 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     calendar_list.add_argument("--period")
     calendar_list.add_argument("--out", type=Path)
     calendar_list.set_defaults(_operational_handler=_cmd_calendar_list)
+
+    reta = subparsers.add_parser(
+        "reta",
+        help="RETA bracket check (decision support, not a TGSS resolution)",
+        description=(
+            "Compare the RETA base recorded from a TGSS resolution with the tramo of "
+            "the year-to-date income of posted rows. Decision support only: it is not "
+            "a TGSS resolution and never part of tax cash due."
+        ),
+    )
+    reta_sub = reta.add_subparsers(dest="reta_command", required=True)
+    reta_table = reta_sub.add_parser("table", help="Store the source-checked RETA table of a year")
+    reta_table_sub = reta_table.add_subparsers(dest="reta_table_command", required=True)
+    reta_table_import = reta_table_sub.add_parser(
+        "import", help="Validate and store reference/reta/<year>.json"
+    )
+    _db_arg(reta_table_import)
+    reta_table_import.add_argument("--input", type=Path, required=True)
+    reta_table_import.set_defaults(_operational_handler=_cmd_reta_table_import)
+    reta_base = reta_sub.add_parser("base", help="Record RETA bases from TGSS resolutions")
+    reta_base_sub = reta_base.add_subparsers(dest="reta_base_command", required=True)
+    reta_base_add = reta_base_sub.add_parser(
+        "add",
+        help="Append the base a TGSS resolution sets from a date; rows are immutable",
+    )
+    _db_arg(reta_base_add)
+    reta_base_add.add_argument("--effective-from", required=True, help="YYYY-MM-DD")
+    reta_base_add.add_argument("--regime", choices=RETA_REGIMES, required=True)
+    reta_base_add.add_argument(
+        "--monthly-base",
+        help="Monthly base in EUR as on the resolution, e.g. 950,98; only for regime base",
+    )
+    reta_base_add.add_argument("--worker-kind", choices=RETA_WORKER_KINDS, required=True)
+    reta_base_add.add_argument(
+        "--source-reference", required=True,
+        help="Non-secret TGSS resolution reference, e.g. its date and number; not the CSV code",
+    )
+    reta_base_add.add_argument(
+        "--source-file", type=Path, help="TGSS resolution file; only its SHA-256 is stored"
+    )
+    reta_base_add.set_defaults(_operational_handler=_cmd_reta_base_add)
+    reta_base_void = reta_base_sub.add_parser(
+        "void", help="Withdraw a mistaken base row; it stays in the ledger as void"
+    )
+    _db_arg(reta_base_void)
+    reta_base_void.add_argument("--election-id", required=True)
+    reta_base_void.add_argument(
+        "--source-reference", required=True, help="Why the row is void, e.g. the correcting resolution"
+    )
+    reta_base_void.set_defaults(_operational_handler=_cmd_reta_base_void)
+    reta_base_list = reta_base_sub.add_parser("list", help="List the live (not voided) RETA bases")
+    _db_arg(reta_base_list)
+    reta_base_list.set_defaults(_operational_handler=_cmd_reta_base_list)
+    reta_check = reta_sub.add_parser(
+        "check",
+        help="Check the recorded bases against posted income; exit 2 when unknown",
+    )
+    _db_arg(reta_check)
+    reta_check.add_argument("--year", type=int, required=True)
+    reta_check.add_argument("--as-of", type=date.fromisoformat, help="YYYY-MM-DD; default today")
+    reta_check.add_argument(
+        "--through",
+        type=date.fromisoformat,
+        help="Month end YYYY-MM-DD; default the last month end before --as-of",
+    )
+    reta_check.add_argument("--out", type=Path)
+    reta_check.set_defaults(_operational_handler=_cmd_reta_check)
 
     agenda = subparsers.add_parser(
         "agenda",
@@ -3533,6 +3603,64 @@ def _cmd_calendar_list(args: argparse.Namespace) -> int:
         )
     _write_or_emit(rows, args.out)
     return 0
+
+
+def _cmd_reta_table_import(args: argparse.Namespace) -> int:
+    with open_ledger_db(args.db) as db:
+        row = db.import_reta_table(args.input.read_bytes())
+    _emit({key: value for key, value in row.items() if key != "payload_json"})
+    return 0
+
+
+def _cmd_reta_base_add(args: argparse.Namespace) -> int:
+    with open_ledger_db(args.db) as db:
+        row = db.add_reta_base_election(
+            effective_from=args.effective_from,
+            regime=args.regime,
+            monthly_base_minor=None if args.monthly_base is None else _euro_minor(args.monthly_base),
+            worker_kind=args.worker_kind,
+            source_reference=args.source_reference,
+            source_hash=None if args.source_file is None else _sha256(args.source_file),
+        )
+    _emit(row)
+    return 0
+
+
+def _euro_minor(text: str) -> int:
+    # TGSS resolutions print "950,98"; refuse a third decimal instead of rounding it.
+    match = re.fullmatch(r"(\d+)(?:[.,](\d{1,2}))?", text.strip())
+    minor = None if match is None else int(match[1] + (match[2] or "").ljust(2, "0"))
+    if not minor:
+        raise ValueError(
+            "monthly base must be a positive euro amount with at most two decimals and "
+            f"no thousands separator, e.g. 950,98 or 1166.70; got {text!r}"
+        )
+    return minor
+
+
+def _cmd_reta_base_void(args: argparse.Namespace) -> int:
+    with open_ledger_db(args.db) as db:
+        row = db.void_reta_base_election(
+            election_id=args.election_id, source_reference=args.source_reference
+        )
+    _emit(row)
+    return 0
+
+
+def _cmd_reta_base_list(args: argparse.Namespace) -> int:
+    with open_ledger_db(args.db, read_only=True) as db:
+        rows = db.list_reta_base_elections()
+    _emit(rows)
+    return 0
+
+
+def _cmd_reta_check(args: argparse.Namespace) -> int:
+    with open_ledger_db(args.db, read_only=True) as db:
+        result = ledger_bracket_check(
+            db, year=args.year, as_of=args.as_of or date.today(), through=args.through
+        )
+    _write_or_emit(result, args.out)
+    return 2 if result["status"] == "unknown" else 0
 
 
 def _cmd_agenda(args: argparse.Namespace) -> int:
@@ -6668,6 +6796,11 @@ def _intake_transaction_draft(
             f"{amounts.gross_source or 'unknown'}; base_source="
             f"{amounts.taxable_base_source or 'unknown'}; vat_source="
             f"{amounts.vat_source or 'unknown'}"
+            + (
+                f"; parser_category={suggestion.category}"
+                if suggestion is not None and suggestion.category.isidentifier()
+                else ""
+            )
         ),
         source_hash=hashlib.sha256(
             f"intake-treatment:{source_hash}".encode("utf-8")

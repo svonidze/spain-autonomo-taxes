@@ -1,5 +1,6 @@
 import type { ViewServices } from '../../vue/services.ts';
-import type { MessageId } from '../../core/i18n.ts';
+import { localeTag, type MessageId } from '../../core/i18n.ts';
+import { eur, formatDateText } from '../../core/format.ts';
 export type Scalar = string | number | boolean | null;
 export type Fields = Record<string, Scalar>;
 export interface ExpensePayload {
@@ -15,6 +16,36 @@ export interface ExpensePayload {
   fx: FxSelection | null;
   change_reason?: Scalar;
   manual_review_reason?: Scalar;
+  deduction?: DeductionChoice | null;
+}
+export interface DeductionChoice {
+  rule_id: string;
+  facts: Fields;
+}
+export interface RuleSource {
+  title: string;
+  url: string;
+  checked_on: string;
+  source_kind: 'primary' | 'secondary';
+}
+export interface DeductionRule {
+  id: string;
+  risk: string;
+  evidence: string;
+  facts: string[];
+  sources: RuleSource[];
+}
+export interface DeductionProposal {
+  rule_id: string;
+  status: 'ready' | 'needs_facts' | 'not_deductible' | 'out_of_scope' | 'unavailable';
+  irpf_minor: number | null;
+  vat_minor: number | null;
+  suggested: { irpf_minor: number; vat_minor: number | null } | null;
+  missing: string[];
+  explanation: { code: string; params: Record<string, unknown> }[];
+  risk?: string;
+  sources?: RuleSource[];
+  evidence?: { required: string; satisfied: boolean | null };
 }
 export interface FxSelection {
   rate_date?: Scalar;
@@ -40,6 +71,8 @@ export interface WorkflowDraft {
   };
   activities: { business_activity_id: string; description: string }[];
   allowed_values: Record<string, string[]>;
+  deduction_rules?: DeductionRule[];
+  deduction_proposal?: DeductionProposal | null;
   fx_suggestion?: {
     status: string;
     note?: string;
@@ -59,6 +92,7 @@ export interface WorkflowPreview {
   deductible_irpf_minor: number;
   future_depreciation_minor: number;
   schedule: { period_key: string; recognition_on?: string; amount_minor: number }[];
+  deduction?: DeductionProposal | null;
 }
 export interface PostedExpense {
   transaction_id: string;
@@ -161,7 +195,69 @@ export function setField(payload: ExpensePayload, path: string, value: Scalar): 
   }
   target[keys.at(-1)!] = value;
 }
-export function defaults(payload: ExpensePayload) {
+export const FACT_NAMES = [
+  'persons',
+  'persons_disabled',
+  'days',
+  'abroad',
+  'overnight',
+  'electronic_payment',
+  'evidence_confirmed',
+] as const;
+const usesArea = (rules: DeductionRule[], id?: string | null) =>
+  !!rules.find((rule) => rule.id === id)?.facts.includes('area_share');
+/** A partly used home is never 100% business: an area rule starts without a share. */
+export function chooseRule(payload: ExpensePayload, rules: DeductionRule[], id: string) {
+  payload.deduction = id
+    ? {
+        rule_id: id,
+        facts: Object.fromEntries(
+          FACT_NAMES.map((name) => [name, payload.deduction?.facts[name] ?? null]),
+        ),
+      }
+    : null;
+  const tax = payload.decision.tax_treatment;
+  if (usesArea(rules, id) && tax.deductible_ratio === 1) tax.deductible_ratio = null;
+  // Leaving an area rule restores the same default share as defaults().
+  if (!usesArea(rules, id) && tax.deductible_ratio == null) tax.deductible_ratio = 1;
+}
+/** Copies the backend's consistent IRPF/IVA pair; IVA stays manual when the rule sets none. */
+export function copyProposal(payload: ExpensePayload, proposal: DeductionProposal): boolean {
+  if (!proposal.suggested) return false;
+  const tax = payload.decision.tax_treatment;
+  tax.deductible_irpf_minor = proposal.suggested.irpf_minor;
+  if (proposal.suggested.vat_minor != null) tax.deductible_vat_minor = proposal.suggested.vat_minor;
+  return true;
+}
+/** The inputs a saved proposal was calculated from. */
+export const proposalInputs = (payload: ExpensePayload) =>
+  JSON.stringify([
+    payload.facts,
+    payload.decision.tax_treatment,
+    payload.deduction ?? null,
+    payload.asset,
+    payload.fx,
+  ]);
+/** Server params are basis points and cents; messages take formatted percentages, money and dates. */
+export function explanationValues(params: Record<string, unknown>, locale: unknown) {
+  return Object.fromEntries(
+    Object.entries(params).map(([key, value]) =>
+      key.endsWith('_basis_points')
+        ? [
+            key.slice(0, -'_basis_points'.length),
+            new Intl.NumberFormat(localeTag(locale), { maximumFractionDigits: 2 }).format(
+              Number(value) / 100,
+            ),
+          ]
+        : key.endsWith('_minor')
+          ? [key.slice(0, -'_minor'.length), eur(Number(value) / 100, locale)]
+          : /^\d{4}-\d{2}-\d{2}$/.test(String(value))
+            ? [key, formatDateText(value, locale)]
+            : [key, value ?? 'none'],
+    ),
+  );
+}
+export function defaults(payload: ExpensePayload, rules: DeductionRule[] = []) {
   for (const [key, value] of Object.entries({
     aeat_invoice_type: 'F1',
     aeat_operation_key: '01',
@@ -174,5 +270,9 @@ export function defaults(payload: ExpensePayload) {
     include_modelo347: true,
     deductible_ratio: 1,
   }))
-    if (payload.decision.tax_treatment[key] == null) payload.decision.tax_treatment[key] = value;
+    if (
+      payload.decision.tax_treatment[key] == null &&
+      !(key === 'deductible_ratio' && usesArea(rules, payload.deduction?.rule_id))
+    )
+      payload.decision.tax_treatment[key] = value;
 }

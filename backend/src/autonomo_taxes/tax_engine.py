@@ -92,6 +92,8 @@ class TaxRow:
     withholding_type: str = ""
     asset_id: str = ""
     vat_investment_good: bool | None = None
+    # AEAT expense concept (G45 = the owner's social security contributions).
+    aeat_expense_concept: str = ""
 
     def __post_init__(self) -> None:
         if self.kind not in {"income", "expense", "adjustment"}:
