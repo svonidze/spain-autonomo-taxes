@@ -50,3 +50,14 @@ def test_wheel_does_not_retain_an_obsolete_cached_bundle(tmp_path):
     with zipfile.ZipFile(wheel) as archive:
         resources = [name for name in archive.namelist() if "/web_ui/" in name]
         assert set(resources) == {"autonomo_taxes/web_ui/dist/" + name for name in ("index.html", "build-manifest.json", "ui-assets/current.js")}
+
+
+def test_wheel_ships_the_expense_rule_catalog(tmp_path):
+    project(tmp_path)
+    catalog = (REPO_ROOT / "backend/src/autonomo_taxes/expense_rules.json").read_bytes()
+    (tmp_path / "src/autonomo_taxes/expense_rules.json").write_bytes(catalog)
+    result = subprocess.run([sys.executable, "-m", "build", "--wheel"], cwd=tmp_path, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    wheel, = (tmp_path / "dist").glob("*.whl")
+    with zipfile.ZipFile(wheel) as archive:
+        assert archive.read("autonomo_taxes/expense_rules.json") == catalog

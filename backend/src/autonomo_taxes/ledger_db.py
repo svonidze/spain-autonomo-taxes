@@ -3018,7 +3018,7 @@ class LedgerDB:
             return existing
         timestamp = _utc_now()
         rule_id = _new_id()
-        with self.connection:
+        with _write_scope(self.connection):
             self.connection.execute(
                 """
                 INSERT INTO rule_versions (

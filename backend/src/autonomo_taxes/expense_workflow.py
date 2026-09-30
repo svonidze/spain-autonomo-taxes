@@ -3,13 +3,15 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import date, datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 import hashlib
 import json
 from pathlib import Path
+import re
 from typing import Any, Callable, Mapping
 from uuid import UUID, uuid4
 
+from . import expense_rules
 from .depreciation import CALCULATION_VERSION, minor, schedule
 from .ledger_db import LedgerDB
 from .review_packet import (
@@ -25,7 +27,7 @@ from .tax_rules import (
 )
 
 FACT_FIELDS = {"document_number", "issued_on", "transaction_date", "booking_date", "currency", "gross_minor", "counterparty_id", "business_activity_id"}
-PAYLOAD_FIELDS = {"facts", "supplier", "decision", "asset", "fx", "manual_review_reason", "change_reason"}
+PAYLOAD_FIELDS = {"facts", "supplier", "decision", "asset", "fx", "manual_review_reason", "change_reason", "deduction"}
 ASSET_FIELDS = {"description", "basis_minor", "business_use_ratio", "annual_rate_basis_points", "placed_in_service_on", "method", "new_equipment", "aeat_asset_type"}
 MANUAL_ISSUES = {"document_structural_review", "document_classification_review"}
 TAX_ISSUES = {"transaction_tax_review", "counterparty_tax_profile_review"}
@@ -33,14 +35,16 @@ EDITABLE = {"received", "extracted", "needs_review", "approved"}
 
 
 class ExpenseWorkflowError(ValueError):
-    def __init__(self, message: str, *, code: str = "expense_invalid", status: int = 400):
+    def __init__(self, message: str, *, code: str = "expense_invalid", status: int = 400, message_code: str | None = None):
         super().__init__(message)
-        self.code, self.status = code, status
+        self.code, self.status, self.message_code = code, status, message_code
 
 
 def require(condition: Any, message: str, *, code: str = "expense_invalid", status: int = 400) -> None:
     if not condition:
-        raise ExpenseWorkflowError(message, code=code, status=status)
+        # Deduction rule failures have interface translations keyed by their code.
+        raise ExpenseWorkflowError(message, code=code, status=status,
+                                   message_code="errors." + code if code.startswith("deduction_") else None)
 
 
 def text(value: Any, name: str, *, optional: bool = False) -> str:
@@ -84,12 +88,34 @@ def _editable(db: LedgerDB, packet: Mapping[str, Any]) -> None:
     require(len(state["assets"]) <= 1, "One asset per expense is supported")
 
 
+def _seed_deduction(state: Mapping[str, Any], decision: dict[str, Any]) -> dict[str, Any] | None:
+    """Suggest the rule matched by the parser; the reviewer can change or clear it."""
+    match = re.search(r"\bparser_category=(\w+)", (state.get("tax_treatment") or {}).get("notes") or "")
+    rule_id = expense_rules.rule_for_parser_category(match.group(1)) if match else None
+    if rule_id is None:
+        return None
+    tax = decision["tax_treatment"]
+    # Sheet intake turns a blank business-use value into 100, so only a lower value is evidence of a share.
+    percent = ((state.get("operator_intake") or {}).get("values") or {}).get("business_use_percent")
+    if expense_rules.uses_area(rule_id) and tax.get("deductible_ratio") is None and isinstance(percent, str):
+        try:
+            share = Decimal(percent) / 100
+            below_full = 0 <= share < 1
+        except InvalidOperation:
+            below_full = False
+        if below_full:
+            tax["deductible_ratio"] = float(share)
+    return {"rule_id": rule_id, "facts": dict.fromkeys(expense_rules.FACT_NAMES)}
+
+
 def _seed(packet: Mapping[str, Any], activities: list[dict[str, Any]]) -> dict[str, Any]:
     state = packet["state"]
     transaction, document = state["transaction"], state["document"]
     activity = transaction.get("business_activity_id")
     if not activity and len(activities) == 1:
         activity = activities[0]["business_activity_id"]
+    decision = deepcopy(packet["decision"])
+    deduction = _seed_deduction(state, decision)
     return {
         "facts": {
             "document_number": document.get("document_number") or "", "issued_on": document.get("issued_on"),
@@ -98,9 +124,19 @@ def _seed(packet: Mapping[str, Any], activities: list[dict[str, Any]]) -> dict[s
             "gross_minor": transaction.get("amount_original_minor") if transaction.get("amount_original_minor") is not None else transaction["amount_minor"],
             "counterparty_id": transaction.get("counterparty_id"), "business_activity_id": activity,
         },
-        "supplier": None, "decision": deepcopy(packet["decision"]), "asset": None, "fx": None,
-        "manual_review_reason": "", "change_reason": "",
+        "supplier": None, "decision": decision, "asset": None, "fx": None,
+        "manual_review_reason": "", "change_reason": "", "deduction": deduction,
     }
+
+
+def _current(payload: Any) -> Any:
+    """Drafts saved before deduction rules existed stay on the manual path; older fact sets gain empty facts."""
+    if not isinstance(payload, dict):
+        return payload
+    deduction = payload.get("deduction")
+    if isinstance(deduction, dict) and isinstance(deduction.get("facts"), dict):
+        deduction = {**deduction, "facts": {**dict.fromkeys(expense_rules.FACT_NAMES), **deduction["facts"]}}
+    return {**payload, "deduction": deduction}
 
 
 def get_draft(db: LedgerDB, transaction_id: str) -> dict[str, Any]:
@@ -108,11 +144,13 @@ def get_draft(db: LedgerDB, transaction_id: str) -> dict[str, Any]:
     activities = db.list_business_activities()
     draft = db.connection.execute("SELECT * FROM expense_drafts WHERE transaction_id=?", (transaction_id,)).fetchone()
     seed = _seed(packet, activities)
+    payload = _current(json.loads(draft["payload_json"])) if draft else seed
     return {
         "transaction_id": transaction_id, "draft_version": draft["row_version"] if draft else 0,
         "source_snapshot_hash": draft["source_snapshot_hash"] if draft else packet["snapshot_hash"],
         "current_snapshot_hash": packet["snapshot_hash"], "source_values": seed,
-        "payload": json.loads(draft["payload_json"]) if draft else seed,
+        "payload": payload, "deduction_proposal": expense_rules.propose(db, packet["state"], payload),
+        "deduction_rules": expense_rules.rule_list(),
         "source": packet["state"], "allowed_values": packet["allowed_values"], "activities": activities,
         "editable": packet["state"]["transaction"]["lifecycle_status"] in EDITABLE and packet["state"]["period"]["status"] == "open",
         "conflict": bool(draft and draft["source_snapshot_hash"] != packet["snapshot_hash"]),
@@ -120,6 +158,7 @@ def get_draft(db: LedgerDB, transaction_id: str) -> dict[str, Any]:
 
 
 def _shape(payload: Any) -> dict[str, Any]:
+    payload = _current(payload)
     require(isinstance(payload, dict) and set(payload) == PAYLOAD_FIELDS, "Invalid expense draft fields")
     require(isinstance(payload["facts"], dict) and set(payload["facts"]) == FACT_FIELDS, "Invalid expense fact fields")
     require(isinstance(payload["decision"], dict) and set(payload["decision"]) == DECISION_FIELDS, "Review decision fields are invalid")
@@ -128,6 +167,16 @@ def _shape(payload: Any) -> dict[str, Any]:
     require(payload["fx"] is None or isinstance(payload["fx"], dict), "Invalid FX decision")
     for name in ("manual_review_reason", "change_reason"):
         text(payload[name], name, optional=True)
+    deduction = payload["deduction"]
+    if deduction is not None:
+        require(isinstance(deduction, dict) and set(deduction) == {"rule_id", "facts"}, "Invalid deduction rule fields")
+        require(isinstance(deduction["rule_id"], str) and 0 < len(deduction["rule_id"]) <= 64, "Choose a deduction rule")
+        facts = deduction["facts"]
+        require(isinstance(facts, dict) and set(facts) == set(expense_rules.FACT_NAMES), "Invalid deduction facts")
+        for name in ("persons", "persons_disabled", "days"):
+            require(facts[name] is None or type(facts[name]) is int and 0 <= facts[name] <= 366, f"Invalid deduction fact {name}")
+        for name in ("abroad", "overnight", "electronic_payment", "evidence_confirmed"):
+            require(facts[name] is None or isinstance(facts[name], bool), f"Invalid deduction fact {name}")
     # Reject NaN and unsupported JSON values before any write.
     require(len(json.dumps(payload, allow_nan=False)) <= 100_000, "Expense draft is too large")
     return deepcopy(payload)
@@ -143,7 +192,7 @@ def save_draft(db: LedgerDB, transaction_id: str, *, payload: dict[str, Any], ex
         require(packet["snapshot_hash"] == source_snapshot_hash, "Source records changed; reload before saving", code="expense_stale", status=409)
         current = db.connection.execute("SELECT * FROM expense_drafts WHERE transaction_id=?", (transaction_id,)).fetchone()
         require((current["row_version"] if current else 0) == expected_version, "Draft changed in another session", code="expense_stale", status=409)
-        changed = current is None or json.loads(current["payload_json"]) != payload or current["source_snapshot_hash"] != source_snapshot_hash
+        changed = current is None or _current(json.loads(current["payload_json"])) != payload or current["source_snapshot_hash"] != source_snapshot_hash
         if changed and packet["state"]["transaction"]["lifecycle_status"] == "approved":
             text(payload["change_reason"], "Reason for invalidating approval")
             db.connection.execute("UPDATE transactions SET lifecycle_status='needs_review',row_version=row_version+1,updated_at=? WHERE transaction_id=?", (stamp(), transaction_id))
@@ -322,13 +371,44 @@ def _asset(db: LedgerDB, packet: Mapping[str, Any], payload: Mapping[str, Any]) 
     return asset, rows
 
 
-def _decision(db: LedgerDB, packet: dict[str, Any], payload: Mapping[str, Any], asset: Mapping[str, Any] | None) -> None:
+def _deduction(db: LedgerDB, packet: Mapping[str, Any], payload: Mapping[str, Any]) -> dict[str, Any] | None:
+    """A selected rule is a ceiling: lower amounts pass, higher amounts block."""
+    proposal = expense_rules.propose(db, packet["state"], payload)
+    if proposal is None:
+        return None
+    require(proposal["status"] != "unavailable", "The selected deduction rule is not in the catalog", code="deduction_rule_unknown")
+    require(proposal["status"] != "needs_facts", "The selected deduction rule needs: " + ", ".join(proposal["missing"]), code="deduction_facts_missing")
+    require(proposal["status"] != "out_of_scope", "The selected deduction rule does not cover this expense", code="deduction_out_of_scope")
+    tax = payload["decision"]["tax_treatment"]
+    require(type(tax.get("deductible_irpf_minor")) is int, "Explicit deductible_irpf_minor in EUR is required")
+    irpf = tax["deductible_irpf_minor"] if tax["include_modelo130"] else 0
+    vat = tax["deductible_vat_minor"] if tax["include_modelo303"] else 0
+    require(irpf <= proposal["irpf_minor"] and (proposal["vat_minor"] is None or vat <= proposal["vat_minor"]),
+            f"Deductions exceed the {proposal['rule_id']} ceiling (IRPF {proposal['irpf_minor']}, IVA "
+            f"{'manual' if proposal['vat_minor'] is None else proposal['vat_minor']} EUR cents)", code="deduction_exceeds_rule")
+    return proposal
+
+
+def _decision(db: LedgerDB, packet: dict[str, Any], payload: Mapping[str, Any], asset: Mapping[str, Any] | None,
+              proposal: Mapping[str, Any] | None) -> None:
     decision = deepcopy(payload["decision"])
     decision.update(outcome="approve", asset_decision="asset" if asset else "current_expense", asset_id=asset["asset_id"] if asset else None)
     tax = decision["tax_treatment"]
     require(set(tax) == set(TREATMENT_DECISION_FIELDS), "Invalid tax treatment fields")
     if asset:
         tax.update(deductible_irpf_minor=0, include_modelo130=False)
+    if proposal:
+        version = db.add_rule_version(rule_name="expense_rule:" + proposal["rule_id"], version=proposal["version"], source_hash=proposal["source_hash"])
+        require(version["source_hash"] == proposal["source_hash"], "The deduction rule changed without a new catalog version",
+                code="deduction_rule_conflict", status=409)
+        tax["rule_version_id"] = version["rule_version_id"]
+        require(tax["notes"] is None or isinstance(tax["notes"], str), "Tax treatment notes must be text")
+        vat = "manual" if proposal["vat_minor"] is None else proposal["vat_minor"]
+        audit = (f"Deduction rule {proposal['rule_id']} (catalog {proposal['version']}, {proposal['status']}, "
+                 f"risk {proposal['risk']}): ceiling IRPF {proposal['irpf_minor']}, IVA {vat} EUR cents")
+        # A repeated approval replaces its earlier rule line instead of stacking them.
+        kept = [line for line in (tax["notes"] or "").splitlines() if not line.startswith("Deduction rule ")]
+        tax["notes"] = "\n".join(filter(None, ["\n".join(kept).rstrip(), audit]))
     resolutions = []
     for issue in packet["state"]["issues"]:
         code = issue["issue_code"]
@@ -388,9 +468,10 @@ def _prepare(db: LedgerDB, transaction_id: str, version: int, *, resolved_fx: Ma
         _apply_confirmed_fx(db, packet["state"], resolved_fx)
         packet = _build_packet(db, packet["review_id"])
     _reconcile_amounts(packet, payload)
+    proposal = _deduction(db, packet, payload)
     asset, rows = _asset(db, packet, payload)
     packet = _build_packet(db, packet["review_id"])
-    _decision(db, packet, payload, asset)
+    _decision(db, packet, payload, asset, proposal)
     confirm_review_packet(db, packet)
     tx = _one(db, "SELECT * FROM transactions WHERE transaction_id=?", (transaction_id,))
     # The same readiness gate is exercised during preview and confirmation.
@@ -408,7 +489,7 @@ def _prepare(db: LedgerDB, transaction_id: str, version: int, *, resolved_fx: Ma
         "schedule": [{k: v for k, v in row.items() if k != "amortization_entry_id"} for row in rows],
         "future_depreciation_minor": sum(row["amount_minor"] for row in rows if row not in due),
         "supplier": packet["state"]["counterparty"]["display_name"], "period": packet["state"]["period"]["period_key"],
-        "posted": False,
+        "deduction": proposal, "posted": False,
     }}
 
 

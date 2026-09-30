@@ -391,3 +391,168 @@ def test_migration_adopts_only_unambiguous_matching_legacy_links(tmp_path,case):
         links=[row[0] for row in db.connection.execute('SELECT recognition_transaction_id FROM amortization_entries')]
         assert links==([journal['transaction_id']] if case=='exact' else [None]*len(links))
         assert not db.connection.execute('PRAGMA foreign_key_check').fetchall()
+
+
+def with_rule(db, fixture, draft, rule_id, tax=None, **facts):
+    from autonomo_taxes.expense_rules import FACT_NAMES
+    p=deepcopy(draft['payload']);p['deduction']={'rule_id':rule_id,'facts':{**dict.fromkeys(FACT_NAMES),**facts}}
+    p['decision']['tax_treatment'].update(tax or {})
+    return save_draft(db,fixture['transaction_id'],payload=p,expected_version=draft['draft_version'],source_snapshot_hash=draft['source_snapshot_hash'],actor='test')
+
+
+def test_rule_ceiling_is_recorded_and_preview_leaves_no_trace(tmp_path):
+    from autonomo_taxes.expense_rules import load_catalog
+    fixture,draft=setup_draft(tmp_path)
+    with open_db(fixture['database']) as db:
+        saved=with_rule(db,fixture,draft,'general_business',{'notes':''})
+        assert (saved['deduction_proposal']['status'],saved['deduction_proposal']['irpf_minor'],saved['deduction_proposal']['vat_minor'])==('ready',10000,2100)
+        assert {rule['id'] for rule in saved['deduction_rules']}==set(load_catalog()['rules'])
+        before='\n'.join(db.connection.iterdump())
+        proposed=preview(db,fixture['transaction_id'],expected_version=saved['draft_version'])
+        assert '\n'.join(db.connection.iterdump())==before
+        assert proposed['deduction']['rule_id']=='general_business'
+        commit(db,fixture,saved,tmp_path)
+        row=db.connection.execute('''SELECT rv.rule_name,rv.version,tt.notes FROM tax_treatments tt
+            JOIN rule_versions rv ON rv.rule_version_id=tt.rule_version_id WHERE tt.transaction_id=?''',(fixture['transaction_id'],)).fetchone()
+        assert (row['rule_name'],row['version'])==('expense_rule:general_business',load_catalog()['version'])
+        assert 'Deduction rule general_business' in row['notes'] and 'ceiling IRPF 10000, IVA 2100' in row['notes']
+
+
+@pytest.mark.parametrize('irpf,vat,allowed',[(4000,1000,True),(10000,2100,True),(10001,2100,False)])
+def test_rule_proposal_is_a_ceiling_not_a_target(tmp_path,irpf,vat,allowed):
+    fixture,draft=setup_draft(tmp_path)
+    with open_db(fixture['database']) as db:
+        saved=with_rule(db,fixture,draft,'general_business',{'deductible_irpf_minor':irpf,'deductible_vat_minor':vat})
+        if allowed:
+            assert commit(db,fixture,saved,tmp_path)['posted']
+        else:
+            with pytest.raises(ExpenseWorkflowError) as error:
+                preview(db,fixture['transaction_id'],expected_version=saved['draft_version'])
+            assert error.value.code=='deduction_exceeds_rule'
+
+
+def test_home_supplies_leave_the_reviewed_iva_amount_manual(tmp_path):
+    fixture,draft=setup_draft(tmp_path)
+    with open_db(fixture['database']) as db:
+        saved=with_rule(db,fixture,draft,'home_utility_partial_dwelling',{
+            'deductible_ratio':0.25,'deductible_irpf_minor':750,'deductible_vat_minor':600})
+        assert saved['deduction_proposal']['vat_minor'] is None
+        assert commit(db,fixture,saved,tmp_path)['posted']
+        row=db.connection.execute('SELECT * FROM tax_treatments WHERE transaction_id=?',
+                                  (fixture['transaction_id'],)).fetchone()
+        assert row['deductible_vat_minor']==600
+        assert 'IVA manual' in row['notes']
+
+
+@pytest.mark.parametrize('rule_id,method,code',[('own_meals',None,'deduction_facts_missing'),('no_such_rule',None,'deduction_rule_unknown'),
+    ('general_business','immediate','deduction_out_of_scope'),('fine_or_surcharge',None,'deduction_exceeds_rule')])
+def test_selected_rule_must_apply_before_preview(tmp_path,rule_id,method,code):
+    fixture,draft=setup_draft(tmp_path,method=method)
+    with open_db(fixture['database']) as db:
+        saved=with_rule(db,fixture,draft,rule_id)
+        before='\n'.join(db.connection.iterdump())
+        with pytest.raises(ExpenseWorkflowError) as error:
+            preview(db,fixture['transaction_id'],expected_version=saved['draft_version'])
+        assert error.value.code==code
+        assert '\n'.join(db.connection.iterdump())==before
+
+
+def test_changed_rule_under_the_same_catalog_version_blocks(tmp_path):
+    from autonomo_taxes.expense_rules import load_catalog
+    fixture,draft=setup_draft(tmp_path)
+    with open_db(fixture['database']) as db:
+        db.add_rule_version(rule_name='expense_rule:general_business',version=load_catalog()['version'],source_hash='0'*64)
+        saved=with_rule(db,fixture,draft,'general_business')
+        with pytest.raises(ExpenseWorkflowError) as error:
+            preview(db,fixture['transaction_id'],expected_version=saved['draft_version'])
+        assert (error.value.code,error.value.status)==('deduction_rule_conflict',409)
+
+
+def test_cap_subtracts_only_postings_linked_to_the_rule(tmp_path):
+    from autonomo_taxes.expense_rules import propose
+    fixture,draft=setup_draft(tmp_path)
+    tax={'taxable_base_minor':12100,'vat_minor':0,'rate_basis_points':0,'deductible_vat_minor':0,'deductible_irpf_minor':12100}
+    with open_db(fixture['database']) as db:
+        saved=with_rule(db,fixture,draft,'health_insurance',tax,persons=1,persons_disabled=0)
+        assert saved['deduction_proposal']['irpf_minor']==12100
+        commit(db,fixture,saved,tmp_path)
+        later=deepcopy(saved['payload']);later['decision']['tax_treatment'].update(taxable_base_minor=50000)
+        other={'transaction':{'transaction_id':'synthetic-other-transaction'}}
+        result=propose(db,other,later)
+        assert result['irpf_minor']==50000-12100
+        assert {'code':'irpf_person_cap','params':{'persons':1,'persons_disabled':0,'cap_minor':50000,'used_minor':12100,'year':saved['payload']['facts']['transaction_date'][:4]}} in result['explanation']
+        later['deduction']={'rule_id':'own_meals','facts':{'persons':None,'persons_disabled':None,'days':1,'abroad':False,'overnight':False,'electronic_payment':True}}
+        meals=propose(db,other,later)
+        assert meals['irpf_minor']==2667 and any(note['params'].get('used_minor')==0 for note in meals['explanation'])
+
+
+def test_exhausted_daily_meal_cap_leaves_no_iva(tmp_path):
+    from autonomo_taxes.expense_rules import propose
+    fixture,draft=setup_draft(tmp_path)
+    with open_db(fixture['database']) as db:
+        saved=with_rule(db,fixture,draft,'own_meals',{'deductible_irpf_minor':2667,'deductible_vat_minor':0},days=1,abroad=False,overnight=False,electronic_payment=True)
+        assert (saved['deduction_proposal']['irpf_minor'],saved['deduction_proposal']['vat_minor'])==(2667,None)
+        commit(db,fixture,saved,tmp_path)
+        second=propose(db,{'transaction':{'transaction_id':'synthetic-second-meal'}},saved['payload'])
+        assert (second['status'],second['irpf_minor'],second['vat_minor'])==('ready',0,0)
+        assert 'cap_exhausted' in [note['code'] for note in second['explanation']]
+
+
+def test_older_fact_sets_and_repeated_rule_lines_are_normalized(tmp_path):
+    from autonomo_taxes.expense_workflow import _current,_decision
+    older={'deduction':{'rule_id':'social_security_reta','facts':{'persons':None}}}
+    assert _current(older)['deduction']['facts']['evidence_confirmed'] is None and 'evidence_confirmed' not in older['deduction']['facts']
+    fixture,draft=setup_draft(tmp_path)
+    with open_db(fixture['database']) as db:
+        with pytest.raises(ExpenseWorkflowError,match='evidence_confirmed'):
+            with_rule(db,fixture,draft,'social_security_reta',evidence_confirmed='yes')
+        payload=deepcopy(draft['payload']);payload['decision']['tax_treatment']['notes']='Reviewed\nDeduction rule general_business (catalog old): ceiling IRPF 1, IVA 1 EUR cents'
+        packet={'state':{'issues':[]}}
+        proposal={'rule_id':'general_business','version':'2026-09-24','source_hash':'synthetic-hash','status':'ready','risk':'low','irpf_minor':10000,'vat_minor':2100}
+        _decision(db,packet,payload,None,proposal)
+        notes=packet['decision']['tax_treatment']['notes']
+        assert notes.count('Deduction rule ')==1 and notes.startswith('Reviewed\n') and 'ceiling IRPF 10000' in notes
+
+
+def test_draft_saved_before_rules_stays_on_manual_path(tmp_path):
+    fixture,draft=setup_draft(tmp_path)
+    with open_db(fixture['database']) as db:
+        legacy=deepcopy(draft['payload']);del legacy['deduction']
+        db.connection.execute('UPDATE expense_drafts SET payload_json=?',(json.dumps(legacy),));db.connection.commit()
+        fresh=get_draft(db,fixture['transaction_id'])
+        assert fresh['payload']['deduction'] is None and fresh['deduction_proposal'] is None
+        saved=save_draft(db,fixture['transaction_id'],payload=legacy,expected_version=fresh['draft_version'],source_snapshot_hash=fresh['current_snapshot_hash'],actor='test')
+        assert saved['draft_version']==fresh['draft_version']
+        with pytest.raises(ExpenseWorkflowError,match='deduction rule fields'):
+            save_draft(db,fixture['transaction_id'],payload={**legacy,'deduction':{'rule_id':'general_business'}},expected_version=fresh['draft_version'],source_snapshot_hash=fresh['current_snapshot_hash'],actor='test')
+
+
+@pytest.mark.parametrize('percent,share',[('25',0.25),('100',None)])
+def test_intake_category_seeds_rule_and_only_a_partial_business_share(tmp_path,monkeypatch,capsys,percent,share):
+    import hashlib
+    from autonomo_taxes.cli import main
+    from autonomo_taxes.intake import IntakeResult
+    from autonomo_taxes.ledger_db import initialize
+    from autonomo_taxes.parsers import LedgerEntry
+    database=tmp_path/'ledger.sqlite';invoice=tmp_path/'utility.pdf';invoice.write_bytes(b'synthetic utility fixture')
+    digest=hashlib.sha256(invoice.read_bytes()).hexdigest()
+    suggestion=LedgerEntry(kind='expense',date=date.today(),document=str(invoice),counterparty='Synthetic Utility',description='SYNTH-UTILITY-1',
+        amount_original=Decimal('60.50'),currency='EUR',amount_eur=Decimal('60.50'),deductible_eur=None,category='home_utility_review',
+        confidence='high',review_required=True,notes='Business-use allocation requires review')
+    monkeypatch.setattr('autonomo_taxes.operational_cli.inspect_document',lambda *args,**kwargs:IntakeResult(source_path=str(invoice),sha256=digest,
+        kind='expense_invoice',mime_type='application/pdf',extraction_method='pdf_text',extracted_text='parsed fixture',status='extracted',structural_errors=()))
+    monkeypatch.setattr('autonomo_taxes.operational_cli._document_suggestion',lambda *args,**kwargs:suggestion)
+    with initialize(database):pass
+    assert main(['ingest','--db',str(database),str(invoice),'--kind','expense_invoice'])==0
+    capsys.readouterr()
+    with open_db(database) as db:
+        treatment=db.connection.execute('SELECT * FROM tax_treatments').fetchone()
+        assert treatment['notes'].endswith('; parser_category=home_utility_review')
+        db.add_intake_receipt(intake_tab='expense_intake',source_row_number=2,row_fingerprint='synthetic-row',evidence_sha256=digest,
+            document_id=db.connection.execute('SELECT document_id FROM documents').fetchone()[0],transaction_id=treatment['transaction_id'],
+            treatment_id=treatment['treatment_id'],input_payload={'business_use_percent':percent})
+        seeded=get_draft(db,treatment['transaction_id'])
+    assert seeded['payload']['deduction']['rule_id']=='home_utility_partial_dwelling'
+    assert seeded['payload']['decision']['tax_treatment']['deductible_ratio']==share
+    assert seeded['deduction_proposal']['status']=='needs_facts'
+    assert ('area_share' in seeded['deduction_proposal']['missing'])==(share is None)
