@@ -527,3 +527,80 @@ def test_modelo390_derives_refund_choice_from_final_filed_modelo303(
                 "compensate",
             ]
         )
+
+
+def test_modelo100_cli_reports_new_activity_reduction_from_explicit_facts(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    database = tmp_path / "ledger.sqlite"
+    with initialize(database) as db:
+        _add_activity(db, starts_on="2026-01-01")
+        income = db.add_transaction(
+            external_key="income-2026",
+            period_key="2026-Q2",
+            transaction_date="2026-04-10",
+            booking_date="2026-04-10",
+            entry_type="income",
+            description="Issued invoice",
+            amount_minor=3000000,
+            lifecycle_status="posted",
+        )
+        db.add_detailed_tax_treatment(
+            transaction_id=income["transaction_id"],
+            treatment_type="income",
+            tax_code="outside_scope",
+            taxable_base_minor=3000000,
+            include_modelo130=True,
+        )
+        for period_key in ("2026-Q1", "2026-Q2", "2026-Q3", "2026-Q4"):
+            _close_empty_period(db, period_key)
+        db.ensure_period("2026")
+        db.add_obligation(
+            period_key="2026",
+            obligation_code="100",
+            determination="due",
+            filing_status="due",
+            blocking=True,
+            explanation="Annual return will be due after year end.",
+        )
+    command = ["calculate", "--db", str(database), "--form", "100", "--year", "2026"]
+
+    assert main(command) == 0
+    values = json.loads(capsys.readouterr().out)["values"]
+    assert values["business_net_income"] == "28500.00"
+    assert values["new_activity_reduction_status"] == "unknown"
+    assert values["new_activity_reduction_missing_facts"] == [
+        "prior_activity_before_start",
+        "former_employer_income_over_half",
+    ]
+    assert values["new_activity_reduction_amount"] is None
+
+    assert main(
+        command
+        + [
+            "--new-activity-prior-activity",
+            "never_positive",
+            "--new-activity-former-employer-over-half",
+            "no",
+        ]
+    ) == 0
+    report = json.loads(capsys.readouterr().out)
+    values = report["values"]
+    assert values["business_net_income"] == "28500.00"
+    assert values["new_activity_reduction_status"] == "eligible"
+    assert values["new_activity_reduction_window_years"] == [2026, 2027]
+    assert values["new_activity_reduction_base"] == "28500.00"
+    assert values["new_activity_reduction_amount"] == "5700.00"
+    assert any("never in Modelo 130" in warning for warning in report["warnings"])
+
+    assert main(command + ["--new-activity-former-employer-over-half", "yes"]) == 0
+    values = json.loads(capsys.readouterr().out)["values"]
+    assert values["new_activity_reduction_status"] == "not_eligible"
+    assert values["new_activity_reduction_reason"] == "former_employer_income_over_half"
+
+    with pytest.raises(ValueError, match="only to --form 100"):
+        main(
+            ["calculate", "--db", str(database), "--form", "347", "--year", "2026"]
+            + ["--new-activity-prior-activity", "none"]
+        )

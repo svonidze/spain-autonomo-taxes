@@ -1310,6 +1310,32 @@ def register_operational_commands(subparsers: argparse._SubParsersAction[Any]) -
     calculate.add_argument("--withholding-and-payments")
     calculate.add_argument("--reduction")
     calculate.add_argument("--unsupported-annual-category", action="append", default=[])
+    calculate.add_argument(
+        "--new-activity-prior-activity",
+        choices=["none", "never_positive", "yes"],
+        help=(
+            "Modelo 100 new-activity reduction (LIRPF art. 32.3): economic activity in the year before "
+            "this activity's start date: none; never_positive = only ceased activities that never had "
+            "positive net income; yes. Omitted means unknown."
+        ),
+    )
+    calculate.add_argument(
+        "--new-activity-former-employer-over-half",
+        choices=["yes", "no"],
+        help=(
+            "Modelo 100 new-activity reduction: whether more than 50%% of this year's activity income "
+            "comes from a person or entity that paid you employment income in the year before the "
+            "activity start. Omitted means unknown."
+        ),
+    )
+    calculate.add_argument(
+        "--new-activity-first-positive-year",
+        type=int,
+        help=(
+            "Modelo 100 new-activity reduction: first tax year in which this activity's net income was "
+            "positive. Derived only when the activity started in --year."
+        ),
+    )
     calculate.add_argument("--out", type=Path)
     calculate.set_defaults(_operational_handler=_cmd_calculate)
 
@@ -5345,6 +5371,15 @@ def _final_filing_for_form(
 def _cmd_calculate(args: argparse.Namespace) -> int:
     if args.form in QUARTERLY_FORM_CODES and args.quarter is None:
         raise ValueError(f"Modelo {args.form} requires --quarter")
+    if args.form != "100" and any(
+        value is not None
+        for value in (
+            args.new_activity_prior_activity,
+            args.new_activity_former_employer_over_half,
+            args.new_activity_first_positive_year,
+        )
+    ):
+        raise ValueError("--new-activity-* options apply only to --form 100")
     if args.difficult_expenses_policy == "source_book_total" and args.mode != "verify_history":
         raise CalculationBlocked("source_book_total is restricted to verify_history")
     if args.difficult_expenses_policy == "exclude_by_documented_decision" and not args.decision_ref:
@@ -5485,6 +5520,7 @@ def _cmd_calculate(args: argparse.Namespace) -> int:
             rows,
             modelo303_periods=modelo303_periods,
             modelo303_opening_compensation=modelo303_opening_compensation,
+            business_activities=db.list_business_activities() if args.form == "100" else (),
         )
         payload = _calculation_payload(result)
         baseline = _filed_baseline(db, result.period, args.form)
@@ -5593,6 +5629,7 @@ def _calculate(
     *,
     modelo303_periods: tuple[str, ...] = (),
     modelo303_opening_compensation: Decimal = Decimal("0.00"),
+    business_activities: Iterable[dict[str, Any]] = (),
 ) -> CalculationResult:
     rule = difficult_expense_rule_for_year(args.year)
     if args.form == "130":
@@ -5678,6 +5715,14 @@ def _calculate(
         difficult_expenses_rate=rule.rate,
         difficult_expenses_cap=rule.annual_cap_eur,
         unsupported_categories=args.unsupported_annual_category,
+        business_activities=business_activities,
+        new_activity_prior_activity=args.new_activity_prior_activity,
+        new_activity_former_employer_over_half=(
+            None
+            if args.new_activity_former_employer_over_half is None
+            else args.new_activity_former_employer_over_half == "yes"
+        ),
+        new_activity_first_positive_year=args.new_activity_first_positive_year,
     )
 
 

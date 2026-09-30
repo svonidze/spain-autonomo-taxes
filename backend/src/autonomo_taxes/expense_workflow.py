@@ -18,6 +18,11 @@ from .review_packet import (
     _apply_confirmed_fx, _resolve_confirmed_fx, _validate_fx_spec_shape,
 )
 from .posting import prevalidate_expense_inbox_cleanup
+from .tax_rules import (
+    DIRECT_ESTIMATION_IRPF_METHODS,
+    IMMEDIATE_WRITE_OFF_ANNUAL_CAP_EUR,
+    IMMEDIATE_WRITE_OFF_UNIT_LIMIT_EUR,
+)
 
 FACT_FIELDS = {"document_number", "issued_on", "transaction_date", "booking_date", "currency", "gross_minor", "counterparty_id", "business_activity_id"}
 PAYLOAD_FIELDS = {"facts", "supplier", "decision", "asset", "fx", "manual_review_reason", "change_reason"}
@@ -283,14 +288,16 @@ def _asset(db: LedgerDB, packet: Mapping[str, Any], payload: Mapping[str, Any]) 
         annual_rate_basis_points=values["annual_rate_basis_points"], placed_in_service_on=values["placed_in_service_on"], method=values["method"])
     if values["method"] == "immediate":
         require(values["annual_rate_basis_points"] == 10000, "Immediate depreciation uses a full-rate decision")
-        require(values["new_equipment"] is True and cost <= 30000, "Immediate deduction requires a new object costing at most EUR 300 before business share")
+        unit_limit_minor = minor(IMMEDIATE_WRITE_OFF_UNIT_LIMIT_EUR * 100)
+        require(values["new_equipment"] is True and cost <= unit_limit_minor, "Immediate deduction requires a new object costing at most EUR 300 before business share")
         activity = _one(db, "SELECT irpf_method FROM business_activities WHERE business_activity_id=?", (tx["business_activity_id"],))
-        require(activity["irpf_method"] in {"estimacion_directa", "estimacion_directa_normal", "estimacion_directa_simplificada"}, "Immediate depreciation requires the reviewed direct-estimation activity")
+        require(activity["irpf_method"] in DIRECT_ESTIMATION_IRPF_METHODS, "Immediate depreciation requires the reviewed direct-estimation activity")
         # Conservatively include every recorded low-value acquisition in this year.
         inventory = db.connection.execute("SELECT cost_minor,currency FROM assets WHERE substr(placed_in_service_on,1,4)=?", (values["placed_in_service_on"][:4],)).fetchall()
         require(all(row["currency"] == "EUR" for row in inventory), "Review foreign-currency asset bases before applying the annual limit")
-        used = sum(row["cost_minor"] for row in inventory if row["cost_minor"] <= 30000)
-        require(used + cost <= 2500000, "Annual low-value asset limit would be exceeded")
+        used = sum(row["cost_minor"] for row in inventory if row["cost_minor"] <= unit_limit_minor)
+        annual_cap_minor = minor(IMMEDIATE_WRITE_OFF_ANNUAL_CAP_EUR * 100)
+        require(used + cost <= annual_cap_minor, "Annual low-value asset limit would be exceeded")
     asset = db.add_asset(asset_code="expense-" + tx["transaction_id"], cost_minor=cost, currency="EUR",
         depreciation_method=values["method"], source_hash=packet["state"]["document"]["source_hash"],
         document_id=tx["document_id"], acquisition_transaction_id=tx["transaction_id"],
