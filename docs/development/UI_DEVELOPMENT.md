@@ -87,6 +87,19 @@ fields only. Settings drafts remain exclusively in memory.
 Run Python resource tests after builds/pseudolocale finish, as CI does: rebuilding
 the same dist while tests read its manifest creates transient failures.
 
+On macOS, a uv (python-build-standalone) Python loads `/private/etc/ssl/cert.pem`,
+which may lack current roots such as GlobalSign Root R46 (VIES) and Sectigo Public
+Server Authentication Root E46 (ECB data API). Live calls then fail with
+`CERTIFICATE_VERIFY_FAILED`; tests do not use the network. For a local live run,
+export the system roots and point Python at them:
+
+```sh
+security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain > <file>
+export SSL_CERT_FILE=<file>
+```
+
+Never disable certificate verification.
+
 ## Packaging and review
 
 Build before Python installation or startup. The server serves only verified

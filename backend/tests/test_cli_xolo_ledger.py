@@ -11,6 +11,7 @@ from unittest.mock import patch
 from autonomo_taxes.cli import main
 from autonomo_taxes.reports import write_markdown_report
 from autonomo_taxes.modelo130 import calculate_modelo130
+from autonomo_taxes.tax_rules import difficult_expense_rate_for_year
 from autonomo_taxes.xolo_ledger import write_xolo_expense_ledger_csv
 
 
@@ -172,7 +173,9 @@ class XoloLedgerCliTests(unittest.TestCase):
     def test_report_status_is_not_filing_ready_when_match_uses_residual(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "report.md"
-            result = calculate_modelo130(Decimal("10000.00"), Decimal("1000.00"))
+            result = calculate_modelo130(
+                Decimal("10000.00"), Decimal("1000.00"), difficult_expenses_rate=Decimal("0.05")
+            )
 
             write_markdown_report(
                 path,
@@ -194,6 +197,31 @@ class XoloLedgerCliTests(unittest.TestCase):
 
             report = path.read_text(encoding="utf-8")
             self.assertIn("matched target via unresolved expense rows; not filing-ready", report)
+
+    def test_report_implied_deductible_uses_canonical_rate_per_year(self):
+        for year, expected_rate in ((2023, Decimal("0.07")), (2022, Decimal("0.05"))):
+            with self.subTest(year=year):
+                self.assertEqual(difficult_expense_rate_for_year(year), expected_rate)
+                with tempfile.TemporaryDirectory() as tmp:
+                    path = Path(tmp) / "report.md"
+                    result = calculate_modelo130(
+                        Decimal("10000.00"),
+                        Decimal("1000.00"),
+                        difficult_expenses_rate=expected_rate,
+                    )
+                    target = dict(result.as_dict())
+
+                    write_markdown_report(path, year, 1, result, target, [], [], [], [])
+
+                    report = path.read_text(encoding="utf-8")
+                    self.assertIn(
+                        "Xolo implied deductible expenses before difficult-expenses provision: **1.000,00 EUR**",
+                        report,
+                    )
+                    self.assertIn(
+                        "Unexplained deductible gap before difficult-expenses provision: **0,00 EUR**",
+                        report,
+                    )
 
     def _xolo_root(self, path: Path) -> Path:
         for child in ("INVOICE", "EXPENSE", "TAX_REPORT"):

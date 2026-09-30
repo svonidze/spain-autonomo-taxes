@@ -215,6 +215,17 @@ fields universally mean the payment date or change them to force a desired
 period. Their recorded accounting meaning must be checked for the operation.
 A sent-email date alone does not prove a document's issue date.
 
+Intake compares these dates for a new income entry. An invoice issued after the
+15th of the month following its service period end gets the non-blocking
+`invoice_issue_deadline_missed` issue (RD 1619/2012 art. 11.1 for business
+customers; the ledger cannot recognise a private individual, so every customer is
+treated as a business). A corrective invoice (`correction_of`) is exempt from this
+check, because art. 15.3 allows up to four years. Income dated, or with a service
+period starting, before the earliest recorded business activity start gets the
+blocking `income_before_activity_start` issue, which needs an explicit resolution
+reason.
+Outgoing invoice drafts report the same deadline check in `warnings`.
+
 Names, addresses and identifiers may be supplemented from verified earlier
 documents for the same party, after checking that they remain applicable.
 Record which source supports each addition and any explicit confirmation.
@@ -302,6 +313,29 @@ reported through withholding returns.
 Outgoing invoice drafts in this toolkit are a numbering and review aid. They are
 not a certified invoicing system (SIF) under the Verifactu regulation, and the
 toolkit does not send invoice records to the AEAT.
+
+A draft and `invoice show` list `invoice_mentions` to add in the external channel;
+they never change totals. `eu_service_income` for an EU customer with a VAT id
+requires "Inversión del sujeto pasivo" (RD 1619/2012 art. 6.1.m); services
+located outside Spain get the recommended, practice-based reference to art. 69
+LIVA. `export` and `eu_goods_income` require the exempting provision (art.
+6.1.j), and Spanish VAT charged in another currency must also be stated in EUR
+(art. 12.1). When the tax code and customer country, VAT id or ROI status do not
+settle the case, the result is status `unknown_review` instead of a guess:
+`reverse_charge` for an unconfirmed EU customer, `place_of_supply_review` when the
+customer country is Spain, unknown or conflicts with the tax code.
+
+Templates and drafts accept the professional withholding presets 0, 700 and 1500
+basis points (LIRPF art. 101.5, RIRPF art. 95.1), and only 0 for a client outside
+Spain; record a client operating through a Spanish permanent establishment with
+country ES. A draft may use 700 only when its issue year falls in the year of the
+earliest recorded professional activity start (IAE section 2 or 3) or the two
+following years. Such a draft always warns that the client must hold your signed
+written notice, which the ledger does not record. The permanent 7% rates of RIRPF
+art. 95.1 a-d and the Ceuta/Melilla reduction are not modelled. These checks run
+when a template or draft is saved, so historical rows stay readable and a legacy
+template can still be deactivated. The ledger cannot recognise a private
+individual, who does not withhold; choose 0 for such a client yourself.
 
 Current timeline for the Verifactu obligation (Real Decreto 1007/2023 as amended by
 Real Decreto-ley 15/2025 of 2 December, BOE 3 December 2025):

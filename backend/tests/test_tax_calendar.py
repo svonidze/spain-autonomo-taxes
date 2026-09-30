@@ -7,8 +7,16 @@ from pathlib import Path
 
 import pytest
 
+from datetime import date
+
 from autonomo_taxes.ledger_db import initialize
-from autonomo_taxes.tax_calendar import entry_as_record, load_tax_calendar
+from autonomo_taxes.tax_calendar import (
+    TaxScheduleEvent,
+    _fold_ics_line,
+    build_period_ics,
+    entry_as_record,
+    load_tax_calendar,
+)
 
 
 CALENDAR_PATH = REPO_ROOT / "reference" / "tax-calendars" / "2026.json"
@@ -160,3 +168,56 @@ def test_provisional_calendar_never_supplies_an_effective_due_date(tmp_path: Pat
         assert obligation["calendar_statutory_due_on"] == "2027-01-30"
         assert obligation["due_on"] is None
         assert obligation["calendar_deadline_mismatch"] is False
+
+
+def test_fold_ics_line_keeps_short_lines_untouched() -> None:
+    assert _fold_ics_line("SUMMARY:short") == "SUMMARY:short"
+
+
+def test_fold_ics_line_wraps_long_ascii_lines_at_75_octets() -> None:
+    line = "DESCRIPTION:" + "x" * 200
+    folded = _fold_ics_line(line)
+    physical_lines = folded.split("\r\n")
+    assert len(physical_lines) > 1
+    assert all(len(part.encode("utf-8")) <= 75 for part in physical_lines)
+    # Every continuation line starts with the single required folding space.
+    assert all(part.startswith(" ") for part in physical_lines[1:])
+    # Unfolding (CRLF + one space removed) reconstructs the original line.
+    assert folded.replace("\r\n ", "") == line
+
+
+def test_fold_ics_line_never_splits_a_multibyte_utf8_character() -> None:
+    line = "DESCRIPTION:" + ("Revision trimestral de notificacion electronica ó " * 3)
+    folded = _fold_ics_line(line)
+    physical_lines = folded.split("\r\n")
+    assert all(len(part.encode("utf-8")) <= 75 for part in physical_lines)
+    for part in physical_lines:
+        # Would raise UnicodeDecodeError if a multi-byte character were split.
+        part.encode("utf-8").decode("utf-8")
+    assert folded.replace("\r\n ", "") == line
+
+
+def test_build_period_ics_folds_long_description_lines() -> None:
+    long_event = TaxScheduleEvent(
+        kind="long-description-event",
+        event_date=date(2026, 3, 31),
+        summary="Long event",
+        description=(
+            "This description is intentionally long enough that the serialized "
+            "DESCRIPTION content line must exceed seventy-five octets and "
+            "therefore needs RFC 5545 line folding to stay compliant."
+        ),
+        forms=(),
+        determinations=(),
+        category="recurring-action",
+    )
+
+    calendar = build_period_ics(
+        period_key="2026-Q1",
+        period_ends_on=date(2026, 3, 31),
+        obligations=[],
+        extra_events=[long_event],
+    )
+
+    for physical_line in calendar.split("\r\n"):
+        assert len(physical_line.encode("utf-8")) <= 75

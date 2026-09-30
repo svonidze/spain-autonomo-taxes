@@ -22,6 +22,7 @@ from .ledger_db import LedgerDB
 from .money import parse_amount
 from .tax_rules import (
     ANNUAL_FORM_CODES,
+    EU_COUNTRY_CODES,
     FORM_RULES,
     QUARTERLY_FORM_CODES,
     recognize_tax_form_filename,
@@ -30,35 +31,6 @@ from .tax_engine import EU_349_CODES
 
 
 MIGRATION_NAMESPACE = UUID("adca0a24-7f65-4bde-9251-558c3d820889")
-EU_COUNTRY_CODES = {
-    "AT",
-    "BE",
-    "BG",
-    "CY",
-    "CZ",
-    "DE",
-    "DK",
-    "EE",
-    "ES",
-    "FI",
-    "FR",
-    "GR",
-    "HR",
-    "HU",
-    "IE",
-    "IT",
-    "LT",
-    "LU",
-    "LV",
-    "MT",
-    "NL",
-    "PL",
-    "PT",
-    "RO",
-    "SE",
-    "SI",
-    "SK",
-}
 QUARTERLY_BOOK_TYPES = {
     "ingresos_book": "income",
     "gastos_book": "expense",
@@ -1787,6 +1759,7 @@ def _migration_counterparty_is_referenced(db: LedgerDB, counterparty_id: str) ->
             EXISTS(SELECT 1 FROM invoice_templates WHERE counterparty_id = ?) OR
             EXISTS(SELECT 1 FROM outgoing_invoice_drafts WHERE counterparty_id = ?) OR
             EXISTS(SELECT 1 FROM counterparty_name_changes WHERE counterparty_id = ?) OR
+            EXISTS(SELECT 1 FROM vies_checks WHERE counterparty_id = ?) OR
             EXISTS(SELECT 1 FROM counterparties WHERE counterparty_id = ? AND name_is_manual = 1) OR
             EXISTS(
                 SELECT 1 FROM validation_issues
@@ -1794,7 +1767,7 @@ def _migration_counterparty_is_referenced(db: LedgerDB, counterparty_id: str) ->
                   AND issue_status = 'open'
             ) AS is_referenced
         """,
-        (counterparty_id,) * 8,
+        (counterparty_id,) * 9,
     ).fetchone()["is_referenced"]
     return bool(referenced)
 

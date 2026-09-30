@@ -8,6 +8,7 @@ from pathlib import Path
 from .modelo130 import Modelo130Result
 from .money import format_es, cents
 from .parsers import LedgerEntry
+from .tax_rules import DIFFICULT_EXPENSE_CAP_EUR, difficult_expense_rate_for_year
 
 
 def write_ledger(path: Path, entries: list[LedgerEntry]) -> None:
@@ -86,7 +87,7 @@ def write_markdown_report(
             target_before = _deductible_before_from_total(
                 target["01"],
                 target["02"],
-                rate=_difficult_expenses_rate_for_year(year),
+                rate=difficult_expense_rate_for_year(year),
             )
             target_label = "Xolo implied deductible expenses before difficult-expenses provision"
             gap_label = "Unexplained deductible gap before difficult-expenses provision"
@@ -184,8 +185,9 @@ def write_manifest(path: Path, manifest: dict[str, object]) -> None:
 def _deductible_before_from_total(
     income: Decimal,
     total_expenses: Decimal,
-    rate: Decimal = Decimal("0.05"),
-    cap: Decimal = Decimal("2000.00"),
+    *,
+    rate: Decimal,
+    cap: Decimal = DIFFICULT_EXPENSE_CAP_EUR,
 ) -> Decimal:
     uncapped = (total_expenses - income * rate) / (Decimal("1.00") - rate)
     hard_to_justify = income - uncapped
@@ -193,10 +195,6 @@ def _deductible_before_from_total(
     if hard_to_justify <= cap:
         return cents(uncapped)
     return cents(total_expenses - cap)
-
-
-def _difficult_expenses_rate_for_year(year: int) -> Decimal:
-    return Decimal("0.07") if year == 2023 else Decimal("0.05")
 
 
 def _manual_reconciliation_block(

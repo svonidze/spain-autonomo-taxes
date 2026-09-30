@@ -22,15 +22,18 @@ from .outgoing_invoices import (
     canonical_lines_json,
     invoice_line_hash,
     normalize_invoice_lines,
+    outgoing_invoice_mentions,
+    outgoing_invoice_warnings,
     parse_template_lines,
     validate_currency,
+    validate_professional_withholding,
     validate_withholding_rate,
 )
 from .tax_rules import ALL_FORM_CODES, ANNUAL_FORM_CODES, FORM_RULES, QUARTERLY_FORM_CODES
 from .vat_classification import is_vat_investment_good
 
 
-LATEST_SCHEMA_VERSION = 25
+LATEST_SCHEMA_VERSION = 26
 
 # Migrations that rebuild a table referenced by a foreign key. They must
 # run with foreign-key enforcement temporarily disabled, and that pragma
@@ -113,6 +116,7 @@ AEAT_DOCUMENT_KINDS = {
     "certificate",
     "other",
 }
+VIES_CHECK_OUTCOMES = {"valid", "invalid", "unavailable", "invalid_input"}
 AEAT_PROCEDURE_KINDS = {
     "roi_registration",
     "periodic_filing",
@@ -666,6 +670,13 @@ class LedgerDB:
             params = (taxpayer_profile_id,)
         sql += " ORDER BY starts_on, activity_key"
         return self._fetch_all(sql, params)
+
+    def earliest_business_activity_start(self, *, professional_only: bool = False) -> str | None:
+        sql = "SELECT MIN(starts_on) FROM business_activities"
+        if professional_only:
+            # RIRPF art. 95.2: professional activities are IAE sections 2 and 3.
+            sql += " WHERE iae_section IN ('2', '3')"
+        return self.connection.execute(sql).fetchone()[0]
 
     def add_import_batch(
         self,
@@ -1262,6 +1273,67 @@ class LedgerDB:
             params = (counterparty_id,)
         sql += " ORDER BY counterparty_id, is_primary DESC, identity_kind, identifier"
         return self._fetch_all(sql, params)
+
+    def record_vies_check(
+        self,
+        counterparty_id: str,
+        check: Mapping[str, Any],
+        *,
+        apply: bool = False,
+        expected_row_version: int | None = None,
+    ) -> dict[str, Any]:
+        """Append one VIES check; with ``apply`` a valid/invalid answer sets roi_status.
+
+        ``unavailable`` and ``invalid_input`` never change the counterparty. A stale
+        ``expected_row_version`` keeps the evidence but leaves the status untouched.
+        """
+
+        if check["outcome"] not in VIES_CHECK_OUTCOMES:
+            raise ValueError(f"Unsupported VIES outcome: {check['outcome']}")
+        new_status = {"valid": "registered", "invalid": "not_registered"}.get(check["outcome"])
+        check_id = _new_id()
+        with self.transaction():
+            existing = self._fetch_one(
+                "SELECT * FROM counterparties WHERE counterparty_id = ?", (counterparty_id,),
+            )
+            applied_version = None
+            if not apply or new_status is None or (
+                expected_row_version is not None
+                and existing["row_version"] != expected_row_version
+            ):
+                new_status = None
+            else:
+                applied_version = existing["row_version"] + 1
+                self.connection.execute(
+                    """UPDATE counterparties
+                       SET roi_status = ?, source_hash = ?, row_version = ?, updated_at = ?
+                       WHERE counterparty_id = ? AND row_version = ?""",
+                    (new_status, check["response_sha256"], applied_version, _utc_now(),
+                     counterparty_id, existing["row_version"]),
+                )
+            self.connection.execute(
+                """INSERT INTO vies_checks (
+                    vies_check_id, counterparty_id, checked_at, country_code, vat_number,
+                    outcome, error_code, request_date, request_identifier, trader_name,
+                    trader_address, requester_used, http_status, response_body,
+                    response_encoding, response_sha256, applied_roi_status, applied_row_version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (check_id, counterparty_id, check["checked_at"], check["country_code"],
+                 check["vat_number"], check["outcome"], check["error_code"],
+                 check["request_date"], check["request_identifier"], check["trader_name"],
+                 check["trader_address"], int(bool(check["requester_used"])),
+                 check["http_status"], check["response_body"], check["response_encoding"],
+                 check["response_sha256"], new_status, applied_version),
+            )
+        return self._fetch_one("SELECT * FROM vies_checks WHERE vies_check_id = ?", (check_id,))
+
+    def list_vies_checks(self, *, counterparty_id: str | None = None) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM vies_checks"
+        params: tuple[Any, ...] = ()
+        if counterparty_id is not None:
+            sql += " WHERE counterparty_id = ?"
+            params = (counterparty_id,)
+        return self._fetch_all(sql + " ORDER BY checked_at DESC, rowid DESC", params)
 
     def update_counterparty_review(
         self, counterparty_id: str, *, display_name: str, tax_id: str | None,
@@ -5371,8 +5443,8 @@ class LedgerDB:
         effective_region = (recipient_region or "").strip() or None
         if not effective_address_line1 or not effective_city:
             raise ValueError("Invoice recipient address_line1 and city are required")
-        self._fetch_one(
-            "SELECT counterparty_id FROM counterparties WHERE counterparty_id = ?",
+        counterparty = self._fetch_one(
+            "SELECT counterparty_id, country_code FROM counterparties WHERE counterparty_id = ?",
             (counterparty_id,),
         )
 
@@ -5395,6 +5467,15 @@ class LedgerDB:
         if existing is not None and existing["template_key"] != template_key:
             raise LedgerDbError(
                 "An invoice template_key is stable; create a separate template to rename it"
+            )
+        # A template has no issue date, so the 7% window is checked per draft. Deactivating
+        # a legacy template without changing its rate stays possible.
+        if active or existing is None or (
+            existing["withholding_rate_basis_points"] != effective_withholding_rate
+        ):
+            validate_professional_withholding(
+                effective_withholding_rate,
+                country_code=counterparty["country_code"],
             )
         payload = {
             "template_key": template_key,
@@ -5555,6 +5636,15 @@ class LedgerDB:
             template["withholding_rate_basis_points"]
             if withholding_rate_basis_points is None
             else withholding_rate_basis_points
+        )
+        validate_professional_withholding(
+            effective_withholding_rate,
+            country_code=self._fetch_one(
+                "SELECT country_code FROM counterparties WHERE counterparty_id = ?",
+                (template["counterparty_id"],),
+            )["country_code"],
+            issue_on=planned_issue_date,
+            activity_starts_on=self.earliest_business_activity_start(professional_only=True),
         )
         totals = calculate_invoice_totals(
             materialized_lines,
@@ -6031,7 +6121,8 @@ class LedgerDB:
             """
             SELECT d.*, p.period_key, t.template_key, t.template_version, t.template_name,
                    c.display_name AS counterparty_name, c.country_code,
-                   c.tax_id AS counterparty_tax_id, c.vat_id AS counterparty_vat_id
+                   c.tax_id AS counterparty_tax_id, c.vat_id AS counterparty_vat_id,
+                   c.roi_status AS counterparty_roi_status
             FROM outgoing_invoice_drafts d
             JOIN periods p ON p.period_id = d.period_id
             JOIN invoice_templates t ON t.invoice_template_id = d.invoice_template_id
@@ -6055,6 +6146,8 @@ class LedgerDB:
             if row["lifecycle_status"] == "issued"
             else "not_issued_do_not_book_as_income"
         )
+        row["warnings"] = outgoing_invoice_warnings(row)
+        row["invoice_mentions"] = outgoing_invoice_mentions(row)
         return row
 
     def list_outgoing_invoice_drafts(
@@ -6122,6 +6215,7 @@ class LedgerDB:
             "aeat_cases",
             "aeat_documents",
             "aeat_case_events",
+            "vies_checks",
             "invoice_templates",
             "outgoing_invoice_drafts",
             "outgoing_invoice_lines",
@@ -7970,6 +8064,54 @@ def _migration_25(connection: sqlite3.Connection) -> None:
         connection.execute(statement)
 
 
+def _migration_26(connection: sqlite3.Connection) -> None:
+    # Append-only VIES evidence; a check is never rewritten, only superseded by a newer one.
+    connection.execute("""
+        CREATE TABLE vies_checks (
+            vies_check_id TEXT PRIMARY KEY,
+            counterparty_id TEXT NOT NULL REFERENCES counterparties(counterparty_id),
+            checked_at TEXT NOT NULL,
+            country_code TEXT NOT NULL CHECK (length(country_code) = 2),
+            vat_number TEXT NOT NULL CHECK (length(vat_number) BETWEEN 1 AND 20),
+            outcome TEXT NOT NULL CHECK (outcome IN (
+                'valid', 'invalid', 'unavailable', 'invalid_input'
+            )),
+            error_code TEXT,
+            request_date TEXT,
+            request_identifier TEXT,
+            trader_name TEXT,
+            trader_address TEXT,
+            requester_used INTEGER NOT NULL CHECK (requester_used IN (0, 1)),
+            http_status INTEGER,
+            response_body TEXT,
+            response_encoding TEXT CHECK (response_encoding IN ('utf-8', 'base64')),
+            response_sha256 TEXT CHECK (
+                response_sha256 IS NULL OR (
+                    length(response_sha256) = 64 AND response_sha256 NOT GLOB '*[^0-9a-f]*'
+                )
+            ),
+            applied_roi_status TEXT,
+            applied_row_version INTEGER,
+            CHECK ((response_body IS NULL) = (response_sha256 IS NULL)),
+            CHECK ((response_body IS NULL) = (response_encoding IS NULL)),
+            CHECK ((applied_roi_status IS NULL) = (applied_row_version IS NULL)),
+            CHECK (
+                applied_roi_status IS NULL
+                OR (outcome = 'valid' AND applied_roi_status = 'registered')
+                OR (outcome = 'invalid' AND applied_roi_status = 'not_registered')
+            )
+        )
+    """)
+    connection.execute(
+        "CREATE INDEX vies_checks_counterparty_idx ON vies_checks(counterparty_id, checked_at)"
+    )
+    for action in ("UPDATE", "DELETE"):
+        connection.execute(
+            f"CREATE TRIGGER vies_checks_no_{action.lower()} BEFORE {action} "
+            "ON vies_checks BEGIN SELECT RAISE(ABORT, 'VIES checks are immutable'); END"
+        )
+
+
 _MIGRATIONS = {
     1: _migration_1,
     2: _migration_2,
@@ -7996,4 +8138,5 @@ _MIGRATIONS = {
     23: _migration_23,
     24: _migration_24,
     25: _migration_25,
+    26: _migration_26,
 }
