@@ -40,6 +40,12 @@ fx_rates:
   # USD: "0.85679"
 
 review:
-  # Large equipment purchases are queued by default because IRPF deductibility
-  # may require capitalization/amortization rather than full immediate expense.
-  asset_review_threshold_eur: "600.00"
+  # Equipment purchases above this unit value are queued for review instead
+  # of expensed immediately: libertad de amortizacion (Ley 27/2014 LIS art.
+  # 12.3) only covers new tangible items <= 300 EUR/unit; above that,
+  # deductibility requires capitalization/amortization instead of full
+  # immediate expense. This override is only merged for the `modelo130` and
+  # `xolo-ledger reconcile` commands; every other path (plain `xolo-ledger`,
+  # the history audit, the local archive audit) always uses the
+  # IMMEDIATE_WRITE_OFF_UNIT_LIMIT_EUR constant in tax_rules.py.
+  asset_review_threshold_eur: "300.00"
