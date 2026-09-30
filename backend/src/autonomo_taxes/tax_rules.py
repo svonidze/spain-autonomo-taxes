@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 import re
@@ -15,6 +16,80 @@ QUARTERLY_FORM_CODES = ("130", "303", "349", "111", "115", "216")
 ANNUAL_FORM_CODES = ("390", "347", "190", "180", "296", "100", "714", "720", "721")
 ALL_FORM_CODES = QUARTERLY_FORM_CODES + ANNUAL_FORM_CODES
 DIFFICULT_EXPENSE_CAP_EUR = Decimal("2000.00")
+# EU Member States by ISO 3166-1 alpha-2 code (Greece is GR here, EL in VAT numbers).
+EU_COUNTRY_CODES = frozenset({
+    "AT", "BE", "BG", "CY", "CZ", "DE", "DK", "EE", "ES", "FI", "FR", "GR", "HR", "HU",
+    "IE", "IT", "LT", "LU", "LV", "MT", "NL", "PL", "PT", "RO", "SE", "SI", "SK",
+})
+
+INVOICE_ISSUE_DEADLINE_CODE = "invoice_issue_deadline_missed"
+INVOICE_ISSUE_DEADLINE_SOURCE = (
+    "RD 1619/2012 (Reglamento de facturacion), art. 11.1: when the recipient is a business "
+    "or professional acting as such, the invoice must be issued before the 16th day of the "
+    "month following the accrual (devengo). The service date or service period end is used "
+    "as the accrual date; advance payments (art. 75.Dos LIVA) and continuous supplies "
+    "(art. 75.Uno.7º LIVA) can accrue on another date. Corrective invoices follow art. 15.3 "
+    "(up to four years) instead. https://www.boe.es/buscar/act.php?id=BOE-A-2012-14696"
+)
+INCOME_BEFORE_ACTIVITY_START_CODE = "income_before_activity_start"
+
+# Professional IRPF withholding on outgoing invoices (basis points).
+PROFESSIONAL_WITHHOLDING_RATES = frozenset({0, 700, 1500})
+REDUCED_PROFESSIONAL_WITHHOLDING_RATE = 700
+REDUCED_PROFESSIONAL_WITHHOLDING_EXTRA_YEARS = 2
+PROFESSIONAL_WITHHOLDING_SOURCE = (
+    "LIRPF (Ley 35/2006) art. 101.5.a and RIRPF (RD 439/2007) art. 95.1: professional "
+    "income is withheld at 15%, or 7% in the year the professional activity starts and "
+    "the two following years when there was no professional activity in the previous "
+    "year and the professional gave the payer a written notice, which the payer keeps. "
+    "Professional activities are IAE sections 2 and 3 (RIRPF art. 95.2). The obligation "
+    "arises on payment (RIRPF art. 78); the invoice issue year is used as a proxy. Only "
+    "payers obliged to withhold (RIRPF art. 76) apply it: private individuals and "
+    "foreign clients do not, while a non-resident operating through a Spanish permanent "
+    "establishment does (RIRPF art. 76.1.c) and must be recorded with country ES. The "
+    "0/7/15% presets are not exhaustive: the permanent 7% for the activities in RIRPF "
+    "art. 95.1 a-d and the 60% Ceuta/Melilla reduction are not modelled. "
+    "https://www.boe.es/buscar/act.php?id=BOE-A-2007-6820"
+)
+WITHHOLDING_RATE_NOT_ALLOWED_CODE = "withholding_rate_not_allowed"
+WITHHOLDING_FOREIGN_COUNTERPARTY_CODE = "withholding_foreign_counterparty"
+WITHHOLDING_REDUCED_RATE_OUTSIDE_WINDOW_CODE = "withholding_reduced_rate_outside_window"
+WITHHOLDING_REDUCED_RATE_NOTICE_UNCONFIRMED_CODE = "withholding_reduced_rate_notice_unconfirmed"
+
+# Invoice mentions the operator must add in the external invoicing channel.
+# Box 59 of Modelo 303 (eu_service_income) is the EU B2B case; box 120
+# (outside_scope) holds services located outside Spain for non-EU customers.
+EU_REVERSE_CHARGE_TAX_CODES = frozenset({"eu_service_income"})
+OUTSIDE_SPAIN_SERVICE_TAX_CODES = frozenset({"outside_scope", "not_subject_place_of_supply"})
+EXEMPT_INCOME_PROVISIONS = {"export": "art. 21 LIVA", "eu_goods_income": "art. 25 LIVA"}
+INVOICE_MENTION_REVERSE_CHARGE_TEXT = "Inversión del sujeto pasivo"
+INVOICE_MENTION_NOT_SUBJECT_TEXT = "Operación no sujeta a IVA en España (art. 69 LIVA)"
+_LIVA_PLACE_OF_SUPPLY_SOURCE = (
+    "Ley 37/1992 (LIVA) art. 69 locates services outside Spain: to a business where the "
+    "recipient is established (art. 69.Uno.1º) and certain services to private customers "
+    "outside the EU (art. 69.Dos). Citing the non-subject provision is common practice; "
+    "RD 1619/2012 does not fix this wording. "
+    "https://www.boe.es/buscar/act.php?id=BOE-A-1992-28740"
+)
+INVOICE_MENTION_SOURCES = {
+    "reverse_charge": (
+        "RD 1619/2012 art. 6.1.m: when the recipient is liable for the tax, the invoice "
+        "must state «inversión del sujeto pasivo». "
+        "https://www.boe.es/buscar/act.php?id=BOE-A-2012-14696"
+    ),
+    "not_subject_place_of_supply": _LIVA_PLACE_OF_SUPPLY_SOURCE,
+    "place_of_supply_review": _LIVA_PLACE_OF_SUPPLY_SOURCE,
+    "exempt_provision": (
+        "RD 1619/2012 art. 6.1.j: an exempt operation needs a reference to the exempting "
+        "provision of Directive 2006/112/CE or LIVA, or an indication that it is exempt. "
+        "https://www.boe.es/buscar/act.php?id=BOE-A-2012-14696"
+    ),
+    "vat_amount_in_eur": (
+        "RD 1619/2012 art. 12.1: amounts may use any currency, but the Spanish VAT charged "
+        "must be stated in EUR at the exchange rate of art. 79.Once LIVA. "
+        "https://www.boe.es/buscar/act.php?id=BOE-A-2012-14696"
+    ),
+}
 DIRECT_ESTIMATION_IRPF_METHODS = frozenset(
     {"estimacion_directa", "estimacion_directa_normal", "estimacion_directa_simplificada"}
 )
@@ -256,6 +331,25 @@ def calculate_difficult_expenses(
         return Decimal("0.00")
     rule = difficult_expense_rule_for_year(year)
     return min(cents(base * rule.rate), rule.annual_cap_eur)
+
+
+def invoice_issue_deadline(accrued_on: date) -> date:
+    """Last issue date allowed for a business recipient: the 15th of the next month."""
+    if accrued_on.month == 12:
+        return date(accrued_on.year + 1, 1, 15)
+    return date(accrued_on.year, accrued_on.month + 1, 15)
+
+
+def invoice_issue_deadline_warning(*, accrued_on: date, issued_on: date) -> str | None:
+    deadline = invoice_issue_deadline(accrued_on)
+    if issued_on <= deadline:
+        return None
+    return (
+        f"Issue date {issued_on.isoformat()} is after {deadline.isoformat()}, the last day "
+        f"allowed for a business recipient when the service accrues on {accrued_on.isoformat()}. "
+        "The ledger cannot tell a private individual from a business, so the recipient is "
+        "treated as a business or professional."
+    )
 
 
 def recognize_tax_form_filename(name: str) -> RecognizedTaxForm | None:
