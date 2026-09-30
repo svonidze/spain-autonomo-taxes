@@ -135,10 +135,14 @@ def test_period_preparation_writes_calculations_cash_and_calendar(tmp_path) -> N
         "UID:2026-Q3-cash@spain-autonomo-taxes", maxsplit=1
     )[1].split("END:VEVENT", maxsplit=1)[0]
     assert "DTSTART;VALUE=DATE:20261014" in cash_event
-    assert "Required tax: 777.29 EUR" in cash_event
-    assert "recommended reserve: 877.29 EUR" in cash_event
-    assert "available: 1000.00 EUR" in cash_event
-    assert "status: sufficient" in cash_event
+    # RFC 5545 line folding (added for the new periodic-action ICS entries) can
+    # break a long DESCRIPTION across physical lines; unfold before matching
+    # on its free-text content.
+    cash_event_unfolded = cash_event.replace("\r\n ", "").replace("\n ", "")
+    assert "Required tax: 777.29 EUR" in cash_event_unfolded
+    assert "recommended reserve: 877.29 EUR" in cash_event_unfolded
+    assert "available: 1000.00 EUR" in cash_event_unfolded
+    assert "status: sufficient" in cash_event_unfolded
     markdown = outputs["markdown"].read_text(encoding="utf-8")
     assert "### Modelo 130" in markdown
     assert "Casilla 19: 777.29" in markdown
