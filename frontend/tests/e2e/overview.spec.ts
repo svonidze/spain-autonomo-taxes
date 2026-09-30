@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import messages from '../../src/locales/en/workflow.json' with { type: 'json' };
+import analyticsFixture from '../fixtures/analytics.json' with { type: 'json' };
 const ASSET = '55555555-5555-4555-8555-555555555555',
   ENTRY = '66666666-6666-4666-8666-666666666666';
 const asset = {
@@ -188,6 +189,50 @@ test('undecided returns stay distinct from filing exemptions in both locales', a
     'Декларации без решения — проверьте обязательства',
   );
 });
+test('cumulative purchases follow business net and show missing FX beside zero totals in both locales', async ({
+  page,
+}) => {
+  const data = structuredClone(analyticsFixture);
+  data.datasets.cumulative_expenses = {
+    ...data.datasets.cumulative_expenses,
+    gross_actual_minor: [0, 0],
+    gross_projected_minor: [0, 0],
+    deductible_actual_minor: [0, 0],
+    deductible_projected_minor: [0, 0],
+    missing_fx_transaction_count: 1,
+  };
+  let reads = 0;
+  await page.route('**/api/analytics?**', (route) => {
+    reads++;
+    return route.fulfill({ json: data });
+  });
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto('/dashboard?period=2026-Q3');
+  const chart = page.locator('#chart-cumulative-expenses');
+  await expect(chart.locator('.chart-note')).toContainText('В расчет не вошли расходы');
+  expect(
+    await page.evaluate(() => {
+      const net = document.querySelector('#chart-cumulative-net')!;
+      const purchases = document.querySelector('#chart-cumulative-expenses')!;
+      return Boolean(net.compareDocumentPosition(purchases) & Node.DOCUMENT_POSITION_FOLLOWING);
+    }),
+  ).toBe(true);
+  const before = reads;
+  await page.locator('[data-locale="en"]').evaluate((button: HTMLElement) => button.click());
+  await expect(chart.locator('figcaption > span')).toHaveText('Cumulative purchases and IRPF deductions');
+  await expect(chart.locator('.chart-note')).toContainText(
+    'Expense rows without confirmed EUR conversion are excluded: 1.',
+  );
+  expect(reads).toBe(before);
+  await expect(chart.locator('.chart-legend li')).toHaveCount(4);
+  await chart.locator('details.chart-data summary').click();
+  await expect(chart.locator('table')).toBeVisible();
+  await expect(chart.locator('table')).toContainText('IRPF deductions: actual');
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+  ).toBe(true);
+});
+
 test('Vue expanded chart is CSP-safe, uses cached locale data and closes on route disposal', async ({
   page,
 }) => {

@@ -145,6 +145,14 @@ export interface Analytics {
       projected_minor: ChartValue[];
       actual_minor: ChartValue[];
     };
+    cumulative_expenses: {
+      buckets: string[];
+      gross_actual_minor: ChartValue[];
+      gross_projected_minor: ChartValue[];
+      deductible_actual_minor: ChartValue[];
+      deductible_projected_minor: ChartValue[];
+      missing_fx_transaction_count: number;
+    };
     ytd_comparison: { previous_year: YearSummary; current_year: YearSummary };
     expense_structure: {
       buckets: {

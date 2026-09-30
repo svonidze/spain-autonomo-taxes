@@ -303,6 +303,73 @@ def test_cumulative_expenses_drop_missing_fx_rows_from_both_measures(tmp_path: P
     assert analytics["quality"]["missing_fx_transaction_count"] == 1
 
 
+def test_cumulative_purchases_do_not_repeat_native_asset_recognitions(tmp_path, monkeypatch):
+    from uuid import uuid4
+    from autonomo_taxes import expense_workflow, posting, review_packet
+    from autonomo_test_support.expense_workflow import setup_draft
+
+    class CheckDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 10, 1)
+
+    for module in (expense_workflow, posting, review_packet):
+        monkeypatch.setattr(module, "date", CheckDate)
+    fixture, draft = setup_draft(tmp_path, method="linear", transaction_date="2026-04-01")
+    with open_ledger_db(fixture["database"]) as db:
+        preview = expense_workflow.preview(db, fixture["transaction_id"], expected_version=draft["draft_version"])
+        result = expense_workflow.confirm_and_post(
+            db, fixture["transaction_id"], expected_version=draft["draft_version"],
+            preview_token=preview["preview_token"], request_id=str(uuid4()), actor="synthetic",
+            archive_root=tmp_path / "archive",
+        )
+        assert len(result["recognitions"]) == 2
+    dataset = _build(fixture["database"], period_key="2026-Q4", as_of=CheckDate.today())["datasets"]["cumulative_expenses"]
+    assert dataset["measure"] == "purchase_cost_and_irpf_deductible"
+    assert dataset["gross_actual_minor"][3:10] == [12100] * 7
+    # EUR 100 basis x 25% x 91/365 through June, then another 92/365 through September.
+    assert dataset["deductible_actual_minor"][5] == 623
+    assert dataset["deductible_actual_minor"][8:10] == [1253, 1253]
+    assert dataset["gross_projected_minor"][-1] == 12100
+    assert dataset["deductible_projected_minor"][-1] == 1253
+    assert dataset["gross_actual_minor"][10:] == [None, None]
+
+
+def test_historical_amortization_keeps_prior_year_purchase_out_of_current_gross(tmp_path):
+    database = tmp_path / "ledger.sqlite"
+    with LedgerDB.initialize(database) as db:
+        _add_transaction(db, external_key="prior-year-equipment", period_key="2025-Q3",
+                         transaction_date="2025-07-01", entry_type="expense", direction="debit",
+                         amount_minor=12100, amount_eur_minor=12100)
+        amortization = _add_transaction(db, external_key="historical-equipment-amortization",
+                                       entry_type="expense", direction="debit",
+                                       amount_minor=12100, amount_eur_minor=12100)
+        db.add_detailed_tax_treatment(transaction_id=amortization["transaction_id"],
+                                      treatment_type="expense", tax_code="historical_g03",
+                                      deductible_irpf_minor=2500)
+    dataset = _build(database)["datasets"]["cumulative_expenses"]
+    assert dataset["gross_actual_minor"][6:8] == [0, 0]
+    assert dataset["deductible_actual_minor"][6:8] == [2500, 2500]
+
+
+def test_only_missing_fx_expenses_keep_a_scoped_warning_beside_zero_totals(tmp_path):
+    database = tmp_path / "ledger.sqlite"
+    with LedgerDB.initialize(database) as db:
+        for key, period, on, kind in (
+            ("current-missing-fx", "2026-Q3", "2026-07-01", "expense"),
+            ("prior-missing-fx", "2025-Q3", "2025-07-01", "expense"),
+            ("later-missing-fx", "2026-Q4", "2026-10-01", "expense"),
+            ("income-missing-fx", "2026-Q3", "2026-07-01", "income"),
+        ):
+            _add_transaction(db, external_key=key, period_key=period, transaction_date=on,
+                             entry_type=kind, currency="USD", amount_eur_minor=None)
+    dataset = _build(database)["datasets"]["cumulative_expenses"]
+    assert dataset["missing_fx_transaction_count"] == 1
+    assert dataset["gross_actual_minor"] == [0] * 8 + [None]
+    assert dataset["deductible_actual_minor"] == [0] * 8 + [None]
+    assert dataset["gross_projected_minor"] == dataset["deductible_projected_minor"] == [0] * 9
+
+
 def test_as_of_boundary_counts_as_actual(tmp_path: Path) -> None:
     db_path = tmp_path / "autonomo.sqlite"
     with LedgerDB.initialize(db_path) as db:

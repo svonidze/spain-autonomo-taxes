@@ -133,6 +133,12 @@ def _load_transactions(
     quality: dict[str, int],
 ) -> list[dict[str, Any]]:
     excluded = ", ".join(f"'{status}'" for status in EXCLUDED_STATUSES)
+    native_recognitions = {
+        row[0] for row in connection.execute(
+            "SELECT recognition_transaction_id FROM amortization_entries "
+            "WHERE recognition_transaction_id IS NOT NULL"
+        )
+    }
     rows = connection.execute(
         f"""
         SELECT
@@ -147,6 +153,7 @@ def _load_transactions(
             t.counterparty_id,
             c.display_name AS counterparty_name,
             tt.treatment_id,
+            tt.tax_code,
             tt.taxable_base_minor,
             tt.vat_minor,
             tt.deductible_irpf_minor,
@@ -175,6 +182,7 @@ def _load_transactions(
                 "transaction_id": transaction_id,
                 "transaction_date": str(row["transaction_date"]),
                 "kind": "income" if entry_type.startswith("income") else "expense",
+                "is_amortization": transaction_id in native_recognitions,
                 "lifecycle_status": str(row["lifecycle_status"]),
                 "created_at": str(row["created_at"] or ""),
                 "counterparty_id": row["counterparty_id"],
@@ -188,6 +196,8 @@ def _load_transactions(
                 "treatment_count": 0,
             }
             grouped[transaction_id] = bucket
+        if row["tax_code"] == "historical_g03":
+            bucket["is_amortization"] = True
         if row["treatment_id"] is None:
             continue
         bucket["treatment_count"] += 1
@@ -408,17 +418,15 @@ def _cumulative_expenses(
     query: AnalyticsQuery,
     through: date,
 ) -> dict[str, Any]:
-    """Running year-to-date expenses: what was spent and what IRPF actually deducts.
+    """Stored purchase amounts once, beside reviewed IRPF deductions.
 
-    Gross uses the stored EUR amount of each source entry; deductible uses the
-    reviewed IRPF share, so the gap between the two lines is the non-deductible
-    part (personal share of utilities, capped insurance premiums, and similar).
-    Like the expense-structure chart this keeps source amounts: a depreciation
-    row contributes its original purchase cost, which the chart note explains.
+    Recognition journals and historical amortization contribute only to IRPF.
+    The difference between the lines is not a non-deductible-expense measure.
     """
     months = _month_keys(query.year, through.month)
     actual = {"gross": dict.fromkeys(months, 0), "deductible": dict.fromkeys(months, 0)}
     reviewed = {"gross": dict.fromkeys(months, 0), "deductible": dict.fromkeys(months, 0)}
+    missing_fx = 0
     for transaction in transactions:
         if transaction["kind"] != "expense":
             continue
@@ -432,13 +440,19 @@ def _cumulative_expenses(
         if gross is None:
             # FX policy: a foreign-currency row without a stored EUR amount leaves
             # every money dataset, deduction included (see _expense_structure).
+            missing_fx += 1
             continue
+        if transaction["is_amortization"]:
+            gross = 0
         deductible = int(transaction["deductible_irpf_minor"] or 0)
         for measure, value in (("gross", int(gross)), ("deductible", deductible)):
             reviewed[measure][month] += value
             if scope == "actual":
                 actual[measure][month] += value
-    result: dict[str, Any] = {"measure": "gross_expenses_and_irpf_deductible", "buckets": months}
+    result: dict[str, Any] = {
+        "measure": "purchase_cost_and_irpf_deductible", "buckets": months,
+        "missing_fx_transaction_count": missing_fx,
+    }
     for measure in ("gross", "deductible"):
         actual_values: list[int | None] = []
         projected_values: list[int] = []

@@ -73,5 +73,13 @@
   "charts.yoy.income": "Income",
   "charts.yoy.net": "Result",
   "charts.yoy.previousYear": "Previous year",
-  "charts.yoy.title": "Year over year (through this month)"
+  "charts.yoy.title": "Year over year (through this month)",
+  "charts.cumulativeExpenses.title": "Cumulative purchases and IRPF deductions",
+  "charts.cumulativeExpenses.aria": "Year-to-date purchase amounts and IRPF deductions, actual and including approved entries",
+  "charts.cumulativeExpenses.grossActual": "Purchases: actual",
+  "charts.cumulativeExpenses.grossProjected": "Purchases: including approved",
+  "charts.cumulativeExpenses.deductibleActual": "IRPF deductions: actual",
+  "charts.cumulativeExpenses.deductibleProjected": "IRPF deductions: including approved",
+  "charts.cumulativeExpenses.basis": "Purchases use stored EUR amounts once. Depreciation counts only in IRPF deductions. Deductions for earlier-year equipment can exceed purchases in the selected year.",
+  "charts.cumulativeExpenses.missingFx": "Expense rows without confirmed EUR conversion are excluded: {count}."
 }
