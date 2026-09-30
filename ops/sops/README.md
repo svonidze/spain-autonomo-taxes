@@ -1,6 +1,6 @@
 # Optional SOPS control plane
 
-The [default deployment](../README.md) remains the normal single-host workflow.
+The [default deployment](../docs/README.md) remains the normal single-host workflow.
 This directory preserves encrypted-Git configuration as an opt-in control
 plane. Preparing the repository or copying this directory does not activate it.
 Do not mix SOPS deploy/rollback/restore scripts or units with the default ones.
@@ -217,7 +217,7 @@ validate_sha "$app_sha"
 The bootstrap transport ref normally selects `master`; use a one-shot
 `AUTONOMO_DEPLOY_REF` only for an explicitly approved PR SHA. Use the one-shot
 storage migration flag only for a release needing it, as in the
-[default migration explanation](../README.md#schema-migration).
+[default migration explanation](../docs/README.md#schema-migration).
 
 SOPS deployment stages/preflights first, renders
 `autonomo-web-<app-sha>-<secret-sha>.service`, and snapshots SQLite under
@@ -264,7 +264,7 @@ validate_sha "$target_sha"
 This stages and validates the bound config before service stop. Cross-schema
 rollback also requires a verified `AUTONOMO_ROLLBACK_SNAPSHOT`; loss of newer
 writes and the safety procedure are the same as
-[default rollback](../README.md#rollback). Keep the exact snapshot outside the
+[default rollback](../docs/README.md#rollback). Keep the exact snapshot outside the
 excluded backups tree in an independently verified recovery copy as appropriate.
 
 For a config-only change, deploy the current app SHA with the new secret SHA.
@@ -275,7 +275,7 @@ the private maintenance record before each change.
 
 For live SQLite recovery use this directory's `restore.sh`, with the same
 dangerous `--yes-restore` contract and prerequisites as
-[disaster recovery](../../docs/DISASTER_RECOVERY.md#production-cutover-dangerous).
+[disaster recovery](../docs/DISASTER_RECOVERY.md#production-cutover-dangerous).
 It stages the recorded configuration before stopping the paired unit. Archive
 extraction remains isolated and does not activate any configuration.
 
@@ -341,7 +341,7 @@ their original crypt material, even if new backups move to a new encryption set.
 For total server loss, recover ciphertext using the independently stored recovery
 identity on a trusted device, provision a new server identity and read-only
 deploy key, then materialize an approved compatible configuration and follow
-the [data recovery procedure](../../docs/DISASTER_RECOVERY.md). SSH keys, age
+the [data recovery procedure](../docs/DISASTER_RECOVERY.md). SSH keys, age
 identities, trusted host keys, bootstrap paths, and deployment bindings are not
 reconstructed automatically by cloning the secrets repository.
 
@@ -360,4 +360,4 @@ reconstructed automatically by cloning the secrets repository.
 - Test coverage for staging/rotation helpers is not evidence of a real production
   SOPS migration. Keep actual activation and off-server recovery evidence private.
 
-The repository and credential boundaries remain in [PRIVACY.md](../../docs/PRIVACY.md).
+The repository and credential boundaries remain in [PRIVACY.md](../../docs/development/PRIVACY.md).

@@ -1,0 +1,904 @@
+{
+  "ru": {
+    "businessResult": {
+      "spec": {
+        "chartId": "business-result",
+        "title": "Доходы и вычитаемые расходы по месяцам",
+        "ariaLabel": "Столбики доходов и вычитаемых расходов по месяцам",
+        "tableLabel": "Данные таблицей",
+        "emptyMessage": "Нет операций за период",
+        "bucketLabel": "Месяц",
+        "buckets": [
+          "янв.",
+          "февр."
+        ],
+        "series": [
+          {
+            "key": "income-actual",
+            "label": "Доход — факт",
+            "kind": "bar",
+            "stack": "income",
+            "tone": "info",
+            "pattern": "solid",
+            "values": [
+              10000,
+              null
+            ]
+          },
+          {
+            "key": "income-backlog",
+            "label": "Доход — не проведено",
+            "kind": "bar",
+            "stack": "income",
+            "tone": "info",
+            "pattern": "hatched",
+            "values": [
+              0,
+              0
+            ]
+          },
+          {
+            "key": "income-forecast",
+            "label": "Доход — прогноз",
+            "kind": "bar",
+            "stack": "income",
+            "tone": "info",
+            "pattern": "outline",
+            "values": [
+              0,
+              3000
+            ]
+          },
+          {
+            "key": "expense-actual",
+            "label": "Вычет — факт",
+            "kind": "bar",
+            "stack": "expense",
+            "tone": "warning",
+            "pattern": "solid",
+            "values": [
+              5000,
+              null
+            ]
+          },
+          {
+            "key": "expense-backlog",
+            "label": "Вычет — не проведено",
+            "kind": "bar",
+            "stack": "expense",
+            "tone": "warning",
+            "pattern": "hatched",
+            "values": [
+              0,
+              2000
+            ]
+          },
+          {
+            "key": "expense-forecast",
+            "label": "Вычет — прогноз",
+            "kind": "bar",
+            "stack": "expense",
+            "tone": "warning",
+            "pattern": "outline",
+            "values": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "value": "-1 234,56 €",
+      "percent": null
+    },
+    "taxDue": {
+      "spec": {
+        "chartId": "tax-due",
+        "title": "Налоги к оплате по кварталам",
+        "ariaLabel": "Платежи Modelo 130 и Modelo 303 по кварталам",
+        "tableLabel": "Данные таблицей",
+        "emptyMessage": "Форма подана, но значения не извлечены",
+        "bucketLabel": "Квартал",
+        "buckets": [
+          "2026-Q1",
+          "2026-Q2"
+        ],
+        "series": [
+          {
+            "key": "m130",
+            "label": "Modelo 130 к оплате",
+            "kind": "bar",
+            "stack": "m130",
+            "tone": "accent",
+            "pattern": "solid",
+            "values": [
+              26391,
+              null
+            ]
+          },
+          {
+            "key": "m303",
+            "label": "Modelo 303 к оплате",
+            "kind": "bar",
+            "stack": "m303",
+            "tone": "warning",
+            "pattern": "solid",
+            "values": [
+              0,
+              null
+            ]
+          }
+        ]
+      },
+      "value": "-1 234,56 €",
+      "percent": null
+    },
+    "ivaPosition": {
+      "spec": {
+        "chartId": "iva-position",
+        "title": "Позиция IVA по кварталам",
+        "ariaLabel": "IVA начисленный, к вычету и итог по кварталам",
+        "tableLabel": "Данные таблицей",
+        "emptyMessage": "Квартальные расчёты не сформированы",
+        "bucketLabel": "Квартал",
+        "buckets": [
+          "2026-Q1"
+        ],
+        "series": [
+          {
+            "key": "output",
+            "label": "IVA начисленный (27)",
+            "kind": "bar",
+            "stack": "output",
+            "tone": "info",
+            "pattern": "solid",
+            "values": [
+              10000
+            ]
+          },
+          {
+            "key": "input",
+            "label": "IVA к вычету (45)",
+            "kind": "bar",
+            "stack": "input",
+            "tone": "warning",
+            "pattern": "solid",
+            "values": [
+              14074
+            ]
+          },
+          {
+            "key": "result",
+            "label": "Итог (71)",
+            "kind": "line",
+            "tone": "accent",
+            "pattern": "solid",
+            "values": [
+              -4074
+            ]
+          }
+        ]
+      },
+      "value": "-1 234,56 €",
+      "percent": null
+    },
+    "reserve": {
+      "spec": {
+        "chartId": "tax-reserve",
+        "title": "Резерв под налоги",
+        "ariaLabel": "Требуемый налог, рекомендуемый резерв и доступные средства",
+        "tableLabel": "Данные таблицей",
+        "emptyMessage": "Платежей к резервированию нет",
+        "bucketLabel": "",
+        "ranges": [
+          {
+            "key": "recommended",
+            "label": "Рекомендуемый резерв",
+            "tone": "info",
+            "value": 36391
+          },
+          {
+            "key": "required",
+            "label": "Нужно на налоги",
+            "tone": "warning",
+            "value": 26391
+          }
+        ],
+        "measure": {
+          "key": "available",
+          "label": "Доступно",
+          "tone": "accent",
+          "value": null
+        },
+        "unavailableMessage": "Свободные средства не проверены — сверьте резерв вручную"
+      },
+      "value": "-1 234,56 €",
+      "percent": null
+    },
+    "cumulativeNet": {
+      "spec": {
+        "chartId": "cumulative-net",
+        "title": "Чистый результат нарастающим итогом",
+        "ariaLabel": "Накопленный чистый результат до трудно обосновываемых расходов",
+        "tableLabel": "Данные таблицей",
+        "emptyMessage": "Нет операций за период",
+        "bucketLabel": "Месяц",
+        "buckets": [
+          "янв.",
+          "февр."
+        ],
+        "series": [
+          {
+            "key": "net-projected",
+            "label": "С учётом одобренного",
+            "kind": "line",
+            "tone": "accent",
+            "pattern": "dashed",
+            "values": [
+              5000,
+              6000
+            ]
+          },
+          {
+            "key": "net-actual",
+            "label": "Факт",
+            "kind": "line",
+            "tone": "accent",
+            "pattern": "solid",
+            "values": [
+              5000,
+              null
+            ]
+          }
+        ]
+      },
+      "value": "-1 234,56 €",
+      "percent": null
+    },
+    "yearComparison": {
+      "spec": {
+        "chartId": "ytd-comparison",
+        "title": "Год к году (по текущий месяц)",
+        "ariaLabel": "Сравнение дохода, вычетов и результата с прошлым годом",
+        "tableLabel": "Данные таблицей",
+        "emptyMessage": "Недостаточно данных для сравнения",
+        "bucketLabel": "",
+        "buckets": [
+          "Доход",
+          "Вычеты",
+          "Результат"
+        ],
+        "series": [
+          {
+            "key": "previous",
+            "label": "Прошлый год (2025)",
+            "kind": "bar",
+            "stack": "previous",
+            "tone": "warning",
+            "pattern": "hatched",
+            "values": [
+              null,
+              null,
+              null
+            ]
+          },
+          {
+            "key": "current",
+            "label": "Текущий год (2026)",
+            "kind": "bar",
+            "stack": "current",
+            "tone": "accent",
+            "pattern": "solid",
+            "values": [
+              80000,
+              20000,
+              60000
+            ]
+          }
+        ]
+      },
+      "value": "-1 234,56 €",
+      "percent": null
+    },
+    "expenseStructure": {
+      "spec": {
+        "chartId": "expense-structure",
+        "title": "Расходы: что уменьшает базу IRPF",
+        "ariaLabel": "Расходы по категориям: суммы, которые уменьшают и не уменьшают базу IRPF",
+        "tableLabel": "Суммы по категориям",
+        "emptyMessage": "Нет операций за период",
+        "bucketLabel": "Категория расхода",
+        "totalLabel": "Всего расходов",
+        "totalValueLabel": "Всего",
+        "shareUnavailableLabel": "доля не рассчитывается",
+        "showSegmentShares": true,
+        "tableInitiallyOpen": true,
+        "tablePrimaryOnNarrow": true,
+        "rowLabelWidth": 280,
+        "rowHeight": 42,
+        "rows": [
+          {
+            "key": "G45",
+            "label": "Соцстрахование autónomo",
+            "secondaryLabel": "G45",
+            "total": 30000,
+            "segments": [
+              {
+                "key": "deductible",
+                "label": "Уменьшает базу IRPF",
+                "tone": "accent",
+                "pattern": "solid",
+                "value": 20000
+              },
+              {
+                "key": "non-deductible",
+                "label": "Не уменьшает базу IRPF",
+                "tone": "warning",
+                "pattern": "hatched",
+                "value": 10000
+              }
+            ]
+          },
+          {
+            "key": "unclassified",
+            "label": "Категория не указана",
+            "secondaryLabel": "",
+            "total": 5000,
+            "segments": [
+              {
+                "key": "deductible",
+                "label": "Уменьшает базу IRPF",
+                "tone": "accent",
+                "pattern": "solid",
+                "value": 0
+              },
+              {
+                "key": "non-deductible",
+                "label": "Не уменьшает базу IRPF",
+                "tone": "warning",
+                "pattern": "hatched",
+                "value": 5000
+              }
+            ]
+          }
+        ]
+      },
+      "value": "-1 234,56 €",
+      "percent": "31,4 %"
+    },
+    "reviewAging": {
+      "spec": {
+        "chartId": "review-aging",
+        "title": "Очередь разбора по срокам",
+        "ariaLabel": "Число операций в очереди по возрасту и статусу",
+        "tableLabel": "Данные таблицей",
+        "emptyMessage": "Очередь разбора пуста",
+        "bucketLabel": "Дней в очереди",
+        "rows": []
+      },
+      "value": "-123456",
+      "percent": null
+    },
+    "counterparty": {
+      "spec": {
+        "chartId": "counterparty-concentration",
+        "title": "Крупнейшие клиенты",
+        "ariaLabel": "Доход по крупнейшим контрагентам",
+        "tableLabel": "Данные таблицей",
+        "emptyMessage": "Доходы за период не найдены",
+        "bucketLabel": "",
+        "rows": [
+          {
+            "key": "cp-1",
+            "label": "Client One",
+            "segments": [
+              {
+                "key": "income",
+                "label": "Доход",
+                "tone": "info",
+                "pattern": "solid",
+                "value": 90000
+              }
+            ]
+          },
+          {
+            "key": "other",
+            "label": "Прочие",
+            "segments": [
+              {
+                "key": "income",
+                "label": "Доход",
+                "tone": "info",
+                "pattern": "hatched",
+                "value": 15000
+              }
+            ]
+          }
+        ]
+      },
+      "value": "-1 234,56 €",
+      "percent": null
+    },
+    "amortization": {
+      "spec": {
+        "chartId": "amortization",
+        "title": "Амортизация по кварталам",
+        "ariaLabel": "Начисления амортизации по кварталам",
+        "tableLabel": "Данные таблицей",
+        "emptyMessage": "Начислений амортизации нет",
+        "bucketLabel": "Квартал",
+        "note": "На графике — включённые в книги строки по кварталам года. В таблице — выбранный квартал, с отдельными суммами вне книг. Годовые подтверждения не прибавляются.",
+        "buckets": [
+          "2026-Q1",
+          "2026-Q2"
+        ],
+        "series": [
+          {
+            "key": "amortization",
+            "label": "Амортизация за квартал",
+            "kind": "bar",
+            "stack": "amortization",
+            "tone": "accent",
+            "pattern": "solid",
+            "values": [
+              6500,
+              6500
+            ]
+          }
+        ]
+      },
+      "value": "-1 234,56 €",
+      "percent": null
+    }
+  },
+  "en": {
+    "businessResult": {
+      "spec": {
+        "chartId": "business-result",
+        "title": "Income and deductible expenses by month",
+        "ariaLabel": "Bars of income and deductible expenses by month",
+        "tableLabel": "Data as a table",
+        "emptyMessage": "No transactions in this period",
+        "bucketLabel": "Month",
+        "buckets": [
+          "Jan",
+          "Feb"
+        ],
+        "series": [
+          {
+            "key": "income-actual",
+            "label": "Income — actual",
+            "kind": "bar",
+            "stack": "income",
+            "tone": "info",
+            "pattern": "solid",
+            "values": [
+              10000,
+              null
+            ]
+          },
+          {
+            "key": "income-backlog",
+            "label": "Income — not posted",
+            "kind": "bar",
+            "stack": "income",
+            "tone": "info",
+            "pattern": "hatched",
+            "values": [
+              0,
+              0
+            ]
+          },
+          {
+            "key": "income-forecast",
+            "label": "Income — forecast",
+            "kind": "bar",
+            "stack": "income",
+            "tone": "info",
+            "pattern": "outline",
+            "values": [
+              0,
+              3000
+            ]
+          },
+          {
+            "key": "expense-actual",
+            "label": "Deductible — actual",
+            "kind": "bar",
+            "stack": "expense",
+            "tone": "warning",
+            "pattern": "solid",
+            "values": [
+              5000,
+              null
+            ]
+          },
+          {
+            "key": "expense-backlog",
+            "label": "Deductible — not posted",
+            "kind": "bar",
+            "stack": "expense",
+            "tone": "warning",
+            "pattern": "hatched",
+            "values": [
+              0,
+              2000
+            ]
+          },
+          {
+            "key": "expense-forecast",
+            "label": "Deductible — forecast",
+            "kind": "bar",
+            "stack": "expense",
+            "tone": "warning",
+            "pattern": "outline",
+            "values": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "value": "-€1,234.56",
+      "percent": null
+    },
+    "taxDue": {
+      "spec": {
+        "chartId": "tax-due",
+        "title": "Tax cash due by quarter",
+        "ariaLabel": "Modelo 130 and Modelo 303 payments by quarter",
+        "tableLabel": "Data as a table",
+        "emptyMessage": "The form was filed but no values were extracted",
+        "bucketLabel": "Quarter",
+        "buckets": [
+          "2026-Q1",
+          "2026-Q2"
+        ],
+        "series": [
+          {
+            "key": "m130",
+            "label": "Modelo 130 payable",
+            "kind": "bar",
+            "stack": "m130",
+            "tone": "accent",
+            "pattern": "solid",
+            "values": [
+              26391,
+              null
+            ]
+          },
+          {
+            "key": "m303",
+            "label": "Modelo 303 payable",
+            "kind": "bar",
+            "stack": "m303",
+            "tone": "warning",
+            "pattern": "solid",
+            "values": [
+              0,
+              null
+            ]
+          }
+        ]
+      },
+      "value": "-€1,234.56",
+      "percent": null
+    },
+    "ivaPosition": {
+      "spec": {
+        "chartId": "iva-position",
+        "title": "IVA position by quarter",
+        "ariaLabel": "Output IVA, deductible input IVA and the result by quarter",
+        "tableLabel": "Data as a table",
+        "emptyMessage": "Quarterly calculations are not available",
+        "bucketLabel": "Quarter",
+        "buckets": [
+          "2026-Q1"
+        ],
+        "series": [
+          {
+            "key": "output",
+            "label": "Output IVA (27)",
+            "kind": "bar",
+            "stack": "output",
+            "tone": "info",
+            "pattern": "solid",
+            "values": [
+              10000
+            ]
+          },
+          {
+            "key": "input",
+            "label": "Deductible input IVA (45)",
+            "kind": "bar",
+            "stack": "input",
+            "tone": "warning",
+            "pattern": "solid",
+            "values": [
+              14074
+            ]
+          },
+          {
+            "key": "result",
+            "label": "Result (71)",
+            "kind": "line",
+            "tone": "accent",
+            "pattern": "solid",
+            "values": [
+              -4074
+            ]
+          }
+        ]
+      },
+      "value": "-€1,234.56",
+      "percent": null
+    },
+    "reserve": {
+      "spec": {
+        "chartId": "tax-reserve",
+        "title": "Tax reserve",
+        "ariaLabel": "Required tax, recommended reserve and available funds",
+        "tableLabel": "Data as a table",
+        "emptyMessage": "No payments to reserve for",
+        "bucketLabel": "",
+        "ranges": [
+          {
+            "key": "recommended",
+            "label": "Recommended reserve",
+            "tone": "info",
+            "value": 36391
+          },
+          {
+            "key": "required",
+            "label": "Required for taxes",
+            "tone": "warning",
+            "value": 26391
+          }
+        ],
+        "measure": {
+          "key": "available",
+          "label": "Available",
+          "tone": "accent",
+          "value": null
+        },
+        "unavailableMessage": "Available funds are not checked — verify the reserve manually"
+      },
+      "value": "-€1,234.56",
+      "percent": null
+    },
+    "cumulativeNet": {
+      "spec": {
+        "chartId": "cumulative-net",
+        "title": "Cumulative business result",
+        "ariaLabel": "Cumulative net result before difficult-to-justify expenses",
+        "tableLabel": "Data as a table",
+        "emptyMessage": "No transactions in this period",
+        "bucketLabel": "Month",
+        "buckets": [
+          "Jan",
+          "Feb"
+        ],
+        "series": [
+          {
+            "key": "net-projected",
+            "label": "Including approved",
+            "kind": "line",
+            "tone": "accent",
+            "pattern": "dashed",
+            "values": [
+              5000,
+              6000
+            ]
+          },
+          {
+            "key": "net-actual",
+            "label": "Actual",
+            "kind": "line",
+            "tone": "accent",
+            "pattern": "solid",
+            "values": [
+              5000,
+              null
+            ]
+          }
+        ]
+      },
+      "value": "-€1,234.56",
+      "percent": null
+    },
+    "yearComparison": {
+      "spec": {
+        "chartId": "ytd-comparison",
+        "title": "Year over year (through this month)",
+        "ariaLabel": "Income, deductibles and result compared with the previous year",
+        "tableLabel": "Data as a table",
+        "emptyMessage": "Not enough data for a comparison",
+        "bucketLabel": "",
+        "buckets": [
+          "Income",
+          "Deductibles",
+          "Result"
+        ],
+        "series": [
+          {
+            "key": "previous",
+            "label": "Previous year (2025)",
+            "kind": "bar",
+            "stack": "previous",
+            "tone": "warning",
+            "pattern": "hatched",
+            "values": [
+              null,
+              null,
+              null
+            ]
+          },
+          {
+            "key": "current",
+            "label": "Current year (2026)",
+            "kind": "bar",
+            "stack": "current",
+            "tone": "accent",
+            "pattern": "solid",
+            "values": [
+              80000,
+              20000,
+              60000
+            ]
+          }
+        ]
+      },
+      "value": "-€1,234.56",
+      "percent": null
+    },
+    "expenseStructure": {
+      "spec": {
+        "chartId": "expense-structure",
+        "title": "Expenses: what reduces the IRPF tax base",
+        "ariaLabel": "Expenses by category: amounts that reduce and do not reduce the IRPF tax base",
+        "tableLabel": "Amounts by category",
+        "emptyMessage": "No transactions in this period",
+        "bucketLabel": "Expense category",
+        "totalLabel": "Total expenses",
+        "totalValueLabel": "Total",
+        "shareUnavailableLabel": "share not available",
+        "showSegmentShares": true,
+        "tableInitiallyOpen": true,
+        "tablePrimaryOnNarrow": true,
+        "rowLabelWidth": 280,
+        "rowHeight": 42,
+        "rows": [
+          {
+            "key": "G45",
+            "label": "Owner Social Security contributions",
+            "secondaryLabel": "G45",
+            "total": 30000,
+            "segments": [
+              {
+                "key": "deductible",
+                "label": "Reduces the IRPF tax base",
+                "tone": "accent",
+                "pattern": "solid",
+                "value": 20000
+              },
+              {
+                "key": "non-deductible",
+                "label": "Does not reduce the IRPF tax base",
+                "tone": "warning",
+                "pattern": "hatched",
+                "value": 10000
+              }
+            ]
+          },
+          {
+            "key": "unclassified",
+            "label": "Category not assigned",
+            "secondaryLabel": "",
+            "total": 5000,
+            "segments": [
+              {
+                "key": "deductible",
+                "label": "Reduces the IRPF tax base",
+                "tone": "accent",
+                "pattern": "solid",
+                "value": 0
+              },
+              {
+                "key": "non-deductible",
+                "label": "Does not reduce the IRPF tax base",
+                "tone": "warning",
+                "pattern": "hatched",
+                "value": 5000
+              }
+            ]
+          }
+        ]
+      },
+      "value": "-€1,234.56",
+      "percent": "31.4%"
+    },
+    "reviewAging": {
+      "spec": {
+        "chartId": "review-aging",
+        "title": "Review queue by age",
+        "ariaLabel": "Queued transactions by age bucket and status",
+        "tableLabel": "Data as a table",
+        "emptyMessage": "The review queue is empty",
+        "bucketLabel": "Days in queue",
+        "rows": []
+      },
+      "value": "-123456",
+      "percent": null
+    },
+    "counterparty": {
+      "spec": {
+        "chartId": "counterparty-concentration",
+        "title": "Top customers",
+        "ariaLabel": "Income by largest counterparties",
+        "tableLabel": "Data as a table",
+        "emptyMessage": "No income found for the period",
+        "bucketLabel": "",
+        "rows": [
+          {
+            "key": "cp-1",
+            "label": "Client One",
+            "segments": [
+              {
+                "key": "income",
+                "label": "Income",
+                "tone": "info",
+                "pattern": "solid",
+                "value": 90000
+              }
+            ]
+          },
+          {
+            "key": "other",
+            "label": "Other",
+            "segments": [
+              {
+                "key": "income",
+                "label": "Income",
+                "tone": "info",
+                "pattern": "hatched",
+                "value": 15000
+              }
+            ]
+          }
+        ]
+      },
+      "value": "-€1,234.56",
+      "percent": null
+    },
+    "amortization": {
+      "spec": {
+        "chartId": "amortization",
+        "title": "Amortization by quarter",
+        "ariaLabel": "Amortization charges by quarter",
+        "tableLabel": "Data as a table",
+        "emptyMessage": "No amortization charges",
+        "bucketLabel": "Quarter",
+        "note": "The chart shows book-included entries across the year. The table shows the selected quarter, separating entries outside the books. Annual evidence is not added.",
+        "buckets": [
+          "2026-Q1",
+          "2026-Q2"
+        ],
+        "series": [
+          {
+            "key": "amortization",
+            "label": "Amortization per quarter",
+            "kind": "bar",
+            "stack": "amortization",
+            "tone": "accent",
+            "pattern": "solid",
+            "values": [
+              6500,
+              6500
+            ]
+          }
+        ]
+      },
+      "value": "-€1,234.56",
+      "percent": null
+    }
+  }
+}

@@ -30,7 +30,7 @@ if [[ -n "$snapshot" ]]; then
 fi
 
 snapshot_tool="$script_dir/backup_sqlite.py"
-[[ -f "$snapshot_tool" ]] || snapshot_tool="$script_dir/../scripts/backup_sqlite.py"
+[[ -f "$snapshot_tool" ]] || snapshot_tool="$script_dir/backup/backup_sqlite.py"
 snapshot_output="$(python3 "$snapshot_tool" --database "$data/autonomo.sqlite" --backup-dir "$data/backups/rollback" --keep "${AUTONOMO_ROLLBACK_BACKUP_KEEP:-10}")"
 current_snapshot="$(printf '%s\n' "$snapshot_output" | sed -n 's/^backup=//p')"
 [[ -f "$current_snapshot" ]] || die "rollback safety backup did not complete"

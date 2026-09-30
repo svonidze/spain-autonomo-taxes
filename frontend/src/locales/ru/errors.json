@@ -1,0 +1,5 @@
+{
+  "errors.apiReturnedHtml": "API вернул HTML вместо данных. Вероятно, на {origin} запущен другой сервер. Остановите его или запустите autonomo-web на другом порту.",
+  "errors.malformedJson": "Некорректный JSON в ответе от {url} ({status}).",
+  "errors.unexpectedNonJson": "Неожиданный ответ не в JSON от {url} ({status})."
+}

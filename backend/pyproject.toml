@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spain-autonomo-taxes"
+version = "0.1.0"
+description = "SQLite-backed accounting and tax preparation toolkit for a Spanish autonomo."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "google-api-python-client>=2.0",
+  "google-auth-oauthlib>=1.2",
+  "pypdf>=5",
+  "PyYAML>=6",
+]
+
+[project.scripts]
+autonomo-tax = "autonomo_taxes.cli:main"
+autonomo-web = "autonomo_taxes.local_web:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+autonomo_taxes = ["web_ui/dist/index.html", "web_ui/dist/build-manifest.json", "web_ui/dist/ui-assets/*.js", "web_ui/dist/ui-assets/*.css"]
+
+[tool.autonomo.web-ui]
+build-contract = 1
+
+[tool.autonomo.release]
+layout-version = 2

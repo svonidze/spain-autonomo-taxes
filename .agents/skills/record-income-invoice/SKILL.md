@@ -6,9 +6,9 @@ description: Upload, review, and post a customer invoice as income in the Spain 
 # Record Income Invoice
 
 Record one authorized customer invoice without broadening the action to other
-ready transactions. Read [the accounting workflow](../../../docs/ACCOUNTING_WORKFLOW.md)
-and [the FX policy](../../../docs/FX_RATES.md) before the first write. Use
-[scoped accounting maintenance](../../../ops/README.md#scoped-accounting-maintenance)
+ready transactions. Read [the accounting workflow](../../../docs/user/ACCOUNTING_WORKFLOW.md)
+and [the FX policy](../../../docs/user/FX_RATES.md) before the first write. Use
+[scoped accounting maintenance](../../../ops/docs/README.md#scoped-accounting-maintenance)
 only when the installed application cannot complete an authorized step.
 
 ## Boundaries

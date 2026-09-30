@@ -1,0 +1,216 @@
+from datetime import date
+from decimal import Decimal
+import tempfile
+import unittest
+from pathlib import Path
+
+from autonomo_taxes.money import parse_amount
+from autonomo_taxes.parsers import (
+    LedgerEntry,
+    apply_fx,
+    parse_date_from_filename,
+    parse_income_invoice,
+    parse_expense,
+    parse_us_numeric_date,
+    scan_income_dir,
+)
+
+
+class ParserTests(unittest.TestCase):
+    def test_parse_amount_formats(self):
+        self.assertEqual(parse_amount("36.770,89"), Decimal("36770.89"))
+        self.assertEqual(parse_amount("6 281,71 USD"), Decimal("6281.71"))
+        self.assertEqual(parse_amount("$1,234.56"), Decimal("1234.56"))
+
+    def test_parse_income_invoice_text(self):
+        text = """
+        INVOICE
+        Invoice No: FACT-2026-00001
+        Date: 2026-01-03
+        Sent to: Sent by:
+        Example Customer One Example Sender
+        Invoice total: 6 281,71 USD
+        """
+        entry = parse_income_invoice(Path("ipg.pdf"), text)
+        self.assertIsNotNone(entry)
+        assert entry is not None
+        self.assertEqual(entry.date.isoformat(), "2026-01-03")
+        self.assertEqual(entry.currency, "USD")
+        self.assertEqual(entry.amount_original, Decimal("6281.71"))
+
+    def test_parse_xolo_fee_text(self):
+        text = """
+        Example Accounting Provider
+        FACTURA
+        Fecha de emisión: 01/04/2026
+        Base (sin IVA): 59,00 EUR
+        VAT 21% 12,39 EUR
+        Total: 71,39 EUR
+        """
+        entry = parse_expense(Path("xolo.pdf"), text)
+        self.assertFalse(entry.review_required)
+        self.assertEqual(entry.date.isoformat(), "2026-04-01")
+        self.assertEqual(entry.deductible_eur, Decimal("59.00"))
+
+    def test_parse_namecheap_us_date(self):
+        self.assertEqual(parse_us_numeric_date("5/8/2026").isoformat(), "2026-05-08")
+        text = """
+        RECEIPT
+        Synthetic Party 002
+        Order Date : 6/4/2026 7:58:24 AM
+        Sub Total $131.96
+        TOTAL $131.96
+        """
+        entry = parse_expense(Path("namecheap.pdf"), text)
+        self.assertEqual(entry.date.isoformat(), "2026-06-04")
+        self.assertEqual(entry.amount_original, Decimal("131.96"))
+
+    def test_parse_tgss_debit_without_person_specific_literals(self):
+        text = """
+        TGSS. COTIZACION
+        EXAMPLE CONTRIBUTOR 12345-67 370,59
+        """
+
+        entry = parse_expense(Path("tgss.pdf"), text)
+
+        self.assertEqual(entry.counterparty, "TGSS")
+        self.assertEqual(entry.amount_original, Decimal("370.59"))
+        self.assertFalse(entry.review_required)
+
+    def test_parse_plenitude_uses_invoice_date_not_consumption_period(self):
+        text = """
+        Eni Plenitude Iberia, SL
+        DATOS DE FACTURA DE ELECTRICIDAD
+        Nº de factura: SYNTH-DOCUMENT-014
+        Periodo de consumo: 08/06/2026 a 07/07/2026
+        Fecha de factura : 13/07/2026
+        Base imponible 89,56 €
+        IVA General (21%) 18,81 €
+        TOTAL IMPORTE FACTURA 108,37 €
+        """
+
+        entry = parse_expense(Path("plenitude.pdf"), text)
+
+        self.assertEqual(entry.date.isoformat(), "2026-07-13")
+        self.assertEqual(entry.amount_original, Decimal("108.37"))
+        self.assertEqual(entry.amount_eur, Decimal("108.37"))
+        self.assertIsNone(entry.deductible_eur)
+        self.assertEqual(entry.description, "SYNTH-DOCUMENT-014")
+        self.assertEqual(entry.category, "home_utility_review")
+        self.assertTrue(entry.review_required)
+
+    def test_parse_apple_equipment_above_immediate_write_off_limit_requires_review(self):
+        # Libertad de amortizacion (Ley 27/2014 LIS art. 12.3) only covers new
+        # tangible items <= 300 EUR/unit; above that, deductibility requires
+        # amortization review rather than full immediate expense.
+        text = """
+        Apple Retail Spain
+        Fecha de factura: 01.03.2026
+        Base imponible IVA Tasa de IVA 450,00
+        """
+
+        entry = parse_expense(Path("apple-450.pdf"), text)
+
+        self.assertEqual(entry.amount_original, Decimal("450.00"))
+        self.assertEqual(entry.category, "asset_review")
+        self.assertTrue(entry.review_required)
+        self.assertIsNone(entry.deductible_eur)
+
+    def test_parse_apple_equipment_at_immediate_write_off_limit_stays_deductible(self):
+        # The 300 EUR unit limit is inclusive: exactly 300.00 EUR still
+        # qualifies for immediate write-off.
+        text = """
+        Apple Retail Spain
+        Fecha de factura: 01.03.2026
+        Base imponible IVA Tasa de IVA 300,00
+        """
+
+        entry = parse_expense(Path("apple-300-00.pdf"), text)
+
+        self.assertEqual(entry.amount_original, Decimal("300.00"))
+        self.assertEqual(entry.category, "apple_domestic")
+        self.assertFalse(entry.review_required)
+        self.assertEqual(entry.deductible_eur, Decimal("300.00"))
+
+    def test_parse_apple_equipment_one_cent_above_limit_requires_review(self):
+        text = """
+        Apple Retail Spain
+        Fecha de factura: 01.03.2026
+        Base imponible IVA Tasa de IVA 300,01
+        """
+
+        entry = parse_expense(Path("apple-300-01.pdf"), text)
+
+        self.assertEqual(entry.amount_original, Decimal("300.01"))
+        self.assertEqual(entry.category, "asset_review")
+        self.assertTrue(entry.review_required)
+        self.assertIsNone(entry.deductible_eur)
+
+    def test_parse_amazon_equipment_above_immediate_write_off_limit_requires_review(self):
+        # Amazon EU equipment purchases previously never checked the
+        # threshold at all and stayed fully deductible regardless of amount.
+        text = """
+        Amazon EU
+        Factura con IVA
+        Fecha del pedido 5 marzo 2026
+        Articulo Base IVA Total
+        21% 500,00 € 105,00 € 605,00 €
+        """
+
+        entry = parse_expense(Path("amazon-500.pdf"), text)
+
+        self.assertEqual(entry.amount_original, Decimal("500.00"))
+        self.assertEqual(entry.category, "asset_review")
+        self.assertTrue(entry.review_required)
+        self.assertIsNone(entry.deductible_eur)
+
+    def test_apply_fx_preserves_manual_eur_amount(self):
+        entry = LedgerEntry(
+            kind="income",
+            date=None,
+            document="manual.csv",
+            counterparty="Bank",
+            description="Manual bank credit",
+            amount_original=Decimal("100.00"),
+            currency="USD",
+            amount_eur=Decimal("85.00"),
+            deductible_eur=None,
+            category="manual_income",
+            confidence="manual",
+            review_required=False,
+        )
+        warnings = apply_fx([entry], {"USD": Decimal("0.90")})
+        self.assertEqual(warnings, [])
+        self.assertEqual(entry.amount_eur, Decimal("85.00"))
+        self.assertIn("configured FX USD->0.90 not applied", entry.notes)
+
+    def test_scan_income_queues_non_pdf(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            (path / "invoice.png").write_text("scan", encoding="utf-8")
+            parsed, manual = scan_income_dir(path)
+        self.assertEqual(parsed, [])
+        self.assertEqual(len(manual), 1)
+        self.assertEqual(manual[0].category, "unsupported income invoice")
+
+
+class FilenameDateTests(unittest.TestCase):
+    def test_valid_compact_and_dashed_dates_still_parse(self):
+        self.assertEqual(parse_date_from_filename("scan 20260315 invoice.pdf"), date(2026, 3, 15))
+        self.assertEqual(parse_date_from_filename("2026-03-15 receipt.pdf"), date(2026, 3, 15))
+
+    def test_impossible_date_like_digits_do_not_raise(self):
+        # Document numbers routinely contain eight-digit runs that start with
+        # "20" but are not calendar dates; they must not abort ingestion.
+        self.assertIsNone(parse_date_from_filename("ticket 20269931 summary.pdf"))
+        self.assertIsNone(parse_date_from_filename("order 2026-13-45.pdf"))
+
+    def test_impossible_compact_run_falls_through_to_dashed_date(self):
+        self.assertEqual(
+            parse_date_from_filename("ref 20261399 issued 2026-04-02.pdf"),
+            date(2026, 4, 2),
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

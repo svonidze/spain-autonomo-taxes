@@ -1,0 +1,9 @@
+{
+  "parties.legalForms.individual": "individual",
+  "parties.legalForms.legal_entity": "legal entity",
+  "parties.legalForms.public_body": "public body",
+  "parties.legalForms.unknown": "unknown",
+  "parties.roiStatus.not_registered": "not registered",
+  "parties.roiStatus.registered": "registered",
+  "parties.roiStatus.unknown": "unknown"
+}

@@ -52,16 +52,21 @@ git -C "$source_repo" fetch --quiet origin "$release_ref"
 git -C "$source_repo" cat-file -e "$sha^{commit}"
 git -C "$source_repo" merge-base --is-ancestor "$sha" FETCH_HEAD \
   || die "release SHA is not reachable from fetched origin/$release_ref: $sha"
+python3 "$ops_dir/prepare_ui_release.py" preflight "$source_repo" "$sha" "$target"
 if [[ ! -d "$target" ]]; then
   git -C "$source_repo" worktree add --detach "$target" "$sha"
   printf '%s\n' "$sha" > "$target/.release-sha"
+  python3 "$ops_dir/prepare_ui_release.py" build "$source_repo" "$sha" "$target"
   python3 -m venv "$target/.venv"
-  "$target/.venv/bin/python" -m pip install --disable-pip-version-check --no-input "$target"
+  python_project="$(python3 "$ops_dir/prepare_ui_release.py" python-project-path "$source_repo" "$sha" "$target")"
+  "$target/.venv/bin/python" -m pip install --disable-pip-version-check --no-input "$python_project"
   "$target/.venv/bin/python" - <<'PY' > "$target/.schema-version"
 from autonomo_taxes.ledger_db import LATEST_SCHEMA_VERSION
 print(LATEST_SCHEMA_VERSION)
 PY
+  python3 "$ops_dir/prepare_ui_release.py" receipt "$source_repo" "$sha" "$target"
 fi
+python3 "$ops_dir/prepare_ui_release.py" verify "$source_repo" "$sha" "$target"
 [[ "$(<"$target/.release-sha")" == "$sha" ]] || die "release marker mismatch: $target"
 if [[ ! -s "$target/.schema-version" ]]; then
   "$target/.venv/bin/python" - <<'PY' > "$target/.schema-version"
@@ -168,7 +173,7 @@ fi
 if [[ "${AUTONOMO_ENABLE_STORAGE_MIGRATION:-0}" == "1" || -n "$backend_pre" ]]; then
   migration_backup_dir="$(private_root)/backups/pre-deploy"
   migration_tool="$ops_dir/backup_sqlite.py"
-  [[ -f "$migration_tool" ]] || migration_tool="$ops_dir/../scripts/backup_sqlite.py"
+  [[ -f "$migration_tool" ]] || migration_tool="$ops_dir/backup/backup_sqlite.py"
   migration_output="$(python3 "$migration_tool" \
     --database "$(private_root)/autonomo.sqlite" \
     --backup-dir "$migration_backup_dir" \

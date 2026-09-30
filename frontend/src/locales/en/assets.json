@@ -1,0 +1,11 @@
+{
+  "assets.asset": "Asset",
+  "assets.base": "Base",
+  "assets.businessUse": "Business use",
+  "assets.cost": "Cost",
+  "assets.decision": "Accounting status",
+  "assets.inService": "In service",
+  "assets.rate": "Rate",
+  "assets.schedule": "Schedule",
+  "assets.title": "Assets and amortization"
+}

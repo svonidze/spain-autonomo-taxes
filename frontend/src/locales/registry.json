@@ -1,0 +1,20 @@
+[
+  {
+    "code": "ru",
+    "name": "Русский",
+    "intl": "ru-RU",
+    "direction": "ltr",
+    "quarterNumbers": [
+      "I",
+      "II",
+      "III",
+      "IV"
+    ]
+  },
+  {
+    "code": "en",
+    "name": "English",
+    "intl": "en-GB",
+    "direction": "ltr"
+  }
+]

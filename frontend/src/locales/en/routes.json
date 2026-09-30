@@ -1,0 +1,5 @@
+{
+  "routes.backToDashboard": "Back to overview",
+  "routes.unknownHint": "This section does not exist. Open the overview to continue.",
+  "routes.unknownTitle": "Page not found"
+}

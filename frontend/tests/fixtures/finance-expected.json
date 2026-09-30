@@ -1,0 +1,4066 @@
+[
+  {
+    "locale": "ru",
+    "headlines": [
+      {
+        "summary": {
+          "settlement_status": "not_started",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Квартал ещё не начался",
+          "amount": null,
+          "detail": "Налоговый прогноз появится с первого дня квартала.",
+          "tone": "neutral"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "not_started",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Квартал ещё не начался",
+          "amount": null,
+          "detail": "Налоговый прогноз появится с первого дня квартала.",
+          "tone": "neutral"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "not_started",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Квартал ещё не начался",
+          "amount": null,
+          "detail": "Налоговый прогноз появится с первого дня квартала.",
+          "tone": "neutral"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "not_started",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Квартал ещё не начался",
+          "amount": null,
+          "detail": "Налоговый прогноз появится с первого дня квартала.",
+          "tone": "neutral"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "not_started",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Квартал ещё не начался",
+          "amount": null,
+          "detail": "Налоговый прогноз появится с первого дня квартала.",
+          "tone": "neutral"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "not_started",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Квартал ещё не начался",
+          "amount": null,
+          "detail": "Налоговый прогноз появится с первого дня квартала.",
+          "tone": "neutral"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "not_started",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Квартал ещё не начался",
+          "amount": null,
+          "detail": "Налоговый прогноз появится с первого дня квартала.",
+          "tone": "neutral"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "not_started",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Квартал ещё не начался",
+          "amount": null,
+          "detail": "Налоговый прогноз появится с первого дня квартала.",
+          "tone": "neutral"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "not_started",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Квартал ещё не начался",
+          "amount": null,
+          "detail": "Налоговый прогноз появится с первого дня квартала.",
+          "tone": "neutral"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "undetermined",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Сумма пока не определена",
+          "amount": null,
+          "detail": "Не хватает расчёта или решения по обязательной декларации.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "undetermined",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Сумма пока не определена",
+          "amount": null,
+          "detail": "Не хватает расчёта или решения по обязательной декларации.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "undetermined",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Сумма пока не определена",
+          "amount": null,
+          "detail": "Не хватает расчёта или решения по обязательной декларации.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "undetermined",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Сумма пока не определена",
+          "amount": null,
+          "detail": "Не хватает расчёта или решения по обязательной декларации.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "undetermined",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Сумма пока не определена",
+          "amount": null,
+          "detail": "Не хватает расчёта или решения по обязательной декларации.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "undetermined",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Сумма пока не определена",
+          "amount": null,
+          "detail": "Не хватает расчёта или решения по обязательной декларации.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "undetermined",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Сумма пока не определена",
+          "amount": null,
+          "detail": "Не хватает расчёта или решения по обязательной декларации.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "undetermined",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Сумма пока не определена",
+          "amount": null,
+          "detail": "Не хватает расчёта или решения по обязательной декларации.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "undetermined",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Сумма пока не определена",
+          "amount": null,
+          "detail": "Не хватает расчёта или решения по обязательной декларации.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "no_payment_required",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Платить не нужно",
+          "amount": 0,
+          "detail": "По этой декларации платить не нужно.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "no_payment_required",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Платить не нужно",
+          "amount": 0,
+          "detail": "По этой декларации платить не нужно.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "no_payment_required",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Платить не нужно",
+          "amount": 0,
+          "detail": "По этой декларации платить не нужно.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "no_payment_required",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Платить не нужно",
+          "amount": 0,
+          "detail": "По этой декларации платить не нужно.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "no_payment_required",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Платить не нужно",
+          "amount": 0,
+          "detail": "По этой декларации платить не нужно.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "no_payment_required",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Платить не нужно",
+          "amount": 0,
+          "detail": "По этой декларации платить не нужно.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "no_payment_required",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Платить не нужно",
+          "amount": 0,
+          "detail": "По этой декларации платить не нужно.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "no_payment_required",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Платить не нужно",
+          "amount": 0,
+          "detail": "По этой декларации платить не нужно.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "no_payment_required",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Платить не нужно",
+          "amount": 0,
+          "detail": "По этой декларации платить не нужно.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "paid",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Заплачено",
+          "amount": 10000,
+          "detail": "Банковское списание подтверждено.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "paid",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Заплачено",
+          "amount": 10000,
+          "detail": "Банковское списание подтверждено.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "paid",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Заплачено",
+          "amount": 10000,
+          "detail": "Банковское списание подтверждено.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "paid",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Заплачено",
+          "amount": 10000,
+          "detail": "Банковское списание подтверждено.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "paid",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Заплачено",
+          "amount": 10000,
+          "detail": "Банковское списание подтверждено.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "paid",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Заплачено",
+          "amount": 10000,
+          "detail": "Банковское списание подтверждено.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "paid",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Заплачено",
+          "amount": 10000,
+          "detail": "Банковское списание подтверждено.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "paid",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Заплачено",
+          "amount": 10000,
+          "detail": "Банковское списание подтверждено.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "paid",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Заплачено",
+          "amount": 10000,
+          "detail": "Банковское списание подтверждено.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "partially_paid",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Осталось подтвердить или доплатить 23,45 €.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "partially_paid",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Осталось подтвердить или доплатить 23,45 €.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "partially_paid",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Осталось подтвердить или доплатить 23,45 €.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "partially_paid",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Осталось подтвердить или доплатить 23,45 €.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "partially_paid",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Осталось подтвердить или доплатить 23,45 €.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "partially_paid",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Осталось подтвердить или доплатить 23,45 €.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "partially_paid",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Осталось подтвердить или доплатить 23,45 €.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "partially_paid",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Осталось подтвердить или доплатить 23,45 €.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "partially_paid",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Осталось подтвердить или доплатить 23,45 €.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "overpaid",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Списано на 0,00 € больше суммы к уплате.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "overpaid",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Списано на 0,00 € больше суммы к уплате.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "overpaid",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Списано на 0,00 € больше суммы к уплате.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "overpaid",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Списано на 0,00 € больше суммы к уплате.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "overpaid",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Списано на 0,00 € больше суммы к уплате.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "overpaid",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Списано на 0,00 € больше суммы к уплате.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "overpaid",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Списано на 0,00 € больше суммы к уплате.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "overpaid",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Списано на 0,00 € больше суммы к уплате.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "overpaid",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Списано на 0,00 € больше суммы к уплате.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "planned",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "По декларациям к уплате —. Банковское списание не подтверждено.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "planned",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "По декларациям к уплате 0,00 €. Банковское списание не подтверждено.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "planned",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "По декларациям к уплате 123,45 €. Банковское списание не подтверждено.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "planned",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Планируется к оплате",
+          "amount": null,
+          "detail": "Расчёт на 01 июл. 2026 г. До конца квартала сумма может измениться.",
+          "tone": "accent"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "planned",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Планируется к оплате",
+          "amount": 0,
+          "detail": "Расчёт на 01 июл. 2026 г. До конца квартала сумма может измениться.",
+          "tone": "accent"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "planned",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Планируется к оплате",
+          "amount": 12345,
+          "detail": "Расчёт на 01 июл. 2026 г. До конца квартала сумма может измениться.",
+          "tone": "accent"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "planned",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "По декларациям к уплате —. Банковское списание не подтверждено.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "planned",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "По декларациям к уплате 0,00 €. Банковское списание не подтверждено.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "planned",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "По декларациям к уплате 123,45 €. Банковское списание не подтверждено.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "evidence_unavailable",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Запись об оплате есть, но её подтверждение неполное.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "evidence_unavailable",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Запись об оплате есть, но её подтверждение неполное.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "evidence_unavailable",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Запись об оплате есть, но её подтверждение неполное.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "evidence_unavailable",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Запись об оплате есть, но её подтверждение неполное.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "evidence_unavailable",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Запись об оплате есть, но её подтверждение неполное.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "evidence_unavailable",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Запись об оплате есть, но её подтверждение неполное.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "evidence_unavailable",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Запись об оплате есть, но её подтверждение неполное.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "evidence_unavailable",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Запись об оплате есть, но её подтверждение неполное.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "evidence_unavailable",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Запись об оплате есть, но её подтверждение неполное.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "unfiled",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Квартал завершён, но декларация ещё не подтверждена. Показан предварительный расчёт.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "unfiled",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Квартал завершён, но декларация ещё не подтверждена. Показан предварительный расчёт.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "unfiled",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Квартал завершён, но декларация ещё не подтверждена. Показан предварительный расчёт.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "unfiled",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Квартал завершён, но декларация ещё не подтверждена. Показан предварительный расчёт.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "unfiled",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Квартал завершён, но декларация ещё не подтверждена. Показан предварительный расчёт.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "unfiled",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Квартал завершён, но декларация ещё не подтверждена. Показан предварительный расчёт.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "unfiled",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Квартал завершён, но декларация ещё не подтверждена. Показан предварительный расчёт.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "unfiled",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Квартал завершён, но декларация ещё не подтверждена. Показан предварительный расчёт.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "unfiled",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "Квартал завершён, но декларация ещё не подтверждена. Показан предварительный расчёт.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "payment_unconfirmed",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "По декларациям к уплате —. Банковское списание не подтверждено.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "payment_unconfirmed",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "По декларациям к уплате 0,00 €. Банковское списание не подтверждено.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "payment_unconfirmed",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "По декларациям к уплате 123,45 €. Банковское списание не подтверждено.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "payment_unconfirmed",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "По декларациям к уплате —. Банковское списание не подтверждено.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "payment_unconfirmed",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "По декларациям к уплате 0,00 €. Банковское списание не подтверждено.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "payment_unconfirmed",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "По декларациям к уплате 123,45 €. Банковское списание не подтверждено.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "payment_unconfirmed",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "По декларациям к уплате —. Банковское списание не подтверждено.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "payment_unconfirmed",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "По декларациям к уплате 0,00 €. Банковское списание не подтверждено.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "payment_unconfirmed",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Подтверждено оплачено",
+          "amount": 10000,
+          "detail": "По декларациям к уплате 123,45 €. Банковское списание не подтверждено.",
+          "tone": "pending"
+        }
+      }
+    ],
+    "forms": [
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "filed",
+          "values": {},
+          "headline_value": null,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "filed_without_values",
+          "values": {},
+          "headline_value": null,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "подано 01 июл. 2026 г. · к переносу 0,00 €"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "filed",
+          "values": {},
+          "headline_value": 0,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "filed",
+          "values": {},
+          "headline_value": 0,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "подано 01 июл. 2026 г. · к переносу 0,00 €"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "filed",
+          "values": {},
+          "headline_value": 12.34,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "filed",
+          "values": {},
+          "headline_value": 12.34,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "подано 01 июл. 2026 г. · к переносу 0,00 €"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "filed_without_values",
+          "values": {},
+          "headline_value": null,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "filed_without_values",
+          "values": {},
+          "headline_value": null,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "подано 01 июл. 2026 г. · значения недоступны"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "filed_without_values",
+          "values": {},
+          "headline_value": 0,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "filed_without_values",
+          "values": {},
+          "headline_value": 0,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "подано 01 июл. 2026 г. · значения недоступны"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "filed_without_values",
+          "values": {},
+          "headline_value": 12.34,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "filed_without_values",
+          "values": {},
+          "headline_value": 12.34,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "подано 01 июл. 2026 г. · значения недоступны"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "preview",
+          "values": {},
+          "headline_value": null,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "preview",
+          "values": {},
+          "headline_value": null,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "подано · расчет на 02 июл. 2026 г. · к переносу 0,00 €"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "preview",
+          "values": {},
+          "headline_value": 0,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "preview",
+          "values": {},
+          "headline_value": 0,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "подано · расчет на 02 июл. 2026 г. · к переносу 0,00 €"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "preview",
+          "values": {},
+          "headline_value": 12.34,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "preview",
+          "values": {},
+          "headline_value": 12.34,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "подано · расчет на 02 июл. 2026 г. · к переносу 0,00 €"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "snapshot_only",
+          "values": {},
+          "headline_value": null,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "snapshot_only",
+          "values": {},
+          "headline_value": null,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "есть filing snapshot · к переносу 0,00 €"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "snapshot_only",
+          "values": {},
+          "headline_value": 0,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "snapshot_only",
+          "values": {},
+          "headline_value": 0,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "есть filing snapshot · к переносу 0,00 €"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "snapshot_only",
+          "values": {},
+          "headline_value": 12.34,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "snapshot_only",
+          "values": {},
+          "headline_value": 12.34,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "есть filing snapshot · к переносу 0,00 €"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "unavailable",
+          "values": {},
+          "headline_value": null,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "unavailable",
+          "values": {},
+          "headline_value": null,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "подано · расчет не обновлен"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "unavailable",
+          "values": {},
+          "headline_value": 0,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "unavailable",
+          "values": {},
+          "headline_value": 0,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "подано · расчет не обновлен"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "unavailable",
+          "values": {},
+          "headline_value": 12.34,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "unavailable",
+          "values": {},
+          "headline_value": 12.34,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "подано · расчет не обновлен"
+      }
+    ]
+  },
+  {
+    "locale": "en",
+    "headlines": [
+      {
+        "summary": {
+          "settlement_status": "not_started",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "The quarter has not started",
+          "amount": null,
+          "detail": "A tax forecast will be available from the first day of the quarter.",
+          "tone": "neutral"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "not_started",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "The quarter has not started",
+          "amount": null,
+          "detail": "A tax forecast will be available from the first day of the quarter.",
+          "tone": "neutral"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "not_started",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "The quarter has not started",
+          "amount": null,
+          "detail": "A tax forecast will be available from the first day of the quarter.",
+          "tone": "neutral"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "not_started",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "The quarter has not started",
+          "amount": null,
+          "detail": "A tax forecast will be available from the first day of the quarter.",
+          "tone": "neutral"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "not_started",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "The quarter has not started",
+          "amount": null,
+          "detail": "A tax forecast will be available from the first day of the quarter.",
+          "tone": "neutral"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "not_started",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "The quarter has not started",
+          "amount": null,
+          "detail": "A tax forecast will be available from the first day of the quarter.",
+          "tone": "neutral"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "not_started",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "The quarter has not started",
+          "amount": null,
+          "detail": "A tax forecast will be available from the first day of the quarter.",
+          "tone": "neutral"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "not_started",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "The quarter has not started",
+          "amount": null,
+          "detail": "A tax forecast will be available from the first day of the quarter.",
+          "tone": "neutral"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "not_started",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "The quarter has not started",
+          "amount": null,
+          "detail": "A tax forecast will be available from the first day of the quarter.",
+          "tone": "neutral"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "undetermined",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Amount not determined yet",
+          "amount": null,
+          "detail": "A calculation or decision for a required return is missing.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "undetermined",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Amount not determined yet",
+          "amount": null,
+          "detail": "A calculation or decision for a required return is missing.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "undetermined",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Amount not determined yet",
+          "amount": null,
+          "detail": "A calculation or decision for a required return is missing.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "undetermined",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Amount not determined yet",
+          "amount": null,
+          "detail": "A calculation or decision for a required return is missing.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "undetermined",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Amount not determined yet",
+          "amount": null,
+          "detail": "A calculation or decision for a required return is missing.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "undetermined",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Amount not determined yet",
+          "amount": null,
+          "detail": "A calculation or decision for a required return is missing.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "undetermined",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Amount not determined yet",
+          "amount": null,
+          "detail": "A calculation or decision for a required return is missing.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "undetermined",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Amount not determined yet",
+          "amount": null,
+          "detail": "A calculation or decision for a required return is missing.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "undetermined",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Amount not determined yet",
+          "amount": null,
+          "detail": "A calculation or decision for a required return is missing.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "no_payment_required",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "No payment required",
+          "amount": 0,
+          "detail": "No payment is required for this return.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "no_payment_required",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "No payment required",
+          "amount": 0,
+          "detail": "No payment is required for this return.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "no_payment_required",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "No payment required",
+          "amount": 0,
+          "detail": "No payment is required for this return.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "no_payment_required",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "No payment required",
+          "amount": 0,
+          "detail": "No payment is required for this return.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "no_payment_required",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "No payment required",
+          "amount": 0,
+          "detail": "No payment is required for this return.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "no_payment_required",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "No payment required",
+          "amount": 0,
+          "detail": "No payment is required for this return.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "no_payment_required",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "No payment required",
+          "amount": 0,
+          "detail": "No payment is required for this return.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "no_payment_required",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "No payment required",
+          "amount": 0,
+          "detail": "No payment is required for this return.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "no_payment_required",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "No payment required",
+          "amount": 0,
+          "detail": "No payment is required for this return.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "paid",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Paid",
+          "amount": 10000,
+          "detail": "The bank debit is confirmed.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "paid",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Paid",
+          "amount": 10000,
+          "detail": "The bank debit is confirmed.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "paid",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Paid",
+          "amount": 10000,
+          "detail": "The bank debit is confirmed.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "paid",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Paid",
+          "amount": 10000,
+          "detail": "The bank debit is confirmed.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "paid",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Paid",
+          "amount": 10000,
+          "detail": "The bank debit is confirmed.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "paid",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Paid",
+          "amount": 10000,
+          "detail": "The bank debit is confirmed.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "paid",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Paid",
+          "amount": 10000,
+          "detail": "The bank debit is confirmed.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "paid",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Paid",
+          "amount": 10000,
+          "detail": "The bank debit is confirmed.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "paid",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Paid",
+          "amount": 10000,
+          "detail": "The bank debit is confirmed.",
+          "tone": "positive"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "partially_paid",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "Still to confirm or pay: €23.45.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "partially_paid",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "Still to confirm or pay: €23.45.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "partially_paid",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "Still to confirm or pay: €23.45.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "partially_paid",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "Still to confirm or pay: €23.45.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "partially_paid",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "Still to confirm or pay: €23.45.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "partially_paid",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "Still to confirm or pay: €23.45.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "partially_paid",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "Still to confirm or pay: €23.45.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "partially_paid",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "Still to confirm or pay: €23.45.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "partially_paid",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "Still to confirm or pay: €23.45.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "overpaid",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "The confirmed debit exceeds the amount due by €0.00.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "overpaid",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "The confirmed debit exceeds the amount due by €0.00.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "overpaid",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "The confirmed debit exceeds the amount due by €0.00.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "overpaid",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "The confirmed debit exceeds the amount due by €0.00.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "overpaid",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "The confirmed debit exceeds the amount due by €0.00.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "overpaid",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "The confirmed debit exceeds the amount due by €0.00.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "overpaid",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "The confirmed debit exceeds the amount due by €0.00.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "overpaid",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "The confirmed debit exceeds the amount due by €0.00.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "overpaid",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "The confirmed debit exceeds the amount due by €0.00.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "planned",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "Filed amount due: —. The bank debit is not confirmed.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "planned",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "Filed amount due: €0.00. The bank debit is not confirmed.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "planned",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "Filed amount due: €123.45. The bank debit is not confirmed.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "planned",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Planned tax payment",
+          "amount": null,
+          "detail": "Calculated as of 01 Jul 2026. The amount may change before quarter end.",
+          "tone": "accent"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "planned",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Planned tax payment",
+          "amount": 0,
+          "detail": "Calculated as of 01 Jul 2026. The amount may change before quarter end.",
+          "tone": "accent"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "planned",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Planned tax payment",
+          "amount": 12345,
+          "detail": "Calculated as of 01 Jul 2026. The amount may change before quarter end.",
+          "tone": "accent"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "planned",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "Filed amount due: —. The bank debit is not confirmed.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "planned",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "Filed amount due: €0.00. The bank debit is not confirmed.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "planned",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "Filed amount due: €123.45. The bank debit is not confirmed.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "evidence_unavailable",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "A payment record exists, but its evidence is incomplete.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "evidence_unavailable",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "A payment record exists, but its evidence is incomplete.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "evidence_unavailable",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "A payment record exists, but its evidence is incomplete.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "evidence_unavailable",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "A payment record exists, but its evidence is incomplete.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "evidence_unavailable",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "A payment record exists, but its evidence is incomplete.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "evidence_unavailable",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "A payment record exists, but its evidence is incomplete.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "evidence_unavailable",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "A payment record exists, but its evidence is incomplete.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "evidence_unavailable",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "A payment record exists, but its evidence is incomplete.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "evidence_unavailable",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "A payment record exists, but its evidence is incomplete.",
+          "tone": "attention"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "unfiled",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "The quarter has ended, but filing is not confirmed. This is a preliminary calculation.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "unfiled",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "The quarter has ended, but filing is not confirmed. This is a preliminary calculation.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "unfiled",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "The quarter has ended, but filing is not confirmed. This is a preliminary calculation.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "unfiled",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "The quarter has ended, but filing is not confirmed. This is a preliminary calculation.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "unfiled",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "The quarter has ended, but filing is not confirmed. This is a preliminary calculation.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "unfiled",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "The quarter has ended, but filing is not confirmed. This is a preliminary calculation.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "unfiled",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "The quarter has ended, but filing is not confirmed. This is a preliminary calculation.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "unfiled",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "The quarter has ended, but filing is not confirmed. This is a preliminary calculation.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "unfiled",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "The quarter has ended, but filing is not confirmed. This is a preliminary calculation.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "payment_unconfirmed",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "Filed amount due: —. The bank debit is not confirmed.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "payment_unconfirmed",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "Filed amount due: €0.00. The bank debit is not confirmed.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "payment_unconfirmed",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "past",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "Filed amount due: €123.45. The bank debit is not confirmed.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "payment_unconfirmed",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "Filed amount due: —. The bank debit is not confirmed.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "payment_unconfirmed",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "Filed amount due: €0.00. The bank debit is not confirmed.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "payment_unconfirmed",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "current",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "Filed amount due: €123.45. The bank debit is not confirmed.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "payment_unconfirmed",
+          "total_payable_minor": null,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "Filed amount due: —. The bank debit is not confirmed.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "payment_unconfirmed",
+          "total_payable_minor": 0,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "Filed amount due: €0.00. The bank debit is not confirmed.",
+          "tone": "pending"
+        }
+      },
+      {
+        "summary": {
+          "settlement_status": "payment_unconfirmed",
+          "total_payable_minor": 12345,
+          "total_confirmed_paid_minor": 10000,
+          "outstanding_minor": 2345,
+          "overpaid_minor": 0,
+          "calculated_as_of": "2026-07-01",
+          "calculation_source": "filed"
+        },
+        "phase": "future",
+        "expected": {
+          "label": "Confirmed paid",
+          "amount": 10000,
+          "detail": "Filed amount due: €123.45. The bank debit is not confirmed.",
+          "tone": "pending"
+        }
+      }
+    ],
+    "forms": [
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "filed",
+          "values": {},
+          "headline_value": null,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "filed_without_values",
+          "values": {},
+          "headline_value": null,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "filed 01 Jul 2026 · carry-forward €0.00"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "filed",
+          "values": {},
+          "headline_value": 0,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "filed",
+          "values": {},
+          "headline_value": 0,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "filed 01 Jul 2026 · carry-forward €0.00"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "filed",
+          "values": {},
+          "headline_value": 12.34,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "filed",
+          "values": {},
+          "headline_value": 12.34,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "filed 01 Jul 2026 · carry-forward €0.00"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "filed_without_values",
+          "values": {},
+          "headline_value": null,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "filed_without_values",
+          "values": {},
+          "headline_value": null,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "filed 01 Jul 2026 · values unavailable"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "filed_without_values",
+          "values": {},
+          "headline_value": 0,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "filed_without_values",
+          "values": {},
+          "headline_value": 0,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "filed 01 Jul 2026 · values unavailable"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "filed_without_values",
+          "values": {},
+          "headline_value": 12.34,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "filed_without_values",
+          "values": {},
+          "headline_value": 12.34,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "filed 01 Jul 2026 · values unavailable"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "preview",
+          "values": {},
+          "headline_value": null,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "preview",
+          "values": {},
+          "headline_value": null,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "filed · calculated as of 02 Jul 2026 · carry-forward €0.00"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "preview",
+          "values": {},
+          "headline_value": 0,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "preview",
+          "values": {},
+          "headline_value": 0,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "filed · calculated as of 02 Jul 2026 · carry-forward €0.00"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "preview",
+          "values": {},
+          "headline_value": 12.34,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "preview",
+          "values": {},
+          "headline_value": 12.34,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "filed · calculated as of 02 Jul 2026 · carry-forward €0.00"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "snapshot_only",
+          "values": {},
+          "headline_value": null,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "snapshot_only",
+          "values": {},
+          "headline_value": null,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "filing snapshot available · carry-forward €0.00"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "snapshot_only",
+          "values": {},
+          "headline_value": 0,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "snapshot_only",
+          "values": {},
+          "headline_value": 0,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "filing snapshot available · carry-forward €0.00"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "snapshot_only",
+          "values": {},
+          "headline_value": 12.34,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "snapshot_only",
+          "values": {},
+          "headline_value": 12.34,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "filing snapshot available · carry-forward €0.00"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "unavailable",
+          "values": {},
+          "headline_value": null,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "unavailable",
+          "values": {},
+          "headline_value": null,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "filed · calculation not refreshed"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "unavailable",
+          "values": {},
+          "headline_value": 0,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "unavailable",
+          "values": {},
+          "headline_value": 0,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "filed · calculation not refreshed"
+      },
+      {
+        "form": {
+          "form_code": "130",
+          "display_state": "unavailable",
+          "values": {},
+          "headline_value": 12.34,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02"
+        },
+        "obligation": {
+          "obligation_code": "130",
+          "determination": "due",
+          "filing_status": "filed"
+        },
+        "expected": {
+          "form_code": "130",
+          "display_state": "unavailable",
+          "values": {},
+          "headline_value": 12.34,
+          "headline_detail": 0,
+          "filed_on": "2026-07-01",
+          "preview_as_of": "2026-07-02",
+          "obligationFiled": true
+        },
+        "subtitle": "filed · calculation not refreshed"
+      }
+    ]
+  }
+]

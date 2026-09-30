@@ -17,4 +17,4 @@ jobs:
           fetch-depth: 0
 
       - name: Scan tracked content and reachable history
-        run: python scripts/privacy_guard.py --history
+        run: python scripts/dev/privacy_guard.py --history
