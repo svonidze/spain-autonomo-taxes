@@ -258,6 +258,7 @@ from .tax_report_sequence import (
     write_tax_report_sequence_csv,
     write_tax_report_sequence_markdown,
 )
+from .tax_rules import IMMEDIATE_WRITE_OFF_UNIT_LIMIT_EUR, difficult_expense_rate_for_year
 from .target_values_coverage import (
     build_target_values_coverage,
     write_target_values_coverage_csv,
@@ -1639,7 +1640,7 @@ def _cmd_modelo130(args: argparse.Namespace) -> int:
         target = extract_modelo130_values(Path(args.target_report), year, quarter)
 
     income_entries, income_manual = scan_income_dir(xolo_root / "INVOICE")
-    asset_threshold = parse_amount(args.asset_review_threshold_eur or "600.00")
+    asset_threshold = parse_amount(args.asset_review_threshold_eur or str(IMMEDIATE_WRITE_OFF_UNIT_LIMIT_EUR))
     expense_entries, expense_manual = scan_expense_dir(xolo_root / "EXPENSE", asset_threshold)
     manual = income_manual + expense_manual
     reviewed: list[LedgerEntry] = []
@@ -1716,7 +1717,7 @@ def _cmd_modelo130(args: argparse.Namespace) -> int:
         previous,
         minoracion=target.get("13", Decimal("0.00")) if target else Decimal("0.00"),
         include_difficult_expenses=args.difficult_expenses_policy == "include",
-        difficult_expenses_rate=_difficult_expenses_rate_for_year(year),
+        difficult_expenses_rate=difficult_expense_rate_for_year(year),
     )
     manifest = _build_manifest(args, xolo_root, out_dir, target is not None)
 
@@ -1758,7 +1759,7 @@ def _cmd_xolo_reconcile(args: argparse.Namespace) -> int:
     year = int(args.year)
     quarter = int(args.quarter)
     rows = load_xolo_expense_ledger(Path(args.xolo_expense_ledger))
-    asset_threshold = parse_amount(args.asset_review_threshold_eur or "600.00")
+    asset_threshold = parse_amount(args.asset_review_threshold_eur or str(IMMEDIATE_WRITE_OFF_UNIT_LIMIT_EUR))
     expense_entries, expense_manual = scan_expense_dir(xolo_root / "EXPENSE", asset_threshold)
     for evidence_root in args.additional_expense_root:
         additional_entries, additional_manual = scan_expense_dir(
@@ -2034,10 +2035,6 @@ def _manual_relevant_to_run(entry: LedgerEntry, year: int, quarter: int) -> bool
         return True
     name = Path(entry.document).name
     return str(year) in name
-
-
-def _difficult_expenses_rate_for_year(year: int) -> Decimal:
-    return Decimal("0.07") if year == 2023 else Decimal("0.05")
 
 
 if __name__ == "__main__":

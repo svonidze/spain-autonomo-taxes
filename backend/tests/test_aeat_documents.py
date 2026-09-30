@@ -69,8 +69,8 @@ def test_migrates_schema_24_to_25(tmp_path: Path) -> None:
         ):
             db.connection.execute(f"DROP TRIGGER {name}")
         for name in (
-            "aeat_case_events", "aeat_documents", "aeat_cases",
             "reta_base_election_voids", "reta_base_elections", "reta_rate_tables",
+            "vies_checks", "aeat_case_events", "aeat_documents", "aeat_cases",
         ):
             db.connection.execute(f"DROP TABLE {name}")
         db.connection.execute("PRAGMA user_version = 24")

@@ -1,7 +1,8 @@
 # Documentation
 
 User guidance is in [user/](user/): the accounting workflow, statuses, account
-settings, counterparty corrections, exchange rates, history replay, and the
+settings, counterparty corrections, VIES checks, exchange rates, history replay,
+the [Renta WEB draft review checklist](user/RENTA_DRAFT_CHECKLIST.md), and the
 [RETA bracket check](user/RETA_CHECK.md).
 Developer guidance is in [development/](development/): frontend development,
 localization, privacy, and the repository layout. Operational runbooks live in
