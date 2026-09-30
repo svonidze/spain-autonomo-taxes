@@ -3,6 +3,7 @@ import unittest
 
 from autonomo_taxes.tax_rules import (
     DIFFICULT_EXPENSE_CAP_EUR,
+    FORM_RULES,
     calculate_difficult_expenses,
     difficult_expense_rate_for_year,
     difficult_expense_rule_for_year,
@@ -15,6 +16,8 @@ class TaxRulesTests(unittest.TestCase):
     def test_difficult_expense_rule_is_year_versioned(self):
         self.assertEqual(difficult_expense_rate_for_year(2023), Decimal("0.07"))
         self.assertEqual(difficult_expense_rate_for_year(2024), Decimal("0.05"))
+        self.assertEqual(difficult_expense_rate_for_year(2025), Decimal("0.05"))
+        self.assertEqual(difficult_expense_rate_for_year(2026), Decimal("0.05"))
         self.assertEqual(difficult_expense_rule_for_year(2026).annual_cap_eur, DIFFICULT_EXPENSE_CAP_EUR)
         self.assertEqual(calculate_difficult_expenses(2023, Decimal("1000.00"), Decimal("0.00")), Decimal("70.00"))
         self.assertEqual(calculate_difficult_expenses(2024, Decimal("1000.00"), Decimal("0.00")), Decimal("50.00"))
@@ -60,6 +63,13 @@ class TaxRulesTests(unittest.TestCase):
         recognized = recognize_tax_form_filename("MOD 130 4T presentado 2024-01-20.pdf")
         self.assertIsNotNone(recognized)
         self.assertEqual(recognized.period, "2023-Q4")
+
+    def test_every_form_rule_has_a_verifiable_https_source_url(self):
+        # Same host prefix tax_calendar.py requires for a confirmed deadline source_url.
+        aeat_prefix = "https://sede.agenciatributaria.gob.es/"
+        for code, rule in FORM_RULES.items():
+            with self.subTest(code=code):
+                self.assertTrue(rule.source_url.startswith(aeat_prefix), rule.source_url)
 
 
 if __name__ == "__main__":

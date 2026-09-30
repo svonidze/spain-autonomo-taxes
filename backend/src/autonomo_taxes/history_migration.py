@@ -22,6 +22,7 @@ from .ledger_db import LedgerDB
 from .money import parse_amount
 from .tax_rules import (
     ANNUAL_FORM_CODES,
+    EU_COUNTRY_CODES,
     FORM_RULES,
     QUARTERLY_FORM_CODES,
     recognize_tax_form_filename,
@@ -30,35 +31,6 @@ from .tax_engine import EU_349_CODES
 
 
 MIGRATION_NAMESPACE = UUID("adca0a24-7f65-4bde-9251-558c3d820889")
-EU_COUNTRY_CODES = {
-    "AT",
-    "BE",
-    "BG",
-    "CY",
-    "CZ",
-    "DE",
-    "DK",
-    "EE",
-    "ES",
-    "FI",
-    "FR",
-    "GR",
-    "HR",
-    "HU",
-    "IE",
-    "IT",
-    "LT",
-    "LU",
-    "LV",
-    "MT",
-    "NL",
-    "PL",
-    "PT",
-    "RO",
-    "SE",
-    "SI",
-    "SK",
-}
 QUARTERLY_BOOK_TYPES = {
     "ingresos_book": "income",
     "gastos_book": "expense",

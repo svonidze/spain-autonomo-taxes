@@ -7,7 +7,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from .tax_rules import ALL_FORM_CODES
 
@@ -49,6 +49,7 @@ class TaxScheduleEvent:
     forms: tuple[str, ...]
     determinations: tuple[tuple[str, str], ...]
     statutory_due_on: date | None = None
+    category: str = "tax-filing"
 
 
 def load_tax_calendar(path: Path) -> TaxCalendarLoadResult:
@@ -123,6 +124,7 @@ def build_period_ics(
     period_ends_on: date,
     obligations: list[dict[str, Any]],
     cash_check: Mapping[str, Any] | None = None,
+    extra_events: Sequence[TaxScheduleEvent] = (),
 ) -> str:
     schedulable = [
         row for row in obligations if obligation_has_confirmed_schedule(row)
@@ -134,7 +136,7 @@ def build_period_ics(
         cash_check=cash_check,
         split_by_determination=False,
     )
-    return _serialize_ics(events, period_key=period_key)
+    return _serialize_ics(list(events) + list(extra_events), period_key=period_key)
 
 
 def build_period_schedule_events(
@@ -311,7 +313,8 @@ def _serialize_ics(
             uid_suffix = f"{uid_suffix}-{kind_date_seen[identity]}"
         uid = f"{period_key}-{uid_suffix}@spain-autonomo-taxes"
         lines.extend(
-            [
+            _fold_ics_line(line)
+            for line in [
                 "BEGIN:VEVENT",
                 f"UID:{uid}",
                 f"DTSTAMP:{year}0101T000000Z",
@@ -319,6 +322,7 @@ def _serialize_ics(
                 f"DTEND;VALUE=DATE:{event.event_date + timedelta(days=1):%Y%m%d}",
                 f"SUMMARY:{_ics_escape(event.summary)}",
                 f"DESCRIPTION:{_ics_escape(event.description)}",
+                f"CATEGORIES:{_ics_escape(event.category.upper())}",
                 "END:VEVENT",
             ]
         )
@@ -328,6 +332,27 @@ def _serialize_ics(
 
 def _ics_escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+
+
+def _fold_ics_line(line: str) -> str:
+    # RFC 5545 3.1: content lines SHOULD NOT exceed 75 octets (excluding the
+    # line break); longer lines are folded by inserting CRLF + a single
+    # leading space before each continuation. Folding must not split a
+    # multi-byte UTF-8 character.
+    data = line.encode("utf-8")
+    if len(data) <= 75:
+        return line
+    segments: list[bytes] = []
+    start = 0
+    limit = 75
+    while start < len(data):
+        end = min(start + limit, len(data))
+        while end < len(data) and (data[end] & 0xC0) == 0x80:
+            end -= 1
+        segments.append(data[start:end])
+        start = end
+        limit = 74  # continuation lines reserve one octet for the leading space
+    return "\r\n ".join(segment.decode("utf-8") for segment in segments)
 
 
 def _validated_group(
