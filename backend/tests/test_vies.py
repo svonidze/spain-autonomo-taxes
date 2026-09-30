@@ -220,10 +220,11 @@ def test_checks_are_immutable_and_protect_the_counterparty(tmp_path: Path) -> No
         assert _prune_unreferenced_migration_counterparty(db, party["counterparty_id"]) is False
 
 
-def test_migrates_schema_25_to_26(tmp_path: Path) -> None:
+def test_migrates_schema_25_to_27_preserves_vies_migration_26(tmp_path: Path) -> None:
     database = tmp_path / "ledger.sqlite"
     with LedgerDB.initialize(database) as db:
-        db.connection.execute("DROP TABLE vies_checks")
+        for name in ("reta_base_election_voids", "reta_base_elections", "reta_rate_tables", "vies_checks"):
+            db.connection.execute(f"DROP TABLE {name}")
         db.connection.execute("PRAGMA user_version = 25")
         db.connection.commit()
     with LedgerDB.open(database, apply_migrations=True) as db:

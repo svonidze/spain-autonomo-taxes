@@ -268,11 +268,12 @@ decides. Change the definitions here first, then the code.
   - `unknown` with reason codes and `null` estimates, never `ok`: missing
     bases, unposted rows or missing periods in the window, a missing table,
     no regularisable days, bases below the table minimum (Orden art. 18.6 and
-    18.11 special bases), and societarios or familiares colaboradores, whose
-    grupo 7 floor (art. 44.3.b) and, for 305.2.b/e, entity income (LGSS
-    art. 308.1.c regla 1.ª) the ledger does not hold. Ledger-side reasons
-    also null the income, tramo and sensitivity, and so does the societario
-    kind, whose income is incomplete without the entity part.
+    18.11 special bases) or above its maximum, and societarios or
+    familiares colaboradores, whose grupo 7 floor (art. 44.3.b) and, for
+    305.2.b/e, entity income (LGSS art. 308.1.c regla 1.ª) the ledger does
+    not hold. Ledger-side reasons also null the income, tramo and
+    sensitivity, and so does the societario kind, whose income is incomplete
+    without the entity part.
 - **Taxes-page headline**: the large amount is the cash expected to leave for
   AEAT in the selected quarter, with IRPF and IVA kept as separate components
   immediately below it. A negative IVA result never offsets positive IRPF in

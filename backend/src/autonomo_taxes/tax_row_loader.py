@@ -91,6 +91,13 @@ def load_tax_rows(
                     f"Conflicting vat_investment_good for transaction {raw['transaction_id']}"
                 )
             bucket["vat_investment_good"] = investment
+        concept = raw.get("aeat_expense_concept")
+        if concept:
+            if bucket.get("aeat_expense_concept") not in {None, "", concept}:
+                raise CalculationBlocked(
+                    f"Conflicting aeat_expense_concept for transaction {raw['transaction_id']}"
+                )
+            bucket["aeat_expense_concept"] = concept
         for key in ("include_modelo130", "include_modelo303", "include_modelo347"):
             bucket[key] = int(bool(bucket.get(key)) or bool(raw.get(key)))
 
@@ -140,4 +147,5 @@ def _to_tax_row(row: dict[str, Any]) -> TaxRow:
         vat_investment_good=(
             None if row.get("vat_investment_good") is None else bool(row["vat_investment_good"])
         ),
+        aeat_expense_concept=row.get("aeat_expense_concept") or "",
     )

@@ -29,11 +29,12 @@ from .outgoing_invoices import (
     validate_professional_withholding,
     validate_withholding_rate,
 )
+from .reta import REGIMES as RETA_REGIMES, WORKER_KINDS as RETA_WORKER_KINDS, parse_reta_table
 from .tax_rules import ALL_FORM_CODES, ANNUAL_FORM_CODES, FORM_RULES, QUARTERLY_FORM_CODES
 from .vat_classification import is_vat_investment_good
 
 
-LATEST_SCHEMA_VERSION = 26
+LATEST_SCHEMA_VERSION = 27
 
 # Migrations that rebuild a table referenced by a foreign key. They must
 # run with foreign-key enforcement temporarily disabled, and that pragma
@@ -4009,6 +4010,155 @@ class LedgerDB:
         sql += " ORDER BY tc.statutory_due_on, p.period_key, tc.form_code"
         return self._fetch_all(sql, tuple(params))
 
+    def import_reta_table(self, raw_bytes: bytes) -> dict[str, Any]:
+        """Store a validated ``reference/reta/<year>.json`` byte for byte."""
+        table = parse_reta_table(raw_bytes)
+        year, source_hash = table.year, table.source_file_hash
+        source_url = json.loads(raw_bytes.decode("utf-8-sig"))["source_url"]
+        with self.transaction():
+            existing = self.reta_rate_table(year)
+            if existing is not None and existing["source_hash"] == source_hash:
+                return {**existing, "changed": False}
+            self.connection.execute(
+                """
+                INSERT INTO reta_rate_tables (year, payload_json, source_url, source_hash, imported_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT (year) DO UPDATE SET payload_json = excluded.payload_json,
+                    source_url = excluded.source_url, source_hash = excluded.source_hash,
+                    imported_at = excluded.imported_at
+                """,
+                (year, raw_bytes.decode("utf-8"), source_url, source_hash, _utc_now()),
+            )
+        return {**self.reta_rate_table(year), "changed": True}
+
+    def reta_rate_table(self, year: int) -> dict[str, Any] | None:
+        return self._fetch_optional("SELECT * FROM reta_rate_tables WHERE year = ?", (year,))
+
+    def add_reta_base_election(
+        self,
+        *,
+        effective_from: str,
+        regime: str,
+        monthly_base_minor: int | None,
+        worker_kind: str,
+        source_reference: str,
+        source_hash: str | None = None,
+    ) -> dict[str, Any]:
+        """Append the base (or tarifa plana) a TGSS resolution sets from ``effective_from``.
+
+        Rows are immutable; a mistaken one is voided, never edited. Live rows
+        are entered in date order, one per date. RD 2064/1995 art. 45.1 lets a
+        base change only on 1 Jan/Mar/May/Jul/Sep/Nov; the first row, a row on
+        a business activity's ``starts_on`` (an alta or re-alta) and the row
+        after a tarifa plana may start on any day. A base cannot exceed the
+        maximum of that year's RETA table.
+        """
+        start = date.fromisoformat(effective_from)
+        source_reference = source_reference.strip()
+        if regime not in RETA_REGIMES:
+            raise ValueError(f"RETA regime must be one of {RETA_REGIMES}")
+        if worker_kind not in RETA_WORKER_KINDS:
+            raise ValueError(f"RETA worker_kind must be one of {RETA_WORKER_KINDS}")
+        if (monthly_base_minor is None) != (regime == "tarifa_plana"):
+            raise ValueError("A RETA base row needs a monthly base; a tarifa plana row has none")
+        if monthly_base_minor is not None and (
+            isinstance(monthly_base_minor, bool)
+            or not isinstance(monthly_base_minor, int)
+            or monthly_base_minor <= 0
+        ):
+            raise ValueError("The RETA monthly base must be a positive amount in minor units")
+        if not source_reference:
+            raise ValueError("A RETA base election needs the TGSS source reference")
+        profiles = self._fetch_all("SELECT taxpayer_profile_id FROM taxpayer_profile")
+        if len(profiles) != 1:
+            raise ValueError("RETA base elections require exactly one taxpayer profile")
+        profile_id = profiles[0]["taxpayer_profile_id"]
+        payload = {
+            "taxpayer_profile_id": profile_id,
+            "effective_from": start.isoformat(),
+            "regime": regime,
+            "monthly_base_minor": monthly_base_minor,
+            "worker_kind": worker_kind,
+            "source_reference": source_reference,
+        }
+        payload["source_hash"] = source_hash or _stable_hash(payload)
+        with self.transaction():
+            live = [row for row in self.list_reta_base_elections() if row["taxpayer_profile_id"] == profile_id]
+            existing = next((row for row in live if row["effective_from"] == payload["effective_from"]), None)
+            if existing is not None:
+                if all(existing[key] == value for key, value in payload.items()):
+                    return existing
+                raise ValueError(
+                    f"A different RETA base election already starts on {payload['effective_from']}; "
+                    "void it first"
+                )
+            last = live[-1] if live else None
+            if last is not None and payload["effective_from"] <= last["effective_from"]:
+                raise ValueError(
+                    f"RETA base elections are entered in date order; the last starts on {last['effective_from']}"
+                )
+            alta_dates = {
+                row["starts_on"] for row in self.list_business_activities(taxpayer_profile_id=profile_id)
+            }
+            if (
+                last is not None
+                and last["regime"] != "tarifa_plana"
+                and payload["effective_from"] not in alta_dates
+                and not (start.day == 1 and start.month in {1, 3, 5, 7, 9, 11})
+            ):
+                raise ValueError(
+                    "A RETA base change takes effect on 1 January, March, May, July, September "
+                    "or November (RD 2064/1995 art. 45.1)"
+                )
+            if monthly_base_minor is not None:
+                table = self.reta_rate_table(start.year)
+                if table is None:
+                    raise ValueError(f"Import the {start.year} RETA table before recording a base in it")
+                maximum = parse_reta_table(table["payload_json"].encode("utf-8")).maximum_base_minor
+                if monthly_base_minor > maximum:
+                    raise ValueError(f"The RETA base exceeds the {start.year} maximum base {maximum}")
+            election_id = _new_id()
+            self.connection.execute(
+                """
+                INSERT INTO reta_base_elections (
+                    election_id, taxpayer_profile_id, effective_from, regime,
+                    monthly_base_minor, worker_kind, source_reference, source_hash, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (election_id, *payload.values(), _utc_now()),
+            )
+        return self._fetch_one("SELECT * FROM reta_base_elections WHERE election_id = ?", (election_id,))
+
+    def void_reta_base_election(self, *, election_id: str, source_reference: str) -> dict[str, Any]:
+        source_reference = source_reference.strip()
+        if not source_reference:
+            raise ValueError("Voiding a RETA base election needs a source reference")
+        with self.transaction():
+            if self._fetch_optional("SELECT 1 FROM reta_base_elections WHERE election_id = ?", (election_id,)) is None:
+                raise ValueError(f"Unknown RETA base election {election_id}")
+            existing = self._fetch_optional(
+                "SELECT * FROM reta_base_election_voids WHERE election_id = ?", (election_id,)
+            )
+            if existing is not None:
+                if existing["source_reference"] == source_reference:
+                    return existing
+                raise ValueError(f"RETA base election {election_id} is already void")
+            self.connection.execute(
+                "INSERT INTO reta_base_election_voids (election_id, source_reference, created_at) VALUES (?, ?, ?)",
+                (election_id, source_reference, _utc_now()),
+            )
+        return self._fetch_one("SELECT * FROM reta_base_election_voids WHERE election_id = ?", (election_id,))
+
+    def list_reta_base_elections(self) -> list[dict[str, Any]]:
+        """Live (not voided) base elections in date order."""
+        return self._fetch_all(
+            """
+            SELECT e.* FROM reta_base_elections e
+            WHERE NOT EXISTS (SELECT 1 FROM reta_base_election_voids v WHERE v.election_id = e.election_id)
+            ORDER BY e.taxpayer_profile_id, e.effective_from
+            """
+        )
+
     def list_obligations_with_deadlines(self, *, period_key: str) -> list[dict[str, Any]]:
         rows = self._fetch_all(
             """
@@ -5347,6 +5497,7 @@ class LedgerDB:
                    tt.deductible_irpf_minor, tt.deductible_vat_minor, tt.withholding_minor,
                    tt.include_modelo130, tt.include_modelo303, tt.include_modelo347,
                    tt.treatment_type, tt.jurisdiction, tt.vat_investment_good,
+                   tt.aeat_expense_concept,
                    CASE
                        WHEN COALESCE(at.asset_count, 0) + COALESCE(ad.asset_count, 0) > 0
                            THEN COALESCE(at.asset_id, ad.asset_id)
@@ -6210,6 +6361,9 @@ class LedgerDB:
             "fx_rates",
             "obligations",
             "tax_calendar_entries",
+            "reta_rate_tables",
+            "reta_base_elections",
+            "reta_base_election_voids",
             "validation_issues",
             "filing_snapshots",
             "aeat_cases",
@@ -8112,6 +8266,51 @@ def _migration_26(connection: sqlite3.Connection) -> None:
         )
 
 
+def _migration_27(connection: sqlite3.Connection) -> None:
+    connection.execute("""
+        CREATE TABLE reta_base_elections (
+            election_id TEXT PRIMARY KEY,
+            taxpayer_profile_id TEXT NOT NULL REFERENCES taxpayer_profile(taxpayer_profile_id),
+            effective_from TEXT NOT NULL,
+            regime TEXT NOT NULL CHECK (regime IN ('base', 'tarifa_plana')),
+            monthly_base_minor INTEGER CHECK (monthly_base_minor IS NULL OR monthly_base_minor > 0),
+            worker_kind TEXT NOT NULL CHECK (worker_kind IN ('individual', 'societario', 'colaborador')),
+            source_reference TEXT NOT NULL CHECK (length(trim(source_reference)) > 0),
+            source_hash TEXT NOT NULL CHECK (
+                length(source_hash) = 64 AND source_hash NOT GLOB '*[^0-9a-f]*'
+            ),
+            created_at TEXT NOT NULL,
+            CHECK ((regime = 'tarifa_plana') = (monthly_base_minor IS NULL))
+        )
+    """)
+    # A void withdraws a mistaken row; one live row per date is checked in code.
+    connection.execute("""
+        CREATE TABLE reta_base_election_voids (
+            election_id TEXT PRIMARY KEY REFERENCES reta_base_elections(election_id),
+            source_reference TEXT NOT NULL CHECK (length(trim(source_reference)) > 0),
+            created_at TEXT NOT NULL
+        )
+    """)
+    connection.execute("""
+        CREATE TABLE reta_rate_tables (
+            year INTEGER PRIMARY KEY,
+            payload_json TEXT NOT NULL,
+            source_url TEXT NOT NULL,
+            source_hash TEXT NOT NULL CHECK (
+                length(source_hash) = 64 AND source_hash NOT GLOB '*[^0-9a-f]*'
+            ),
+            imported_at TEXT NOT NULL
+        )
+    """)
+    for table in ("reta_base_elections", "reta_base_election_voids"):
+        for action in ("UPDATE", "DELETE"):
+            connection.execute(
+                f"CREATE TRIGGER {table}_no_{action.lower()} BEFORE {action} "
+                f"ON {table} BEGIN "
+                "SELECT RAISE(ABORT, 'RETA base elections are append-only'); END"
+            )
+
+
 _MIGRATIONS = {
     1: _migration_1,
     2: _migration_2,
@@ -8139,4 +8338,5 @@ _MIGRATIONS = {
     24: _migration_24,
     25: _migration_25,
     26: _migration_26,
+    27: _migration_27,
 }

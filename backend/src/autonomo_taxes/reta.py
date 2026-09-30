@@ -67,7 +67,10 @@ class BaseElection:
 
 
 def load_reta_table(path: Path) -> RetaTable:
-    raw_bytes = path.read_bytes()
+    return parse_reta_table(path.read_bytes())
+
+
+def parse_reta_table(raw_bytes: bytes) -> RetaTable:
     payload = json.loads(raw_bytes.decode("utf-8-sig"))
     if not isinstance(payload, dict):
         raise ValueError("RETA table input must be a JSON object")
@@ -242,7 +245,8 @@ def bracket_check(
     used_bases = {base for row in all_months for base in row["bases"]}
     if table_ok:
         if any(base > table.maximum_base_minor for base in used_bases):
-            raise ValueError(f"An elected base exceeds the {table.year} maximum base {table.maximum_base_minor}")
+            # A table re-import can lower the maximum under a recorded base.
+            found.append("base_above_table_maximum")
         if any(base < table.tramos[0].min_base_minor for base in used_bases):
             # Orden art. 18.6 / 18.11 special bases; their regularisation is not modelled.
             found.append("base_below_table_minimum")

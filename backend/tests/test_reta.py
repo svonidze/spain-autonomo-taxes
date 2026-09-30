@@ -310,6 +310,7 @@ def test_partial_month_counts_thirtieths_of_the_base_and_the_tramo_limits() -> N
     [
         ({"elections": [BaseElection(date(2026, 3, 1), "base", 100_000)]}, ["base_missing"], True),
         ({"elections": [BaseElection(date(2026, 1, 1), "base", 50_000)]}, ["base_below_table_minimum"], True),
+        ({"elections": [BaseElection(date(2026, 1, 1), "base", 510_121)]}, ["base_above_table_maximum"], True),
         ({"table": None}, ["table_unavailable"], False),
         ({"irpf_net_income_minor": None}, ["ledger_blocked"], False),
         ({"reasons": ["unposted_rows_in_window", "period_missing"]}, ["unposted_rows_in_window", "period_missing"], False),
@@ -345,7 +346,6 @@ def test_table_for_another_year_is_unavailable() -> None:
         ({"reasons": ["looks_fine"]}, "Unsupported caller reasons"),
         ({"worker_kind": "employee"}, "worker_kind"),
         ({"elections": [BaseElection(date(2026, 1, 1), "base", None)]}, "positive monthly_base_minor"),
-        ({"elections": [BaseElection(date(2026, 1, 1), "base", 510_121)]}, "exceeds the 2026 maximum base"),
     ],
 )
 def test_bracket_check_rejects_malformed_inputs(overrides, message: str) -> None:
