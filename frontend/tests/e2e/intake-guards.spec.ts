@@ -108,6 +108,7 @@ test('closed intake does not interrupt a pending rename or submit it twice', asy
   expect(calls.lists).toBe(1);
   expect(confirmations).toBe(0);
   saved.release();
+  await expect.poll(() => calls.lists).toBe(2);
   await expect(page.locator('.counterparty-link')).toContainText('Synthetic unsaved rename');
   await expect(page.locator('#vue-counterparty-name-dialog')).not.toBeVisible();
   expect(writes).toBe(1);

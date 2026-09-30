@@ -14,9 +14,15 @@ from autonomo_taxes.modelo130 import (
 
 class Modelo130Tests(unittest.TestCase):
     def test_difficult_expenses_are_five_percent_capped(self):
-        self.assertEqual(difficult_expenses(Decimal("100000"), Decimal("10000")), Decimal("2000.00"))
-        self.assertEqual(difficult_expenses(Decimal("10000"), Decimal("8000")), Decimal("100.00"))
-        self.assertEqual(difficult_expenses(Decimal("1000"), Decimal("1200")), Decimal("0.00"))
+        self.assertEqual(
+            difficult_expenses(Decimal("100000"), Decimal("10000"), rate=Decimal("0.05")), Decimal("2000.00")
+        )
+        self.assertEqual(
+            difficult_expenses(Decimal("10000"), Decimal("8000"), rate=Decimal("0.05")), Decimal("100.00")
+        )
+        self.assertEqual(
+            difficult_expenses(Decimal("1000"), Decimal("1200"), rate=Decimal("0.05")), Decimal("0.00")
+        )
         self.assertEqual(
             difficult_expenses(Decimal("1000"), Decimal("0"), rate=Decimal("0.07")),
             Decimal("70.00"),
@@ -27,6 +33,7 @@ class Modelo130Tests(unittest.TestCase):
             income_ytd=Decimal("36770.89"),
             deductible_before_difficult_ytd=Decimal("8885.98"),
             previous_positive_casilla_07=Decimal("2659.01"),
+            difficult_expenses_rate=Decimal("0.05"),
         )
         self.assertEqual(result.casilla_02, Decimal("10280.23"))
         self.assertEqual(result.casilla_03, Decimal("26490.66"))
@@ -39,6 +46,7 @@ class Modelo130Tests(unittest.TestCase):
             deductible_before_difficult_ytd=Decimal("10280.23"),
             previous_positive_casilla_07=Decimal("2659.01"),
             include_difficult_expenses=False,
+            difficult_expenses_rate=Decimal("0.05"),
         )
         self.assertEqual(result.casilla_02, Decimal("10280.23"))
         self.assertEqual(result.casilla_19, Decimal("2639.12"))

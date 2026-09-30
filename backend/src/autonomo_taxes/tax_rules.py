@@ -15,6 +15,37 @@ QUARTERLY_FORM_CODES = ("130", "303", "349", "111", "115", "216")
 ANNUAL_FORM_CODES = ("390", "347", "190", "180", "296", "100", "714", "720", "721")
 ALL_FORM_CODES = QUARTERLY_FORM_CODES + ANNUAL_FORM_CODES
 DIFFICULT_EXPENSE_CAP_EUR = Decimal("2000.00")
+DIRECT_ESTIMATION_IRPF_METHODS = frozenset(
+    {"estimacion_directa", "estimacion_directa_normal", "estimacion_directa_simplificada"}
+)
+NEW_ACTIVITY_REDUCTION_RATE = Decimal("0.20")
+NEW_ACTIVITY_REDUCTION_BASE_CAP_EUR = Decimal("100000.00")
+NEW_ACTIVITY_REDUCTION_SOURCE = (
+    "LIRPF art. 32.3 (Ley 35/2006): taxpayers in estimacion directa who start an economic activity "
+    "may reduce by 20% the positive net activity income of the first tax period with positive net "
+    "income and of the following period, on at most 100,000 EUR per year. No activity may have been "
+    "exercised in the year before the start date (ceased activities without positive net income do "
+    "not count); excluded when more than 50% of the period's income comes from a payer of employment "
+    "income in the year before the start. AEAT Manual practico IRPF 2024: "
+    "https://sede.agenciatributaria.gob.es/Sede/ayuda/manuales-videos-folletos/manuales-practicos/"
+    "irpf-2024/c07-rendimientos-actividades-economicas-estimacion-directa/"
+    "fase-3-determinacion-rendimiento-neto-total/reduccion-rendimiento-neto-inicio-actividad-economica.html"
+)
+# Libertad de amortizacion for immaterial-value tangible fixed assets: Ley 27/2014
+# (LIS) art. 12.3, applicable to IRPF estimacion directa. Immediate write-off is
+# only allowed for new items with unit value <= 300 EUR, up to a cumulative
+# IMMEDIATE_WRITE_OFF_ANNUAL_CAP_EUR per tax period. Above the unit limit,
+# amortize per the simplified table (IT equipment: max 26%/year, max 10 years).
+# See AEAT manual:
+# https://sede.agenciatributaria.gob.es/Sede/ayuda/manuales-videos-folletos/manuales-practicos/irpf-2024/c07-rendimientos-actividades-economicas-estimacion-directa/fase-1-determinacion-rendimiento-neto/amortizaciones-dotaciones-ejercicio-fiscalmente-deducibles/supuestos-libertad-amortizacion.html
+# The expense parsers compare this limit against the whole invoice base
+# (conservative for multi-item invoices, which can include several sub-300 EUR
+# units) and against the base without recoverable IVA (prorrata/exempt-activity
+# IVA treatment is not modelled).
+IMMEDIATE_WRITE_OFF_UNIT_LIMIT_EUR = Decimal("300.00")
+IMMEDIATE_WRITE_OFF_ANNUAL_CAP_EUR = Decimal("25000.00")
+# Date every FORM_RULES.source_url below was last confirmed to resolve (HTTP 200).
+SOURCE_CHECKED_ON = "2026-09-24"
 
 _YEAR_PATTERN = re.compile(r"(?<!\d)(20\d{2})(?!\d)")
 _QUARTER_PATTERNS = (
@@ -34,6 +65,7 @@ class FormRule:
     category: str
     cadence: TaxFormCadence
     source_citation: str
+    source_url: str
     introduced_year: int | None = None
 
 
@@ -59,25 +91,48 @@ FORM_RULES: dict[str, FormRule] = {
         code="130",
         category="modelo130_report",
         cadence="quarterly",
-        source_citation="AEAT Modelo 130: IRPF. Empresarios y profesionales en Estimacion Directa. Pago fraccionado.",
+        source_citation=(
+            "AEAT Modelo 130: IRPF. Empresarios y profesionales en Estimacion Directa. Pago fraccionado. "
+            "LIRPF art. 99.1.c) y 99.7 (obligacion de pago fraccionado); RIRPF arts. 109-112 "
+            "(obligados, importe, declaracion e ingreso)."
+        ),
+        source_url="https://sede.agenciatributaria.gob.es/Sede/procedimientoini/G601.shtml",
     ),
     "303": FormRule(
         code="303",
         category="modelo303_report",
         cadence="quarterly",
-        source_citation="AEAT Modelo 303: IVA. Autoliquidacion.",
+        source_citation=(
+            "AEAT Modelo 303: IVA. Autoliquidacion. "
+            "LIVA art. 164.Uno.6 (presentar las declaraciones-liquidaciones e ingresar el impuesto); "
+            "RIVA art. 71 (liquidacion del impuesto, normas generales)."
+        ),
+        source_url="https://sede.agenciatributaria.gob.es/Sede/procedimientoini/G414.shtml",
     ),
+    # V2594-21 could not be checked directly: petete.tributos.hacienda.gob.es fails
+    # certificate verification (incomplete FNMT chain). Verified instead from a
+    # third-party copy via a Wayback Machine snapshot of a mirror; checked 2026-09-24.
     "349": FormRule(
         code="349",
         category="modelo349_report",
         cadence="quarterly",
-        source_citation="AEAT Modelo 349: Declaracion recapitulativa de operaciones intracomunitarias.",
+        source_citation=(
+            "AEAT Modelo 349: Declaracion recapitulativa de operaciones intracomunitarias. "
+            "LIVA art. 164.Uno.5 (declaracion recapitulativa de operaciones intracomunitarias); "
+            "RIVA arts. 78-81 (declaracion recapitulativa: obligados, contenido, lugar, forma y plazos). "
+            "DGT consulta vinculante V2594-21 (25-10-2021): quien cobra de una empresa establecida en Irlanda "
+            "por servicios prestados a traves de una plataforma de internet (p. ej. YouTube/Google) debe "
+            "inscribirse en el ROI, recibe factura sin IVA espanol con mencion 'inversion del sujeto pasivo' "
+            "y declara la operacion en el modelo 349."
+        ),
+        source_url="https://sede.agenciatributaria.gob.es/Sede/procedimientoini/GI28.shtml",
     ),
     "390": FormRule(
         code="390",
         category="modelo390_report",
         cadence="annual",
         source_citation="AEAT Modelo 390: Declaracion-resumen anual del IVA.",
+        source_url="https://sede.agenciatributaria.gob.es/Sede/procedimientoini/G412.shtml",
     ),
     "347": FormRule(
         code="347",
@@ -88,30 +143,35 @@ FORM_RULES: dict[str, FormRule] = {
             "A recipient established outside Spain or the EU is not excluded by itself: DGT consulta vinculante "
             "V0516-19 (12-03-2019) requires listing services above 3,005.06 EUR supplied to an organisation established in Switzerland."
         ),
+        source_url="https://sede.agenciatributaria.gob.es/Sede/procedimientoini/GI27.shtml",
     ),
     "111": FormRule(
         code="111",
         category="modelo111_report",
         cadence="quarterly",
         source_citation="AEAT Modelo 111: Retenciones e ingresos a cuenta sobre rendimientos del trabajo y actividades economicas.",
+        source_url="https://sede.agenciatributaria.gob.es/Sede/procedimientoini/GH01.shtml",
     ),
     "190": FormRule(
         code="190",
         category="modelo190_report",
         cadence="annual",
         source_citation="AEAT Modelo 190: Resumen anual de retenciones e ingresos a cuenta.",
+        source_url="https://sede.agenciatributaria.gob.es/Sede/procedimientoini/GI10.shtml",
     ),
     "115": FormRule(
         code="115",
         category="modelo115_report",
         cadence="quarterly",
         source_citation="AEAT Modelo 115: Retenciones e ingresos a cuenta por arrendamiento o subarrendamiento de inmuebles urbanos.",
+        source_url="https://sede.agenciatributaria.gob.es/Sede/procedimientoini/GH02.shtml",
     ),
     "180": FormRule(
         code="180",
         category="modelo180_report",
         cadence="annual",
         source_citation="AEAT Modelo 180: Resumen anual de retenciones por arrendamiento de inmuebles urbanos.",
+        source_url="https://sede.agenciatributaria.gob.es/Sede/procedimientoini/GI00.shtml",
     ),
     "216": FormRule(
         code="216",
@@ -121,36 +181,50 @@ FORM_RULES: dict[str, FormRule] = {
             "AEAT Modelo 216: IRNR. Retenciones e ingresos a cuenta sobre rentas obtenidas "
             "sin establecimiento permanente, incluidas declaraciones negativas por exencion de convenio."
         ),
+        source_url="https://sede.agenciatributaria.gob.es/Sede/procedimientoini/GF05.shtml",
     ),
     "296": FormRule(
         code="296",
         category="modelo296_report",
         cadence="annual",
         source_citation="AEAT Modelo 296: Resumen anual de retenciones e ingresos a cuenta del IRNR.",
+        source_url="https://sede.agenciatributaria.gob.es/Sede/procedimientoini/GI22.shtml",
     ),
     "100": FormRule(
         code="100",
         category="modelo100_report",
         cadence="annual",
         source_citation="AEAT Modelo 100: IRPF. Declaracion anual.",
+        source_url="https://sede.agenciatributaria.gob.es/Sede/procedimientoini/G229.shtml",
     ),
     "714": FormRule(
         code="714",
         category="modelo714_report",
         cadence="annual",
         source_citation="AEAT Modelo 714: Impuesto sobre el Patrimonio.",
+        source_url="https://sede.agenciatributaria.gob.es/Sede/procedimientoini/G611.shtml",
     ),
     "720": FormRule(
         code="720",
         category="modelo720_report",
         cadence="annual",
-        source_citation="AEAT Modelo 720: Declaracion sobre bienes y derechos situados en el extranjero.",
+        source_citation=(
+            "AEAT Modelo 720: Declaracion sobre bienes y derechos situados en el extranjero. "
+            "LGT (Ley 58/2003) disposicion adicional decimoctava, letras a) a c) "
+            "(informacion sobre cuentas, valores y bienes inmuebles en el extranjero)."
+        ),
+        source_url="https://sede.agenciatributaria.gob.es/Sede/procedimientoini/GI34.shtml",
     ),
     "721": FormRule(
         code="721",
         category="modelo721_report",
         cadence="annual",
-        source_citation="AEAT Modelo 721: Declaracion informativa sobre monedas virtuales situadas en el extranjero.",
+        source_citation=(
+            "AEAT Modelo 721: Declaracion informativa sobre monedas virtuales situadas en el extranjero. "
+            "LGT (Ley 58/2003) disposicion adicional decimoctava, letra d) "
+            "(informacion sobre monedas virtuales en el extranjero)."
+        ),
+        source_url="https://sede.agenciatributaria.gob.es/Sede/procedimientoini/GI55.shtml",
         introduced_year=2023,
     ),
 }
