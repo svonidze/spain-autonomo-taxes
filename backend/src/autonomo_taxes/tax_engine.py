@@ -8,6 +8,7 @@ from typing import Iterable
 from .counterparty_names import is_oss_non_union_identifier
 from .modelo130 import Modelo130Result, calculate_modelo130
 from .money import cents
+from .tax_rules import DIFFICULT_EXPENSE_CAP_EUR
 from .vat_classification import LEGACY_VAT_CLASSIFICATION_WARNING, is_vat_investment_good
 
 
@@ -653,7 +654,7 @@ def calculate_modelo100_business_support(
     *,
     year: int,
     difficult_expenses_rate: Decimal,
-    difficult_expenses_cap: Decimal = Decimal("2000.00"),
+    difficult_expenses_cap: Decimal = DIFFICULT_EXPENSE_CAP_EUR,
     unsupported_categories: Iterable[str] = (),
 ) -> CalculationResult:
     unsupported = tuple(sorted({value for value in unsupported_categories if value}))
