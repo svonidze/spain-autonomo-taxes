@@ -1,5 +1,10 @@
 {
   "errors.apiReturnedHtml": "The API returned HTML instead of data. Another server is probably running at {origin}. Stop it or run autonomo-web on another port.",
   "errors.malformedJson": "Malformed JSON response from {url} ({status}).",
-  "errors.unexpectedNonJson": "Unexpected non-JSON response from {url} ({status})."
+  "errors.unexpectedNonJson": "Unexpected non-JSON response from {url} ({status}).",
+  "errors.deduction_facts_missing": "The selected deduction rule needs more facts. Complete them in the rule card and save the draft.",
+  "errors.deduction_exceeds_rule": "The IRPF or IVA deduction is above the rule''s ceiling. Enter the proposal or less, or choose no rule.",
+  "errors.deduction_rule_unknown": "The selected deduction rule is not in this version''s catalog. Choose another rule or no rule.",
+  "errors.deduction_out_of_scope": "The selected deduction rule does not cover this expense. Choose no rule and enter the amounts manually.",
+  "errors.deduction_rule_conflict": "The deduction rule changed without a new catalog date. Posting is stopped until the catalog is fixed; contact the operator."
 }

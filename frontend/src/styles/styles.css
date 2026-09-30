@@ -2657,6 +2657,12 @@ textarea:focus {
 .wf-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
 .wf-fields details { display: grid; gap: 12px; }
 .wf-message:empty { display: none; }
+.wf-rule, .wf-rule-card { display: grid; gap: 10px; }
+.wf-rule-card { border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+.wf-rule-card ul { margin: 0; padding-left: 20px; }
+.wf-rule small, .wf-rule-risk { color: var(--muted); }
+.wf-risk { margin-left: 8px; }
+.wf-rule-stale { color: #714307; }
 @media (max-width: 800px) {
   .wf-layout { grid-template-columns: minmax(0, 1fr); }
   .wf-source { position: static; }
