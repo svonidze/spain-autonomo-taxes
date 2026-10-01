@@ -1,5 +1,7 @@
 # Documentation
 
+Start with [Local setup](../SETUP.md) to install and run the application.
+
 User guidance is in [user/](user/): the accounting workflow, statuses, account
 settings, counterparty corrections, VIES checks, exchange rates, history replay,
 the [Renta WEB draft review checklist](user/RENTA_DRAFT_CHECKLIST.md), and the
