@@ -294,6 +294,62 @@ export function createChartBuilders(locale: Locale) {
     return spec;
   }
 
+  function buildCumulativeExpensesSpec(analytics: Analytics) {
+    const expenses = analytics.datasets.cumulative_expenses;
+    const spec = chartSpecBase(
+      'cumulative-expenses',
+      'charts.cumulativeExpenses.title',
+      'charts.cumulativeExpenses.aria',
+      transactionsEmptyMessage(analytics),
+    );
+    spec.bucketLabel = t('charts.bucket.month');
+    spec.buckets = expenses.buckets.map(chartMonthLabel);
+    spec.series = [
+      {
+        key: 'gross-projected',
+        label: t('charts.cumulativeExpenses.grossProjected'),
+        kind: 'line',
+        tone: 'warning',
+        pattern: 'dashed',
+        values: expenses.gross_projected_minor,
+      },
+      {
+        key: 'deductible-projected',
+        label: t('charts.cumulativeExpenses.deductibleProjected'),
+        kind: 'line',
+        tone: 'accent',
+        pattern: 'dashed',
+        values: expenses.deductible_projected_minor,
+      },
+      {
+        key: 'gross-actual',
+        label: t('charts.cumulativeExpenses.grossActual'),
+        kind: 'line',
+        tone: 'warning',
+        pattern: 'solid',
+        values: expenses.gross_actual_minor,
+      },
+      {
+        key: 'deductible-actual',
+        label: t('charts.cumulativeExpenses.deductibleActual'),
+        kind: 'line',
+        tone: 'accent',
+        pattern: 'solid',
+        values: expenses.deductible_actual_minor,
+      },
+    ];
+    spec.note = t('charts.cumulativeExpenses.basis');
+    if (expenses.missing_fx_transaction_count > 0)
+      spec.note +=
+        ' ' +
+        formatMessage(
+          'charts.cumulativeExpenses.missingFx',
+          { count: expenses.missing_fx_transaction_count },
+          locale,
+        );
+    return spec;
+  }
+
   function buildYearComparisonSpec(analytics: Analytics) {
     const comparison = analytics.datasets.ytd_comparison;
     const spec = chartSpecBase(
@@ -489,6 +545,7 @@ export function createChartBuilders(locale: Locale) {
     ivaPosition: buildIvaPositionSpec,
     reserve: buildReserveSpec,
     cumulativeNet: buildCumulativeNetSpec,
+    cumulativeExpenses: buildCumulativeExpensesSpec,
     yearComparison: buildYearComparisonSpec,
     expenseStructure: buildExpenseStructureSpec,
     reviewAging: buildReviewAgingSpec,

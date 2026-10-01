@@ -116,6 +116,7 @@ const charts: { id: string; kind: ChartKind }[] = [
   { id: 'chart-iva-position', kind: 'ivaPosition' },
   { id: 'chart-tax-reserve', kind: 'reserve' },
   { id: 'chart-cumulative-net', kind: 'cumulativeNet' },
+  { id: 'chart-cumulative-expenses', kind: 'cumulativeExpenses' },
 ];
 const review = (posting = false) =>
   props.context.services.navigate(

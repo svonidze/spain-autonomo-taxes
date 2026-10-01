@@ -173,6 +173,30 @@
           "assets": []
         }
       ]
+    },
+    "cumulative_expenses": {
+      "measure": "purchase_cost_and_irpf_deductible",
+      "buckets": [
+        "2026-01",
+        "2026-02"
+      ],
+      "gross_actual_minor": [
+        10000,
+        null
+      ],
+      "gross_projected_minor": [
+        10000,
+        12000
+      ],
+      "deductible_actual_minor": [
+        5000,
+        null
+      ],
+      "deductible_projected_minor": [
+        5000,
+        6000
+      ],
+      "missing_fx_transaction_count": 0
     }
   }
 }

@@ -229,6 +229,19 @@ decides. Change the definitions here first, then the code.
 - **Deductible expense**: `tax_treatments.deductible_irpf_minor`; missing
   treatment means 0 deductible, and the gross amount is reported separately in
   the expense-structure dataset.
+- **Cumulative purchases and IRPF deductions**: `cumulative_expenses` sums
+  stored EUR purchase amounts once, including equipment acquisitions. Native
+  depreciation recognition transactions and `historical_g03` rows contribute
+  only their reviewed IRPF deduction, never another purchase amount. Use the
+  expense-register classification (`recognition_transaction_id` or
+  `historical_g03`). Purchases use the accounting transaction date and do not
+  imply payment evidence. Deductions from equipment bought in an earlier year
+  can exceed purchases in the selected year; the difference is not a measure
+  of non-deductible expenses. Signed corrections retain their signs.
+  Four lines show purchases/deductions, actual/projected, using the existing
+  analytics lifecycle policy. Missing-FX expense rows are excluded from both
+  measures and counted in this dataset; display the warning even when the
+  known totals are zero or other valid rows keep the chart non-empty.
 - **Business net ("net before difficult-to-justify expenses")**: income (IRPF
   basis) minus deductible expenses. No difficult-expenses provision, no rates.
 - **Tax cash due**: positive payables per form — Modelo 130 casilla `19`,
@@ -342,7 +355,7 @@ Additional rules:
 
 | View | Charts |
 |---|---|
-| Dashboard | monthly income vs deductible expenses; quarterly tax cash due; IVA position (27/45/71 + disposition); tax reserve bullet; cumulative business net |
+| Dashboard | monthly income vs deductible expenses; quarterly tax cash due; IVA position (27/45/71 + disposition); tax reserve bullet; cumulative business net; cumulative purchases and IRPF deductions immediately after business net |
 | Taxes | year-over-year YTD comparison (decision support, never final Renta) |
 | Expenses | expense structure by AEAT concept (deductible / non-deductible / unclassified) |
 | Review | queue aging by age bucket and status |

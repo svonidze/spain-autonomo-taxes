@@ -63,6 +63,7 @@ def build_analytics(
     datasets = {
         "business_result": _business_result(transactions, query=query, through=through),
         "cumulative_net": _cumulative_net(transactions, query=query, through=through),
+        "cumulative_expenses": _cumulative_expenses(transactions, query=query, through=through),
         "quarterly_tax_due": _quarterly_tax_due(year_forms),
         "iva_position": _iva_position(year_forms),
         "reserve_bullet": _reserve_bullet(query.period_key, year_forms),
@@ -132,6 +133,12 @@ def _load_transactions(
     quality: dict[str, int],
 ) -> list[dict[str, Any]]:
     excluded = ", ".join(f"'{status}'" for status in EXCLUDED_STATUSES)
+    native_recognitions = {
+        row[0] for row in connection.execute(
+            "SELECT recognition_transaction_id FROM amortization_entries "
+            "WHERE recognition_transaction_id IS NOT NULL"
+        )
+    }
     rows = connection.execute(
         f"""
         SELECT
@@ -146,6 +153,7 @@ def _load_transactions(
             t.counterparty_id,
             c.display_name AS counterparty_name,
             tt.treatment_id,
+            tt.tax_code,
             tt.taxable_base_minor,
             tt.vat_minor,
             tt.deductible_irpf_minor,
@@ -174,6 +182,7 @@ def _load_transactions(
                 "transaction_id": transaction_id,
                 "transaction_date": str(row["transaction_date"]),
                 "kind": "income" if entry_type.startswith("income") else "expense",
+                "is_amortization": transaction_id in native_recognitions,
                 "lifecycle_status": str(row["lifecycle_status"]),
                 "created_at": str(row["created_at"] or ""),
                 "counterparty_id": row["counterparty_id"],
@@ -187,6 +196,8 @@ def _load_transactions(
                 "treatment_count": 0,
             }
             grouped[transaction_id] = bucket
+        if row["tax_code"] == "historical_g03":
+            bucket["is_amortization"] = True
         if row["treatment_id"] is None:
             continue
         bucket["treatment_count"] += 1
@@ -399,6 +410,65 @@ def _cumulative_net(
         "actual_minor": actual_values,
         "projected_minor": projected_values,
     }
+
+
+def _cumulative_expenses(
+    transactions: list[dict[str, Any]],
+    *,
+    query: AnalyticsQuery,
+    through: date,
+) -> dict[str, Any]:
+    """Stored purchase amounts once, beside reviewed IRPF deductions.
+
+    Recognition journals and historical amortization contribute only to IRPF.
+    The difference between the lines is not a non-deductible-expense measure.
+    """
+    months = _month_keys(query.year, through.month)
+    actual = {"gross": dict.fromkeys(months, 0), "deductible": dict.fromkeys(months, 0)}
+    reviewed = {"gross": dict.fromkeys(months, 0), "deductible": dict.fromkeys(months, 0)}
+    missing_fx = 0
+    for transaction in transactions:
+        if transaction["kind"] != "expense":
+            continue
+        month = transaction["transaction_date"][:7]
+        if month not in months:
+            continue
+        scope = _scope_key(transaction, query.as_of)
+        if scope not in {"actual", "approved_unposted", "approved_future"}:
+            continue
+        gross = transaction["eur_minor"]
+        if gross is None:
+            # FX policy: a foreign-currency row without a stored EUR amount leaves
+            # every money dataset, deduction included (see _expense_structure).
+            missing_fx += 1
+            continue
+        if transaction["is_amortization"]:
+            gross = 0
+        deductible = int(transaction["deductible_irpf_minor"] or 0)
+        for measure, value in (("gross", int(gross)), ("deductible", deductible)):
+            reviewed[measure][month] += value
+            if scope == "actual":
+                actual[measure][month] += value
+    result: dict[str, Any] = {
+        "measure": "purchase_cost_and_irpf_deductible", "buckets": months,
+        "missing_fx_transaction_count": missing_fx,
+    }
+    for measure in ("gross", "deductible"):
+        actual_values: list[int | None] = []
+        projected_values: list[int] = []
+        actual_running = 0
+        projected_running = 0
+        for month in months:
+            projected_running += reviewed[measure][month]
+            projected_values.append(projected_running)
+            if _month_elapsed(month, query.as_of):
+                actual_running += actual[measure][month]
+                actual_values.append(actual_running)
+            else:
+                actual_values.append(None)
+        result[f"{measure}_actual_minor"] = actual_values
+        result[f"{measure}_projected_minor"] = projected_values
+    return result
 
 
 def _form_values(entry: Mapping[str, Any], form_key: str) -> tuple[dict[str, str], str]:

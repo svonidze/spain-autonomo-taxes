@@ -697,6 +697,12 @@ function renderFigure(container, spec, scene, headers, rows) {
     empty.className = "empty-state chart-empty-state";
     empty.textContent = spec.emptyMessage;
     figure.appendChild(empty);
+    if (spec.note) {
+      const note = doc.createElement("p");
+      note.className = "chart-note chart-tone-muted";
+      note.textContent = spec.note;
+      figure.appendChild(note);
+    }
     container.appendChild(figure);
     return figure;
   }

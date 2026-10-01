@@ -448,6 +448,69 @@
       },
       "value": "-1 234,56 €",
       "percent": null
+    },
+    "cumulativeExpenses": {
+      "spec": {
+        "chartId": "cumulative-expenses",
+        "title": "Покупки и вычеты IRPF с начала года",
+        "ariaLabel": "Стоимость покупок и вычеты IRPF нарастающим итогом, факт и с учетом одобренного",
+        "tableLabel": "Данные таблицей",
+        "emptyMessage": "Нет операций за период",
+        "bucketLabel": "Месяц",
+        "buckets": [
+          "янв.",
+          "февр."
+        ],
+        "series": [
+          {
+            "key": "gross-projected",
+            "label": "Покупки: с учетом одобренного",
+            "kind": "line",
+            "tone": "warning",
+            "pattern": "dashed",
+            "values": [
+              10000,
+              12000
+            ]
+          },
+          {
+            "key": "deductible-projected",
+            "label": "Вычеты IRPF: с учетом одобренного",
+            "kind": "line",
+            "tone": "accent",
+            "pattern": "dashed",
+            "values": [
+              5000,
+              6000
+            ]
+          },
+          {
+            "key": "gross-actual",
+            "label": "Покупки: факт",
+            "kind": "line",
+            "tone": "warning",
+            "pattern": "solid",
+            "values": [
+              10000,
+              null
+            ]
+          },
+          {
+            "key": "deductible-actual",
+            "label": "Вычеты IRPF: факт",
+            "kind": "line",
+            "tone": "accent",
+            "pattern": "solid",
+            "values": [
+              5000,
+              null
+            ]
+          }
+        ],
+        "note": "Покупки учитываются один раз по сохраненным суммам EUR. Амортизация входит только в вычеты IRPF. Вычеты по оборудованию прошлых лет могут превышать покупки выбранного года."
+      },
+      "value": "-1 234,56 €",
+      "percent": null
     }
   },
   "en": {
@@ -896,6 +959,69 @@
             ]
           }
         ]
+      },
+      "value": "-€1,234.56",
+      "percent": null
+    },
+    "cumulativeExpenses": {
+      "spec": {
+        "chartId": "cumulative-expenses",
+        "title": "Cumulative purchases and IRPF deductions",
+        "ariaLabel": "Year-to-date purchase amounts and IRPF deductions, actual and including approved entries",
+        "tableLabel": "Data as a table",
+        "emptyMessage": "No transactions in this period",
+        "bucketLabel": "Month",
+        "buckets": [
+          "Jan",
+          "Feb"
+        ],
+        "series": [
+          {
+            "key": "gross-projected",
+            "label": "Purchases: including approved",
+            "kind": "line",
+            "tone": "warning",
+            "pattern": "dashed",
+            "values": [
+              10000,
+              12000
+            ]
+          },
+          {
+            "key": "deductible-projected",
+            "label": "IRPF deductions: including approved",
+            "kind": "line",
+            "tone": "accent",
+            "pattern": "dashed",
+            "values": [
+              5000,
+              6000
+            ]
+          },
+          {
+            "key": "gross-actual",
+            "label": "Purchases: actual",
+            "kind": "line",
+            "tone": "warning",
+            "pattern": "solid",
+            "values": [
+              10000,
+              null
+            ]
+          },
+          {
+            "key": "deductible-actual",
+            "label": "IRPF deductions: actual",
+            "kind": "line",
+            "tone": "accent",
+            "pattern": "solid",
+            "values": [
+              5000,
+              null
+            ]
+          }
+        ],
+        "note": "Purchases use stored EUR amounts once. Depreciation counts only in IRPF deductions. Deductions for earlier-year equipment can exceed purchases in the selected year."
       },
       "value": "-€1,234.56",
       "percent": null

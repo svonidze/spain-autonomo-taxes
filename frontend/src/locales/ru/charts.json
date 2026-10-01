@@ -73,5 +73,13 @@
   "charts.yoy.income": "Доход",
   "charts.yoy.net": "Результат",
   "charts.yoy.previousYear": "Прошлый год",
-  "charts.yoy.title": "Год к году (по текущий месяц)"
+  "charts.yoy.title": "Год к году (по текущий месяц)",
+  "charts.cumulativeExpenses.title": "Покупки и вычеты IRPF с начала года",
+  "charts.cumulativeExpenses.aria": "Стоимость покупок и вычеты IRPF нарастающим итогом, факт и с учетом одобренного",
+  "charts.cumulativeExpenses.grossActual": "Покупки: факт",
+  "charts.cumulativeExpenses.grossProjected": "Покупки: с учетом одобренного",
+  "charts.cumulativeExpenses.deductibleActual": "Вычеты IRPF: факт",
+  "charts.cumulativeExpenses.deductibleProjected": "Вычеты IRPF: с учетом одобренного",
+  "charts.cumulativeExpenses.basis": "Покупки учитываются один раз по сохраненным суммам EUR. Амортизация входит только в вычеты IRPF. Вычеты по оборудованию прошлых лет могут превышать покупки выбранного года.",
+  "charts.cumulativeExpenses.missingFx": "В расчет не вошли расходы без подтвержденного пересчета в EUR: {count}."
 }
