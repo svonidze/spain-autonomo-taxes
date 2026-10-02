@@ -22,6 +22,7 @@ from .review_packet import (
 from .posting import prevalidate_expense_inbox_cleanup
 from .tax_rules import (
     DIRECT_ESTIMATION_IRPF_METHODS,
+    EU_COUNTRY_CODES,
     IMMEDIATE_WRITE_OFF_ANNUAL_CAP_EUR,
     IMMEDIATE_WRITE_OFF_UNIT_LIMIT_EUR,
 )
@@ -220,13 +221,23 @@ def _supplier(db: LedgerDB, payload: Mapping[str, Any]) -> dict[str, Any] | None
     require(supplier is not None, "Choose or create a supplier")
     country = text(supplier["country_code"], "Supplier country").upper()
     require(len(country) == 2 and country.isalpha() and country != "ZZ", "Use a reviewed supplier country")
-    tax_id = text(supplier["tax_id"], "Supplier tax identifier").upper()
+    tax = payload["decision"]["tax_treatment"]
+    # RD 1619/2012 art. 2.4 permits accounting evidence from a non-EU supplier.
+    accounting_evidence = (
+        isinstance(tax, Mapping)
+        and country not in EU_COUNTRY_CODES | {"EU", "EL", "ZZ"}
+        and tax.get("aeat_invoice_type") == "F6"
+        and tax.get("tax_code") == "non_eu_service_expense"
+        and payload["decision"]["document_valid"] is True
+    )
+    tax_id = text(supplier["tax_id"], "Supplier tax identifier", optional=accounting_evidence).upper()
     def normalized(value: Any) -> str:
         value = "".join(char for char in str(value or "").upper() if char.isalnum())
         return value.removeprefix("ES") if country == "ES" else value
     identifiers = {normalized(tax_id)}
     if supplier["vat_id"]:
         identifiers.add(normalized(supplier["vat_id"]))
+    identifiers.discard("")
     # The underlying registry resolves tax identifiers globally. Never let its
     # upsert reinterpret a conflicting country as permission to rename a card.
     for row in db.connection.execute("SELECT * FROM counterparties"):
@@ -269,7 +280,7 @@ def _facts(db: LedgerDB, packet: Mapping[str, Any], payload: Mapping[str, Any]) 
     if supplier is None:
         values = payload["supplier"]
         supplier = db.upsert_counterparty(external_key="expense-supplier:" + digest(values),
-            display_name=text(values["display_name"], "Supplier name"), tax_id=text(values["tax_id"], "Supplier tax identifier").upper(),
+            display_name=text(values["display_name"], "Supplier name"), tax_id=text(values["tax_id"], "Supplier tax identifier", optional=True).upper() or None,
             country_code=text(values["country_code"], "Supplier country").upper())
         if values["vat_id"]:
             supplier = db.update_counterparty_review(supplier["counterparty_id"],

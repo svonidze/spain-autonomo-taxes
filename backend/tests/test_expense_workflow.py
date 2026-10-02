@@ -164,6 +164,65 @@ def test_new_supplier_with_vat_id_is_created_atomically(tmp_path):
         assert db.connection.execute('SELECT COUNT(*) FROM counterparties').fetchone()[0]==2
 
 
+def test_non_eu_f6_without_supplier_tax_id_previews_and_posts_atomically(tmp_path):
+    from autonomo_taxes.aeat_books import build_aeat_book_projection
+    fixture,draft=setup_draft(tmp_path)
+    with open_db(fixture['database']) as db:
+        p=deepcopy(draft['payload']);p['facts']['counterparty_id']=None
+        p['supplier']={'display_name':'Synthetic overseas service','tax_id':'  ','vat_id':'','country_code':'CN'}
+        p['decision']['tax_treatment'].update(tax_code='non_eu_service_expense',aeat_invoice_type='F6',
+            aeat_reverse_charge=True,taxable_base_minor=12100,vat_minor=2541,
+            deductible_irpf_minor=12100,deductible_vat_minor=2541)
+        saved=save_draft(db,fixture['transaction_id'],payload=p,expected_version=draft['draft_version'],source_snapshot_hash=draft['source_snapshot_hash'],actor='test')
+        document=dict(db.connection.execute('SELECT * FROM documents').fetchone())
+        original=Path(document['source_path']).read_bytes()
+        before='\n'.join(db.connection.iterdump())
+        proposed=preview(db,fixture['transaction_id'],expected_version=saved['draft_version'])
+        assert '\n'.join(db.connection.iterdump())==before
+        with pytest.raises(ExpenseWorkflowError,match='changed'):
+            preview(db,fixture['transaction_id'],expected_version=draft['draft_version'])
+        request=str(uuid4())
+        options=dict(expected_version=saved['draft_version'],preview_token=proposed['preview_token'],
+                     request_id=request,actor='test',archive_root=tmp_path/'archive')
+        result=confirm_and_post(db,fixture['transaction_id'],**options)
+        assert result['posted'] and confirm_and_post(db,fixture['transaction_id'],**options)==result
+        party=db.connection.execute("SELECT * FROM counterparties WHERE country_code='CN'").fetchone()
+        assert party['tax_id'] is None and party['vat_id'] is None
+        assert db.connection.execute('SELECT COUNT(*) FROM counterparties').fetchone()[0]==2
+        assert db.connection.execute('SELECT COUNT(*) FROM transactions').fetchone()[0]==1
+        stored=db.connection.execute('SELECT * FROM documents').fetchone()
+        assert stored['document_id']==document['document_id'] and stored['source_hash']==document['source_hash']
+        assert Path(stored['source_path']).read_bytes()==original
+        projection=build_aeat_book_projection(db,period_key=fixture['period'])
+        assert any('Foreign counterparty requires a primary source-backed AEAT identity' in str(blocker)
+                   for blocker in projection['blockers'])
+
+
+@pytest.mark.parametrize('country,invoice_type,tax_code,valid',[
+    ('ES','F6','non_eu_service_expense',True),
+    ('DE','F6','non_eu_service_expense',True),
+    ('EL','F6','non_eu_service_expense',True),
+    ('EU','F6','non_eu_service_expense',True),
+    ('ZZ','F6','non_eu_service_expense',True),
+    ('CN','F1','non_eu_service_expense',True),
+    ('CN','F6','domestic_input',True),
+    ('CN','F6','non_eu_service_expense',False),
+    ('CN','F6','non_eu_service_expense',None),
+])
+def test_missing_supplier_tax_id_exception_is_restricted(tmp_path,country,invoice_type,tax_code,valid):
+    fixture,draft=setup_draft(tmp_path)
+    with open_db(fixture['database']) as db:
+        p=deepcopy(draft['payload']);p['facts']['counterparty_id']=None
+        p['supplier']={'display_name':'Synthetic supplier','tax_id':'','vat_id':'','country_code':country}
+        p['decision']['document_valid']=valid
+        p['decision']['tax_treatment'].update(aeat_invoice_type=invoice_type,tax_code=tax_code)
+        saved=save_draft(db,fixture['transaction_id'],payload=p,expected_version=draft['draft_version'],source_snapshot_hash=draft['source_snapshot_hash'],actor='test')
+        before='\n'.join(db.connection.iterdump())
+        with pytest.raises(ExpenseWorkflowError,match='Supplier tax identifier|reviewed supplier country'):
+            preview(db,fixture['transaction_id'],expected_version=saved['draft_version'])
+        assert '\n'.join(db.connection.iterdump())==before
+
+
 def test_asset_basis_cannot_exceed_real_invoice_gross(tmp_path):
     fixture,draft=setup_draft(tmp_path,method='immediate')
     with open_db(fixture['database']) as db:

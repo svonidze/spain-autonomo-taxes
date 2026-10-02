@@ -46,7 +46,7 @@
   "help.reasons.deductibility_pending_confirmation.title": "Deduction needs confirmation",
   "help.reasons.document_classification_review.action": "Open the original and check its purpose.",
   "help.reasons.document_classification_review.description": "The document could not be classified automatically.",
-  "help.reasons.document_classification_review.title": "Document type unclear",
+  "help.reasons.document_classification_review.title": "Document needs manual review",
   "help.reasons.document_not_ready.action": "Open the original and complete its review.",
   "help.reasons.document_not_ready.description": "The linked document is not ready for posting.",
   "help.reasons.document_not_ready.title": "Document not yet reviewed",

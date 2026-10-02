@@ -11,6 +11,7 @@
   "expense.forQuarter": "Depreciation for {period}",
   "expense.future": "Recognition date has not arrived: {date}",
   "expense.futureAmount": "Of which future-dated: {amount}",
+  "expense.fxUnconfirmed": "EUR exchange rate is not confirmed",
   "expense.inAmount": "In depreciation amount",
   "expense.inferred": "Matched by counterparty and document date",
   "expense.invalidPage": "Could not load the next page. Please retry.",
