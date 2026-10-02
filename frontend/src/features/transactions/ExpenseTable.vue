@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import { useLocale } from '../../vue/locale.ts';
 import { eur, formatDateText } from '../../core/format.ts';
-import { quarterNumber } from '../../core/i18n.ts';
+import { localeTag, quarterNumber } from '../../core/i18n.ts';
 import { followSpaLink } from '../../vue/services.ts';
 import StatusCell from '../../components/StatusCell.vue';
 import DocumentLabel from './DocumentLabel.vue';
@@ -35,6 +35,15 @@ const headers = computed(() =>
 );
 const date = (value?: string) => formatDateText(value, locale.value);
 const money = (value: unknown) => eur(value, locale.value);
+const originalAmount = (row: TransactionRow) =>
+  hasAmount(row.amount_original) && row.currency && Number.isFinite(Number(row.amount_original))
+    ? `${new Intl.NumberFormat(localeTag(locale.value), {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(Number(row.amount_original))} ${row.currency}`
+    : '—';
+const purchaseAmount = (row: TransactionRow) =>
+  hasAmount(row.amount_eur) ? money(row.amount_eur) : originalAmount(row);
 const quarter = (period: string) => {
   const match = /^(\d{4})-Q([1-4])$/.exec(period);
   return match
@@ -164,11 +173,30 @@ const matched = (row: TransactionRow) => row.asset_match_count === 1 && row.asse
           </td>
           <td role="cell" :data-label="headers[3]">
             <div>
-              <strong>{{ money(amortization ? row.deductible_irpf_eur : row.amount_eur) }}</strong
+              <strong>{{
+                amortization ? money(row.deductible_irpf_eur) : purchaseAmount(row)
+              }}</strong
               ><small
-                v-if="!hasAmount(amortization ? row.deductible_irpf_eur : row.amount_eur)"
+                v-if="
+                  !amortization &&
+                  hasAmount(row.amount_eur) &&
+                  row.currency !== 'EUR' &&
+                  originalAmount(row) !== '—'
+                "
+                class="expense-note"
+                >{{ originalAmount(row) }}</small
+              ><small
+                v-if="
+                  amortization
+                    ? !hasAmount(row.deductible_irpf_eur)
+                    : !hasAmount(row.amount_eur) && originalAmount(row) === '—'
+                "
                 class="expense-note"
                 >{{ t('expense.missing') }}</small
+              ><small
+                v-else-if="!amortization && !hasAmount(row.amount_eur) && row.currency !== 'EUR'"
+                class="expense-note"
+                >{{ t('expense.fxUnconfirmed') }}</small
               ><small
                 v-if="
                   amortization &&

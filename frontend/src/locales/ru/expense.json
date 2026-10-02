@@ -11,6 +11,7 @@
   "expense.forQuarter": "Амортизация за {period}",
   "expense.future": "Дата учёта ещё не наступила: {date}",
   "expense.futureAmount": "Из них будущей датой: {amount}",
+  "expense.fxUnconfirmed": "Курс в EUR не подтвержден",
   "expense.inAmount": "В сумме амортизации",
   "expense.inferred": "Сопоставлено по контрагенту и дате документа",
   "expense.invalidPage": "Не удалось загрузить следующую страницу. Повторите попытку.",

@@ -46,7 +46,7 @@
   "help.reasons.deductibility_pending_confirmation.title": "Вычет требует подтверждения",
   "help.reasons.document_classification_review.action": "Откройте оригинал и проверьте его назначение.",
   "help.reasons.document_classification_review.description": "Автоматически определить тип документа не удалось.",
-  "help.reasons.document_classification_review.title": "Неясен тип документа",
+  "help.reasons.document_classification_review.title": "Нужна ручная проверка документа",
   "help.reasons.document_not_ready.action": "Откройте оригинал и завершите проверку документа.",
   "help.reasons.document_not_ready.description": "Связанный документ не готов к проведению.",
   "help.reasons.document_not_ready.title": "Документ ещё не проверен",

@@ -244,6 +244,17 @@ identify the specific missing fact or document requirement and explain why it
 is needed. If a corrected or additional source document is genuinely required,
 keep its relationship to the original explicit.
 
+For a reviewed non-EU service expense supported by an F6 accounting document,
+a new supplier may have no tax identifier. Confirm the supplier's country and
+the original's validity; do not invent an identifier. This follows
+[RD 1619/2012, art. 2.4](https://www.boe.es/buscar/act.php?id=BOE-A-2012-14696#a2-2).
+Posting and AEAT book-export readiness remain separate: export still requires
+a primary source-backed foreign counterparty identity.
+
+The expense list shows the original amount and currency when the EUR conversion
+is not confirmed. Its exchange-rate note does not mean the source amount is
+missing or include the unconverted amount in EUR totals.
+
 For supported name corrections, see [Correcting a counterparty name](COUNTERPARTY_NAMES.md).
 Other metadata is not necessarily editable through that action.
 
