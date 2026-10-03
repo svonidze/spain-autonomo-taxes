@@ -140,6 +140,28 @@ write was rolled back.
 
 ### Operator and assistant updates
 
+The authorized operator, including an assistant acting on the user's instructions,
+owns completing the accounting review within that scope. Check originals,
+existing confirmations and applicable primary sources before asking for more
+information. Ask the user for missing facts, not to choose a tax classification
+the operator has not investigated. A separate external opinion or accountant's
+signature is not a prerequisite for every posting in this service.
+
+For a material uncertainty, obtain an independent second opinion when useful
+and available, then assess its reasoning against the evidence and primary
+sources. Record the operator's own conclusion, source links, assumptions and
+any specific remaining uncertainty. An adviser or model response is not binding
+law, evidence of an unstated fact, or permission to bypass application checks.
+If the question remains unresolved, state it precisely, identify who will
+investigate and what evidence or action is needed next. Do not replace that work
+with an unexplained requirement to "ask a gestor".
+
+Keep case records and second-opinion artifacts under the private-data boundary,
+outside Git. Public documentation and examples must be independently synthetic;
+do not copy real invoice figures, dates, identifiers, provider locators or
+case-specific conclusions into a general rule. For foreign electronic services,
+follow the [invoice review procedure](../../docs/user/ACCOUNTING_WORKFLOW.md#reviewing-foreign-electronic-service-invoices).
+
 Every update should identify what is saved, what is still pending and who will
 perform the next action. Use the installed application's terminology with an
 explicit explanation of internal review. Avoid an unexplained "tax review"
@@ -147,8 +169,8 @@ or "tax check", which can sound like an inspection by AEAT.
 
 Examples without operational data:
 
-- "The document details are saved. The entry still needs internal confirmation
-  of its accounting treatment; I will review it next."
+- "The document details are saved. The business-use share is missing; I will
+  check existing evidence and ask the user if it is still unknown."
 - "The decision is approved but not posted. I will post the authorized entry
   after checking the current posting preview."
 - "The correction is prepared but has not run. You need to enter the
