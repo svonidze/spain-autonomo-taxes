@@ -185,7 +185,7 @@ while its transaction is `posted` is normal.
 |---|---|---|---|
 | `received` | The entry has been recorded for processing. | No. | The service attempts extraction; an operator investigates if processing cannot continue. |
 | `extracted` | Candidate data has been extracted. | No. | The user or authorized operator checks the facts and decision. |
-| `needs_review` | Confirmation or issue resolution is still needed. | No. | The user or authorized operator completes the supported review or identifies the exact missing fact. |
+| `needs_review` | Internal confirmation or issue resolution is still needed. | No. | The authorized operator completes the supported review or identifies the exact missing fact or decision, its owner and next action. |
 | `approved` | The review decision is saved; posting has not happened. | No, in the ordinary actuals path. It may appear in a clearly labeled preview or forecast. | The user or operator checks posting readiness and explicitly posts the intended rows. If deferred or blocked, follow the reason. |
 | `posted` | The transaction has passed the posting checks and is recorded as posted. | Eligible, subject to the reviewed treatment and report rules. | Check the result and calculation freshness. Use the correction workflow if a saved fact is wrong. |
 | `included_in_snapshot` | The transaction is linked to a saved accounting calculation snapshot. | Eligible; saved snapshots retain their historical values. | Inspect the saved result. The operator handles any required correction or amendment without rewriting the snapshot. |
@@ -258,12 +258,69 @@ missing or include the unconverted amount in EUR totals.
 For supported name corrections, see [Correcting a counterparty name](COUNTERPARTY_NAMES.md).
 Other metadata is not necessarily editable through that action.
 
+## Reviewing foreign electronic service invoices
+
+An invoice from a foreign supplier does not by itself settle the IVA treatment.
+Review the service and the evidence, rather than copying another invoice's
+classification or treating a supplier's VAT line as automatically deductible.
+
+1. Establish the supplier's place of establishment, the nature of the service,
+   the recipient's business status, business purpose and business-use share.
+   Check the issue date, service period and payment terms, including advance
+   payments where relevant. Establish the applicable tax point; do not substitute
+   upload or review time for it.
+2. Check the effective ROI registration and VAT ID validity in VIES,
+   and whether and when the VAT ID was communicated to the supplier. A personal
+   NIF printed in a customer name is not proof of a validated VAT ID. A request
+   for registration is not proof of its approval. Registration timing alone
+   does not determine the whole treatment or change an actual business customer's
+   taxable status.
+3. Determine the place of supply, who accounts for IVA and any reporting duties
+   from applicable primary sources. The [AEAT cross-border services guidance](https://sede.agenciatributaria.gob.es/Sede/iva/iva-operaciones-comercio-exterior/prestaciones-servicios.html)
+   gives the general business-service rule. For electronic services, also check
+   Regulation 282/2011 art. 18(2): the supplier's option to treat a customer without
+   a communicated VAT ID as non-taxable is distinct from the recipient's status
+   and obligations. The [European Commission explanatory notes, section 5](https://taxation-customs.ec.europa.eu/system/files/2016-09/explanatory_notes_2015_en.pdf)
+   discuss this distinction and supplier correction; they are guidance, not
+   binding law. Supplier billing policy explains a charge but does not establish
+   the recipient's right to deduct it. Check the applicable invoicing rules,
+   including the state of identification if an OSS scheme is used.
+4. Decide IRPF cost and IVA independently. Separate supplier-charged IVA,
+   self-assessed IVA where required, and amounts recoverable from the supplier.
+   Distinguish permanently non-deductible IVA from a deduction merely deferred
+   or not claimed: choosing zero IVA deduction does not automatically make the
+   whole gross amount an IRPF expense. A later supplier refund or correction
+   needs its own supported accounting adjustment, without a double deduction.
+5. Preserve original amounts and currency. Verify the appropriate rate date,
+   rate and provenance, then reconcile the EUR gross, base and quotas; see
+   [Foreign-currency exchange rates](FX_RATES.md). Record the source facts, user
+   confirmations, legal basis, chosen treatment and any remaining requirement.
+   If a corrected invoice is needed, explain the exact defect and retain its
+   relationship to the original.
+
+These are separate accounting judgments, not separate posting controls. The
+current expense wizard requires a completed, supported review before
+**Confirm and post**; it does not post IRPF while leaving IVA unresolved. Keep
+an unresolved case in its draft. Do not replace gross with net, suppress a tax
+line or choose a false tax classification to bypass reconciliation.
+
+Synthetic examples:
+
+- A fictional cloud subscription has a supplier VAT line and confirmed business
+  use, but the place of supply and responsibility for IVA are unresolved. The
+  operator checks the applicable rules and billing evidence, then records the
+  supported treatment or the specific remaining legal question and next action.
+- A fictional EU software invoice says "reverse charge", but the relevant VAT
+  ID and its validity date are unverified. The operator checks the evidence and
+  identifies the remaining requirement; the printed wording alone does not
+  establish the classification, deduction or readiness to post.
+
 ## When the workflow stops
 
 | Situation | What it means | What happens next |
 |---|---|---|
 | OCR is unavailable or unreadable. | Extraction failed; this is not a tax-authority check. | Use the documented manual-original check in the expense wizard when the original is readable. Missing/unreadable files remain blockers; an operator can investigate the [OCR dependency](../../ops/docs/PROVISIONING.md#local-ocr-dependency). |
-| A fact or accounting decision is missing. | The entry still needs internal confirmation. | The operator first checks the original, applicable earlier sources and confirmations already supplied. Ask the user only for the unresolved fact, with an explanation of its effect. Do not invent a value. |
+| A fact or accounting decision is missing. | The entry still needs internal confirmation. | The operator checks the original, applicable sources and existing confirmations, then records the decision or names the exact remaining requirement and next action. Ask the user only for an unresolved fact, with an explanation of its effect. Do not invent a value. |
 | The transaction is approved but absent from posted totals. | Approval is saved, but posting has not happened. | The user or operator checks the posting preview, addresses any blocker and posts only the intended rows. |
 | An unposted expense has incorrect data. | Its server draft can be edited before posting. | Correct the facts beside the original and record the reason; an earlier approval is invalidated. Posted data requires the separate correction procedure. |
 | A save or posting response is lost. | The server may already have saved some or all of the work. | Reload first. The operator compares the actual status, current versions and saved decision before retrying only unfinished work. Keep intervening changes. |

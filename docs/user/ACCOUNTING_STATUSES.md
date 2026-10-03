@@ -20,7 +20,7 @@ lifecycle remains `approved`.
 
 | State | English / Russian label | Meaning and next action |
 |---|---|---|
-| `needs_review` | Review required / Требуется проверка | Check the original and resolve the missing facts or decision. Use **Open review / Открыть проверку** when offered. Otherwise pass the specific unresolved requirement to your accountant or operator. |
+| `needs_review` | Review required / Требуется проверка | Internal facts or accounting-treatment review is unfinished. Use **Open review / Открыть проверку** when offered. Identify the exact missing fact or decision, who will resolve it and the next action; an operator handles a required action unavailable in the interface. |
 | `approved` | Reviewed, not posted / Проверено, ещё не проведено | The review decision is saved. Check the current posting readiness before arranging an explicit posting action. Approval alone is not permission to post. |
 | `ready` | Ready to post / Готово к проведению | The current posting preview permits posting. Check the intended entries before confirming a separate posting action; viewing this status does not perform it. |
 | `deferred` | Waiting for posting date / Ожидает даты проведения | Read the displayed earliest posting date, then refresh readiness on or after that date. Do not change the recorded date to bypass the restriction. |
@@ -37,9 +37,18 @@ An available review link means the record supports that review route. It does
 not guarantee that changes can be applied: the review screen checks current
 permissions, period restrictions and evidence. No link does not mean approval
 or that nothing remains to do. Follow **Next actions / Следующие действия**;
-if no confirmation form exists, check the sources and contact your accountant
-or operator. An unknown status or missing amount needs clarification, not an
-assumed zero or a guessed tax decision.
+if no confirmation form exists, the authorized operator checks the sources and
+identifies a supported next action for that specific requirement. An unknown
+status or missing amount needs clarification, not an assumed zero or a guessed
+tax decision.
+
+`needs_review` is not an inspection by AEAT or a request for a separate accountant's
+signature. The authorized operator owns the review: checks sources, asks for
+missing facts, records a supported decision and verifies the saved result. An
+update should say, for example, "The draft is saved. The date the VAT ID was
+provided is missing; the operator will check the billing evidence and ask the
+user if that evidence does not establish it." An unresolved legal question must
+also be named, with its owner and next action, rather than only "IVA review".
 
 ## Filing is a separate state
 
@@ -75,8 +84,9 @@ issues before deciding what remains unresolved.
 When an explanation says **Awaiting advance and VAT review / Ожидает проверки
 авансов и IVA**, establish which advance documents remain valid and whether a
 deduction was already taken. Do not infer cancellation, zero purchase cost or
-completed tax treatment from that status. Resolve the documented question with
-your accountant or operator before changing the accounting decision.
+completed tax treatment from that status. The authorized operator establishes
+the remaining facts and records the supported decision before applying it;
+an unsupported correction follows the [accounting workflow](ACCOUNTING_WORKFLOW.md#when-the-workflow-stops).
 
 ## Originals and safe actions
 
